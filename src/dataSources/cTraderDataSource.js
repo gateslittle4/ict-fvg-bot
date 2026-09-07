@@ -255,8 +255,21 @@ export class CTraderDataSource {
         60000 // this single response can be tens of thousands of bars across 3 symbols - give it more room than the default before calling it stuck
       );
       console.log(`[cTrader] ${symbolName}: received ${(history.trendbar || []).length} warm-up candles, replaying...`);
-      for (const bar of (history.trendbar || []).sort((a, b) => a.utcTimestampInMinutes - b.utcTimestampInMinutes)) {
-        const candle = this._trendbarToCandle(bar);
+      const sortedBars = (history.trendbar || []).sort((a, b) => a.utcTimestampInMinutes - b.utcTimestampInMinutes);
+      // ingestCandle() rebuilds the whole filtered engine from scratch on every
+      // call (see liveStrategyEngine.js's "rebuild-and-replay" header comment) -
+      // O(n) per candle, so O(n^2) to replay this whole warm-up window, measured
+      // at several minutes for ~8640 candles on a modest CPU. Run synchronously
+      // for that long and Node's event loop never gets a turn - in particular the
+      // heartbeat setInterval above never fires, cTrader silently drops the
+      // session for inactivity, and the FIRST request sent afterwards (spot
+      // subscribe or live-trendbar subscribe, observed both ways live) times out
+      // with no response. Yielding every YIELD_EVERY candles costs nothing
+      // measurable but lets pending timers/socket reads run, so the heartbeat
+      // keeps firing and the session stays alive through the whole replay.
+      const YIELD_EVERY = 200;
+      for (let i = 0; i < sortedBars.length; i++) {
+        const candle = this._trendbarToCandle(sortedBars[i]);
         const events = store.strategyEngine.ingestCandle(symbolName, candle);
         pushSignalEvents(events);
         store.lastCandleBySymbol.set(symbolName, candle);
@@ -264,6 +277,9 @@ export class CTraderDataSource {
         // these are historical bars, not a live tick; only the LATEST state matters
         // once warm-up is done (any position LiveStrategyEngine "opened" mid-replay
         // reflects real, already-past price action and is left as accurate context).
+        if (i % YIELD_EVERY === YIELD_EVERY - 1) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
       }
 
       // ProtoOASubscribeLiveTrendbarReq's own doc (OpenApiMessages.proto) says it
