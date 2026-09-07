@@ -266,6 +266,17 @@ export class CTraderDataSource {
         // reflects real, already-past price action and is left as accurate context).
       }
 
+      // ProtoOASubscribeLiveTrendbarReq's own doc (OpenApiMessages.proto) says it
+      // "Requires subscription on the spot events, see ProtoOASubscribeSpotsReq" -
+      // this was missing entirely, which is why the trendbar subscription below
+      // timed out with no response on the first live deploy (confirmed: adding
+      // this call is what makes ProtoOASpotEvent - already listened for below -
+      // actually start arriving).
+      await sendCommandWithTimeout(this.connection, 'ProtoOASubscribeSpotsReq', {
+        ctidTraderAccountId: Number(accountId),
+        symbolId: [symbolId],
+      });
+
       await sendCommandWithTimeout(this.connection, 'ProtoOASubscribeLiveTrendbarReq', {
         ctidTraderAccountId: Number(accountId),
         symbolId,
