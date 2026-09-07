@@ -199,13 +199,19 @@ export class CTraderDataSource {
       // warm-up before its EMA reading means anything, and the Divergence z-score
       // needs `lookback` H1 bars (config-driven) on top of that. ~90 days of M15
       // (24/5 markets, so this over-counts a bit) covers both with room to spare.
-      // !!! VERIFY against cTrader's actual ProtoOAGetTrendbarsReq limits - the Open
-      // API docs describe a per-request cap that may be well under this `count`, in
-      // which case this needs to be paginated with repeated fromTimestamp/toTimestamp
-      // windows. Untested against the real API (see file header).
-      const WARMUP_M15_CANDLES = 90 * 24 * 4; // ~90 days
+      // fromTimestamp/toTimestamp are REQUIRED fields on ProtoOAGetTrendbarsReq (count
+      // alone is not enough - confirmed against OpenApiMessages.proto after the first
+      // live deploy rejected a count-only request). The M10-H1 bucket (which M15 falls
+      // into) caps the from/to span at 35 weeks, so this single 90-day window request
+      // needs no pagination.
+      const WARMUP_MS = 90 * 24 * 60 * 60 * 1000; // ~90 days
+      const WARMUP_M15_CANDLES = 90 * 24 * 4; // ~90 days, used as a response-size cap
+      const toTimestamp = Date.now();
+      const fromTimestamp = toTimestamp - WARMUP_MS;
       const history = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', {
         ctidTraderAccountId: Number(accountId),
+        fromTimestamp,
+        toTimestamp,
         symbolId,
         period,
         count: WARMUP_M15_CANDLES,
