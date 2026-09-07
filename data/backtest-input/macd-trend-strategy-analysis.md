@@ -1,0 +1,11 @@
+# Stratégie exploratoire non-ICT #6 : croisement MACD (Appel)
+
+⚠ Système de SUIVI DE TENDANCE publié (Appel, années 1970), mécanisme différent du suivi de tendance ADX/DMI (Wilder) déjà testé : le MACD lit l'écart entre deux EMA de prix (momentum de la tendance), l'ADX/DMI lit quel côté du mouvement directionnel domine actuellement - deux mécanismes publiés distincts, pas un re-réglage de celui déjà rejeté. Bougies journalières. Paramètres d'Appel eux-mêmes (EMA 12/26, ligne de signal EMA 9) - ceux par défaut sur toute plateforme de graphiques, jamais ajustés sur les données de ce projet. Entrée à l'ouverture du jour suivant un croisement MACD/ligne de signal confirmé à la clôture, sans filtre de confirmation supplémentaire (pas de gate ADX - le but est de tester le mécanisme standard tel que publié, pas un hybride). Stop = 2xATR(14) (même convention que RSI-2/Turtle/divergence RSI/DMI). Sortie = stop OU un croisement opposé (retournement direct, même convention que DMI). Délibérément AUCUNE cible R:R fixe et AUCUN plafond de durée : système de suivi de tendance par construction, comme DMI/Turtle. Testé sur les 5 instruments disponibles d'un coup. Écran TRAIN (2019-2023) / vérification TEST (2024-2025), même règle de verdict que partout ailleurs (y compris le garde-fou "pas assez de trades" ajouté cette session). ATTENTION : si un edge réel apparaît ici, la leçon déjà apprise avec Turtle System 2 / re-flaggée pour DMI (voir HANDOFF.md) s'applique - sa durée de détention doit être vérifiée AVANT toute combinaison avec le combo déjà validé. Cette vérification est hors du périmètre de ce script, qui teste seulement la qualité du signal seul.
+
+| Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Durée médiane (j, train) | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|
+| US100 | 120 | 34.2% | 0.98 | -0.01 | 52 | 28.8% | 0.55 | -0.25 | 7 | ❌ ne tient pas |
+| US500 | 122 | 35.2% | 1.02 | 0.01 | 49 | 32.7% | 0.63 | -0.17 | 8 | ❌ ne tient pas |
+| XAUUSD | 126 | 34.1% | 0.93 | -0.03 | 46 | 30.4% | 1.64 | 0.26 | 9 | ⚠️ affaibli |
+| EURUSD | 158 | 31.0% | 0.85 | -0.07 | 53 | 34.0% | 0.57 | -0.21 | 8 | ❌ ne tient pas |
+| GBPUSD | 120 | 40.0% | 0.93 | -0.03 | 46 | 39.1% | 0.70 | -0.14 | 10.5 | ❌ ne tient pas |

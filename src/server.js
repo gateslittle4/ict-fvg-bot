@@ -1,0 +1,119 @@
+import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { CONFIG, isLiveConfigured, getConfiguredPlatform } from './config.js';
+import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive } from './store.js';
+import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
+import { startMockDataSource } from './dataSources/mockDataSource.js';
+import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
+import { MatchTraderDataSource } from './dataSources/matchTraderDataSource.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
+app.get('/api/status', (req, res) => {
+  const guardrailStatus = store.guardrail.getStatus();
+  const symbols = CONFIG.symbols.map((symbol) => {
+    const last = store.lastCandleBySymbol.get(symbol);
+    return {
+      symbol,
+      lastPrice: last ? last.close : null,
+      lastCandleTime: last ? last.time : null,
+      openPosition: store.strategyEngine.getOpenPosition(symbol),
+    };
+  });
+
+  res.json({
+    mode: store.mode,
+    timeframe: CONFIG.timeframe,
+    balance: store.balance,
+    guardrail: guardrailStatus,
+    riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
+    symbols,
+    liveConfigured: isLiveConfigured(),
+    autoExecute: { ...store.autoExecute, active: isAutoExecuteActive() },
+  });
+});
+
+// "Mode indisponible" - see the comment on store.autoExecute. POST
+// { enabled: true, hours: 24 } to switch the bot to auto-executing entries
+// itself for that many hours (capped server-side), or { enabled: false } to
+// switch back to semi-automatic (alert-only) immediately.
+app.post('/api/auto-execute', (req, res) => {
+  try {
+    const { enabled, hours } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: '`enabled` (boolean) is required' });
+    }
+    const result = setAutoExecute(enabled, hours);
+    res.json({ ...result, active: isAutoExecuteActive() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/signals', (req, res) => {
+  const watching = store.signalLog
+    .filter((e) => e.type === 'watching')
+    .slice(-30)
+    .reverse();
+  res.json({
+    actionable: getActionableSignals(),
+    watching,
+  });
+});
+
+app.post('/api/lot-calc', (req, res) => {
+  try {
+    const { symbol, entryPrice, stopPrice, riskPct, balance } = req.body || {};
+    const spec = getDefaultSpec(symbol);
+    if (!spec) {
+      return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
+    }
+    const result = calculateLotSize({
+      balance: typeof balance === 'number' ? balance : store.balance,
+      riskPct: typeof riskPct === 'number' ? riskPct : CONFIG.risk.riskPctPerTrade,
+      entryPrice,
+      stopPrice,
+      symbolSpec: spec,
+    });
+    res.json({ ...result, symbol, specSource: spec.verified ? 'verified' : 'placeholder-verify-before-live-use' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, async () => {
+    console.log(`ICT-FVG assistant listening on :${PORT}`);
+    const platform = getConfiguredPlatform();
+    if (platform === 'matchtrader') {
+      try {
+        const live = new MatchTraderDataSource();
+        await live.start();
+        console.log('[boot] connected live to Match-Trader.');
+      } catch (err) {
+        console.error('[boot] live Match-Trader connection failed, falling back to demo mode:', err.message);
+        startMockDataSource();
+      }
+    } else if (platform === 'ctrader') {
+      try {
+        const live = new CTraderDataSource();
+        await live.start();
+        console.log('[boot] connected live to cTrader.');
+      } catch (err) {
+        console.error('[boot] live cTrader connection failed, falling back to demo mode:', err.message);
+        startMockDataSource();
+      }
+    } else {
+      console.log('[boot] no broker credentials configured — starting in demo mode.');
+      startMockDataSource();
+    }
+  });
+}
+
+export default app;

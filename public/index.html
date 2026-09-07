@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ICT FVG Assistant</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #131a22;
+    --panel-border: #232d38;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --green: #3fb950;
+    --red: #f85149;
+    --amber: #d29922;
+    --blue: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 16px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .banner {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 16px;
+    letter-spacing: 0.3px;
+  }
+  .banner.demo { background: rgba(210,153,34,0.15); color: var(--amber); border: 1px solid rgba(210,153,34,0.4); }
+  .banner.live { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 0 0 10px; }
+  .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+  .stat-row .label { color: var(--muted); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.ok { background: rgba(63,185,80,0.15); color: var(--green); }
+  .pill.blocked { background: rgba(248,81,73,0.15); color: var(--red); }
+  .signal-list { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
+  .signal-item { padding: 8px 0; border-bottom: 1px solid var(--panel-border); font-size: 13px; }
+  .signal-item:last-child { border-bottom: none; }
+  .signal-item .dir-bullish { color: var(--green); }
+  .signal-item .dir-bearish { color: var(--red); }
+  .signal-item .meta { color: var(--muted); font-size: 12px; }
+  .badge-actionable { background: var(--blue); color: #fff; padding: 1px 6px; border-radius: 6px; font-size: 11px; margin-left: 6px; }
+  .badge-blocked { background: var(--red); color: #fff; padding: 1px 6px; border-radius: 6px; font-size: 11px; margin-left: 6px; }
+  form.calc { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  form.calc label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 3px; }
+  form.calc input, form.calc select {
+    width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--panel-border);
+    background: #0e141b; color: var(--text); font-size: 14px;
+  }
+  form.calc .full { grid-column: 1 / -1; }
+  button {
+    background: var(--blue); color: #fff; border: none; border-radius: 6px;
+    padding: 10px 14px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 4px;
+  }
+  button:hover { opacity: 0.9; }
+  .result { margin-top: 12px; padding: 10px; border-radius: 8px; background: #0e141b; font-size: 14px; }
+  .result .big { font-size: 22px; font-weight: 700; color: var(--blue); }
+  .warn { color: var(--amber); font-size: 12px; margin-top: 6px; }
+  .err { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .price-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+  .price-row .sym { color: var(--muted); }
+  .auto-status { font-size: 13px; margin-bottom: 10px; }
+  .auto-status.active { color: var(--green); font-weight: 600; }
+  .auto-status.inactive { color: var(--muted); }
+  .auto-btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .auto-btn-row button { margin-top: 0; }
+  button.secondary { background: #2a333d; }
+  button.danger { background: var(--red); }
+</style>
+</head>
+<body>
+  <h1>ICT FVG Assistant</h1>
+  <div class="subtitle">US100 · US500 · XAUUSD — FVG filtré (biais HTF + structure + session + sweep) et Divergence US100/US500, garde-fous anti-overtrading</div>
+
+  <div id="banner" class="banner demo">Chargement…</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Garde-fous</h2>
+      <div id="guardrail-body">—</div>
+    </div>
+    <div class="card">
+      <h2>Prix en direct</h2>
+      <div id="prices-body">—</div>
+    </div>
+  </div>
+
+  <div class="card" id="auto-execute-card">
+    <h2>Mode indisponible (exécution automatique des entrées)</h2>
+    <div id="auto-execute-body">—</div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Signaux d'entrée validés (actionnables)</h2>
+      <ul id="actionable-list" class="signal-list"><li class="signal-item meta">Aucun pour l'instant…</li></ul>
+    </div>
+    <div class="card">
+      <h2>FVG en surveillance</h2>
+      <ul id="watching-list" class="signal-list"><li class="signal-item meta">Aucun pour l'instant…</li></ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Calculateur de lot (risque % configurable)</h2>
+    <form class="calc" id="calc-form">
+      <div>
+        <label>Instrument</label>
+        <select id="calc-symbol">
+          <option value="US100">US100</option>
+          <option value="US500">US500</option>
+          <option value="XAUUSD">XAUUSD (or)</option>
+          <option value="EURUSD">EUR/USD</option>
+          <option value="GBPUSD">GBP/USD</option>
+        </select>
+      </div>
+      <div>
+        <label>Risque (%)</label>
+        <input id="calc-risk" type="number" step="0.01" value="0.5" />
+      </div>
+      <div>
+        <label>Prix d'entrée</label>
+        <input id="calc-entry" type="number" step="any" placeholder="ex: 19500" />
+      </div>
+      <div>
+        <label>Prix du stop</label>
+        <input id="calc-stop" type="number" step="any" placeholder="ex: 19480" />
+      </div>
+      <div class="full">
+        <button type="submit">Calculer la taille de lot</button>
+      </div>
+    </form>
+    <div id="calc-result"></div>
+  </div>
+
+<script>
+const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
+const fmtTime = (t) => t ? new Date(t).toLocaleTimeString('fr-FR') : '—';
+const fmtDuration = (ms) => {
+  if (!ms || ms <= 0) return '0 min';
+  const m = Math.ceil(ms / 60000);
+  return m + ' min';
+};
+// US indices and gold trade in whole-ish points (2dp is plenty); forex pairs need more precision.
+const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
+const sourceLabel = (s) => s.source === 'divergence' ? 'Divergence' : 'FVG';
+
+async function refreshStatus() {
+  const res = await fetch('/api/status');
+  const data = await res.json();
+
+  const banner = document.getElementById('banner');
+  if (data.mode === 'demo') {
+    banner.className = 'banner demo';
+    banner.textContent = "⚠ MODE DÉMO — données simulées, pas connecté à ton compte réel. Aucun signal ici n'est réel.";
+  } else {
+    banner.className = 'banner live';
+    banner.textContent = '● LIVE — connecté à ton compte FundingPips via cTrader';
+  }
+
+  const g = data.guardrail;
+  const pill = g.blocked
+    ? '<span class="pill blocked">BLOQUÉ</span>'
+    : '<span class="pill ok">OK — signaux actifs</span>';
+  document.getElementById('guardrail-body').innerHTML = `
+    <div class="stat-row"><span>${pill}</span></div>
+    <div class="stat-row"><span class="label">Trades aujourd'hui</span><span>${g.tradesToday} / ${g.maxTradesPerDay}</span></div>
+    <div class="stat-row"><span class="label">Cooldown restant</span><span>${fmtDuration(g.cooldownRemainingMs)}</span></div>
+    <div class="stat-row"><span class="label">P&L du jour</span><span>${fmt(g.dailyPnl)} (${fmt(g.dailyLossPct)}% / limite ${g.dailyLossLimitPct}%)</span></div>
+    <div class="stat-row"><span class="label">Solde</span><span>${fmt(data.balance)}</span></div>
+    ${g.blocked ? `<div class="warn">Raisons: ${g.blockReasons.join(', ')}</div>` : ''}
+  `;
+
+  document.getElementById('prices-body').innerHTML = data.symbols.map((s) => `
+    <div class="price-row"><span class="sym">${s.symbol}${s.openPosition ? ' <span class="meta" style="color:var(--blue)">●position</span>' : ''}</span><span>${fmt(s.lastPrice, priceDecimals(s.symbol))} <span class="meta" style="color:var(--muted)">(${fmtTime(s.lastCandleTime)})</span></span></div>
+  `).join('');
+
+  renderAutoExecute(data.autoExecute);
+}
+
+async function setAutoExecute(enabled, hours) {
+  await fetch('/api/auto-execute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(hours ? { enabled, hours } : { enabled }),
+  });
+  refreshStatus();
+}
+
+function renderAutoExecute(ae) {
+  const body = document.getElementById('auto-execute-body');
+  if (!ae) { body.innerHTML = '—'; return; }
+  if (ae.active) {
+    const remainingMin = Math.max(0, Math.round((ae.expiresAt - Date.now()) / 60000));
+    const h = Math.floor(remainingMin / 60), m = remainingMin % 60;
+    body.innerHTML = `
+      <div class="auto-status active">🤖 ACTIF — le bot exécute les entrées lui-même jusqu'à ${fmtTime(ae.expiresAt)} (reste ${h}h${String(m).padStart(2,'0')})</div>
+      <div class="auto-btn-row"><button class="danger" onclick="setAutoExecute(false)">Désactiver maintenant (revenir en manuel)</button></div>
+    `;
+  } else {
+    body.innerHTML = `
+      <div class="auto-status inactive">Semi-automatique (normal) — alerte, tu cliques toi-même Buy/Sell</div>
+      <div class="auto-btn-row">
+        <button class="secondary" onclick="setAutoExecute(true, 4)">Activer 4h</button>
+        <button class="secondary" onclick="setAutoExecute(true, 8)">Activer 8h</button>
+        <button class="secondary" onclick="setAutoExecute(true, 24)">Activer 24h</button>
+        <button class="secondary" onclick="setAutoExecute(true, 72)">Activer 72h (fin de mois)</button>
+      </div>
+    `;
+  }
+}
+
+async function refreshSignals() {
+  const res = await fetch('/api/signals');
+  const data = await res.json();
+
+  const actionableList = document.getElementById('actionable-list');
+  actionableList.innerHTML = data.actionable.length
+    ? data.actionable.map((s) => {
+        const d = priceDecimals(s.symbol);
+        // Divergence signals have no `zone` (that's an FVG-only concept) - show entry/stop/target instead.
+        const detail = s.zone
+          ? `Zone FVG: ${fmt(s.zone.bottom, d)} – ${fmt(s.zone.top, d)}`
+          : `Entrée ${fmt(s.entryPrice, d)} · Stop ${fmt(s.stopPrice, d)} · Cible ${fmt(s.targetPrice, d)}`;
+        return `
+      <li class="signal-item">
+        <span class="dir-${s.direction}">${s.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${s.symbol}
+        <span class="meta">[${sourceLabel(s)}]</span>
+        ${s.actionable ? '<span class="badge-actionable">ACTIONNABLE</span>' : `<span class="badge-blocked">BLOQUÉ: ${s.blockedReasons.join(', ')}</span>`}
+        <div class="meta">${detail} · validé ${fmtTime(s.validatedAt)}</div>
+      </li>
+    `;
+      }).join('')
+    : '<li class="signal-item meta">Aucun pour l\'instant…</li>';
+
+  const watchingList = document.getElementById('watching-list');
+  watchingList.innerHTML = data.watching.length
+    ? data.watching.map((s) => `
+      <li class="signal-item">
+        <span class="dir-${s.direction}">${s.direction === 'bullish' ? '▲' : '▼'}</span> ${s.symbol}
+        <div class="meta">Zone: ${fmt(s.zone.bottom, priceDecimals(s.symbol))} – ${fmt(s.zone.top, priceDecimals(s.symbol))} · formé ${fmtTime(s.formedAt)}</div>
+      </li>
+    `).join('')
+    : '<li class="signal-item meta">Aucun pour l\'instant…</li>';
+}
+
+document.getElementById('calc-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const symbol = document.getElementById('calc-symbol').value;
+  const riskPct = parseFloat(document.getElementById('calc-risk').value);
+  const entryPrice = parseFloat(document.getElementById('calc-entry').value);
+  const stopPrice = parseFloat(document.getElementById('calc-stop').value);
+  const resultEl = document.getElementById('calc-result');
+
+  try {
+    const res = await fetch('/api/lot-calc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, riskPct, entryPrice, stopPrice }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+
+    resultEl.innerHTML = `
+      <div class="result">
+        <div>Taille de lot recommandée</div>
+        <div class="big">${data.lots} lot${data.lots > 1 ? 's' : ''}</div>
+        <div class="meta">Risque visé: ${fmt(data.riskAmount)} · risque réel arrondi: ${fmt(data.actualRiskAmount)} · distance: ${fmt(data.distanceInPoints, 1)} points/pips</div>
+        ${data.cappedByMin ? '<div class="warn">Plafonné au minimum du broker.</div>' : ''}
+        ${data.cappedByMax ? '<div class="warn">Plafonné au maximum du broker.</div>' : ''}
+        ${data.specSource !== 'verified' ? '<div class="warn">⚠ Spec indicative — à vérifier contre les vraies spécifications FundingPips/cTrader avant usage réel.</div>' : ''}
+      </div>
+    `;
+  } catch (err) {
+    resultEl.innerHTML = `<div class="err">${err.message}</div>`;
+  }
+});
+
+refreshStatus();
+refreshSignals();
+setInterval(refreshStatus, 3000);
+setInterval(refreshSignals, 3000);
+</script>
+</body>
+</html>

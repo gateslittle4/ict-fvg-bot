@@ -1,0 +1,9 @@
+# Stratégie exploratoire ICT #4 : Optimal Trade Entry (OTE, retracement Fibonacci)
+
+⚠ Encore un mécanisme de détection COMPLÈTEMENT différent du FVG/Order Block/IFVG - au lieu d'un gap ou d'une zone de mitigation, on trade un retracement Fibonacci (61.8%-79%, la fourchette publiée standard, jamais ajustée sur nos données) de la jambe d'impulsion qui a produit une cassure de structure (BOS). Réutilise la détection de swing existante (marketStructure.js, lookback 5). Origine de la jambe (le point 0%) = dernier point de swing CONFIRMÉ avant le BOS. Extrémité de la jambe (le point 100%) = plus haut/bas ATTEINT JUSQU'ICI depuis le BOS, recalculé bougie par bougie sans jamais regarder en avant (exactement comme un trader redessine son Fibonacci tant que la jambe continue de s'étendre avant de retracer). Bougies M15, remplissage en limite dès que la mèche touche le bord proche de la zone (61.8%), stop = au-delà de l'origine de la jambe, cible 1:3 (même convention que FVG/Order Block/Divergence), fenêtre de guet 50 bougies après le BOS, timeout 480 bougies. Un seul guet et une seule position suivis à la fois. Écran TRAIN (2019-2023) / vérification TEST (2024-2025), même règle de verdict que partout ailleurs. Testé aussi sur XAUUSD (contrairement à Order Block, qui n'avait couvert que US100/US500) puisque les données sont disponibles et que rien n'indique a priori que ce mécanisme serait limité aux indices.
+
+| Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| US100 | 1535 | 26.6% | 1.03 | 0.03 | 647 | 26.3% | 1.03 | 0.02 | ✅ tient |
+| US500 | 1398 | 25.8% | 0.95 | -0.04 | 613 | 25.4% | 0.96 | -0.04 | ❌ ne tient pas |
+| XAUUSD | 1360 | 25.7% | 0.89 | -0.09 | 614 | 26.9% | 1.03 | 0.02 | ⚠️ affaibli |
