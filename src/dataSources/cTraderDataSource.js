@@ -41,6 +41,30 @@ const PORT = 5035;
 // cTrader trendbar period enum name for our configured timeframe.
 const PERIOD_BY_TIMEFRAME = { M1: 'M1', M5: 'M5', M15: 'M15', M30: 'M30', H1: 'H1' };
 
+// @reiryoku/ctrader-layer's sendCommand() has NO built-in timeout - its promise
+// only settles when a response with a matching clientMsgId arrives, so a
+// request the server never answers (rate limit, oversized response, an
+// unexpected field) hangs start() forever with zero error and zero log line -
+// confirmed live on the first real deploy (boot stalled silently right after
+// account auth). Every boot-time request is wrapped in this so a stuck call
+// fails loud instead of hanging the whole connection indefinitely.
+const CTRADER_REQUEST_TIMEOUT_MS = 20000;
+
+async function sendCommandWithTimeout(connection, payloadName, data, timeoutMs = CTRADER_REQUEST_TIMEOUT_MS) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${payloadName} timed out after ${timeoutMs}ms - cTrader server never responded`)),
+      timeoutMs
+    );
+  });
+  try {
+    return await Promise.race([connection.sendCommand(payloadName, data), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Pure decision logic for CTRADER_ACCOUNT_ID auto-discovery (2026-09, added
  * so a first-time connection doesn't require already knowing the account id
@@ -95,8 +119,10 @@ export class CTraderDataSource {
 
     this.connection = new CTraderConnection({ host: HOST, port: PORT });
     await this.connection.open();
+    console.log('[cTrader] socket open, authenticating application...');
 
-    await this.connection.sendCommand('ProtoOAApplicationAuthReq', { clientId, clientSecret });
+    await sendCommandWithTimeout(this.connection, 'ProtoOAApplicationAuthReq', { clientId, clientSecret });
+    console.log('[cTrader] application authenticated');
 
     if (!accountId) {
       // CTRADER_ACCOUNT_ID not set (first connection) - discover it via the
@@ -108,7 +134,7 @@ export class CTraderDataSource {
       // 2026-09-07) and whether it comes back as `res.ctidTraderAccount` or
       // nested differently - logged in full below either way so a boot
       // failure here is still diagnosable from the deploy logs.
-      const res = await this.connection.sendCommand('ProtoOAGetAccountListByAccessTokenReq', { accessToken });
+      const res = await sendCommandWithTimeout(this.connection, 'ProtoOAGetAccountListByAccessTokenReq', { accessToken });
       const accounts = res.ctidTraderAccount || res.accounts || [];
       console.log('[cTrader] CTRADER_ACCOUNT_ID not set - discovered accounts for this access token:', JSON.stringify(accounts));
       accountId = pickAccountOrThrow(accounts);
@@ -118,19 +144,25 @@ export class CTraderDataSource {
     }
     this.accountId = accountId;
 
-    await this.connection.sendCommand('ProtoOAAccountAuthReq', {
+    await sendCommandWithTimeout(this.connection, 'ProtoOAAccountAuthReq', {
       ctidTraderAccountId: Number(accountId),
       accessToken,
     });
+    console.log(`[cTrader] account ${accountId} authenticated`);
 
     // Heartbeat keeps the socket alive - cTrader disconnects idle sessions.
     this._heartbeat = setInterval(() => {
       this.connection.sendHeartbeat?.();
     }, 25000);
 
+    console.log('[cTrader] loading symbols...');
     await this._loadSymbols(accountId);
+    console.log(`[cTrader] loaded ${this.symbolIdByName.size} symbols`);
+    console.log('[cTrader] loading balance...');
     await this._loadBalance(accountId);
+    console.log('[cTrader] loading last 24h of closed deals...');
     await this._loadClosedDeals(accountId);
+    console.log('[cTrader] subscribing to live candles for', CONFIG.symbols.join(', '));
     await this._subscribeLiveCandles(accountId);
 
     this.connection.on('ProtoOAExecutionEvent', (event) => this._handleExecutionEvent(event));
@@ -146,7 +178,7 @@ export class CTraderDataSource {
   }
 
   async _loadSymbols(accountId) {
-    const res = await this.connection.sendCommand('ProtoOASymbolsListReq', {
+    const res = await sendCommandWithTimeout(this.connection, 'ProtoOASymbolsListReq', {
       ctidTraderAccountId: Number(accountId),
     });
     for (const sym of res.symbol || []) {
@@ -156,7 +188,7 @@ export class CTraderDataSource {
   }
 
   async _loadBalance(accountId) {
-    const res = await this.connection.sendCommand('ProtoOATraderReq', {
+    const res = await sendCommandWithTimeout(this.connection, 'ProtoOATraderReq', {
       ctidTraderAccountId: Number(accountId),
     });
     // balance is typically returned in the account's smallest unit (cents);
@@ -170,7 +202,7 @@ export class CTraderDataSource {
   async _loadClosedDeals(accountId) {
     const to = Date.now();
     const from = to - 24 * 3600 * 1000; // last 24h is enough to seed today's guardrail state
-    const res = await this.connection.sendCommand('ProtoOADealListReq', {
+    const res = await sendCommandWithTimeout(this.connection, 'ProtoOADealListReq', {
       ctidTraderAccountId: Number(accountId),
       fromTimestamp: from,
       toTimestamp: to,
@@ -208,14 +240,21 @@ export class CTraderDataSource {
       const WARMUP_M15_CANDLES = 90 * 24 * 4; // ~90 days, used as a response-size cap
       const toTimestamp = Date.now();
       const fromTimestamp = toTimestamp - WARMUP_MS;
-      const history = await this.connection.sendCommand('ProtoOAGetTrendbarsReq', {
-        ctidTraderAccountId: Number(accountId),
-        fromTimestamp,
-        toTimestamp,
-        symbolId,
-        period,
-        count: WARMUP_M15_CANDLES,
-      });
+      console.log(`[cTrader] ${symbolName}: requesting ${WARMUP_M15_CANDLES} ${period} candles of warm-up history...`);
+      const history = await sendCommandWithTimeout(
+        this.connection,
+        'ProtoOAGetTrendbarsReq',
+        {
+          ctidTraderAccountId: Number(accountId),
+          fromTimestamp,
+          toTimestamp,
+          symbolId,
+          period,
+          count: WARMUP_M15_CANDLES,
+        },
+        60000 // this single response can be tens of thousands of bars across 3 symbols - give it more room than the default before calling it stuck
+      );
+      console.log(`[cTrader] ${symbolName}: received ${(history.trendbar || []).length} warm-up candles, replaying...`);
       for (const bar of (history.trendbar || []).sort((a, b) => a.utcTimestampInMinutes - b.utcTimestampInMinutes)) {
         const candle = this._trendbarToCandle(bar);
         const events = store.strategyEngine.ingestCandle(symbolName, candle);
@@ -227,11 +266,12 @@ export class CTraderDataSource {
         // reflects real, already-past price action and is left as accurate context).
       }
 
-      await this.connection.sendCommand('ProtoOASubscribeLiveTrendbarReq', {
+      await sendCommandWithTimeout(this.connection, 'ProtoOASubscribeLiveTrendbarReq', {
         ctidTraderAccountId: Number(accountId),
         symbolId,
         period,
       });
+      console.log(`[cTrader] ${symbolName}: subscribed to live ${period} candles`);
 
       this.connection.on('ProtoOASpotEvent', (event) => {
         if (event.symbolId !== symbolId || !event.trendbar) return;
