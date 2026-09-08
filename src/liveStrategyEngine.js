@@ -333,53 +333,62 @@ export class LiveStrategyEngine {
       }
     }
 
-    const out = [];
-    for (const e of lastEvents) {
-      if (e.type === 'watching' || e.type === 'expired') {
-        out.push({ ...e, source: 'fvg' });
-        continue;
-      }
-      // e.type === 'validated'
-      const c3Index = formationIndex.get(e.id);
-      const c1Index = c3Index !== undefined ? c3Index - 2 : -1;
-      const entryPrice = e.direction === 'bullish' ? e.zone.top : e.zone.bottom;
-      const stopPrice = computeStop({
-        direction: e.direction,
-        zone: e.zone,
-        candles: hist,
-        c1Index,
-        stopMode: cfg.stopMode,
-        swingLookback: 10,
-      });
-      const distance = Math.abs(entryPrice - stopPrice);
-      const blockedReason = this._blockReason(symbol, distance, candle);
+    return lastEvents.map((e) => this._processFvgEvent(symbol, cfg, candle, e, hist, formationIndex));
+  }
 
-      const signal = { ...e, source: 'fvg', entryPrice, stopPrice, distance, rrMultiple: cfg.rrMultiple, blockedReason };
-
-      if (!blockedReason) {
-        const targetPrice =
-          e.direction === 'bullish' ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
-        const riskAmount = this.balance * (this.riskPctPerTrade / 100);
-        this.openPositions.set(symbol, {
-          source: 'fvg',
-          id: e.id,
-          direction: e.direction,
-          entryIndex: hist.length - 1,
-          entryTime: candle.time,
-          entryPrice,
-          stopPrice,
-          targetPrice,
-          distance,
-          rrMultiple: cfg.rrMultiple,
-          riskAmount,
-          maxHoldingCandles: FVG_MAX_HOLDING_M15_CANDLES,
-        });
-        signal.targetPrice = targetPrice;
-        signal.riskAmount = riskAmount;
-      }
-      out.push(signal);
+  /**
+   * Turns one raw FvgEngine event (for a candle already appended to `hist`,
+   * at index hist.length-1) into the enriched signal shape the rest of the
+   * app expects, opening a position as a side effect when unblocked. Shared
+   * by the per-tick path above (_detectFvgSignal, called once per LIVE
+   * candle) and the bulk warm-up path below (_warmUpOneSymbol, called once
+   * per HISTORICAL candle in a single engine pass) - both must produce
+   * bit-for-bit identical results for the same (symbol, candle, event), so
+   * this is the ONE place that logic lives.
+   */
+  _processFvgEvent(symbol, cfg, candle, e, hist, formationIndex) {
+    if (e.type === 'watching' || e.type === 'expired') {
+      return { ...e, source: 'fvg' };
     }
-    return out;
+    // e.type === 'validated'
+    const c3Index = formationIndex.get(e.id);
+    const c1Index = c3Index !== undefined ? c3Index - 2 : -1;
+    const entryPrice = e.direction === 'bullish' ? e.zone.top : e.zone.bottom;
+    const stopPrice = computeStop({
+      direction: e.direction,
+      zone: e.zone,
+      candles: hist,
+      c1Index,
+      stopMode: cfg.stopMode,
+      swingLookback: 10,
+    });
+    const distance = Math.abs(entryPrice - stopPrice);
+    const blockedReason = this._blockReason(symbol, distance, candle);
+
+    const signal = { ...e, source: 'fvg', entryPrice, stopPrice, distance, rrMultiple: cfg.rrMultiple, blockedReason };
+
+    if (!blockedReason) {
+      const targetPrice =
+        e.direction === 'bullish' ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'fvg',
+        id: e.id,
+        direction: e.direction,
+        entryIndex: hist.length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: FVG_MAX_HOLDING_M15_CANDLES,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
   }
 
   _detectDivergenceSignal(symbol, candle) {
@@ -389,6 +398,32 @@ export class LiveStrategyEngine {
     const histB = this.history.get(symB);
     if (!histA || !histB || histA.length === 0 || histB.length === 0) return [];
 
+    const candidates = this._computeDivergenceCandidates(histA, histB, symA, symB);
+    const candidate = candidates.find((cd) => cd.entryTime === candle.time && cd.symbol === symbol);
+    if (!candidate) return [];
+
+    return [this._processDivergenceCandidate(symbol, candle, candidate)];
+  }
+
+  /**
+   * Pure computation of every divergence entry candidate implied by two full
+   * candle histories - a candidate is emitted at index i+1 whenever the
+   * z-score newly crosses `zThreshold` at index i (see the module header's
+   * no-lookahead note: z[i]/atr[i] only ever read CLOSED buckets strictly
+   * before the trailing/still-forming one, since a candidate always requires
+   * `i + 1 < n`, so it is never the last, possibly-mid-formation bucket).
+   * Because of that causality, this produces the exact same candidate list
+   * whether `histA`/`histB` are the FULL final histories (used by the bulk
+   * warm-up path below) or truncated as-of-some-earlier-tick snapshots (used
+   * by the per-tick path above) - the only difference is how many times the
+   * (non-trivial: resample+align+z-score+ATR) computation has to run to
+   * discover the same entries. Extracted 2026-09 to fix the O(n^2) warm-up
+   * cost documented in HANDOFF.md ("découverte de performance") - this file
+   * literally re-ran resample+align+z-score on the FULL histA on every
+   * single M15 tick during warm-up replay before this change.
+   */
+  _computeDivergenceCandidates(histA, histB, symA, symB) {
+    const cfg = this.divergenceConfig;
     const h1A = resampleCandles(histA, TIMEFRAME_MS.H1);
     const h1B = resampleCandles(histB, TIMEFRAME_MS.H1);
     const { alignedA, alignedB } = alignByTime(h1A, h1B);
@@ -400,7 +435,7 @@ export class LiveStrategyEngine {
     const atrA = computeAtrSeries(alignedA, cfg.atrPeriod);
     const atrB = computeAtrSeries(alignedB, cfg.atrPeriod);
 
-    let candidate = null;
+    const candidates = [];
     let wasExtended = false;
     for (let i = 0; i < n; i++) {
       if (z[i] === null) continue;
@@ -410,15 +445,18 @@ export class LiveStrategyEngine {
         const candSymbol = laggardIsB ? symB : symA;
         const atr = laggardIsB ? atrB[i] : atrA[i];
         const entryCandle = laggardIsB ? alignedB[i + 1] : alignedA[i + 1];
-        if (atr && atr > 0 && entryCandle.time === candle.time && candSymbol === symbol) {
-          candidate = { symbol: candSymbol, entryTime: entryCandle.time, stopDistance: cfg.stopAtrMultiple * atr };
+        if (atr && atr > 0) {
+          candidates.push({ symbol: candSymbol, entryTime: entryCandle.time, stopDistance: cfg.stopAtrMultiple * atr });
         }
       }
       wasExtended = extended;
     }
+    return candidates;
+  }
 
-    if (!candidate) return [];
-
+  /** Shared tail of divergence signal handling - same role as _processFvgEvent() above. */
+  _processDivergenceCandidate(symbol, candle, candidate) {
+    const cfg = this.divergenceConfig;
     const distance = candidate.stopDistance;
     const blockedReason = this._blockReason(symbol, distance, candle);
     const entryPrice = candle.open;
@@ -459,6 +497,104 @@ export class LiveStrategyEngine {
       signal.targetPrice = targetPrice;
       signal.riskAmount = riskAmount;
     }
-    return [signal];
+    return signal;
+  }
+
+  // -------------------------------------------------------------------------
+  // Bulk warm-up (2026-09): reconstructs this engine's state (history,
+  // openPositions, pyramidPositions, formationIndexBySymbol) from a full
+  // historical candle window in roughly O(n) instead of replaying via
+  // ingestCandle() once per historical candle (O(n) PER CALL -> O(n^2)
+  // total, measured live at ~14 minutes to warm up 3 symbols - see
+  // HANDOFF.md "découverte de performance"). Deliberately silent: no events
+  // are returned and no store/dashboard side effects happen for historical
+  // candles (matches the already-flagged cosmetic wish in HANDOFF.md to stop
+  // showing warm-up replay artifacts in the signal log) - only the FINAL
+  // internal state matters once warm-up is done, exactly as the comment on
+  // the old per-candle replay loop in cTraderDataSource.js already said.
+  //
+  // Equivalence to sequential ingestCandle() calls, symbol by symbol in
+  // `candlesBySymbol` key order (same order the caller must use as its own
+  // per-symbol fetch order - see cTraderDataSource.js): FVG's HTF-bias/
+  // market-structure/liquidity-sweep lookups are causal (gate on
+  // `closeTime <= t`, see the top-of-file no-lookahead note), so building
+  // them ONCE from the complete candle array yields the identical lookup
+  // result at every prefix as rebuilding them from a truncated array at each
+  // step - only HOW MANY TIMES the (expensive) construction runs changes,
+  // not WHAT it computes for any given prefix. Divergence candidates are
+  // equivalent for the same reason (see _computeDivergenceCandidates' own
+  // doc). This is also why this method must NOT reorder or interleave
+  // symbols across each other: it reproduces today's per-symbol-sequential
+  // production warm-up loop exactly, quirks included - e.g. the FIRST
+  // symbol processed for a divergence pair sees an empty history for its
+  // partner (matching `_detectDivergenceSignal`'s existing early-return) and
+  // so never discovers a divergence candidate during its OWN warm-up, only
+  // during the partner's (this is pre-existing behavior, not something this
+  // refactor changes).
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {Record<string, Array>} candlesBySymbol - symbol -> full sorted-ascending array of CLOSED historical candles
+   */
+  warmUp(candlesBySymbol) {
+    for (const symbol of this.symbols) {
+      const candles = candlesBySymbol[symbol];
+      if (!candles || candles.length === 0) continue;
+      this._warmUpOneSymbol(symbol, candles);
+    }
+  }
+
+  _warmUpOneSymbol(symbol, candles) {
+    const hist = this.history.get(symbol);
+    const cfg = this.fvgConfig[symbol];
+    const formationIndex = this.formationIndexBySymbol.get(symbol);
+    const fvgEngine = cfg ? buildFilteredEngine(candles, symbol, cfg).engine : null;
+
+    // Divergence candidates for this symbol's leg of the pair, computed ONCE
+    // using whatever history its partner already holds AT THE START of this
+    // symbol's warm-up (empty if the partner hasn't been warmed up yet - see
+    // the equivalence note above). histB (this symbol's own history) is
+    // still being built below, but that's fine: _computeDivergenceCandidates
+    // only needs the FINAL history for both legs, and this symbol's own
+    // final history is exactly `candles` (passed in whole).
+    let divergenceCandidates = null;
+    if (this.divergenceConfig && this.divergenceConfig.pair.includes(symbol)) {
+      const [symA, symB] = this.divergenceConfig.pair;
+      const otherSymbol = symA === symbol ? symB : symA;
+      const otherHist = this.history.get(otherSymbol);
+      if (otherHist && otherHist.length > 0) {
+        const histA = symA === symbol ? candles : otherHist;
+        const histB = symA === symbol ? otherHist : candles;
+        divergenceCandidates = this._computeDivergenceCandidates(histA, histB, symA, symB);
+      }
+    }
+
+    for (let i = 0; i < candles.length; i++) {
+      const candle = candles[i];
+      if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
+      hist.push(candle);
+
+      this._resolveOpenPosition(symbol, candle, []);
+      this._maybeRequestPyramid(symbol, candle, []);
+
+      if (fvgEngine) {
+        const evs = fvgEngine.processCandle(candle);
+        for (const e of evs) {
+          // Index into `hist` (NOT the local loop index `i`) - matches
+          // _detectFvgSignal's own `formationIndex.set(e.id, i)`, where its
+          // `i` is a loop index over `hist` itself. The two only coincide
+          // because warm-up always starts from an empty `hist` (fresh boot),
+          // so `hist.length - 1 === i` at every step here too - spelled out
+          // explicitly rather than relying on that coincidence silently.
+          if (e.type === 'watching') formationIndex.set(e.id, hist.length - 1);
+          this._processFvgEvent(symbol, cfg, candle, e, hist, formationIndex); // side effect only (may open a position) - return value unused, see class doc above
+        }
+      }
+
+      if (divergenceCandidates) {
+        const candidate = divergenceCandidates.find((cd) => cd.entryTime === candle.time && cd.symbol === symbol);
+        if (candidate) this._processDivergenceCandidate(symbol, candle, candidate);
+      }
+    }
   }
 }

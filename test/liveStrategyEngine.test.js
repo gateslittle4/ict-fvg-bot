@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { LiveStrategyEngine } from '../src/liveStrategyEngine.js';
 import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
+import { CONFIG } from '../src/config.js';
 
 function c(time, open, high, low, close) {
   return { time, open, high, low, close };
@@ -403,4 +405,128 @@ test('getHistory() for an unknown symbol returns an empty array, not undefined',
     guardrail: permissiveGuardrail(),
   });
   assert.deepEqual(engine.getHistory('UNKNOWN'), []);
+});
+
+// --- Bulk warm-up (2026-09) -------------------------------------------------
+// Fixes the O(n^2) boot-time cost documented in HANDOFF.md ("découverte de
+// performance", measured live at ~14 minutes to warm up 3 symbols): the old
+// path replayed history via ingestCandle() once per historical candle, which
+// rebuilds+replays the WHOLE retained history from scratch on every single
+// call. warmUp() reconstructs the exact same end state in one pass per
+// symbol instead. The test below is the single most important one in this
+// file: it proves that claim empirically against real market data, not just
+// by code inspection - any future change that breaks the equivalence
+// between the fast bulk path and the slow-but-obviously-correct sequential
+// path will fail this test.
+
+function loadCsv(path) {
+  const lines = fs.readFileSync(path, 'utf8').trim().split('\n').slice(1);
+  return lines.map((line) => {
+    const [time, open, high, low, close] = line.split(',');
+    return { time: Number(time), open: Number(open), high: Number(high), low: Number(low), close: Number(close) };
+  });
+}
+
+function newEngineForWarmupComparison() {
+  const guardrail = permissiveGuardrail();
+  return new LiveStrategyEngine({
+    symbols: CONFIG.symbols,
+    fvgConfig: CONFIG.fvg.perSymbol,
+    divergenceConfig: CONFIG.divergence,
+    guardrail,
+    riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['US100', 'US500'] }, // exercise _maybeRequestPyramid's bulk path too, not just the default-off case
+  });
+}
+
+test('warmUp(): bulk single-pass reconstruction is IDENTICAL to sequential ingestCandle() replay, on real market data, using the real production config', () => {
+  // 1500 candles/symbol (~15.6 days of M15) keeps this test fast (the
+  // reference/sequential path below still pays the full O(n^2) cost this
+  // whole change exists to avoid in production) while still exercising real
+  // FVG watching/validated/expired events, Divergence entries, and (on
+  // US100/US500) pyramid add-on requests - not a vacuous comparison of two
+  // empty states.
+  const N = 1500;
+  const candlesBySymbol = {
+    US100: loadCsv('data/backtest-input/US100.csv').slice(0, N),
+    US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
+    XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
+  };
+
+  const sequential = newEngineForWarmupComparison();
+  // Same per-symbol-sequential order production already uses (see
+  // cTraderDataSource.js's _subscribeLiveCandles: one symbol's ENTIRE
+  // warm-up window is replayed before moving to the next) - NOT interleaved
+  // chronologically across symbols. warmUp() must reproduce this exact
+  // ordering (including its pre-existing "first-processed leg of the
+  // Divergence pair sees no partner history yet" quirk), not a supposedly
+  // more correct chronologically-merged one.
+  for (const symbol of CONFIG.symbols) {
+    for (const candle of candlesBySymbol[symbol]) {
+      sequential.ingestCandle(symbol, candle);
+    }
+  }
+
+  const bulk = newEngineForWarmupComparison();
+  bulk.warmUp(candlesBySymbol);
+
+  for (const symbol of CONFIG.symbols) {
+    assert.deepEqual(bulk.getHistory(symbol), sequential.getHistory(symbol), `history mismatch for ${symbol}`);
+  }
+  assert.deepEqual(bulk.openPositions, sequential.openPositions, 'openPositions mismatch');
+  assert.deepEqual(bulk.pyramidPositions, sequential.pyramidPositions, 'pyramidPositions mismatch');
+  assert.deepEqual(bulk.formationIndexBySymbol, sequential.formationIndexBySymbol, 'formationIndexBySymbol mismatch');
+
+  // Sanity: this fixture must actually exercise real signal detection on
+  // both paths, or the comparison above would be vacuous (two empty states
+  // trivially match). At least one symbol must have formed FVG zones.
+  const totalWatched = CONFIG.symbols.reduce((sum, s) => sum + sequential.formationIndexBySymbol.get(s).size, 0);
+  assert.ok(totalWatched > 0, 'expected at least one FVG zone to have formed in this fixture - comparison would be vacuous otherwise');
+});
+
+test('warmUp(): after reconstructing state, a NEW live candle produces the same next event as it would after the equivalent sequential replay', () => {
+  // Equal internal state (proven above) should mean equal FUTURE behavior
+  // too - the actual guarantee that matters for production, since warm-up
+  // only exists to prepare the engine for what happens next.
+  const N = 1500;
+  const candlesBySymbol = {
+    US100: loadCsv('data/backtest-input/US100.csv').slice(0, N),
+    US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
+    XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
+  };
+  const nextCandles = {
+    US100: loadCsv('data/backtest-input/US100.csv').slice(N, N + 50),
+    US500: loadCsv('data/backtest-input/US500.csv').slice(N, N + 50),
+    XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(N, N + 50),
+  };
+
+  const sequential = newEngineForWarmupComparison();
+  for (const symbol of CONFIG.symbols) {
+    for (const candle of candlesBySymbol[symbol]) sequential.ingestCandle(symbol, candle);
+  }
+  const bulk = newEngineForWarmupComparison();
+  bulk.warmUp(candlesBySymbol);
+
+  for (const symbol of CONFIG.symbols) {
+    for (const candle of nextCandles[symbol]) {
+      const seqEvs = sequential.ingestCandle(symbol, candle);
+      const bulkEvs = bulk.ingestCandle(symbol, candle);
+      assert.deepEqual(bulkEvs, seqEvs, `event mismatch for ${symbol} at candle.time=${candle.time}`);
+    }
+  }
+});
+
+test('warmUp(): a symbol with no candles in the input is left untouched, not a crash', () => {
+  const engine = newEngineForWarmupComparison();
+  engine.warmUp({ US100: loadCsv('data/backtest-input/US100.csv').slice(0, 10) }); // US500/XAUUSD omitted entirely
+  assert.equal(engine.getHistoryLength('US500'), 0);
+  assert.equal(engine.getHistoryLength('XAUUSD'), 0);
+  assert.equal(engine.getHistoryLength('US100'), 10);
+});
+
+test('warmUp(): an empty candles array for a symbol is a no-op for that symbol', () => {
+  const engine = newEngineForWarmupComparison();
+  engine.warmUp({ US100: [], US500: loadCsv('data/backtest-input/US500.csv').slice(0, 5), XAUUSD: [] });
+  assert.equal(engine.getHistoryLength('US100'), 0);
+  assert.equal(engine.getHistoryLength('US500'), 5);
 });

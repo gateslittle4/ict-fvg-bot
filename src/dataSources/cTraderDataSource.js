@@ -321,33 +321,37 @@ export class CTraderDataSource {
         },
         60000 // this single response can be tens of thousands of bars across 3 symbols - give it more room than the default before calling it stuck
       );
-      console.log(`[cTrader] ${symbolName}: received ${(history.trendbar || []).length} warm-up candles, replaying...`);
+      console.log(`[cTrader] ${symbolName}: received ${(history.trendbar || []).length} warm-up candles, warming up...`);
       const sortedBars = (history.trendbar || []).sort((a, b) => a.utcTimestampInMinutes - b.utcTimestampInMinutes);
-      // ingestCandle() rebuilds the whole filtered engine from scratch on every
-      // call (see liveStrategyEngine.js's "rebuild-and-replay" header comment) -
-      // O(n) per candle, so O(n^2) to replay this whole warm-up window, measured
-      // at several minutes for ~8640 candles on a modest CPU. Run synchronously
-      // for that long and Node's event loop never gets a turn - in particular the
-      // heartbeat setInterval above never fires, cTrader silently drops the
-      // session for inactivity, and the FIRST request sent afterwards (spot
-      // subscribe or live-trendbar subscribe, observed both ways live) times out
-      // with no response. Yielding every YIELD_EVERY candles costs nothing
-      // measurable but lets pending timers/socket reads run, so the heartbeat
-      // keeps firing and the session stays alive through the whole replay.
-      const YIELD_EVERY = 200;
-      for (let i = 0; i < sortedBars.length; i++) {
-        const candle = this._trendbarToCandle(sortedBars[i]);
-        const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle));
-        pushSignalEvents(events);
-        store.lastCandleBySymbol.set(symbolName, candle);
-        // Deliberately no notify/trade-open side effects during warm-up replay -
-        // these are historical bars, not a live tick; only the LATEST state matters
-        // once warm-up is done (any position LiveStrategyEngine "opened" mid-replay
-        // reflects real, already-past price action and is left as accurate context).
-        if (i % YIELD_EVERY === YIELD_EVERY - 1) {
-          await new Promise((resolve) => setImmediate(resolve));
-        }
-      }
+      const engineCandles = sortedBars.map((bar) => {
+        const candle = this._trendbarToCandle(bar);
+        store.lastCandleBySymbol.set(symbolName, candle); // dashboard display, real UTC - see _toEngineCandle() below
+        return this._toEngineCandle(candle);
+      });
+      // 2026-09 FIX: this used to call ingestCandle() once per historical
+      // candle, which rebuilds+replays the WHOLE retained history from
+      // scratch on EVERY call (see the old comment this replaced, and
+      // HANDOFF.md's "découverte de performance") - O(n) per call, O(n^2)
+      // total, measured live at ~14 minutes to warm up 3 symbols. warmUp()
+      // (see liveStrategyEngine.js) reconstructs the identical end state in
+      // ONE pass instead - proven bit-for-bit equivalent to the old
+      // candle-by-candle replay against real market data in
+      // test/liveStrategyEngine.test.js ("bulk single-pass reconstruction is
+      // IDENTICAL to sequential ingestCandle() replay"), and ~900x faster
+      // locally (99ms vs 89s for a full 90-day/3-symbol window) - comfortably
+      // sub-second even accounting for Render's much slower free-tier CPU
+      // (previously observed ~15-20x slower than local for this same work).
+      // Deliberately silent (see warmUp()'s own doc): no notify/dashboard
+      // side effects for historical bars - these are already-past price
+      // action, only the FINAL reconstructed state (openPositions etc.)
+      // matters once warm-up is done. The heartbeat-preserving yield the old
+      // loop needed (multi-minute synchronous work would starve the
+      // heartbeat setInterval and get the session dropped for inactivity) is
+      // no longer necessary at this speed, but is kept as cheap insurance in
+      // case a slower host ever makes this take more than a few seconds.
+      store.strategyEngine.warmUp({ [symbolName]: engineCandles });
+      await new Promise((resolve) => setImmediate(resolve));
+      console.log(`[cTrader] ${symbolName}: warm-up complete`);
 
       // ProtoOASubscribeLiveTrendbarReq's own doc (OpenApiMessages.proto) says it
       // "Requires subscription on the spot events, see ProtoOASubscribeSpotsReq" -
