@@ -10,6 +10,7 @@ import { summarizeTrades } from './dataSources/dealPairing.js';
 import { MatchTraderDataSource } from './dataSources/matchTraderDataSource.js';
 import { buildRecentPerformanceReport } from './backtest/recentPerformanceReport.js';
 import { resampleCandles } from './backtest/htfBias.js';
+import { buildChartOverlays } from './backtest/chartOverlays.js';
 import { startKeepAlive } from './keepAlive.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -164,6 +165,45 @@ app.get('/api/candles', (req, res) => {
   const candles = buckets.slice(-limit).map((c) => ({ ...c, time: c.time + offsetMs }));
 
   res.json({ symbol, timeframe, candles });
+});
+
+// The bot's own reasoning, drawn on the chart: the FVG zones it detected and
+// the signals it fired. This is the one thing a broker's chart (MT4,
+// Match-Trader) structurally cannot show, since it knows nothing about this
+// strategy. Cheap enough to serve directly (~80ms for a 90-day window, see
+// chartOverlays.js) but still cached briefly, because the dashboard polls
+// and the underlying candles only change every 15 minutes anyway.
+const OVERLAY_CACHE_MS = 5 * 60 * 1000;
+const overlayCache = new Map(); // symbol -> { builtAt, payload }
+
+app.get('/api/overlays', (req, res) => {
+  const symbol = req.query.symbol;
+  if (!CONFIG.symbols.includes(symbol)) {
+    return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
+  }
+
+  const cached = overlayCache.get(symbol);
+  if (cached && Date.now() - cached.builtAt < OVERLAY_CACHE_MS) {
+    return res.json({ ...cached.payload, cachedAt: cached.builtAt });
+  }
+
+  const historyBySymbol = {};
+  for (const s of CONFIG.symbols) historyBySymbol[s] = store.strategyEngine.getHistory(s);
+  if (Object.values(historyBySymbol).every((h) => h.length === 0)) {
+    return res.json({ symbol, zones: [], signals: [], reason: 'no candle history yet (still warming up or in demo mode)' });
+  }
+
+  try {
+    // Same time-convention correction as /api/candles - overlays have to land
+    // on the same axis as the candles they annotate.
+    const timeOffsetMs = store.liveDataSource?.candleTimeOffsetMs ?? 0;
+    const { zones, signals } = buildChartOverlays(historyBySymbol, { symbol, timeOffsetMs });
+    const payload = { symbol, zones, signals };
+    overlayCache.set(symbol, { builtAt: Date.now(), payload });
+    res.json({ ...payload, cachedAt: Date.now() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // "What would the bot have done over the last 90 days?" - at the user's

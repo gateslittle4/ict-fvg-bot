@@ -88,6 +88,9 @@
         <button data-timeframe="H4">H4</button>
         <button data-timeframe="D1">D1</button>
       </div>
+      <div class="group">
+        <button id="toggle-overlays" class="active">Zones FVG + signaux</button>
+      </div>
     </div>
 
     <div class="price-header">
@@ -106,7 +109,11 @@
       <span><span class="dot" style="background:var(--red)"></span>Baisse</span>
       <span><span class="dot" style="background:var(--blue)"></span>Entrée (position ouverte)</span>
       <span><span class="dot" style="background:var(--amber)"></span>Stop / Cible</span>
+      <span><span class="dot" style="background:rgba(88,166,255,0.45)"></span>Zone FVG haussière</span>
+      <span><span class="dot" style="background:rgba(248,81,73,0.45)"></span>Zone FVG baissière</span>
+      <span>▲▼ signal validé · ○ signal bloqué (netting/garde-fou)</span>
     </div>
+    <div class="meta" id="overlay-counts" style="margin-top:8px;"></div>
     <div class="hint">Pince ou molette pour zoomer · glisse pour te déplacer · touche/survole une bougie pour voir son OHLC · double-clic pour réinitialiser le zoom.</div>
     <div id="chart-error" class="err"></div>
   </div>
@@ -122,6 +129,9 @@ let chart = null;
 let candleSeries = null;
 let priceLines = [];
 let lastCandles = [];
+let zonesPrimitive = null;
+let markersPlugin = null;
+let overlaysVisible = true;
 
 // Lightweight Charts wants seconds-since-epoch, not milliseconds, and it
 // wants each bar's time strictly increasing. Our API already returns sorted
@@ -133,6 +143,97 @@ const toChartCandle = (c) => ({
   low: c.low,
   close: c.close,
 });
+
+// --- FVG zone boxes -------------------------------------------------------
+// Lightweight Charts has no built-in "rectangle between two times and two
+// prices", so this is a series primitive: it draws straight onto the chart's
+// canvas each frame, using the chart's own time/price -> pixel conversions,
+// which keeps the boxes glued to the candles through any zoom or pan.
+class FvgZonesPrimitive {
+  constructor() {
+    this._zones = [];
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+    this._visible = true;
+    this._paneViews = [{ renderer: () => ({ draw: (target) => this._draw(target) }) }];
+  }
+
+  attached({ chart, series, requestUpdate }) {
+    this._chart = chart;
+    this._series = series;
+    this._requestUpdate = requestUpdate;
+  }
+  detached() { this._chart = null; this._series = null; this._requestUpdate = null; }
+  updateAllViews() {}
+  paneViews() { return this._paneViews; }
+
+  setZones(zones) { this._zones = zones || []; this._requestUpdate?.(); }
+  setVisible(visible) { this._visible = visible; this._requestUpdate?.(); }
+
+  _draw(target) {
+    if (!this._visible || !this._chart || !this._series || this._zones.length === 0) return;
+    const timeScale = this._chart.timeScale();
+
+    target.useBitmapCoordinateSpace((scope) => {
+      const ctx = scope.context;
+      const hRatio = scope.horizontalPixelRatio;
+      const vRatio = scope.verticalPixelRatio;
+      const widthPx = scope.bitmapSize.width;
+
+      for (const zone of this._zones) {
+        const yTop = this._series.priceToCoordinate(zone.top);
+        const yBottom = this._series.priceToCoordinate(zone.bottom);
+        if (yTop === null || yBottom === null) continue; // price off the visible scale
+
+        // A zone that has not ended yet (or ends past the last bar) runs to
+        // the right edge; one that starts before the first visible bar is
+        // clamped to the left edge instead of being dropped, so a box you're
+        // zoomed inside of still shows.
+        const xStart = timeScale.timeToCoordinate(zone.startTime);
+        const xEnd = zone.endTime === null ? null : timeScale.timeToCoordinate(zone.endTime);
+        const x1 = xStart === null ? 0 : xStart * hRatio;
+        const x2 = xEnd === null ? widthPx : xEnd * hRatio;
+        if (x2 <= 0 || x1 >= widthPx) continue; // entirely off-screen
+
+        const top = Math.min(yTop, yBottom) * vRatio;
+        const height = Math.abs(yBottom - yTop) * vRatio;
+        const left = Math.max(0, x1);
+        const width = Math.min(widthPx, x2) - left;
+        if (width <= 0) continue;
+
+        const bullish = zone.direction === 'bullish';
+        // A zone the price actually came back into (validated) is drawn
+        // solid-ish; one that expired unused is faded, so the chart shows at
+        // a glance which zones mattered.
+        const alpha = zone.status === 'validated' ? 0.30 : zone.status === 'expired' ? 0.08 : 0.16;
+        ctx.fillStyle = bullish ? `rgba(88, 166, 255, ${alpha})` : `rgba(248, 81, 73, ${alpha})`;
+        ctx.fillRect(left, top, width, Math.max(1, height));
+
+        ctx.strokeStyle = bullish ? 'rgba(88, 166, 255, 0.55)' : 'rgba(248, 81, 73, 0.55)';
+        ctx.lineWidth = Math.max(1, hRatio);
+        ctx.strokeRect(left, top, width, Math.max(1, height));
+      }
+    });
+  }
+}
+
+// Overlay times come from the bot's M15 signal detection, but the chart may
+// be showing H1/H4/D1 buckets. Snapping each overlay time DOWN to the last
+// bar at or before it puts markers and box edges on real bars at every
+// timeframe, without the client needing to know the server's bucketing or
+// time-convention offset.
+function snapToBar(timeMs, barTimesSec) {
+  const sec = Math.floor(timeMs / 1000);
+  let lo = 0;
+  let hi = barTimesSec.length - 1;
+  let best = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (barTimesSec[mid] <= sec) { best = barTimesSec[mid]; lo = mid + 1; } else { hi = mid - 1; }
+  }
+  return best;
+}
 
 function buildChart() {
   const el = document.getElementById('chart');
@@ -170,6 +271,10 @@ function buildChart() {
     wickUpColor: '#3fb950',
     wickDownColor: '#f85149',
   });
+
+  zonesPrimitive = new FvgZonesPrimitive();
+  candleSeries.attachPrimitive(zonesPrimitive);
+  markersPlugin = LightweightCharts.createSeriesMarkers(candleSeries, []);
 
   // OHLC readout under the toolbar, the way a broker chart shows the bar
   // you're pointing at.
@@ -209,19 +314,73 @@ function setPositionLines(openPosition, decimals) {
   }
 }
 
+// Draws what the BOT saw: its FVG zones as boxes, and its signals as
+// markers on the bar they fired. Blocked signals (netting, guardrail, spread)
+// are drawn too, in grey - "why didn't it take that one?" is exactly the
+// question this chart should answer.
+function renderOverlays(overlays, decimals) {
+  const barTimesSec = lastCandles.map((c) => Math.floor(c.time / 1000));
+  const lastBarSec = barTimesSec[barTimesSec.length - 1] ?? null;
+
+  const zones = (overlays.zones || [])
+    .map((z) => {
+      const startTime = snapToBar(z.formedAt, barTimesSec);
+      if (startTime === null) return null; // formed entirely before the loaded window
+      // endTime null == "still open at the right edge" (see the primitive).
+      const endTime = z.endedAt === null || Math.floor(z.endedAt / 1000) > lastBarSec
+        ? null
+        : snapToBar(z.endedAt, barTimesSec);
+      return { ...z, startTime, endTime };
+    })
+    .filter(Boolean);
+  zonesPrimitive.setZones(zones);
+
+  const markers = [];
+  for (const sig of overlays.signals || []) {
+    const time = snapToBar(sig.time, barTimesSec);
+    if (time === null) continue;
+    const bullish = sig.direction === 'bullish';
+    const blocked = Boolean(sig.blockedReason);
+    const outcomeLabel = sig.outcome === 'win' ? ' ✓' : sig.outcome === 'loss' ? ' ✗' : '';
+    markers.push({
+      time,
+      position: bullish ? 'belowBar' : 'aboveBar',
+      shape: blocked ? 'circle' : bullish ? 'arrowUp' : 'arrowDown',
+      color: blocked ? '#8b98a5' : sig.outcome === 'win' ? '#3fb950' : sig.outcome === 'loss' ? '#f85149' : '#58a6ff',
+      text: blocked
+        ? `${sig.source === 'divergence' ? 'DIV' : 'FVG'} bloqué (${sig.blockedReason})`
+        : `${sig.source === 'divergence' ? 'DIV' : 'FVG'} ${fmt(sig.entryPrice, decimals)}${outcomeLabel}`,
+    });
+  }
+  // Markers must be handed over in chronological order.
+  markers.sort((a, b) => a.time - b.time);
+  markersPlugin.setMarkers(overlaysVisible ? markers : []);
+  zonesPrimitive.setVisible(overlaysVisible);
+
+  const counts = document.getElementById('overlay-counts');
+  if (counts) {
+    counts.textContent = overlays.reason
+      ? overlays.reason
+      : `${zones.length} zone${zones.length > 1 ? 's' : ''} FVG · ${markers.length} ${markers.length > 1 ? 'signaux' : 'signal'} sur cette fenêtre`
+        + (overlaysVisible ? '' : ' (masqués)');
+  }
+}
+
 async function loadChart({ keepView = false } = {}) {
   const errEl = document.getElementById('chart-error');
   errEl.textContent = '';
   const decimals = priceDecimals(currentSymbol);
 
   try {
-    const [candlesRes, statusRes] = await Promise.all([
+    const [candlesRes, statusRes, overlaysRes] = await Promise.all([
       fetch(`/api/candles?symbol=${currentSymbol}&timeframe=${currentTimeframe}&limit=1500`),
       fetch('/api/status'),
+      fetch(`/api/overlays?symbol=${currentSymbol}`),
     ]);
     const candlesData = await candlesRes.json();
     if (!candlesRes.ok) throw new Error(candlesData.error || 'Erreur inconnue');
     const statusData = await statusRes.json();
+    const overlaysData = overlaysRes.ok ? await overlaysRes.json() : { zones: [], signals: [] };
 
     lastCandles = candlesData.candles || [];
     candleSeries.applyOptions({ priceFormat: { type: 'price', precision: decimals, minMove: 1 / 10 ** decimals } });
@@ -231,6 +390,8 @@ async function loadChart({ keepView = false } = {}) {
     const symbolStatus = (statusData.symbols || []).find((s) => s.symbol === currentSymbol);
     const openPosition = symbolStatus ? symbolStatus.openPosition : null;
     setPositionLines(openPosition, decimals);
+
+    renderOverlays(overlaysData, decimals);
 
     const last = lastCandles[lastCandles.length - 1];
     document.getElementById('last-price').textContent = last ? fmt(last.close, decimals) : '—';
@@ -256,6 +417,11 @@ function wireGroup(groupId, dataKey, onPick) {
 }
 
 buildChart();
+document.getElementById('toggle-overlays').addEventListener('click', (e) => {
+  overlaysVisible = !overlaysVisible;
+  e.currentTarget.classList.toggle('active', overlaysVisible);
+  loadChart({ keepView: true });
+});
 wireGroup('symbol-group', 'symbol', (v) => { currentSymbol = v; });
 wireGroup('timeframe-group', 'timeframe', (v) => { currentTimeframe = v; });
 loadChart();

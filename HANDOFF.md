@@ -353,3 +353,26 @@ Vérifié avec Playwright contre de vraies données CSV (1500 bougies US100 + po
 `npm test` : 221/221 (inchangé — la logique de re-échantillonnage réutilise `resampleCandles()`, déjà couvert par `htfBias.test.js`).
 
 **Piste évidente pour la suite, PAS faite** : superposer sur ce graphique les zones FVG détectées et les signaux passés du bot. C'est le seul truc qu'un graphique de broker ne peut PAS afficher — MT4/Match-Trader ne connaissent pas la logique du bot. Les données existent déjà côté serveur (`store.signalLog`, et le rapport 90 jours de `recentPerformanceReport.js` calcule déjà entrées/sorties/résultats).
+
+
+## Zones FVG + signaux du bot dessinés sur le graphique — 2026-09-08 soir (suite)
+
+À la demande explicite (« ajoute les zones FVG et les signaux sur le graphique »). C'est la seule chose qu'un graphique de broker ne peut structurellement PAS montrer : MT4/Match-Trader ne connaissent rien à cette stratégie.
+
+- **`src/backtest/chartOverlays.js`** (nouveau, 12 tests) : rejoue l'historique conservé dans un `LiveStrategyEngine` FRAIS et isolé — même discipline que `recentPerformanceReport.js`, donc ce qui est dessiné est par construction ce que le bot détecte vraiment, pas une reconstitution parallèle qui pourrait dériver.
+- **`LiveStrategyEngine.warmUp()` accepte désormais un `onEvent(event, candle)` optionnel** : le rejeu calculait déjà tous ces événements et les jetait. Sans callback, comportement strictement inchangé (le test d'équivalence bulk-vs-séquentiel passe toujours). Grâce à ça l'overlay coûte **O(n) et non O(n²)** : ~80 ms pour 12 000 bougies × 3 symboles, donc servable directement par HTTP (`GET /api/overlays?symbol=X`, cache 5 min).
+- Le `candle` est passé en second argument parce que l'événement `'expired'` du `FvgEngine` **ne porte aucun timestamp**.
+
+**Deux découvertes réelles faites en construisant ça** (à connaître, elles ne cassent rien mais elles piègent) :
+
+1. **`CONFIG.fvg.maxAgeCandles: 50` est du réglage MORT** — jamais lu nulle part. `buildFilteredEngine()` fait `new FvgEngine({ symbol })` sans le passer, donc c'est le défaut interne du moteur qui s'applique. Il vaut aussi 50, donc **aucun comportement n'est faux** et aucun backtest n'est invalidé — mais éditer la valeur dans `CONFIG` en croyant changer quelque chose ne ferait rien.
+2. **Une zone rejetée par un filtre disparaît silencieusement.** Quand un wrapper (biais HTF / structure / session / sweep) refuse une validation, le `FvgEngine` interne consomme quand même la zone, mais l'événement `'validated'` est filtré avant d'atteindre l'observateur. Résultat mesuré sur données réelles : **2258 zones sur 2535 restaient nominalement « watching », d'âge médian 92 JOURS** contre un âge max moteur de 50 bougies (~12 h). Dessinées telles quelles, elles s'étirent chacune jusqu'au bord droit et enterrent complètement le graphique (vérifié, c'était illisible).
+   - Correctif : au-delà de l'horizon d'âge max du moteur, une zone ne PEUT plus être vivante quoi qu'on ait observé ; elle est donc fermée à cet horizon et étiquetée **`stale`** — statut gardé distinct de `expired` (« on l'a vue mourir ») parce que la différence est réelle : `stale` = « on sait qu'elle ne peut plus être vivante ». Résultat : 10 zones réellement ouvertes au lieu de 250.
+
+**Rendu** : zones en boîtes bleues (haussières) / rouges (baissières), opacité selon le statut (validée > en surveillance > périmée) ; signaux en flèches ▲▼ colorées par résultat (vert gagné, rouge perdu, bleu en cours) avec le prix d'entrée en libellé ; **les signaux BLOQUÉS sont affichés aussi**, en gris avec la raison (netting/garde-fou/spread) — « pourquoi il n'a pas pris celui-là ? » est exactement la question à laquelle ce graphique doit répondre. Bouton pour tout masquer.
+
+Vérifié avec Playwright sur données réelles : marqueur rendu correctement (`FVG 7723.86 ✓` sous la bougie exacte du signal), boîtes bien accrochées aux bougies au zoom/déplacement, aucune erreur console.
+
+**Rappel de sélectivité, utile pour ne pas croire à un bug** : la config de production est très sélective — **0 signal sur 1500 bougies M15, 3 sur 5000, 14 sur 12000** (US100). Voir aucun marqueur sur une fenêtre M15 courte est NORMAL. Les unités H1/H4/D1 couvrent bien plus de temps et en montrent davantage.
+
+`npm test` : 233/233.

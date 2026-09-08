@@ -535,16 +535,18 @@ export class LiveStrategyEngine {
 
   /**
    * @param {Record<string, Array>} candlesBySymbol - symbol -> full sorted-ascending array of CLOSED historical candles
+   * @param {object} [opts]
+   * @param {(event: object, candle: object) => void} [opts.onEvent] - called with every event the replay produces, in order, plus the candle that produced it. Omitted by default, which keeps warm-up exactly as silent as before (the production boot path passes nothing). Used by the chart-overlay builder to recover the FVG zones and signals this replay would otherwise compute and throw away - the candle is passed alongside because some engine events ('expired') carry no timestamp of their own.
    */
-  warmUp(candlesBySymbol) {
+  warmUp(candlesBySymbol, { onEvent = null } = {}) {
     for (const symbol of this.symbols) {
       const candles = candlesBySymbol[symbol];
       if (!candles || candles.length === 0) continue;
-      this._warmUpOneSymbol(symbol, candles);
+      this._warmUpOneSymbol(symbol, candles, onEvent);
     }
   }
 
-  _warmUpOneSymbol(symbol, candles) {
+  _warmUpOneSymbol(symbol, candles, onEvent = null) {
     const hist = this.history.get(symbol);
     const cfg = this.fvgConfig[symbol];
     const formationIndex = this.formationIndexBySymbol.get(symbol);
@@ -574,8 +576,10 @@ export class LiveStrategyEngine {
       if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
       hist.push(candle);
 
-      this._resolveOpenPosition(symbol, candle, []);
-      this._maybeRequestPyramid(symbol, candle, []);
+      const resolvedEvents = [];
+      this._resolveOpenPosition(symbol, candle, resolvedEvents);
+      this._maybeRequestPyramid(symbol, candle, resolvedEvents);
+      if (onEvent) for (const e of resolvedEvents) onEvent(e, candle);
 
       if (fvgEngine) {
         const evs = fvgEngine.processCandle(candle);
@@ -587,13 +591,17 @@ export class LiveStrategyEngine {
           // so `hist.length - 1 === i` at every step here too - spelled out
           // explicitly rather than relying on that coincidence silently.
           if (e.type === 'watching') formationIndex.set(e.id, hist.length - 1);
-          this._processFvgEvent(symbol, cfg, candle, e, hist, formationIndex); // side effect only (may open a position) - return value unused, see class doc above
+          const signal = this._processFvgEvent(symbol, cfg, candle, e, hist, formationIndex); // primarily a side effect (may open a position); the enriched signal is only used when a caller is collecting
+          if (onEvent) onEvent(signal, candle);
         }
       }
 
       if (divergenceCandidates) {
         const candidate = divergenceCandidates.find((cd) => cd.entryTime === candle.time && cd.symbol === symbol);
-        if (candidate) this._processDivergenceCandidate(symbol, candle, candidate);
+        if (candidate) {
+          const signal = this._processDivergenceCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
       }
     }
   }
