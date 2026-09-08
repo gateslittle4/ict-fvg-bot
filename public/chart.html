@@ -58,11 +58,21 @@
   .legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
   .err { color: var(--red); font-size: 13px; margin-top: 8px; }
   .meta { color: var(--muted); font-size: 12px; }
+  .topnav { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--panel-border); }
+  .topnav a {
+    color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600;
+    padding: 10px 16px; border-bottom: 2px solid transparent;
+  }
+  .topnav a.active { color: var(--text); border-bottom-color: var(--blue); }
 </style>
 </head>
 <body>
+  <nav class="topnav">
+    <a href="/">Dashboard</a>
+    <a href="/chart.html" class="active">Graphique</a>
+  </nav>
   <h1>ICT FVG Assistant — Graphique des marchés</h1>
-  <div class="subtitle">Historique de bougies M15 déjà conservé par le bot (même données que la détection de signaux). <a href="/">← Retour au dashboard</a></div>
+  <div class="subtitle">Historique de bougies M15 déjà conservé par le bot (même données que la détection de signaux).</div>
 
   <div class="card">
     <div class="tabs">

@@ -91,9 +91,19 @@
   .journal-pnl.win { color: var(--green); font-weight: 700; }
   .journal-pnl.loss { color: var(--red); font-weight: 700; }
   .journal-chart { width: 100%; height: 130px; display: block; background: #0e141b; border-radius: 6px; }
+  .topnav { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--panel-border); }
+  .topnav a {
+    color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600;
+    padding: 10px 16px; border-bottom: 2px solid transparent;
+  }
+  .topnav a.active { color: var(--text); border-bottom-color: var(--blue); }
 </style>
 </head>
 <body>
+  <nav class="topnav">
+    <a href="/" class="active">Dashboard</a>
+    <a href="/chart.html">Graphique</a>
+  </nav>
   <h1>ICT FVG Assistant</h1>
   <div class="subtitle">US100 · US500 · XAUUSD — FVG filtré (biais HTF + structure + session + sweep) et Divergence US100/US500, garde-fous anti-overtrading</div>
 
@@ -107,7 +117,6 @@
     <div class="card">
       <h2>Prix en direct</h2>
       <div id="prices-body">—</div>
-      <div style="margin-top:10px;"><a href="/chart.html" target="_blank" rel="noopener">📈 Voir le graphique des marchés (nouvel onglet)</a></div>
     </div>
   </div>
 
