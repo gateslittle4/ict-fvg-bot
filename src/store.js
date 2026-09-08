@@ -30,6 +30,14 @@ export const store = {
     pyramidConfig: CONFIG.pyramid,
   }),
   balance: 10000, // demo starting balance; replaced by live account balance once connected
+  // Set by the live data source once connected (2026-09, fixing a dashboard
+  // bug: the banner used to hard-code "FundingPips" regardless of which
+  // broker/environment the connected account actually belongs to).
+  // brokerName comes from ProtoOATrader.brokerName (the broker's own
+  // whitelabel name for the account) - null until known or if the broker
+  // never sets it. isDemo is derived from which cTrader host we connected to
+  // (demo.ctraderapi.com vs live.ctraderapi.com), not guessed.
+  broker: { name: null, isDemo: null },
   signalLog: [], // { ...event, loggedAt }
   lastCandleBySymbol: new Map(),
   // "Mode indisponible" - Esdras flips this HIMSELF (dashboard button / API
@@ -74,6 +82,10 @@ export function isAutoExecuteActive(now = Date.now()) {
 }
 
 /** Keep balance, guardrail, and the strategy engine's own risk calc all in sync - use this instead of assigning store.balance directly. */
+export function setBrokerInfo({ name, isDemo }) {
+  store.broker = { name: name ?? null, isDemo: isDemo ?? null };
+}
+
 export function setBalance(balance, now = Date.now()) {
   store.balance = balance;
   store.guardrail.setBalance(balance, now);

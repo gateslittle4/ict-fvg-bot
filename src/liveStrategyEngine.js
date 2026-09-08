@@ -162,6 +162,13 @@ export class LiveStrategyEngine {
     return (this.history.get(symbol) || []).length;
   }
 
+  // Read-only view of the retained candle history (2026-09, for the "last 90
+  // days" recent-performance report - see recentPerformanceReport.js). Copied
+  // so a caller can't mutate the engine's own internal array.
+  getHistory(symbol) {
+    return [...(this.history.get(symbol) || [])];
+  }
+
   /**
    * Feed one new CLOSED candle for one symbol. Returns an array of signal
    * events for the human/dashboard: 'watching' | 'expired' (informational,

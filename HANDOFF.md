@@ -242,6 +242,20 @@ Session longue (import du handoff, déploiement Render, débogage cTrader en con
 - **Journal de trading pas encore testé avec un vrai trade fermé** (voir section dédiée) — à vérifier dès qu'un premier trade (réel, cliqué manuellement dans cTrader) se clôture.
 - Pas de mot de passe sur le dashboard (voir section OAuth/déploiement) — pas urgent tant que démo, à faire avant tout compte réel.
 
+## Rapport "performance récente" (90 derniers jours, hypothétique) + nom du courtier réel — 2026-09-08 nuit (suite)
+
+Deux ajouts faits juste avant la fin de session, à la demande explicite de l'utilisatrice.
+
+1. **`GET /api/recent-performance` + nouvelle carte dashboard "Performance récente"** : après avoir expliqué que le warm-up recalcule déjà tous les signaux sur l'historique récent mais jette le résultat (cause du "signaux qui apparaissent puis disparaissent" observé par l'utilisatrice), elle a demandé un vrai rapport à partir de cette donnée. Implémenté en réutilisant `LiveStrategyEngine` lui-même (instance fraîche et isolée, aucun effet de bord sur le live réel) — même classe que celle qui tourne en production, déjà corrigée du bug de fuseau horaire ce soir — plutôt que d'écrire une simulation séparée qui risquerait de dériver silencieusement de la vraie logique de signal.
+   - Nouveau fichier `src/backtest/recentPerformanceReport.js` (`buildRecentPerformanceReport()`, async) + `LiveStrategyEngine.getHistory(symbol)` (nouvelle méthode, copie en lecture seule de l'historique conservé).
+   - **⚠️ Piège évité, pas juste théorique** : cette fonction a le même coût O(n²) que le warm-up (même moteur, même rejeu). Lancée telle quelle de façon synchrone dans une requête HTTP, elle aurait pu re-provoquer EXACTEMENT le bug de famine du heartbeat qu'on vient de corriger ce soir — potentiellement plusieurs minutes de blocage sur une requête dashboard, cette fois. Corrigé de la même façon (souffle toutes les 200 bougies via `setImmediate`) + mis en cache côté serveur 15 minutes (les bougies ne changent de toute façon qu'à ce rythme) pour ne pas relancer le calcul à chaque poll du dashboard.
+   - Stop/cible non plus inventés pour les trades "expirés" (timeout) : `rMultiple` reste `null` dans ce cas plutôt que d'estimer un prix de sortie non disponible dans l'événement `'closed'` — même discipline que le journal de trading (`dealPairing.js`).
+   - Un signal déjà ouvert AVANT le début de la fenêtre de 90 jours est explicitement exclu (pas d'entrée réelle connue) plutôt que deviné.
+   - 6 nouveaux tests (`test/recentPerformanceReport.test.js` + 2 pour `getHistory()` dans `test/liveStrategyEngine.test.js`), testés contre de VRAIES données CSV (échantillon réduit à ~1800 bougies pour garder la suite rapide — voir commentaire dans le fichier de test sur le coût O(n²)). `npm test` à 185/185.
+   - Testé visuellement (Playwright + données factices) : rendu correct, aucune erreur console.
+
+2. **Bandeau "connecté à ton compte FundingPips" corrigé** (décision "on garde ça pour modification" de plus tôt dans la session, finalement faite avant la fin) : `ProtoOATrader.brokerName` (déjà récupéré par `_loadBalance()` pour le solde, jusqu'ici ignoré) est maintenant utilisé pour afficher le vrai nom du courtier, avec repli explicite ("courtier inconnu") si absent plutôt que d'afficher un nom faux. Le statut démo/réel est dérivé de l'hôte cTrader utilisé (`demo.ctraderapi.com` vs `live.ctraderapi.com`), jamais deviné. Nouveau `store.broker = {name, isDemo}` + `setBrokerInfo()`, exposé via `/api/status`.
+
 ## Structure du repo (après extraction du zip)
 
 - `scripts/` — tous les scripts d'analyse/backtest en Node.js (`node scripts/run....js data/backtest-input`).

@@ -8,6 +8,7 @@ import { startMockDataSource } from './dataSources/mockDataSource.js';
 import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
 import { summarizeTrades } from './dataSources/dealPairing.js';
 import { MatchTraderDataSource } from './dataSources/matchTraderDataSource.js';
+import { buildRecentPerformanceReport } from './backtest/recentPerformanceReport.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -35,6 +36,7 @@ app.get('/api/status', (req, res) => {
     symbols,
     liveConfigured: isLiveConfigured(),
     autoExecute: { ...store.autoExecute, active: isAutoExecuteActive() },
+    broker: store.broker,
   });
 });
 
@@ -80,6 +82,35 @@ app.get('/api/trade-history', async (req, res) => {
     res.json({ trades, summary: summarizeTrades(trades) });
   } catch (err) {
     res.status(502).json({ error: err.message });
+  }
+});
+
+// "What would the bot have done over the last 90 days?" - at the user's
+// request, after realizing the warm-up replay already computes this and
+// throws it away. Expensive (same O(n^2) rebuild-and-replay as the live
+// warm-up, see recentPerformanceReport.js), so cached rather than
+// recomputed on every dashboard poll - candles only update every 15 minutes
+// anyway, so a 15-minute-old report is never actually stale.
+const RECENT_PERFORMANCE_CACHE_MS = 15 * 60 * 1000;
+let recentPerformanceCache = null; // { builtAt, report }
+
+app.get('/api/recent-performance', async (req, res) => {
+  if (recentPerformanceCache && Date.now() - recentPerformanceCache.builtAt < RECENT_PERFORMANCE_CACHE_MS) {
+    return res.json({ ...recentPerformanceCache.report, cachedAt: recentPerformanceCache.builtAt });
+  }
+  const historyBySymbol = {};
+  for (const symbol of CONFIG.symbols) {
+    historyBySymbol[symbol] = store.strategyEngine.getHistory(symbol);
+  }
+  if (Object.values(historyBySymbol).every((h) => h.length === 0)) {
+    return res.json({ trades: [], summary: null, reason: 'no candle history yet (still warming up or in demo mode)' });
+  }
+  try {
+    const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90 });
+    recentPerformanceCache = { builtAt: Date.now(), report };
+    res.json({ ...report, cachedAt: recentPerformanceCache.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

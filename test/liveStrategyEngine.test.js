@@ -373,3 +373,34 @@ test('LiveStrategyEngine (pyramid): a bearish position computes the add-on entry
   assert.ok(Math.abs(req.stopPrice - 97) < 1e-9); // add's own stop = its own entry + distance (bearish), ABOVE its entry, not a breakeven move
   assert.ok(Math.abs(req.targetPrice - 90.4) < 1e-9); // same target as the original
 });
+
+test('getHistory() returns a copy of the retained candles, not a live reference to internal state', () => {
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail: permissiveGuardrail(),
+  });
+
+  assert.deepEqual(engine.getHistory('TEST1'), []);
+
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  engine.ingestCandle('TEST1', c(M15, 100, 102, 100, 101));
+
+  const snapshot = engine.getHistory('TEST1');
+  assert.equal(snapshot.length, 2);
+  assert.deepEqual(snapshot[0], c(0, 100, 101, 99, 100));
+
+  snapshot.push(c(2 * M15, 999, 999, 999, 999)); // mutating the returned array must not affect the engine
+  assert.equal(engine.getHistoryLength('TEST1'), 2);
+});
+
+test('getHistory() for an unknown symbol returns an empty array, not undefined', () => {
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail: permissiveGuardrail(),
+  });
+  assert.deepEqual(engine.getHistory('UNKNOWN'), []);
+});

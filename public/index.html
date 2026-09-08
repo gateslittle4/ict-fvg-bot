@@ -127,6 +127,13 @@
   </div>
 
   <div class="card">
+    <h2>Performance récente (90 derniers jours, hypothétique)</h2>
+    <div class="meta" style="margin-bottom:8px;">Ce que le bot AURAIT signalé sur les 90 derniers jours de vrais prix de marché, calculé avec le même moteur que le combo déjà validé par backtest — ce ne sont PAS des trades réels (aucun ordre n'a été passé), juste une simulation sur les données les plus récentes.</div>
+    <div id="recent-perf-summary">Chargement…</div>
+    <div id="recent-perf-list" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
     <h2>Journal de trading (7 derniers jours)</h2>
     <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L viennent directement de l'historique cTrader. Le stop/la cible prévus ne sont pas affichés ici : cTrader ne conserve pas cette info pour une position déjà fermée, donc plutôt que d'en inventer un, on ne montre que ce qui est vérifiable.</div>
     <div id="journal-summary" style="margin-bottom:10px;"></div>
@@ -187,7 +194,10 @@ async function refreshStatus() {
     banner.textContent = "⚠ MODE DÉMO — données simulées, pas connecté à ton compte réel. Aucun signal ici n'est réel.";
   } else {
     banner.className = 'banner live';
-    banner.textContent = '● LIVE — connecté à ton compte FundingPips via cTrader';
+    const b = data.broker || {};
+    const brokerLabel = b.name || 'courtier inconnu (nom non fourni par cTrader)';
+    const accountLabel = b.isDemo === true ? 'compte DÉMO' : b.isDemo === false ? 'compte RÉEL' : 'type de compte inconnu';
+    banner.textContent = `● LIVE — connecté via cTrader à ${brokerLabel} (${accountLabel})`;
   }
 
   const g = data.guardrail;
@@ -337,6 +347,42 @@ function renderTradeChart(trade, decimals) {
   `;
 }
 
+async function refreshRecentPerformance() {
+  const summaryEl = document.getElementById('recent-perf-summary');
+  const listEl = document.getElementById('recent-perf-list');
+  try {
+    const res = await fetch('/api/recent-performance');
+    const data = await res.json();
+    if (!data.summary) {
+      summaryEl.innerHTML = `<div class="meta">${data.reason || 'Pas encore de données.'}</div>`;
+      listEl.innerHTML = '';
+      return;
+    }
+    const s = data.summary;
+    const netWin = s.totalR >= 0;
+    summaryEl.innerHTML = `
+      <div class="stat-row"><span class="label">Signaux (${s.windowDays}j)</span><span>${s.count}</span></div>
+      <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt(s.winRatePct, 0)}% (${s.wins}G / ${s.losses}P${s.timeouts ? ' / ' + s.timeouts + ' expirés' : ''})</span></div>
+      <div class="stat-row"><span class="label">Total en R</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.totalR)}R</span></div>
+    `;
+    listEl.innerHTML = data.trades.length
+      ? '<ul class="signal-list">' + data.trades.slice(0, 30).map((t) => {
+          const win = t.outcome === 'win';
+          const rLabel = t.rMultiple === null ? '—' : `${t.rMultiple >= 0 ? '+' : ''}${fmt(t.rMultiple, 1)}R`;
+          return `
+            <li class="signal-item">
+              <span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲' : '▼'}</span> ${t.symbol}
+              <span class="meta">[${sourceLabel(t)}]</span>
+              <span class="${win ? 'journal-pnl win' : t.outcome === 'loss' ? 'journal-pnl loss' : 'meta'}">${t.outcome === 'win' ? 'GAGNÉ' : t.outcome === 'loss' ? 'PERDU' : 'EXPIRÉ'} ${rLabel}</span>
+              <div class="meta">entrée ${fmt(t.entryPrice, priceDecimals(t.symbol))} · sortie ${fmtTime(t.exitTime)}</div>
+            </li>`;
+        }).join('') + '</ul>'
+      : '<div class="meta">Aucun signal détecté sur cette fenêtre.</div>';
+  } catch (err) {
+    summaryEl.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  }
+}
+
 async function refreshTradeHistory() {
   const list = document.getElementById('journal-list');
   try {
@@ -408,9 +454,11 @@ document.getElementById('calc-form').addEventListener('submit', async (e) => {
 refreshStatus();
 refreshSignals();
 refreshTradeHistory();
+refreshRecentPerformance();
 setInterval(refreshStatus, 3000);
 setInterval(refreshSignals, 3000);
 setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
+setInterval(refreshRecentPerformance, 120000); // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
 </script>
 </body>
 </html>

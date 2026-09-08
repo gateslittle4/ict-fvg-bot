@@ -31,7 +31,7 @@
 // account's symbol list.
 
 import { CTraderConnection } from '@reiryoku/ctrader-layer';
-import { store, pushSignalEvents, setBalance, isAutoExecuteActive } from '../store.js';
+import { store, pushSignalEvents, setBalance, setBrokerInfo, isAutoExecuteActive } from '../store.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
@@ -199,6 +199,15 @@ export class CTraderDataSource {
     if (typeof rawBalance === 'number') {
       setBalance(rawBalance / 100);
     }
+    // Bug fix (2026-09): the dashboard banner used to hard-code "FundingPips"
+    // no matter which broker/environment the connected account actually
+    // belongs to. brokerName is the broker's own whitelabel name for the
+    // account (ProtoOATrader.brokerName) - may be absent depending on the
+    // broker, in which case the dashboard falls back to a generic label
+    // rather than showing a name we don't actually know. isDemo is derived
+    // from which cTrader host this process connected to (HOST above), not
+    // guessed from account data.
+    setBrokerInfo({ name: res.trader?.brokerName || null, isDemo: HOST.includes('demo') });
   }
 
   async _loadClosedDeals(accountId) {
