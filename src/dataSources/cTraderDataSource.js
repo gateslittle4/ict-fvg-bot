@@ -34,6 +34,8 @@ import { CTraderConnection } from '@reiryoku/ctrader-layer';
 import { store, pushSignalEvents, setBalance, isAutoExecuteActive } from '../store.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
+import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
+import { pairDealsIntoTrades } from './dealPairing.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -215,6 +217,62 @@ export class CTraderDataSource {
     }
   }
 
+  /**
+   * Trading journal (2026-09, at the user's request): closed trades over the
+   * last `days`, each with a small window of candles for a chart. No storage
+   * of our own - always queried fresh from cTrader, so it survives restarts
+   * for free (this session's explicit choice over adding a database).
+   *
+   * Two real limits, not worked around because working around them would
+   * mean guessing/fabricating data rather than reporting it:
+   * - ProtoOADealListReq caps `toTimestamp - fromTimestamp` at 1 week - `days`
+   *   is clamped to 7 rather than silently sending an invalid request.
+   * - cTrader's deal history has no field for a closed position's planned
+   *   stop-loss/take-profit (ProtoOADeal has none; ProtoOAPosition does, but
+   *   closed positions no longer appear in a positions listing) - so trade
+   *   records intentionally carry only what IS verifiable from the deal
+   *   itself (entry, exit, direction, realized P&L), never an invented stop.
+   */
+  async getTradeHistory({ days = 7, maxTrades = 20 } = {}) {
+    const accountId = this.accountId;
+    const to = Date.now();
+    const from = to - Math.min(days, 7) * 24 * 3600 * 1000;
+    const res = await sendCommandWithTimeout(this.connection, 'ProtoOADealListReq', {
+      ctidTraderAccountId: Number(accountId),
+      fromTimestamp: from,
+      toTimestamp: to,
+    });
+    const trades = pairDealsIntoTrades(res.deal || []).slice(0, maxTrades);
+
+    const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
+    const CHART_MARGIN_MS = 12 * 15 * 60 * 1000; // ~3h of M15 padding on each side, for visual context around the trade
+
+    const enriched = [];
+    for (const trade of trades) {
+      const symbolName = this.symbolNameById.get(trade.symbolId) || `#${trade.symbolId}`;
+      let candles = [];
+      try {
+        const history = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
+          ctidTraderAccountId: Number(accountId),
+          fromTimestamp: trade.entryTime - CHART_MARGIN_MS,
+          toTimestamp: trade.exitTime + CHART_MARGIN_MS,
+          symbolId: trade.symbolId,
+          period,
+        });
+        candles = (history.trendbar || [])
+          .map((bar) => this._trendbarToCandle(bar))
+          .sort((a, b) => a.time - b.time);
+      } catch (err) {
+        console.warn(
+          `[cTrader] trade history: failed to fetch chart candles for ${symbolName} position ${trade.positionId}:`,
+          err.message
+        );
+      }
+      enriched.push({ ...trade, symbol: symbolName, candles });
+    }
+    return enriched;
+  }
+
   async _subscribeLiveCandles(accountId) {
     const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
 
@@ -270,7 +328,7 @@ export class CTraderDataSource {
       const YIELD_EVERY = 200;
       for (let i = 0; i < sortedBars.length; i++) {
         const candle = this._trendbarToCandle(sortedBars[i]);
-        const events = store.strategyEngine.ingestCandle(symbolName, candle);
+        const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle));
         pushSignalEvents(events);
         store.lastCandleBySymbol.set(symbolName, candle);
         // Deliberately no notify/trade-open side effects during warm-up replay -
@@ -304,7 +362,7 @@ export class CTraderDataSource {
         if (event.symbolId !== symbolId || !event.trendbar) return;
         for (const bar of event.trendbar) {
           const candle = this._trendbarToCandle(bar);
-          const events = store.strategyEngine.ingestCandle(symbolName, candle);
+          const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle));
           pushSignalEvents(events);
           store.lastCandleBySymbol.set(symbolName, candle);
           const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
@@ -327,12 +385,40 @@ export class CTraderDataSource {
     // exact scaling depends on symbol digits - VERIFY against a real response.
     const low = bar.low / 100000;
     return {
-      time: bar.utcTimestampInMinutes * 60 * 1000,
+      time: bar.utcTimestampInMinutes * 60 * 1000, // genuine UTC (cTrader's field name says so, and it's the documented convention) - correct for display (store.lastCandleBySymbol) and for expirationTimestamp sent to the broker. Do NOT feed this straight into the strategy engine - see _toEngineCandle().
       open: low + bar.deltaOpen / 100000,
       high: low + bar.deltaHigh / 100000,
       low,
       close: low + bar.deltaClose / 100000,
     };
+  }
+
+  // BUG FIX (found live, 2026-09-08): the shared filtered-engine pipeline
+  // (buildFilteredEngine() -> nySession.js's SessionFilteredFvgEngine, used
+  // identically by backtest and live per liveStrategyEngine.js's design)
+  // was built and validated entirely against HistData.com CSV candles, whose
+  // `.time` uses a FIXED EST-as-UTC convention (see nySession.js's header) -
+  // i.e. backtest `.time` is always exactly 5h BEHIND true UTC. cTrader's
+  // live candles are genuine UTC (see _trendbarToCandle() above), so passing
+  // them straight into ingestCandle() made every NY-session-window check
+  // evaluate the wrong wall-clock hour by a flat 5h (confirmed live: at real
+  // NY time 21:25, the session filter was computing NY time 02:25) - the
+  // Silver Bullet (10-11h NY) and London-NY overlap (7-10h NY) windows were
+  // effectively checking 05:00-06:00 and 02:00-05:00 NY instead, well
+  // outside the killzones the whole combo was validated on.
+  // This shifts ONLY the copy handed to the strategy engine into that same
+  // fixed-EST-as-UTC convention, so its internal HTF/structure/sweep
+  // bucketing and session-window check match backtest-validated behavior
+  // exactly. The ORIGINAL true-UTC `candle` (from _trendbarToCandle) is
+  // still what's stored in store.lastCandleBySymbol and used for
+  // expirationTimestamp - those must stay in real time, not this shifted
+  // convention. One side effect, cosmetic only: signal timestamps derived
+  // from the engine's candle (validatedAt, shown as "validé HH:MM" on the
+  // dashboard) will display 5h behind the real validation time - same
+  // convention backtest reports have always used, not a new inconsistency,
+  // but worth fixing in the dashboard layer later if it's ever confusing.
+  _toEngineCandle(candle) {
+    return { ...candle, time: candle.time - FIXED_EST_TO_UTC_OFFSET_MS };
   }
 
   /**

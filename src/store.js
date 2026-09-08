@@ -41,6 +41,11 @@ export const store = {
   // alert-and-click flow is the norm; this is the deliberate, explicit
   // exception Esdras opts into for a bounded window, not a permanent switch.
   autoExecute: { enabled: false, expiresAt: null, enabledAt: null },
+  // Set by server.js once a live broker connection succeeds (CTraderDataSource
+  // or MatchTraderDataSource instance) - lets routes like GET /api/trade-history
+  // reach broker-specific methods without server.js reaching into a data
+  // source module directly. Stays null in demo mode (no broker to query).
+  liveDataSource: null,
 };
 
 const MAX_AUTO_EXECUTE_HOURS = 7 * 24; // hard ceiling - even an explicit request can't leave this on for months unattended

@@ -85,6 +85,12 @@
   .auto-btn-row button { margin-top: 0; }
   button.secondary { background: #2a333d; }
   button.danger { background: var(--red); }
+  .journal-item { border-bottom: 1px solid var(--panel-border); padding: 10px 0; }
+  .journal-item:last-child { border-bottom: none; }
+  .journal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 6px; }
+  .journal-pnl.win { color: var(--green); font-weight: 700; }
+  .journal-pnl.loss { color: var(--red); font-weight: 700; }
+  .journal-chart { width: 100%; height: 130px; display: block; background: #0e141b; border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -118,6 +124,13 @@
       <h2>FVG en surveillance</h2>
       <ul id="watching-list" class="signal-list"><li class="signal-item meta">Aucun pour l'instant…</li></ul>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>Journal de trading (7 derniers jours)</h2>
+    <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L viennent directement de l'historique cTrader. Le stop/la cible prévus ne sont pas affichés ici : cTrader ne conserve pas cette info pour une position déjà fermée, donc plutôt que d'en inventer un, on ne montre que ce qui est vérifiable.</div>
+    <div id="journal-summary" style="margin-bottom:10px;"></div>
+    <div id="journal-list"></div>
   </div>
 
   <div class="card">
@@ -263,6 +276,103 @@ async function refreshSignals() {
     : '<li class="signal-item meta">Aucun pour l\'instant…</li>';
 }
 
+// Builds a small candlestick chart (inline SVG, no library) for one closed
+// trade: candles for visual context, plus dashed lines + labels at the
+// actual entry/exit prices (verified, from the deal history) - deliberately
+// no stop/target line, see the journal card's own explanation for why.
+function renderTradeChart(trade, decimals) {
+  const W = 600, H = 130, PAD_L = 46, PAD_R = 8, PAD_T = 10, PAD_B = 8;
+  const candles = trade.candles || [];
+  if (candles.length === 0) {
+    return '<div class="meta">Pas de données de graphique pour ce trade.</div>';
+  }
+
+  const prices = candles.flatMap((c) => [c.high, c.low]).concat([trade.entryPrice, trade.exitPrice]);
+  const minP = Math.min(...prices), maxP = Math.max(...prices);
+  const range = (maxP - minP) || 1;
+  const y = (p) => PAD_T + (1 - (p - minP) / range) * (H - PAD_T - PAD_B);
+
+  const plotW = W - PAD_L - PAD_R;
+  const slot = plotW / candles.length;
+  const x = (i) => PAD_L + i * slot + slot / 2;
+
+  const nearestIndex = (t) => {
+    let best = 0, bestDiff = Infinity;
+    candles.forEach((c, i) => { const d = Math.abs(c.time - t); if (d < bestDiff) { bestDiff = d; best = i; } });
+    return best;
+  };
+
+  const bodyWidth = Math.max(1, slot * 0.6);
+  const candleShapes = candles.map((c, i) => {
+    const up = c.close >= c.open;
+    const color = up ? 'var(--green)' : 'var(--red)';
+    const cx = x(i);
+    const bodyTop = y(Math.max(c.open, c.close));
+    const bodyBottom = y(Math.min(c.open, c.close));
+    return `
+      <line x1="${cx}" y1="${y(c.high)}" x2="${cx}" y2="${y(c.low)}" stroke="${color}" stroke-width="1" />
+      <rect x="${cx - bodyWidth / 2}" y="${bodyTop}" width="${bodyWidth}" height="${Math.max(1, bodyBottom - bodyTop)}" fill="${color}" />
+    `;
+  }).join('');
+
+  const entryX = x(nearestIndex(trade.entryTime));
+  const exitX = x(nearestIndex(trade.exitTime));
+  const entryY = y(trade.entryPrice);
+  const exitY = y(trade.exitPrice);
+  // Keep both labels inside the chart even when a price sits near the top/bottom edge:
+  // default entry-above/exit-below, but flip whichever one would clip off-canvas.
+  const entryLabelY = entryY - 3 < 8 ? entryY + 10 : entryY - 3;
+  const exitLabelY = exitY + 10 > H - 2 ? exitY - 3 : exitY + 10;
+
+  return `
+    <svg class="journal-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      ${candleShapes}
+      <line x1="${PAD_L}" y1="${entryY}" x2="${W - PAD_R}" y2="${entryY}" stroke="var(--blue)" stroke-width="1" stroke-dasharray="4,3" />
+      <text x="2" y="${entryLabelY}" fill="var(--blue)" font-size="10">Entrée ${fmt(trade.entryPrice, decimals)}</text>
+      <line x1="${PAD_L}" y1="${exitY}" x2="${W - PAD_R}" y2="${exitY}" stroke="var(--amber)" stroke-width="1" stroke-dasharray="4,3" />
+      <text x="2" y="${exitLabelY}" fill="var(--amber)" font-size="10">Sortie ${fmt(trade.exitPrice, decimals)}</text>
+      <circle cx="${entryX}" cy="${entryY}" r="3" fill="var(--blue)" />
+      <circle cx="${exitX}" cy="${exitY}" r="3" fill="var(--amber)" />
+    </svg>
+  `;
+}
+
+async function refreshTradeHistory() {
+  const list = document.getElementById('journal-list');
+  try {
+    const res = await fetch('/api/trade-history');
+    const data = await res.json();
+    const summaryEl = document.getElementById('journal-summary');
+    if (!data.trades || data.trades.length === 0) {
+      summaryEl.innerHTML = '';
+      list.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur les 7 derniers jours.'}</div>`;
+      return;
+    }
+    const s = data.summary;
+    const netWin = s.netPnl >= 0;
+    summaryEl.innerHTML = `
+      <div class="stat-row"><span class="label">Trades (7j)</span><span>${s.count}</span></div>
+      <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt(s.winRatePct, 0)}% (${s.wins}/${s.count})</span></div>
+      <div class="stat-row"><span class="label">P&amp;L net</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.netPnl)}</span></div>
+    `;
+    list.innerHTML = data.trades.map((t) => {
+      const d = priceDecimals(t.symbol);
+      const win = t.pnl >= 0;
+      return `
+        <div class="journal-item">
+          <div class="journal-head">
+            <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
+            <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
+          </div>
+          ${renderTradeChart(t, d)}
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = `<div class="err">Erreur de chargement du journal: ${err.message}</div>`;
+  }
+}
+
 document.getElementById('calc-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const symbol = document.getElementById('calc-symbol').value;
@@ -297,8 +407,10 @@ document.getElementById('calc-form').addEventListener('submit', async (e) => {
 
 refreshStatus();
 refreshSignals();
+refreshTradeHistory();
 setInterval(refreshStatus, 3000);
 setInterval(refreshSignals, 3000);
+setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
 </script>
 </body>
 </html>

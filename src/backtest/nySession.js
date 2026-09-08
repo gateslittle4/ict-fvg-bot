@@ -14,7 +14,13 @@
 // means by "8am-12pm New York time"), we first reconstruct the true UTC
 // instant (`.time + 5h`), then ask Intl for the DST-aware local hour.
 
-const FIXED_EST_TO_UTC_OFFSET_MS = 5 * 60 * 60 * 1000;
+// Exported so live data sources (e.g. cTraderDataSource.js, whose candle
+// `.time` is genuine UTC from the broker, NOT this fixed-EST convention) can
+// convert into the same convention before feeding candles through the
+// shared filtered-engine pipeline - see that file's ingestCandle() call
+// sites for why this matters (a live/backtest convention mismatch here
+// silently evaluates the session window against the wrong wall-clock hour).
+export const FIXED_EST_TO_UTC_OFFSET_MS = 5 * 60 * 60 * 1000;
 
 const nyTimeFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',

@@ -6,6 +6,7 @@ import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive } from
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
 import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
+import { summarizeTrades } from './dataSources/dealPairing.js';
 import { MatchTraderDataSource } from './dataSources/matchTraderDataSource.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,23 @@ app.get('/api/signals', (req, res) => {
   });
 });
 
+// Trading journal (2026-09, at the user's request): closed trades over the
+// last few days with a small chart window, queried fresh from the broker on
+// every request rather than stored - see getTradeHistory()'s own comment in
+// cTraderDataSource.js for why (no database to keep in sync with restarts,
+// but no historical stop-loss/take-profit either - not fabricated here).
+app.get('/api/trade-history', async (req, res) => {
+  if (store.mode !== 'live' || typeof store.liveDataSource?.getTradeHistory !== 'function') {
+    return res.json({ trades: [], reason: 'not connected to a live broker' });
+  }
+  try {
+    const trades = await store.liveDataSource.getTradeHistory();
+    res.json({ trades, summary: summarizeTrades(trades) });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 app.post('/api/lot-calc', (req, res) => {
   try {
     const { symbol, entryPrice, stopPrice, riskPct, balance } = req.body || {};
@@ -95,6 +113,7 @@ if (process.env.NODE_ENV !== 'test') {
       try {
         const live = new MatchTraderDataSource();
         await live.start();
+        store.liveDataSource = live;
         console.log('[boot] connected live to Match-Trader.');
       } catch (err) {
         console.error('[boot] live Match-Trader connection failed, falling back to demo mode:', err.message);
@@ -104,6 +123,7 @@ if (process.env.NODE_ENV !== 'test') {
       try {
         const live = new CTraderDataSource();
         await live.start();
+        store.liveDataSource = live;
         console.log('[boot] connected live to cTrader.');
       } catch (err) {
         console.error('[boot] live cTrader connection failed, falling back to demo mode:', err.message);
