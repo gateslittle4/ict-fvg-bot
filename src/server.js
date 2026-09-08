@@ -49,6 +49,19 @@ app.get('/api/status', (req, res) => {
       symbol,
       lastPrice: last ? last.close : null,
       lastCandleTime: last ? last.time : null,
+      // open/high/low added 2026-09 for the market chart's live-tick update
+      // (see chart.html) - lastCandleBySymbol is updated on EVERY spot tick
+      // (cTraderDataSource.js's ProtoOASpotEvent handler), unlike
+      // LiveStrategyEngine's own retained history, which only keeps the
+      // FIRST tick of each bar (ingestCandle()'s own dedup guard rejects
+      // later updates to an already-seen bar time - correct and untouched,
+      // that history feeds signal detection, not display). Without this,
+      // the chart's rightmost candle looked frozen between M15 closes even
+      // though the real price was moving the whole time - "the price
+      // doesn't move" was a real, reported observation, not a false one.
+      lastOpen: last ? last.open : null,
+      lastHigh: last ? last.high : null,
+      lastLow: last ? last.low : null,
       openPosition: store.strategyEngine.getOpenPosition(symbol),
     };
   });

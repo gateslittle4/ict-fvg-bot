@@ -53,7 +53,19 @@
   .price-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
   .price-header .last { font-size: 26px; font-weight: 700; }
   .price-header .meta { color: var(--muted); font-size: 12px; }
+  .chart-wrap { position: relative; }
   #chart { width: 100%; height: 460px; }
+  #chart-loading {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; background: #0e141b; border-radius: 6px; z-index: 5;
+  }
+  #chart-loading[hidden] { display: none; } /* the ID rule above sets its own `display`, which otherwise overrides the [hidden] attribute's native display:none - verified broken without this, via Playwright, before shipping */
+  #chart-loading .spinner {
+    width: 28px; height: 28px; border: 3px solid #232d38; border-top-color: var(--blue);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  #chart-loading .label { color: var(--muted); font-size: 13px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .ohlc-readout {
     font-size: 12px; color: var(--muted); min-height: 18px; margin-bottom: 6px;
     font-variant-numeric: tabular-nums;
@@ -102,7 +114,13 @@
     </div>
 
     <div class="ohlc-readout" id="ohlc-readout"></div>
-    <div id="chart"></div>
+    <div class="chart-wrap">
+      <div id="chart"></div>
+      <div id="chart-loading">
+        <div class="spinner"></div>
+        <div class="label">Le bot se reconnecte au courtier (démarrage à froid, quelques secondes)…</div>
+      </div>
+    </div>
 
     <div class="legend">
       <span><span class="dot" style="background:var(--green)"></span>Hausse</span>
@@ -383,6 +401,7 @@ async function loadChart({ keepView = false } = {}) {
     const overlaysData = overlaysRes.ok ? await overlaysRes.json() : { zones: [], signals: [] };
 
     lastCandles = candlesData.candles || [];
+    document.getElementById('chart-loading').hidden = lastCandles.length > 0;
     candleSeries.applyOptions({ priceFormat: { type: 'price', precision: decimals, minMove: 1 / 10 ** decimals } });
     candleSeries.setData(lastCandles.map(toChartCandle));
     if (!keepView) chart.timeScale().fitContent();
@@ -424,11 +443,85 @@ document.getElementById('toggle-overlays').addEventListener('click', (e) => {
 });
 wireGroup('symbol-group', 'symbol', (v) => { currentSymbol = v; });
 wireGroup('timeframe-group', 'timeframe', (v) => { currentTimeframe = v; });
-loadChart();
+
+// --- Live price tick (2026-09, fixed a real reported bug: "the price
+// doesn't move") ------------------------------------------------------------
+// LiveStrategyEngine's retained history (what /api/candles serves) only
+// keeps the FIRST tick of each M15 bar - ingestCandle()'s own dedup guard
+// rejects later updates to an already-seen bar, which is correct for signal
+// detection but means the chart's rightmost candle looked frozen between
+// M15 closes even though the real price kept moving. /api/status, by
+// contrast, is fed from store.lastCandleBySymbol, which cTraderDataSource.js
+// updates on EVERY spot tick - so it's genuinely live. Polling that
+// (already cheap, no broker round-trip, no engine work) and pushing it
+// through candleSeries.update() - which merges into the existing last bar
+// when the time matches, or appends a new one when it doesn't - makes the
+// chart feel alive without touching lastCandles (the array overlays/signal
+// snapping depend on) or re-running the heavier candles+overlays fetch.
+// Scoped to M15 only: on H1/H4/D1 "the current bucket" would need
+// client-side aggregation of the not-yet-closed M15 ticks into that larger
+// bucket, which isn't worth the complexity when a several-second display lag
+// on an hours-wide bar is imperceptible anyway.
+const LIVE_TICK_MS = 3000;
+let liveTickTimer = null;
+
+function stopLiveTick() {
+  if (liveTickTimer) { clearInterval(liveTickTimer); liveTickTimer = null; }
+}
+
+function startLiveTick() {
+  stopLiveTick();
+  liveTickTimer = setInterval(async () => {
+    if (currentTimeframe !== 'M15' || lastCandles.length === 0) return;
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      const s = (data.symbols || []).find((x) => x.symbol === currentSymbol);
+      if (!s || s.lastCandleTime === null || typeof s.lastOpen !== 'number') return;
+
+      const decimals = priceDecimals(currentSymbol);
+      const liveBar = toChartCandle({ time: s.lastCandleTime, open: s.lastOpen, high: s.lastHigh, low: s.lastLow, close: s.lastPrice });
+      const lastKnown = lastCandles[lastCandles.length - 1];
+      if (liveBar.time < Math.floor(lastKnown.time / 1000)) return; // stale relative to what a full refresh already showed - ignore rather than move the chart backwards
+
+      candleSeries.update(liveBar);
+      if (liveBar.time === Math.floor(lastKnown.time / 1000)) {
+        // Same bar, still forming: keep the local array's snapshot of it in
+        // sync too, so the NEXT full refresh's "n bougies" count and the
+        // OHLC readout (which reads lastCandles, not the series) stay
+        // consistent with what's actually drawn.
+        lastCandles[lastCandles.length - 1] = { ...lastKnown, high: s.lastHigh, low: s.lastLow, close: s.lastPrice };
+      }
+      document.getElementById('last-price').textContent = fmt(s.lastPrice, decimals);
+    } catch {
+      // A transient failure here just means one tick doesn't update - the
+      // next full refresh (or the next tick) recovers on its own, so this
+      // is deliberately silent rather than surfacing a user-facing error
+      // for what is, worst case, a few seconds of staleness.
+    }
+  }, LIVE_TICK_MS);
+}
+
+const STEADY_REFRESH_MS = 60000; // candles only change every 15 min anyway
+const BOOTING_REFRESH_MS = 3000; // still no data - the bot is very likely mid-warm-up, so check back quickly instead of leaving a blank chart up for a minute
 
 // Refresh in place, without yanking the view back if she has zoomed or
 // panned somewhere - a chart that resets itself every minute is unusable.
-setInterval(() => loadChart({ keepView: true }), 60000);
+// The delay adapts each time based on whether the CURRENT symbol has data
+// yet, so switching to a symbol that's still warming up speeds the loop
+// back up automatically, and it slows back down the moment real candles
+// arrive.
+(async function refreshLoop() {
+  const delay = lastCandles.length === 0 ? BOOTING_REFRESH_MS : STEADY_REFRESH_MS;
+  setTimeout(async () => {
+    await loadChart({ keepView: true });
+    refreshLoop();
+  }, delay);
+})();
+
+loadChart();
+startLiveTick();
 </script>
 </body>
 </html>
