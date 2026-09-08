@@ -9,11 +9,28 @@ import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
 import { summarizeTrades } from './dataSources/dealPairing.js';
 import { MatchTraderDataSource } from './dataSources/matchTraderDataSource.js';
 import { buildRecentPerformanceReport } from './backtest/recentPerformanceReport.js';
+import { startKeepAlive } from './keepAlive.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+const BOOTED_AT = Date.now();
+
+// Deliberately the cheapest possible endpoint: no broker round-trip, no
+// engine work, no allocation of anything meaningful. It exists so the
+// keep-alive ping (see keepAlive.js) costs the running bot nothing, and so
+// "is the process actually up?" can be answered without loading the whole
+// dashboard.
+app.get('/healthz', (req, res) => {
+  res.json({
+    ok: true,
+    mode: store.mode,
+    uptimeSec: Math.round((Date.now() - BOOTED_AT) / 1000),
+    brokerConnected: store.liveDataSource !== null,
+  });
+});
 
 app.get('/api/status', (req, res) => {
   const guardrailStatus = store.guardrail.getStatus();
@@ -169,6 +186,12 @@ const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, async () => {
     console.log(`ICT-FVG assistant listening on :${PORT}`);
+    // Must start BEFORE the (slower) broker connection below: on Render's
+    // free tier the sleep timer is what silently kills this whole process,
+    // so the sooner the anti-sleep ping is armed the better. No-op unless
+    // KEEP_ALIVE=true - see keepAlive.js for the free-instance-hours
+    // trade-off that makes it opt-in.
+    startKeepAlive();
     const platform = getConfiguredPlatform();
     if (platform === 'matchtrader') {
       try {
