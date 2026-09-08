@@ -36,6 +36,7 @@ import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
+import { reconcileAccount, estimateEquity } from './accountReconciliation.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -193,11 +194,15 @@ export class CTraderDataSource {
     const res = await sendCommandWithTimeout(this.connection, 'ProtoOATraderReq', {
       ctidTraderAccountId: Number(accountId),
     });
-    // balance is typically returned in the account's smallest unit (cents);
-    // divide by 100 - VERIFY this against the real response the first time.
+    // 2026-09 fix: was hardcoded /100. ProtoOATrader.moneyDigits (its own doc:
+    // "the exponent of the monetary values... affects balance") is the
+    // ACTUAL scale the broker uses - defaulting to 2 (equivalent to the old
+    // hardcoded /100) only when the field is genuinely absent, not assuming
+    // it up front.
     const rawBalance = res.trader?.balance;
     if (typeof rawBalance === 'number') {
-      setBalance(rawBalance / 100);
+      const moneyDigits = res.trader?.moneyDigits ?? 2;
+      setBalance(rawBalance / 10 ** moneyDigits);
     }
     // Bug fix (2026-09): the dashboard banner used to hard-code "FundingPips"
     // no matter which broker/environment the connected account actually
@@ -280,6 +285,41 @@ export class CTraderDataSource {
       enriched.push({ ...trade, symbol: symbolName, candles });
     }
     return enriched;
+  }
+
+  /**
+   * Real account picture, at the user's request after confirming the
+   * dashboard's own "openPosition" state is only ever LiveStrategyEngine's
+   * belief (its own signals), never a reconciled mirror of the real broker
+   * account (see liveStrategyEngine.js's "believed netting" caveat). Fetched
+   * live on each call (like getTradeHistory() above), not cached - a
+   * ProtoOAReconcileReq is lightweight, unlike the 90-day candle warm-up.
+   * All the actual math (what's REAL vs ESTIMATED, and why) lives in
+   * accountReconciliation.js - this method only gathers the live inputs.
+   */
+  async getAccountReconciliation() {
+    const accountId = this.accountId;
+    const res = await sendCommandWithTimeout(this.connection, 'ProtoOAReconcileReq', {
+      ctidTraderAccountId: Number(accountId),
+    });
+
+    const currentPriceBySymbol = {};
+    for (const [symbol, candle] of store.lastCandleBySymbol) {
+      currentPriceBySymbol[symbol] = candle.close;
+    }
+    const believedOpenBySymbol = {};
+    for (const symbol of CONFIG.symbols) {
+      believedOpenBySymbol[symbol] = Boolean(store.strategyEngine.getOpenPosition(symbol));
+    }
+
+    const result = reconcileAccount({
+      realPositions: res.position || [],
+      symbolNameById: this.symbolNameById,
+      currentPriceBySymbol,
+      believedOpenBySymbol,
+    });
+
+    return { ...result, balance: store.balance, equityEstimate: estimateEquity(store.balance, result.floatingPnlEstimate) };
   }
 
   async _subscribeLiveCandles(accountId) {

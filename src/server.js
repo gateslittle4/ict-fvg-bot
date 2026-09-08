@@ -68,6 +68,21 @@ app.get('/api/signals', (req, res) => {
   });
 });
 
+// Real broker account picture (equity estimate, real margin used, real open
+// positions, reconciliation vs what the bot BELIEVES is open) - see
+// accountReconciliation.js for exactly what's REAL vs ESTIMATED and why.
+app.get('/api/account', async (req, res) => {
+  if (store.mode !== 'live' || typeof store.liveDataSource?.getAccountReconciliation !== 'function') {
+    return res.json({ reason: 'not connected to a live broker' });
+  }
+  try {
+    const account = await store.liveDataSource.getAccountReconciliation();
+    res.json(account);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // Trading journal (2026-09, at the user's request): closed trades over the
 // last few days with a small chart window, queried fresh from the broker on
 // every request rather than stored - see getTradeHistory()'s own comment in
@@ -83,6 +98,21 @@ app.get('/api/trade-history', async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+// Market chart (2026-09, at the user's request: "un graphe des marchés
+// choisis"). Serves the bot's OWN already-retained candle history
+// (LiveStrategyEngine.getHistory - the same 90-day window kept warm for
+// signal detection) - no extra broker round-trip needed, works identically
+// in live and demo mode.
+app.get('/api/candles', (req, res) => {
+  const symbol = req.query.symbol;
+  if (!CONFIG.symbols.includes(symbol)) {
+    return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
+  }
+  const limit = Math.min(Number(req.query.limit) || 300, 3000);
+  const candles = store.strategyEngine.getHistory(symbol).slice(-limit);
+  res.json({ symbol, candles });
 });
 
 // "What would the bot have done over the last 90 days?" - at the user's
