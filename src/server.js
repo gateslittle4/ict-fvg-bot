@@ -9,12 +9,20 @@ import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
 import { summarizeTrades } from './dataSources/dealPairing.js';
 import { MatchTraderDataSource } from './dataSources/matchTraderDataSource.js';
 import { buildRecentPerformanceReport } from './backtest/recentPerformanceReport.js';
+import { resampleCandles } from './backtest/htfBias.js';
 import { startKeepAlive } from './keepAlive.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
+// Lightweight Charts (TradingView's own open-source charting library) is
+// served from OUR origin rather than a CDN on purpose: the dashboard is
+// already hard enough to reach on the user's network (see HANDOFF.md), and a
+// CDN would add a second host that has to resolve and load before the chart
+// can draw anything. Comes from the npm dependency, so it updates with
+// `npm install` instead of being a copied-in vendored blob.
+app.use('/vendor/lightweight-charts', express.static(path.join(__dirname, '..', 'node_modules', 'lightweight-charts', 'dist')));
 
 const BOOTED_AT = Date.now();
 
@@ -122,14 +130,40 @@ app.get('/api/trade-history', async (req, res) => {
 // (LiveStrategyEngine.getHistory - the same 90-day window kept warm for
 // signal detection) - no extra broker round-trip needed, works identically
 // in live and demo mode.
+const CHART_BUCKET_MS = {
+  M15: 15 * 60 * 1000,
+  H1: 60 * 60 * 1000,
+  H4: 4 * 60 * 60 * 1000,
+  D1: 24 * 60 * 60 * 1000,
+};
+
 app.get('/api/candles', (req, res) => {
   const symbol = req.query.symbol;
   if (!CONFIG.symbols.includes(symbol)) {
     return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
   }
-  const limit = Math.min(Number(req.query.limit) || 300, 3000);
-  const candles = store.strategyEngine.getHistory(symbol).slice(-limit);
-  res.json({ symbol, candles });
+  const timeframe = req.query.timeframe || 'M15';
+  const bucketMs = CHART_BUCKET_MS[timeframe];
+  if (!bucketMs) {
+    return res.status(400).json({ error: `Unknown timeframe "${timeframe}". Known: ${Object.keys(CHART_BUCKET_MS).join(', ')}` });
+  }
+  const limit = Math.min(Number(req.query.limit) || 300, 5000);
+
+  // The engine's retained candles are in whatever time convention the active
+  // data source feeds it - for cTrader that is the backtest's
+  // fixed-EST-as-UTC convention, i.e. 5h behind real UTC (see
+  // CTraderDataSource's candleTimeOffsetMs). Undo it here so the chart plots
+  // real wall-clock times instead of every bar sitting 5 hours early.
+  const offsetMs = store.liveDataSource?.candleTimeOffsetMs ?? 0;
+  const history = store.strategyEngine.getHistory(symbol);
+
+  // Resample BEFORE slicing so a bucket is never built from a partial slice,
+  // then take the last `limit` buckets. M15 is the native resolution, so it
+  // needs no resampling at all.
+  const buckets = timeframe === 'M15' ? history : resampleCandles(history, bucketMs);
+  const candles = buckets.slice(-limit).map((c) => ({ ...c, time: c.time + offsetMs }));
+
+  res.json({ symbol, timeframe, candles });
 });
 
 // "What would the bot have done over the last 90 days?" - at the user's

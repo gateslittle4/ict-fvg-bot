@@ -36,34 +36,34 @@
     padding: 14px 16px;
     margin-bottom: 16px;
   }
-  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-  .tabs button {
-    background: #0e141b; color: var(--text); border: 1px solid var(--panel-border); border-radius: 6px;
-    padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
-  }
-  .tabs button.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-  .tabs .spacer { flex: 1; }
-  .tabs select {
-    background: #0e141b; color: var(--text); border: 1px solid var(--panel-border); border-radius: 6px;
-    padding: 8px 10px; font-size: 13px;
-  }
-  .price-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-  .price-header .last { font-size: 24px; font-weight: 700; }
-  .price-header .meta { color: var(--muted); font-size: 12px; }
-  .price-header .dir-up { color: var(--green); }
-  .price-header .dir-down { color: var(--red); }
-  .chart-wrap { position: relative; width: 100%; }
-  .market-chart { width: 100%; height: 480px; display: block; background: #0e141b; border-radius: 6px; }
-  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
-  .legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
-  .err { color: var(--red); font-size: 13px; margin-top: 8px; }
-  .meta { color: var(--muted); font-size: 12px; }
   .topnav { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--panel-border); }
   .topnav a {
     color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600;
     padding: 10px 16px; border-bottom: 2px solid transparent;
   }
   .topnav a.active { color: var(--text); border-bottom-color: var(--blue); }
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .toolbar .group { display: flex; gap: 4px; background: #0e141b; border: 1px solid var(--panel-border); border-radius: 8px; padding: 3px; }
+  .toolbar button {
+    background: transparent; color: var(--muted); border: none; border-radius: 6px;
+    padding: 7px 13px; font-size: 13px; font-weight: 600; cursor: pointer; margin: 0;
+  }
+  .toolbar button.active { background: var(--blue); color: #fff; }
+  .toolbar .spacer { flex: 1; }
+  .price-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .price-header .last { font-size: 26px; font-weight: 700; }
+  .price-header .meta { color: var(--muted); font-size: 12px; }
+  #chart { width: 100%; height: 460px; }
+  .ohlc-readout {
+    font-size: 12px; color: var(--muted); min-height: 18px; margin-bottom: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ohlc-readout b { color: var(--text); font-weight: 600; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+  .err { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -72,167 +72,197 @@
     <a href="/chart.html" class="active">Graphique</a>
   </nav>
   <h1>ICT FVG Assistant — Graphique des marchés</h1>
-  <div class="subtitle">Historique de bougies M15 déjà conservé par le bot (même données que la détection de signaux).</div>
+  <div class="subtitle">Historique conservé par le bot lui-même (mêmes bougies que la détection de signaux).</div>
 
   <div class="card">
-    <div class="tabs">
-      <button data-symbol="US100" class="active">US100</button>
-      <button data-symbol="US500">US500</button>
-      <button data-symbol="XAUUSD">XAUUSD</button>
+    <div class="toolbar">
+      <div class="group" id="symbol-group">
+        <button data-symbol="US100" class="active">US100</button>
+        <button data-symbol="US500">US500</button>
+        <button data-symbol="XAUUSD">XAUUSD</button>
+      </div>
       <span class="spacer"></span>
-      <select id="limit-select">
-        <option value="100">100 bougies (~1j)</option>
-        <option value="300" selected>300 bougies (~3j)</option>
-        <option value="960">960 bougies (~10j)</option>
-        <option value="2880">2880 bougies (~30j)</option>
-      </select>
+      <div class="group" id="timeframe-group">
+        <button data-timeframe="M15" class="active">M15</button>
+        <button data-timeframe="H1">H1</button>
+        <button data-timeframe="H4">H4</button>
+        <button data-timeframe="D1">D1</button>
+      </div>
     </div>
 
     <div class="price-header">
       <div>
         <div class="last" id="last-price">—</div>
-        <div class="meta" id="last-time">—</div>
+        <div class="meta" id="last-time">Chargement…</div>
       </div>
       <div class="meta" id="position-note"></div>
     </div>
 
-    <div class="chart-wrap">
-      <svg class="market-chart" id="chart-svg" viewBox="0 0 1000 480" preserveAspectRatio="none"></svg>
-    </div>
+    <div class="ohlc-readout" id="ohlc-readout"></div>
+    <div id="chart"></div>
+
     <div class="legend">
       <span><span class="dot" style="background:var(--green)"></span>Hausse</span>
       <span><span class="dot" style="background:var(--red)"></span>Baisse</span>
       <span><span class="dot" style="background:var(--blue)"></span>Entrée (position ouverte)</span>
       <span><span class="dot" style="background:var(--amber)"></span>Stop / Cible</span>
     </div>
+    <div class="hint">Pince ou molette pour zoomer · glisse pour te déplacer · touche/survole une bougie pour voir son OHLC · double-clic pour réinitialiser le zoom.</div>
     <div id="chart-error" class="err"></div>
   </div>
 
+<script src="/vendor/lightweight-charts/lightweight-charts.standalone.production.js"></script>
 <script>
 const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
-const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
+const fmt = (n, d = 2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 
 let currentSymbol = 'US100';
+let currentTimeframe = 'M15';
+let chart = null;
+let candleSeries = null;
+let priceLines = [];
+let lastCandles = [];
 
-document.querySelectorAll('.tabs button[data-symbol]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    currentSymbol = btn.dataset.symbol;
-    document.querySelectorAll('.tabs button[data-symbol]').forEach((b) => b.classList.toggle('active', b === btn));
-    loadChart();
-  });
+// Lightweight Charts wants seconds-since-epoch, not milliseconds, and it
+// wants each bar's time strictly increasing. Our API already returns sorted
+// candles, so this only converts units.
+const toChartCandle = (c) => ({
+  time: Math.floor(c.time / 1000),
+  open: c.open,
+  high: c.high,
+  low: c.low,
+  close: c.close,
 });
-document.getElementById('limit-select').addEventListener('change', loadChart);
 
-// Plain SVG candlestick renderer (no library) - same technique as the
-// trading journal's mini-chart on the main dashboard (public/index.html's
-// renderTradeChart), generalized to a full price series plus optional
-// entry/stop/target overlay lines for a currently open position.
-function renderCandles(candles, decimals, openPosition) {
-  const svg = document.getElementById('chart-svg');
-  const W = 1000, H = 480, PAD_L = 60, PAD_R = 12, PAD_T = 14, PAD_B = 20;
-  if (!candles || candles.length === 0) {
-    svg.innerHTML = '';
-    return;
-  }
+function buildChart() {
+  const el = document.getElementById('chart');
+  chart = LightweightCharts.createChart(el, {
+    layout: {
+      background: { color: '#0e141b' },
+      textColor: '#8b98a5',
+      attributionLogo: false,
+    },
+    grid: {
+      vertLines: { color: '#1c2530' },
+      horzLines: { color: '#1c2530' },
+    },
+    rightPriceScale: { borderColor: '#232d38' },
+    timeScale: {
+      borderColor: '#232d38',
+      timeVisible: true,      // intraday bars need the time, not just the date
+      secondsVisible: false,
+    },
+    crosshair: { mode: 0 },   // 0 = free crosshair, follows the pointer like a broker chart
+    localization: {
+      locale: 'fr-FR',
+      // The API hands us real UTC instants (see /api/candles); render them in
+      // the viewer's own timezone so "10:30" means 10:30 where she is.
+      timeFormatter: (ts) => new Date(ts * 1000).toLocaleString('fr-FR'),
+    },
+    autoSize: true,
+  });
 
-  const overlayPrices = openPosition ? [openPosition.entryPrice, openPosition.stopPrice, openPosition.targetPrice].filter((p) => typeof p === 'number') : [];
-  const prices = candles.flatMap((c) => [c.high, c.low]).concat(overlayPrices);
-  const minP = Math.min(...prices), maxP = Math.max(...prices);
-  const range = (maxP - minP) || 1;
-  const y = (p) => PAD_T + (1 - (p - minP) / range) * (H - PAD_T - PAD_B);
+  candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: '#3fb950',
+    downColor: '#f85149',
+    borderUpColor: '#3fb950',
+    borderDownColor: '#f85149',
+    wickUpColor: '#3fb950',
+    wickDownColor: '#f85149',
+  });
 
-  const plotW = W - PAD_L - PAD_R;
-  const slot = plotW / candles.length;
-  const x = (i) => PAD_L + i * slot + slot / 2;
-  const bodyWidth = Math.max(1, slot * 0.6);
-
-  const candleShapes = candles.map((c, i) => {
-    const up = c.close >= c.open;
+  // OHLC readout under the toolbar, the way a broker chart shows the bar
+  // you're pointing at.
+  chart.subscribeCrosshairMove((param) => {
+    const readout = document.getElementById('ohlc-readout');
+    const bar = param.seriesData ? param.seriesData.get(candleSeries) : null;
+    if (!bar) { readout.innerHTML = ''; return; }
+    const d = priceDecimals(currentSymbol);
+    const up = bar.close >= bar.open;
     const color = up ? 'var(--green)' : 'var(--red)';
-    const cx = x(i);
-    const bodyTop = y(Math.max(c.open, c.close));
-    const bodyBottom = y(Math.min(c.open, c.close));
-    return `
-      <line x1="${cx}" y1="${y(c.high)}" x2="${cx}" y2="${y(c.low)}" stroke="${color}" stroke-width="1" />
-      <rect x="${cx - bodyWidth / 2}" y="${bodyTop}" width="${bodyWidth}" height="${Math.max(1, bodyBottom - bodyTop)}" fill="${color}" />
-    `;
-  }).join('');
-
-  // Y-axis price labels (5 evenly spaced levels).
-  const LEVELS = 5;
-  let axisLabels = '';
-  for (let i = 0; i <= LEVELS; i++) {
-    const p = minP + (range * i) / LEVELS;
-    const py = y(p);
-    axisLabels += `
-      <line x1="${PAD_L}" y1="${py}" x2="${W - PAD_R}" y2="${py}" stroke="#1c2530" stroke-width="1" />
-      <text x="4" y="${py + 3}" fill="var(--muted)" font-size="11">${fmt(p, decimals)}</text>
-    `;
-  }
-
-  let overlay = '';
-  if (openPosition) {
-    const lines = [
-      { price: openPosition.entryPrice, color: 'var(--blue)', label: 'Entrée' },
-      { price: openPosition.stopPrice, color: 'var(--amber)', label: 'Stop' },
-      { price: openPosition.targetPrice, color: 'var(--amber)', label: 'Cible' },
-    ].filter((l) => typeof l.price === 'number');
-
-    // Simple label-collision avoidance: when two levels sit close together
-    // (e.g. a tight stop near the entry), their price labels would overlap -
-    // push a label down below its minimum gap from the previous one, sorted
-    // top to bottom, rather than letting text overlap illegibly.
-    const MIN_GAP = 12;
-    const sorted = [...lines].sort((a, b) => y(a.price) - y(b.price));
-    let prevLabelY = -Infinity;
-    const labelYByLine = new Map();
-    for (const l of sorted) {
-      const naturalY = y(l.price) - 3;
-      const labelY = Math.max(naturalY, prevLabelY + MIN_GAP);
-      labelYByLine.set(l, labelY);
-      prevLabelY = labelY;
-    }
-
-    overlay = lines.map((l) => `
-        <line x1="${PAD_L}" y1="${y(l.price)}" x2="${W - PAD_R}" y2="${y(l.price)}" stroke="${l.color}" stroke-width="1" stroke-dasharray="4,3" />
-        <text x="${W - PAD_R - 4}" y="${labelYByLine.get(l)}" fill="${l.color}" font-size="11" text-anchor="end">${l.label} ${fmt(l.price, decimals)}</text>
-      `).join('');
-  }
-
-  svg.innerHTML = axisLabels + candleShapes + overlay;
+    readout.innerHTML =
+      `O <b>${fmt(bar.open, d)}</b>  H <b>${fmt(bar.high, d)}</b>  ` +
+      `B <b>${fmt(bar.low, d)}</b>  C <b style="color:${color}">${fmt(bar.close, d)}</b>`;
+  });
 }
 
-async function loadChart() {
+function setPositionLines(openPosition, decimals) {
+  for (const line of priceLines) candleSeries.removePriceLine(line);
+  priceLines = [];
+  if (!openPosition) return;
+
+  const specs = [
+    { price: openPosition.entryPrice, color: '#58a6ff', title: 'Entrée' },
+    { price: openPosition.stopPrice, color: '#d29922', title: 'Stop' },
+    { price: openPosition.targetPrice, color: '#d29922', title: 'Cible' },
+  ];
+  for (const spec of specs) {
+    if (typeof spec.price !== 'number') continue;
+    priceLines.push(candleSeries.createPriceLine({
+      price: spec.price,
+      color: spec.color,
+      lineWidth: 1,
+      lineStyle: 2, // dashed
+      axisLabelVisible: true,
+      title: spec.title,
+    }));
+  }
+}
+
+async function loadChart({ keepView = false } = {}) {
   const errEl = document.getElementById('chart-error');
   errEl.textContent = '';
-  const limit = document.getElementById('limit-select').value;
   const decimals = priceDecimals(currentSymbol);
+
   try {
     const [candlesRes, statusRes] = await Promise.all([
-      fetch(`/api/candles?symbol=${currentSymbol}&limit=${limit}`),
+      fetch(`/api/candles?symbol=${currentSymbol}&timeframe=${currentTimeframe}&limit=1500`),
       fetch('/api/status'),
     ]);
     const candlesData = await candlesRes.json();
     if (!candlesRes.ok) throw new Error(candlesData.error || 'Erreur inconnue');
     const statusData = await statusRes.json();
+
+    lastCandles = candlesData.candles || [];
+    candleSeries.applyOptions({ priceFormat: { type: 'price', precision: decimals, minMove: 1 / 10 ** decimals } });
+    candleSeries.setData(lastCandles.map(toChartCandle));
+    if (!keepView) chart.timeScale().fitContent();
+
     const symbolStatus = (statusData.symbols || []).find((s) => s.symbol === currentSymbol);
     const openPosition = symbolStatus ? symbolStatus.openPosition : null;
+    setPositionLines(openPosition, decimals);
 
-    renderCandles(candlesData.candles, decimals, openPosition);
-
-    const last = candlesData.candles[candlesData.candles.length - 1];
+    const last = lastCandles[lastCandles.length - 1];
     document.getElementById('last-price').textContent = last ? fmt(last.close, decimals) : '—';
-    document.getElementById('last-time').textContent = last ? `${currentSymbol} · ${new Date(last.time).toLocaleString('fr-FR')} · ${candlesData.candles.length} bougies` : 'Pas encore de données';
+    document.getElementById('last-time').textContent = last
+      ? `${currentSymbol} · ${currentTimeframe} · ${new Date(last.time).toLocaleString('fr-FR')} · ${lastCandles.length} bougies`
+      : 'Pas encore de données (le bot est peut-être encore en démarrage)';
     document.getElementById('position-note').textContent = openPosition
-      ? `Position ouverte (crue par le bot) : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'} depuis ${new Date(openPosition.entryTime).toLocaleString('fr-FR')}`
+      ? `Position ouverte (crue par le bot) : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
       : '';
   } catch (err) {
     errEl.textContent = `Erreur de chargement: ${err.message}`;
   }
 }
 
+function wireGroup(groupId, dataKey, onPick) {
+  document.querySelectorAll(`#${groupId} button`).forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll(`#${groupId} button`).forEach((b) => b.classList.toggle('active', b === btn));
+      onPick(btn.dataset[dataKey]);
+      loadChart();
+    });
+  });
+}
+
+buildChart();
+wireGroup('symbol-group', 'symbol', (v) => { currentSymbol = v; });
+wireGroup('timeframe-group', 'timeframe', (v) => { currentTimeframe = v; });
 loadChart();
-setInterval(loadChart, 60000); // candles only update every 15 min anyway; a live spot tick can shift the current bar sooner, but this stays light on the server
+
+// Refresh in place, without yanking the view back if she has zoomed or
+// panned somewhere - a chart that resets itself every minute is unusable.
+setInterval(() => loadChart({ keepView: true }), 60000);
 </script>
 </body>
 </html>

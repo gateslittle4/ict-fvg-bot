@@ -111,6 +111,16 @@ export class CTraderDataSource {
     // position's close already does).
     this.pyramidOrderSymbolByOrderId = new Map();
     this.pyramidPositionIdBySymbol = new Map();
+    // How many ms to ADD to a candle time held by LiveStrategyEngine to get
+    // back a genuine UTC instant. This source deliberately shifts candles
+    // into the backtest's fixed-EST-as-UTC convention before feeding the
+    // engine (see _toEngineCandle() and the 2026-09-08 session-window bug it
+    // fixes), so anything DISPLAYING those retained candles - the market
+    // chart's /api/candles, for one - has to undo the shift or it shows
+    // every timestamp 5 hours early. Exposed as a property rather than
+    // re-derived from store.mode at each call site: the convention belongs
+    // to whichever data source produced the candles, not to a global flag.
+    this.candleTimeOffsetMs = FIXED_EST_TO_UTC_OFFSET_MS;
   }
 
   async start() {
