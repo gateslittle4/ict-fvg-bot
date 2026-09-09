@@ -59,6 +59,96 @@ const MARKET_CLOSE_DAY = 5; // Friday
 const MARKET_CLOSE_HOUR = 17; // 17:00 NY
 
 /**
+ * ACTIVE-HOURS WINDOWS (KEEP_ALIVE_WINDOWS) - narrower than the market-hours
+ * gate above, added 2026-09-09 at the user's request ("on pourrait programmer
+ * le keep alive uniquement dans les heures où on a le plus de chance d'avoir
+ * un trade").
+ *
+ * Grounded in the actual entry-time distribution of this exact production
+ * config replayed over 2019-2025 (1120 real entries), not a guess:
+ *   - FVG (the validated core): 100% between 07h and 10h NY, Mon-Fri. Zero
+ *     outside - its session filters already constrain it that tightly.
+ *   - NWOG: 351 of 361 entries on SUNDAY, 18h-19h NY (the weekly re-open gap).
+ *   - Divergence: the only source with no session filter, so it is spread
+ *     thinly across all 24 hours.
+ * Measured trade-off for "Mon-Fri@06:30-12:00,Sun@17:00-22:00": keeps 926 of
+ * 1120 entries and +595R of the +651R total (91%) for 30 h/week instead of
+ * 120 h/week, and the kept trades are HIGHER quality (0.643R expectancy vs
+ * 0.289R for the ones dropped, all of which are Divergence or stray NWOG -
+ * no FVG entry is ever lost).
+ *
+ * Format: comma-separated `Day[-Day]@HH:MM-HH:MM` segments in NEW YORK local
+ * time (DST-aware, same basis as everything else here), e.g.
+ *   KEEP_ALIVE_WINDOWS=Mon-Fri@06:30-12:00,Sun@17:00-22:00
+ * A window must not cross midnight - express that as two segments instead
+ * (this is validated, not silently mis-parsed).
+ */
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WINDOW_RE = /^([A-Za-z]{3})(?:\s*-\s*([A-Za-z]{3}))?@(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/;
+
+function normalizeDay(raw) {
+  const key = raw.charAt(0).toUpperCase() + raw.slice(1, 3).toLowerCase();
+  const index = DAY_INDEX[key];
+  if (index === undefined) throw new Error(`unknown day "${raw}" (expected one of ${DAY_NAMES.join(', ')})`);
+  return index;
+}
+
+function daysInRange(fromIndex, toIndex) {
+  // Inclusive, and wraps across the week end (so Fri-Mon is Fri,Sat,Sun,Mon).
+  const days = new Set();
+  for (let i = 0, d = fromIndex; i < 7; i++, d = (d + 1) % 7) {
+    days.add(d);
+    if (d === toIndex) break;
+  }
+  return days;
+}
+
+/**
+ * Pure parser. Throws with a precise message on a malformed spec rather than
+ * silently ignoring a segment - a typo here would quietly stop the bot from
+ * being kept awake during real trading hours, which is exactly the kind of
+ * silent failure this project avoids everywhere else.
+ * @returns {Array<{days: Set<number>, startMin: number, endMin: number}>|null} null when unset/empty
+ */
+export function parseKeepAliveWindows(spec) {
+  if (!spec || !spec.trim()) return null;
+  const windows = [];
+  for (const raw of spec.split(',')) {
+    const segment = raw.trim();
+    if (!segment) continue;
+    const m = WINDOW_RE.exec(segment);
+    if (!m) throw new Error(`unparseable KEEP_ALIVE_WINDOWS segment "${segment}" (expected e.g. Mon-Fri@06:30-12:00)`);
+    const [, fromDay, toDay, h1, m1, h2, m2] = m;
+    const startMin = Number(h1) * 60 + Number(m1);
+    const endMin = Number(h2) * 60 + Number(m2);
+    if (Number(h1) > 23 || Number(h2) > 24 || Number(m1) > 59 || Number(m2) > 59) {
+      throw new Error(`out-of-range time in KEEP_ALIVE_WINDOWS segment "${segment}"`);
+    }
+    if (endMin <= startMin) {
+      throw new Error(`KEEP_ALIVE_WINDOWS segment "${segment}" ends at or before it starts - a window crossing midnight must be split into two segments`);
+    }
+    const fromIndex = normalizeDay(fromDay);
+    const days = toDay ? daysInRange(fromIndex, normalizeDay(toDay)) : new Set([fromIndex]);
+    windows.push({ days, startMin, endMin });
+  }
+  return windows.length > 0 ? windows : null;
+}
+
+/**
+ * Pure: does this real UTC instant fall inside any of the given windows?
+ * @param {number} nowMs - a genuine UTC timestamp (e.g. Date.now())
+ */
+export function isWithinKeepAliveWindows(nowMs, windows) {
+  if (!windows || windows.length === 0) return true; // no windows configured -> never the reason to skip a ping
+  const parts = nyPartsFormatter.formatToParts(new Date(nowMs));
+  const weekday = parts.find((p) => p.type === 'weekday').value;
+  const day = DAY_INDEX[weekday];
+  if (day === undefined) return true; // unrecognized locale output: fail OPEN, same choice as isMarketOpen()
+  const nowMin = Number(parts.find((p) => p.type === 'hour').value) * 60 + Number(parts.find((p) => p.type === 'minute').value);
+  return windows.some((w) => w.days.has(day) && nowMin >= w.startMin && nowMin < w.endMin);
+}
+
+/**
  * Pure: is the (24/5) market open at this real UTC instant?
  * Open from Sunday 17:00 New York time through Friday 17:00 New York time.
  * @param {number} nowMs - a genuine UTC timestamp (e.g. Date.now())
@@ -84,13 +174,24 @@ export function isMarketOpen(nowMs) {
  * @param {Record<string, string|undefined>} env - process.env (or a fake, in tests)
  * @returns {{enabled: boolean, url: string|null, intervalMs: number, marketHoursOnly: boolean, reason: string}}
  */
-export function resolveKeepAliveConfig(env = {}) {
+export function resolveKeepAliveConfig(env = {}, { log = console } = {}) {
   const intervalMinutes = clampInterval(Number(env.KEEP_ALIVE_MINUTES) || DEFAULT_INTERVAL_MINUTES);
   const intervalMs = intervalMinutes * 60 * 1000;
   const marketHoursOnly = env.KEEP_ALIVE_ALWAYS !== 'true';
 
+  // A malformed spec falls back to the WIDER market-hours gate rather than
+  // to no pinging at all: a typo should cost instance-hours, never silently
+  // leave the bot asleep through a trading session.
+  let windows = null;
+  try {
+    windows = parseKeepAliveWindows(env.KEEP_ALIVE_WINDOWS);
+  } catch (err) {
+    log.warn?.(`[keep-alive] ignoring KEEP_ALIVE_WINDOWS - ${err.message}. Falling back to the market-hours gate.`);
+    windows = null;
+  }
+
   if (env.KEEP_ALIVE !== 'true') {
-    return { enabled: false, url: null, intervalMs, marketHoursOnly, reason: 'KEEP_ALIVE is not set to "true"' };
+    return { enabled: false, url: null, intervalMs, marketHoursOnly, windows, reason: 'KEEP_ALIVE is not set to "true"' };
   }
 
   // RENDER_EXTERNAL_URL is set automatically by Render for web services.
@@ -103,11 +204,12 @@ export function resolveKeepAliveConfig(env = {}) {
       url: null,
       intervalMs,
       marketHoursOnly,
+      windows,
       reason: 'no KEEP_ALIVE_URL and no RENDER_EXTERNAL_URL - nothing to ping (this is normal off-Render, e.g. locally)',
     };
   }
 
-  return { enabled: true, url: `${url.replace(/\/+$/, '')}/healthz`, intervalMs, marketHoursOnly, reason: 'enabled' };
+  return { enabled: true, url: `${url.replace(/\/+$/, '')}/healthz`, intervalMs, marketHoursOnly, windows, reason: 'enabled' };
 }
 
 function clampInterval(minutes) {
@@ -124,19 +226,28 @@ function clampInterval(minutes) {
  * tick will try again well before the idle threshold is reached.
  */
 export function startKeepAlive({ env = process.env, fetchImpl = globalThis.fetch, log = console, now = Date.now } = {}) {
-  const config = resolveKeepAliveConfig(env);
+  const config = resolveKeepAliveConfig(env, { log });
   if (!config.enabled) {
     log.log(`[keep-alive] disabled - ${config.reason}`);
     return null;
   }
 
-  const scope = config.marketHoursOnly
-    ? 'while the market is open (Sun 17:00 -> Fri 17:00 NY); asleep on weekends by design'
-    : 'around the clock (KEEP_ALIVE_ALWAYS=true)';
+  // KEEP_ALIVE_WINDOWS, when set, REPLACES the market-hours gate (it is
+  // strictly narrower by construction - see its own comment for the measured
+  // trade-off behind the recommended value).
+  const scope = config.windows
+    ? `only during the configured active-trade windows (${env.KEEP_ALIVE_WINDOWS}, New York time)`
+    : config.marketHoursOnly
+      ? 'while the market is open (Sun 17:00 -> Fri 17:00 NY); asleep on weekends by design'
+      : 'around the clock (KEEP_ALIVE_ALWAYS=true)';
   log.log(`[keep-alive] enabled - pinging ${config.url} every ${config.intervalMs / 60000} min ${scope}`);
 
   const timer = setInterval(async () => {
-    if (config.marketHoursOnly && !isMarketOpen(now())) return; // market closed - let Render sleep it, nothing to watch anyway
+    if (config.windows) {
+      if (!isWithinKeepAliveWindows(now(), config.windows)) return; // outside the hours where this config actually trades
+    } else if (config.marketHoursOnly && !isMarketOpen(now())) {
+      return; // market closed - let Render sleep it, nothing to watch anyway
+    }
     try {
       const res = await fetchImpl(config.url, { method: 'GET' });
       if (!res.ok) log.warn(`[keep-alive] ping returned HTTP ${res.status}`);
