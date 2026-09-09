@@ -16,9 +16,14 @@
 // doesn't because most winners top out well short of 4R/5R and the drop in
 // realized win rate is not compensated.
 //
-// rrMultiple values (3 reference / 4 / 5) fixed BEFORE looking at any
+// rrMultiple values (3 reference / 4 / 5 / 6 / 7) fixed BEFORE looking at any
 // result - same anti-data-snooping discipline as every other script here.
 // Screened on TRAIN (2019-2023), confirmed on TEST (2024-2025).
+//
+// Extension 2026-09-09: US100/US500 improved monotonically all the way to
+// 1:5 (see data/backtest-input/extended-target-analysis.md, prior run).
+// 6/7 added to check whether that keeps climbing or gives back ground the
+// way XAUUSD already did at 1:5 (peaked at 1:4, per the same file).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,7 +43,7 @@ const BASE_CONFIG = {
   XAUUSD: { variant: 'H4_EMA20', stopMode: 'swing', structureEnabled: true, sessionEnabled: true, sessionWindow: LONDON_NY_OVERLAP_WINDOW, liquiditySweepEnabled: true },
 };
 
-const RR_VARIANTS = [3, 4, 5];
+const RR_VARIANTS = [3, 4, 5, 6, 7];
 
 function fmtPct(x) { return x === null || x === undefined ? '—' : (x * 100).toFixed(1) + '%'; }
 function fmtNum(x, d = 2) { return x === null || x === undefined ? '—' : x === Infinity ? '∞' : Number(x).toFixed(d); }
@@ -67,13 +72,14 @@ function main() {
   const cutoffMs = new Date(cutoffArg).getTime();
 
   const md = [];
-  md.push('# 1:3 fixe vs cible étendue (1:4 / 1:5) — mêmes signaux/entrées/stops, seule la cible change');
+  md.push('# 1:3 fixe vs cible étendue (1:4 / 1:5 / 1:6 / 1:7) — mêmes signaux/entrées/stops, seule la cible change');
   md.push('');
   md.push(
     '⚠ Même config validée par instrument (docs/STRATEGY.md), seul le multiple R:R de la cible change (3 actuel / ' +
-      '4 / 5, fixés avant tout résultat). Rappel du seuil de rentabilité mécanique avant coûts : 1:3 → 25% de gains ' +
-      "nécessaires, 1:4 → 20%, 1:5 → 16.7% - un taux de gain plus bas à 1:4/1:5 n'est donc pas en soi un problème, " +
-      "seule l'espérance en R compte. Criblé sur TRAIN, confirmé sur TEST (jamais utilisé pour choisir)."
+      '4 / 5 / 6 / 7, fixés avant tout résultat). Rappel du seuil de rentabilité mécanique avant coûts : 1:3 → 25% ' +
+      'de gains nécessaires, 1:4 → 20%, 1:5 → 16.7%, 1:6 → 14.3%, 1:7 → 12.5% - un taux de gain plus bas à cible ' +
+      "étendue n'est donc pas en soi un problème, seule l'espérance en R compte. Criblé sur TRAIN, confirmé sur " +
+      'TEST (jamais utilisé pour choisir).'
   );
   md.push('');
 
