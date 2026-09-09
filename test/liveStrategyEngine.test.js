@@ -248,6 +248,129 @@ test('LiveStrategyEngine: netting blocks a Divergence signal on a symbol that al
   assert.equal(engine.getOpenPosition('B').source, 'fvg', 'the pre-existing FVG position must remain untouched');
 });
 
+// --- NWOG (New Week Opening Gap) - alert-only observation (2026-09) -------
+
+const NWOG_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+const GAP_HOURS = 30 * HOUR; // within detectNwogEvents' [20h, 100h] window
+
+test('LiveStrategyEngine (NWOG): a weekend-sized time gap fires a "validated" fill-bet signal one candle later, entry = candle.open', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: {},
+    divergenceConfig: null,
+    nwogConfig: NWOG_CFG,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100); // prevClose = 100
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5); // gapped UP -> bet on fill DOWN (bearish), stopReference = high = 106
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5); // entry candle: entryPrice = open = 105.2
+
+  engine.ingestCandle('TEST1', c1);
+  engine.ingestCandle('TEST1', c2);
+  const gapEvents = engine.ingestCandle('TEST1', c3);
+  assert.equal(gapEvents.length, 0, 'the gap candle itself does not fire a signal - entry waits one more candle');
+
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'nwog');
+  assert.equal(entryEvents.length, 1);
+  const sig = entryEvents[0];
+  assert.equal(sig.direction, 'bearish');
+  assert.equal(sig.entryPrice, 105.2);
+  assert.equal(sig.stopPrice, 106);
+  assert.ok(Math.abs(sig.distance - 0.8) < 1e-9);
+  assert.ok(Math.abs(sig.targetPrice - 102.8) < 1e-9); // entry - 3R
+  assert.equal(sig.blockedReason, null);
+  assert.equal(engine.getNwogPosition('TEST1').source, 'nwog');
+  assert.equal(engine.getOpenPosition('TEST1'), null, 'an NWOG signal must never claim the real netting slot');
+});
+
+test('LiveStrategyEngine (NWOG): resolves to a WIN when the fill target is hit', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, nwogConfig: NWOG_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5);
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5);
+  const c5 = c(c4.time + M15, 104.5, 104.6, 102.5, 102.7); // low 102.5 <= target 102.8 -> WIN
+
+  for (const candle of [c1, c2, c3, c4]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', c5).filter((e) => e.type === 'closed' && e.source === 'nwog');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'win');
+  assert.equal(engine.getNwogPosition('TEST1'), null);
+});
+
+test('LiveStrategyEngine (NWOG): resolves to a LOSS when the stop is hit', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, nwogConfig: NWOG_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5);
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5);
+  const c5 = c(c4.time + M15, 105.3, 106.2, 105, 106); // high 106.2 >= stop 106 -> LOSS
+
+  for (const candle of [c1, c2, c3, c4]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', c5).filter((e) => e.type === 'closed' && e.source === 'nwog');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'loss');
+});
+
+test('LiveStrategyEngine (NWOG): reported but blocked (netting) when a REAL position is already open on the symbol - never claims the slot itself either way', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, nwogConfig: NWOG_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  // stop/target set FAR outside the c1-c4 price range (99.5-106) so this
+  // fake position doesn't accidentally resolve while those candles feed
+  // through _resolveOpenPosition - it must still be open when c4 arrives.
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake', direction: 'bullish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 50, targetPrice: 500, distance: 50, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5);
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5);
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'nwog');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, an alert the user could choose to ignore');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+  assert.equal(engine.getNwogPosition('TEST1'), null, 'a blocked alert must not be tracked as a believed position');
+  assert.equal(engine.getOpenPosition('TEST1').source, 'fvg', 'the real position must remain untouched');
+});
+
+test('LiveStrategyEngine (NWOG): a second gap signal is blocked (self-dedup) while a prior NWOG "believed position" on the same symbol is still open', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, nwogConfig: NWOG_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  // same "far outside the c1-c4 range" reasoning as the netting test above.
+  engine.nwogPositions.set('TEST1', {
+    source: 'nwog', id: 'fake-nwog', direction: 'bullish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 50, targetPrice: 500, distance: 50, rrMultiple: 3, maxHoldingCandles: 480,
+  });
+
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5);
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5);
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'nwog');
+
+  assert.equal(entryEvents.length, 1);
+  assert.equal(entryEvents[0].blockedReason, 'nwog-already-open');
+});
+
 // --- Pyramid add-on ("stops indépendants, sans breakeven") ---------------
 
 function engineWithPyramid(pyramidConfig = { enabled: true, addAtR: 1, symbols: ['TEST1'] }) {
@@ -433,6 +556,7 @@ function newEngineForWarmupComparison() {
     symbols: CONFIG.symbols,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
+    nwogConfig: CONFIG.nwog, // exercise NWOG's bulk-vs-sequential equivalence too, not just FVG/Divergence/pyramid
     guardrail,
     riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
     pyramidConfig: { enabled: true, addAtR: 1, symbols: ['US100', 'US500'] }, // exercise _maybeRequestPyramid's bulk path too, not just the default-off case
@@ -474,6 +598,7 @@ test('warmUp(): bulk single-pass reconstruction is IDENTICAL to sequential inges
     assert.deepEqual(bulk.getHistory(symbol), sequential.getHistory(symbol), `history mismatch for ${symbol}`);
   }
   assert.deepEqual(bulk.openPositions, sequential.openPositions, 'openPositions mismatch');
+  assert.deepEqual(bulk.nwogPositions, sequential.nwogPositions, 'nwogPositions mismatch');
   assert.deepEqual(bulk.pyramidPositions, sequential.pyramidPositions, 'pyramidPositions mismatch');
   assert.deepEqual(bulk.formationIndexBySymbol, sequential.formationIndexBySymbol, 'formationIndexBySymbol mismatch');
 

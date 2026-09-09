@@ -110,6 +110,7 @@ import { computeStop } from './backtest/backtestEngine.js';
 import { resampleCandles, TIMEFRAME_MS } from './backtest/htfBias.js';
 import { computeZScoreSeries, alignByTime } from './backtest/correlation.js';
 import { computeAtrSeries } from './backtest/rsiDivergence.js';
+import { detectNwogEvents } from './backtest/nwog.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
@@ -129,6 +130,15 @@ export class LiveStrategyEngine {
     symbols = CONFIG.symbols,
     fvgConfig = CONFIG.fvg.perSymbol,
     divergenceConfig = CONFIG.divergence,
+    // Deliberately NOT defaulted to CONFIG.nwog (unlike fvgConfig/
+    // divergenceConfig above) - explicit opt-in only. The three OTHER
+    // callers of this constructor (chartOverlays.js, forwardTest.js,
+    // recentPerformanceReport.js) build isolated, throwaway engines for
+    // backtest-style replay/reporting; picking up NWOG there by default
+    // would silently mix an alert-only, unvalidated-for-execution source
+    // into "what would the bot have done" reports. Only store.js's ONE real
+    // live-tracking engine passes this explicitly.
+    nwogConfig = null,
     guardrail,
     riskPctPerTrade = CONFIG.risk.riskPctPerTrade,
     spreads = {},
@@ -138,6 +148,7 @@ export class LiveStrategyEngine {
     this.symbols = symbols;
     this.fvgConfig = fvgConfig || {};
     this.divergenceConfig = divergenceConfig || null;
+    this.nwogConfig = nwogConfig || null;
     this.guardrail = guardrail;
     this.riskPctPerTrade = riskPctPerTrade;
     this.spreads = spreads;
@@ -147,6 +158,14 @@ export class LiveStrategyEngine {
     this.history = new Map(symbols.map((s) => [s, []])); // full retained candle history per symbol - never trimmed
     this.formationIndexBySymbol = new Map(symbols.map((s) => [s, new Map()])); // fvg id -> index (in that symbol's history) where it was first seen "watching"
     this.openPositions = new Map(); // symbol -> { source, id, direction, entryIndex, entryTime, entryPrice, stopPrice, targetPrice, distance, rrMultiple, riskAmount, maxHoldingCandles }
+    // NWOG's OWN believed-position tracking (2026-09, ALERT-ONLY observation
+    // phase - see config.js's `nwog` comment and HANDOFF.md). Deliberately a
+    // SEPARATE map from openPositions: nobody is auto-executing these yet,
+    // so an NWOG alert must never claim the real netting slot and silently
+    // block a genuine FVG/Divergence signal on the same symbol. This map
+    // only exists so NWOG's OWN outcomes (win/loss/timeout) can be logged
+    // for the observation phase, independent of what's actually traded.
+    this.nwogPositions = new Map();
     this.pyramidPositions = new Map(symbols.map((s) => [s, null])); // symbol -> null | { status: 'requested'|'placed', direction, entryPrice, stopPrice, targetPrice, distance, riskAmount, brokerOrderId? } - see lifecycle note above
   }
 
@@ -156,6 +175,10 @@ export class LiveStrategyEngine {
 
   getOpenPosition(symbol) {
     return this.openPositions.get(symbol) || null;
+  }
+
+  getNwogPosition(symbol) {
+    return this.nwogPositions.get(symbol) || null;
   }
 
   getHistoryLength(symbol) {
@@ -187,6 +210,7 @@ export class LiveStrategyEngine {
     const events = [];
 
     this._resolveOpenPosition(symbol, candle, events);
+    this._resolveNwogPosition(symbol, candle, events);
     this._maybeRequestPyramid(symbol, candle, events);
 
     if (this.fvgConfig[symbol]) {
@@ -195,6 +219,10 @@ export class LiveStrategyEngine {
 
     if (this.divergenceConfig && this.divergenceConfig.pair.includes(symbol)) {
       events.push(...this._detectDivergenceSignal(symbol, candle));
+    }
+
+    if (this.nwogConfig && this.nwogConfig.symbols.includes(symbol)) {
+      events.push(...this._detectNwogSignal(symbol, candle));
     }
 
     return events;
@@ -500,6 +528,145 @@ export class LiveStrategyEngine {
     return signal;
   }
 
+  /**
+   * Closes an NWOG "believed position" the same way _resolveOpenPosition()
+   * does for real (FVG/Divergence) trades - own map, own event, no pyramid
+   * interaction (NWOG never pyramids). Exists purely to log real win/loss/
+   * timeout outcomes during the observation phase (see this.nwogPositions'
+   * own comment in the constructor for why it's kept separate).
+   */
+  _resolveNwogPosition(symbol, candle, events) {
+    const open = this.nwogPositions.get(symbol);
+    if (!open || candle.time <= open.entryTime) return;
+
+    const bullish = open.direction === 'bullish';
+    const hitStop = bullish ? candle.low <= open.stopPrice : candle.high >= open.stopPrice;
+    const hitTarget = bullish ? candle.high >= open.targetPrice : candle.low <= open.targetPrice;
+    const age = this.history.get(symbol).length - 1 - open.entryIndex;
+    const timedOut = age >= open.maxHoldingCandles;
+    if (!hitStop && !hitTarget && !timedOut) return;
+
+    const outcome = hitStop ? 'loss' : hitTarget ? 'win' : 'timeout';
+    this.nwogPositions.delete(symbol);
+    events.push({
+      type: 'closed',
+      source: 'nwog',
+      symbol,
+      id: open.id,
+      direction: open.direction,
+      outcome,
+      entryPrice: open.entryPrice,
+      stopPrice: open.stopPrice,
+      targetPrice: open.targetPrice,
+      exitTime: candle.time,
+    });
+  }
+
+  /**
+   * Pure computation of every NWOG entry candidate implied by one symbol's
+   * full candle history - reuses detectNwogEvents() (src/backtest/nwog.js)
+   * UNCHANGED (the gap-detection method itself is not reimplemented here),
+   * then shifts each gap event forward one candle to its entry (same
+   * "one-candle no-lookahead delay" nwog.js's own header describes). Same
+   * "recompute fresh every tick, cheap enough at M15 cadence" approach as
+   * _computeDivergenceCandidates() - a single O(n) pass, no stateful engine
+   * to replay.
+   */
+  _computeNwogCandidates(candles) {
+    const events = detectNwogEvents(candles);
+    const candidates = [];
+    for (const e of events) {
+      const entryIndex = e.index + 1;
+      if (entryIndex >= candles.length) continue; // gap candle is the most recent one - entry hasn't printed yet
+      candidates.push({ direction: e.direction, entryTime: candles[entryIndex].time, stopReference: e.stopReference });
+    }
+    return candidates;
+  }
+
+  _detectNwogSignal(symbol, candle) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeNwogCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processNwogCandidate(symbol, candle, candidate)];
+  }
+
+  /**
+   * Shared tail of NWOG signal handling - same role as _processFvgEvent()/
+   * _processDivergenceCandidate() above, with one deliberate difference:
+   * `blockedReason` checks the REAL openPositions map (so an alert correctly
+   * warns "you already have a live FVG/Divergence position on this symbol,
+   * don't stack this manually"), but a clean NWOG signal does NOT get
+   * written into openPositions itself - only into this.nwogPositions, which
+   * nothing else reads. This is what keeps Phase 1 (config.js's `nwog`
+   * comment) alert-only: an NWOG signal can never block a real signal, and
+   * no execution layer acts on it.
+   */
+  _processNwogCandidate(symbol, candle, candidate) {
+    const cfg = this.nwogConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // nwog.js: "Entry at the open of the candle AFTER the gap candle"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `nwog-${symbol}-${candle.time}`;
+
+    if (distance <= 0 || !validStopSide) {
+      // Same defensive guard nwog.js's own backtest applies (see its header
+      // comment on smtDivergence.js's lesson) - discard rather than mis-sign.
+      return {
+        type: 'validated',
+        source: 'nwog',
+        symbol,
+        id,
+        direction: candidate.direction,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this.openPositions.has(symbol)
+      ? 'netting'
+      : this.nwogPositions.has(symbol)
+        ? 'nwog-already-open'
+        : null;
+
+    const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+    const signal = {
+      type: 'validated',
+      source: 'nwog',
+      symbol,
+      id,
+      direction: candidate.direction,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      targetPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      this.nwogPositions.set(symbol, {
+        source: 'nwog',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+    }
+    return signal;
+  }
+
   // -------------------------------------------------------------------------
   // Bulk warm-up (2026-09): reconstructs this engine's state (history,
   // openPositions, pyramidPositions, formationIndexBySymbol) from a full
@@ -571,6 +738,14 @@ export class LiveStrategyEngine {
       }
     }
 
+    // NWOG candidates (2026-09, alert-only - see this.nwogPositions' own
+    // comment). Needs only THIS symbol's own final history (`candles`, no
+    // partner involved), so unlike Divergence this can be computed
+    // unconditionally up front rather than depending on another symbol's
+    // warm-up order.
+    const nwogCandidates =
+      this.nwogConfig && this.nwogConfig.symbols.includes(symbol) ? this._computeNwogCandidates(candles) : null;
+
     for (let i = 0; i < candles.length; i++) {
       const candle = candles[i];
       if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
@@ -578,6 +753,7 @@ export class LiveStrategyEngine {
 
       const resolvedEvents = [];
       this._resolveOpenPosition(symbol, candle, resolvedEvents);
+      this._resolveNwogPosition(symbol, candle, resolvedEvents);
       this._maybeRequestPyramid(symbol, candle, resolvedEvents);
       if (onEvent) for (const e of resolvedEvents) onEvent(e, candle);
 
@@ -600,6 +776,14 @@ export class LiveStrategyEngine {
         const candidate = divergenceCandidates.find((cd) => cd.entryTime === candle.time && cd.symbol === symbol);
         if (candidate) {
           const signal = this._processDivergenceCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (nwogCandidates) {
+        const candidate = nwogCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processNwogCandidate(symbol, candle, candidate);
           if (onEvent) onEvent(signal, candle);
         }
       }

@@ -213,7 +213,11 @@ const fmtDuration = (ms) => {
 };
 // US indices and gold trade in whole-ish points (2dp is plenty); forex pairs need more precision.
 const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
-const sourceLabel = (s) => s.source === 'divergence' ? 'Divergence' : 'FVG';
+// NWOG (2026-09) labelled distinctly with "· observation" - it's an
+// ALERT-ONLY signal (see config.js's `nwog` comment / HANDOFF.md), never
+// auto-executed and not part of the validated real combo, so the dashboard
+// should never let it read as equivalent to FVG/Divergence at a glance.
+const sourceLabel = (s) => s.source === 'divergence' ? 'Divergence' : s.source === 'nwog' ? 'NWOG · observation' : 'FVG';
 
 async function refreshStatus() {
   const res = await fetch('/api/status');

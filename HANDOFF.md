@@ -206,6 +206,31 @@ Question posée après avoir vu le faible nombre de trades du forward-test. Nouv
 
 **Conclusion : le faible nombre de trades vient de la sélectivité voulue de la config (fenêtre de session étroite + biais HTF + structure + sweep), pas du netting.** Retirer le netting ajoute du risque (jusqu'à 2R simultané) sans ajouter de qualité. Aucun changement de code déployé.
 
+## NWOG intégré en mode ALERTE (Phase 1) — 2026-09-09, même session
+
+Suite directe du problème "trop peu de trades" : au lieu de retirer le netting (rejeté ci-dessus), vérifié si NWOG (déjà identifié comme "le résultat le plus crédible de la recherche de nouvelles stratégies", voir plus bas) tiendrait sur les données 2026 fraîchement exportées. **Confirmé, et de façon frappante** : sur US100, mêmes 7 mois que le forward-test :
+
+| | Trades | Win rate | Espérance |
+|---|---|---|---|
+| FVG (déjà en prod) | 3 | 66.7% | +8.62R total |
+| NWOG (nouveau) | 30 | 33.3% | 0.28R/trade, +8.31R total |
+
+**10x plus de trades**, espérance cohérente avec l'historique (train 0.15R, test 0.34R, 2026 0.28R — squarely entre les deux, pas un coup de chance). Mécanisme totalement indépendant du FVG (gap de réouverture hebdomadaire, pas un Fair Value Gap), donc un vrai AJOUT de fréquence, pas une dilution.
+
+**Décision explicite d'Esdras après discussion** : pas d'exécution automatique tout de suite (aucune exécution réelle jamais testée, risque de tail spécifique au pari "le gap se comble" en cas de vraie actualité macro un week-end, séries de pertes attendues à 33% de win rate). Plan en 3 phases retenu :
+1. **Phase 1 (codée maintenant)** : NWOG comme source de signal indépendante, alerte seulement, visible dashboard.
+2. **Phase 2 (4-6 semaines de vraies alertes)** : pas pour re-prouver l'edge (déjà 344 trades sur 3 périodes indépendantes), juste pour valider la QUALITÉ D'EXÉCUTION (prix d'entrée atteignable, détection de gap propre).
+3. **Phase 3** : décision (prise manuelle par Esdras, ou `autoExecute` spécifique à NWOG) selon ce que Phase 2 montre.
+
+**Implémentation (Phase 1)** :
+- `src/liveStrategyEngine.js` : nouvelle source `nwog`, avec sa PROPRE map `nwogPositions` — délibérément SÉPARÉE de `openPositions` (le vrai netting FVG/Divergence). Une alerte NWOG ne peut jamais bloquer un vrai signal FVG en prenant sa place. `_processNwogCandidate()` vérifie quand même `openPositions.has(symbol)` (blockedReason 'netting') pour prévenir l'utilisatrice si une vraie position est déjà ouverte — mais ne s'y ajoute pas elle-même. Auto-dédoublonnage via `nwogPositions` (blockedReason 'nwog-already-open'). Réutilise `detectNwogEvents()` (`src/backtest/nwog.js`) telle quelle, aucune réimplémentation.
+- `nwogConfig` volontairement PAS défaulté dans le constructeur (contrairement à `fvgConfig`/`divergenceConfig`) — opt-in explicite, seul `store.js` (le VRAI moteur live) le passe. Les 3 autres instanciations (`chartOverlays.js`, `forwardTest.js`, `recentPerformanceReport.js`, tous des moteurs de replay/rapport jetables) restent inchangées, pas de NWOG qui se mélange dans "ce que le bot aurait fait".
+- `src/config.js` : `CONFIG.nwog` — scope US100 UNIQUEMENT (le seul instrument où NWOG tient vraiment ; les 4 autres étaient plus faibles/rejetés).
+- `public/index.html` : signals NWOG étiquetés distinctement "NWOG · observation" (pas confondu visuellement avec FVG/Divergence).
+- Tests : +5 (détection, résolution win/loss, netting vs vraie position, auto-dédoublonnage) + étendu le test d'équivalence bulk-warmUp/séquentiel existant pour couvrir NWOG aussi. 291/291.
+
+**Statut : déployé, mode observation actif. Aucune exécution automatique. Revoir dans 4-6 semaines (Phase 2).**
+
 ## Résultats MITIGÉS — pas encore prêt pour la production (vérifications supplémentaires nécessaires)
 
 - **Judas Swing ICT (killzone Londres)** — NOUVEAU (session 2026-09-06, suite, à la demande explicite de continuer sur un concept ICT puisque c'est de là que vient la seule stratégie pleinement validée). Concept ICT publié jamais testé jusqu'ici, différent de l'Order Block/IFVG/Turtle Soup déjà rejetés et du FILTRE liquidity sweep déjà en place sur le FVG (celui-là utilise un pivot fractal à toute heure ; celui-ci utilise le plus-haut/plus-bas de la VEILLE (PDH/PDL), limité à la killzone Londres ICT 02h-05h NY). Signal = mèche qui dépasse le PDH/PDL PUIS clôture de l'autre côté, même bougie (même convention que `liquiditySweep.js`), un signal par direction par jour max. Entrée à l'ouverture de la bougie suivante, stop à l'extrême du sweep, cible fixe 1:3, timeout 480 bougies M15 (conventions déjà utilisées ailleurs, rien inventé pour la sortie). Testé sur les 5 instruments. Résultat, contrairement à tout ce qui a été testé récemment, MITIGÉ plutôt que clairement négatif :
