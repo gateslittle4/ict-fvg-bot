@@ -668,7 +668,8 @@ export class CTraderDataSource {
    * with. Nothing is recomputed or "improved" here versus the manual path.
    *
    * Order type follows how each source actually defines its entry price
-   * (see liveStrategyEngine.js _detectFvgSignal/_detectDivergenceSignal):
+   * (see liveStrategyEngine.js _detectFvgSignal/_detectDivergenceSignal/
+   * _processNwogCandidate):
    *   - FVG: entryPrice is the gap's own edge, a level price has ALREADY
    *     touched by the time 'validated' fires this candle - a LIMIT order
    *     there is the faithful automation of "place a limit at this level
@@ -676,9 +677,20 @@ export class CTraderDataSource {
    *     short expiration so a stale unfilled limit doesn't linger forever
    *     if price never returns (same outcome as a human who never got
    *     filled - not a new gap, see the "believed netting" caveat above).
-   *   - Divergence: entryPrice IS candle.open of the very candle whose spot
-   *     event we're processing right now - a MARKET order is the direct
-   *     equivalent, not an approximation.
+   *   - Divergence AND NWOG: entryPrice IS candle.open of the very candle
+   *     whose spot event we're processing right now - a MARKET order is the
+   *     direct equivalent, not an approximation. For NWOG specifically
+   *     (2026-09, live auto-execute at the user's explicit request - see
+   *     HANDOFF.md) this is a genuine, KNOWN execution-quality gap worth
+   *     naming rather than hiding: the live spot event carrying a completed
+   *     trendbar only arrives once that M15 candle has CLOSED, so the
+   *     MARKET order is submitted with price already having moved away from
+   *     `entryPrice` (that candle's OPEN) by however much it drifted during
+   *     those 15 minutes - especially relevant right after a weekend gap,
+   *     when volatility is elevated. Same approximation Divergence has
+   *     always made; not new here, just newly worth calling out since NWOG
+   *     has no live execution history yet to confirm how much this matters
+   *     in practice.
    */
   async _handleAutoExecuteEntry(symbolName, symbolId, signal) {
     try {
@@ -709,17 +721,22 @@ export class CTraderDataSource {
         price: isFvg ? signal.entryPrice : undefined,
         stopLoss: signal.stopPrice,
         takeProfit: signal.targetPrice,
-        label: `auto-entry-${symbolName}`,
+        // Source in the label so it's identifiable directly in cTrader's own
+        // order/position list, not just in the ntfy push below - the user
+        // explicitly asked to be able to "voir et vérifier" each execution,
+        // and the broker's own UI is the most durable place to check that
+        // (survives even if a push notification is missed/dismissed).
+        label: `auto-${signal.source}-${symbolName}`,
         expirationTimestamp,
       });
       if (brokerOrderId != null) {
         this._notifyText(
-          `🤖 Mode indisponible : entrée auto envoyée sur ${symbolName} (${signal.suggestedSide.toUpperCase()}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
+          `🤖 [${signal.source.toUpperCase()}] Entrée auto envoyée sur ${symbolName} (${signal.suggestedSide.toUpperCase()}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
         );
       }
     } catch (err) {
       console.warn(`[auto-execute] failed to submit entry for ${symbolName}:`, err.message);
-      this._notifyText(`⚠️ Mode indisponible : échec de l'envoi de l'entrée sur ${symbolName} (${err.message}) - à vérifier manuellement`);
+      this._notifyText(`⚠️ [${signal.source.toUpperCase()}] Échec de l'envoi de l'entrée sur ${symbolName} (${err.message}) - à vérifier manuellement`);
     }
   }
 
@@ -810,9 +827,9 @@ export class CTraderDataSource {
     if (!CONFIG.notifications.ntfyTopic) return;
     for (const e of events) {
       if (e.type !== 'validated') continue;
-      // Divergence-sourced signals have no `zone` (that's an FVG-only concept) - describe generically.
+      // Divergence/NWOG signals have no `zone` (that's an FVG-only concept) - describe generically.
       const range = e.zone ? ` (${e.zone.bottom.toFixed(2)}-${e.zone.top.toFixed(2)})` : '';
-      const label = e.source === 'divergence' ? 'divergence' : 'FVG rempli';
+      const label = e.source === 'divergence' ? 'divergence' : e.source === 'nwog' ? 'NWOG (gap week-end)' : 'FVG rempli';
       const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}`;
       fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
         console.warn('[ntfy] push failed', err.message)

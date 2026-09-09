@@ -632,7 +632,7 @@ export class MatchTraderDataSource {
         takeProfit: signal.targetPrice,
       });
       this._notifyText(
-        `🤖 Mode indisponible : entrée auto envoyée sur ${symbol} (${side}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
+        `🤖 [${signal.source.toUpperCase()}] Entrée auto envoyée sur ${symbol} (${side}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
       );
       // Unlike cTrader's LIMIT order, Match-Trader's documented pending-order
       // body has no `expirationTimestamp`/time-in-force field - VERIFY
@@ -641,7 +641,7 @@ export class MatchTraderDataSource {
       // ~1h like the cTrader path does. Worth an explicit manual check.
     } catch (err) {
       console.warn(`[auto-execute] failed to submit entry for ${symbol}:`, err.message);
-      this._notifyText(`⚠️ Mode indisponible : échec de l'envoi de l'entrée sur ${symbol} (${err.message}) - à vérifier manuellement`);
+      this._notifyText(`⚠️ [${signal.source.toUpperCase()}] Échec de l'envoi de l'entrée sur ${symbol} (${err.message}) - à vérifier manuellement`);
     }
   }
 
@@ -652,7 +652,7 @@ export class MatchTraderDataSource {
     for (const e of events) {
       if (e.type !== 'validated') continue;
       const range = e.zone ? ` (${e.zone.bottom.toFixed(2)}-${e.zone.top.toFixed(2)})` : '';
-      const label = e.source === 'divergence' ? 'divergence' : 'FVG rempli';
+      const label = e.source === 'divergence' ? 'divergence' : e.source === 'nwog' ? 'NWOG (gap week-end)' : 'FVG rempli';
       const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}`;
       fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
         console.warn('[ntfy] push failed', err.message)

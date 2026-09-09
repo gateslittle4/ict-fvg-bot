@@ -229,7 +229,26 @@ Suite directe du problème "trop peu de trades" : au lieu de retirer le netting 
 - `public/index.html` : signals NWOG étiquetés distinctement "NWOG · observation" (pas confondu visuellement avec FVG/Divergence).
 - Tests : +5 (détection, résolution win/loss, netting vs vraie position, auto-dédoublonnage) + étendu le test d'équivalence bulk-warmUp/séquentiel existant pour couvrir NWOG aussi. 291/291.
 
-**Statut : déployé, mode observation actif. Aucune exécution automatique. Revoir dans 4-6 semaines (Phase 2).**
+**Statut initial : déployé, mode observation actif. Aucune exécution automatique. Revoir dans 4-6 semaines (Phase 2).**
+
+### Suite (même jour) — Esdras demande l'exécution automatique complète directement, saute Phase 2/3
+
+Message d'Esdras : *"jvais pas te mentir, rend tout automatique, lexecution, je vais pas avoir le temps pour trader. IL doit etre comme un passive income."*
+
+**Tension réelle identifiée avant d'agir** : le plan Phase 2 (4-6 semaines d'alertes) supposait qu'Esdras prendrait les trades manuellement pour valider la qualité d'exécution. Si elle n'a pas le temps de trader manuellement, cette vérification ne peut PAS se faire sans automatiser directement — ce qui élimine la période de contrôle prévue. Risques déjà nommés explicitement avant sa confirmation : aucun historique d'exécution réelle, risque de queue spécifique au pari "le gap se comble" (une vraie actualité macro un week-end peut faire dévier fortement), séries de pertes attendues à 33% de win rate, personne pour repérer un problème technique répété.
+
+**Clarification importante en cours de route** : Esdras a demandé "tu dis que personne ne surveille pour couper — les trades n'ont aucun stop loss?" — NON, chaque trade a TOUJOURS un stop loss/take profit attaché directement à l'ordre envoyé au courtier (protection appliquée côté COURTIER, pas par ce process — survit même si le bot plante). Le risque nommé était à un niveau différent : un bug de détection/exécution qui se répète sans que personne ne le remarque avant plusieurs trades, pas une position sans protection.
+
+**Proposition de compromis (garde-fou renforcé pour NWOG seul) refusée** — Esdras choisit explicitement "auto complet, mêmes règles que FVG/Divergence", pas de risque réduit ni de coupure automatique spéciale.
+
+**Implémentation (refactor du Phase 1)** :
+- `_processNwogCandidate()` (`liveStrategyEngine.js`) réécrit pour écrire dans le VRAI `openPositions` (netting réel partagé avec FVG/Divergence) au lieu de la map séparée `nwogPositions` — supprimée entièrement, ainsi que `_resolveNwogPosition()` et `getNwogPosition()`. NWOG est maintenant un pair complet de FVG/Divergence, résolu par le même `_resolveOpenPosition()` générique.
+- **Bug réel trouvé et corrigé avant activation** : le signal NWOG ne portait pas `suggestedSide` (requis par `_handleAutoExecuteEntry` pour soumettre le vrai ordre — `signal.suggestedSide.toUpperCase()` aurait planté sur `undefined`). Ajouté (`bullish → 'buy'`, `bearish → 'sell'`), vérifié par un test de bout en bout simulant exactement ce que l'exécution automatique lit.
+- Ordre soumis en **MARKET** (comme Divergence, pas LIMIT comme FVG) — `isFvg` dans `_handleAutoExecuteEntry`/`matchTraderDataSource.js` était déjà source-agnostic (`!isFvg → MARKET`), donc aucun changement nécessaire là, seulement documenté. **Limite d'exécution connue et assumée, pas cachée** : l'événement spot en live n'arrive qu'une fois la bougie M15 COMPLÈTE, donc l'ordre MARKET est soumis après que le prix a déjà dérivé par rapport à `entryPrice` (l'open de cette bougie) — surtout pertinent juste après un gap de week-end, quand la volatilité est élevée. Même approximation déjà faite pour Divergence, pas nouvelle, mais sans historique NWOG pour confirmer l'ampleur réelle.
+- **Alertes demandées par Esdras** ("pour que je puisse le voir et vérifier") — déjà existantes génériquement (push ntfy à chaque signal actionnable + à chaque exécution soumise), mais **2 bugs d'étiquetage trouvés et corrigés** : `_notify()` et le dashboard (`index.html`) avaient un label codé en dur `source === 'divergence' ? 'divergence' : 'FVG'` qui aurait affiché NWOG comme "FVG" par erreur (dans `cTraderDataSource.js` ET `matchTraderDataSource.js`, les deux corrigés). Message de confirmation d'exécution (`_notifyText`) et le `label` de l'ordre envoyé au courtier incluent maintenant la source (`[NWOG]`, visible aussi directement dans l'historique d'ordres cTrader, pas seulement dans la notification push).
+- Tests réécrits pour le nouveau comportement (netting partagé au lieu de dédoublonnage séparé) : 291/291.
+
+**Statut final : NWOG en exécution automatique complète, US100 seulement, mêmes règles que FVG/Divergence. Décision consciente d'Esdras après discussion des risques.**
 
 ## Résultats MITIGÉS — pas encore prêt pour la production (vérifications supplémentaires nécessaires)
 

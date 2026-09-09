@@ -24,12 +24,13 @@ export const store = {
     symbols: CONFIG.symbols,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
-    // ALERT-ONLY observation phase (2026-09) - see config.js's `nwog`
-    // comment and HANDOFF.md. Explicitly opted in ONLY here (the one real
-    // live-tracking engine) - LiveStrategyEngine's constructor deliberately
-    // does NOT default this the way fvgConfig/divergenceConfig do, so the
+    // LIVE, auto-executed (2026-09) - see config.js's `nwog` comment and
+    // HANDOFF.md. Explicitly opted in ONLY here (the one real live-tracking
+    // engine) - LiveStrategyEngine's constructor deliberately does NOT
+    // default this the way fvgConfig/divergenceConfig do, so the
     // backtest/report engines (chartOverlays.js, forwardTest.js,
-    // recentPerformanceReport.js) stay unaffected.
+    // recentPerformanceReport.js) stay unaffected - whether to fold NWOG
+    // into THOSE historical reports too is a separate, not-yet-made decision.
     nwogConfig: CONFIG.nwog,
     guardrail,
     riskPctPerTrade: CONFIG.risk.riskPctPerTrade,

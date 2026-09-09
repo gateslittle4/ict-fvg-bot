@@ -94,26 +94,23 @@ export const CONFIG = {
     rrMultiple: 3,
     maxHoldingM15Candles: 480,
   },
-  // NWOG (New Week Opening Gap) - ALERT-ONLY observation phase (2026-09), at
-  // the user's explicit request after the forward-test showed FVG firing far
-  // too rarely to be useful on its own (see HANDOFF.md's "forward-test 2026"
-  // section - 3 trades on US100 over 7 months). Backtested credible on
-  // US100 specifically: train 0.15R (n=224), test 0.34R (n=90, BETTER than
-  // train), and confirmed again independently on the 2026 forward-test data
-  // (n=30, 0.28R - squarely between train/test, ~10x FVG's own trade count
-  // on the same window). Scoped to US100 ONLY - the other 4 instruments were
-  // weaker/rejected on this same concept, see data/backtest-input/
-  // nwog-strategy-analysis.md.
+  // NWOG (New Week Opening Gap) - LIVE, auto-executed (2026-09). Started as
+  // an alert-only observation phase, then moved straight to full
+  // auto-execute at the user's explicit, eyes-open request: "je vais pas
+  // avoir le temps pour trader ... rend tout automatique" (see HANDOFF.md
+  // for the full exchange, including the risk tradeoffs explicitly named
+  // before she confirmed). Backtested credible on US100 specifically: train
+  // 0.15R (n=224), test 0.34R (n=90, BETTER than train), and confirmed again
+  // independently on the 2026 forward-test data (n=30, 0.28R - squarely
+  // between train/test, ~10x FVG's own trade count on the same window).
+  // Scoped to US100 ONLY - the other 4 instruments were weaker/rejected on
+  // this same concept, see data/backtest-input/nwog-strategy-analysis.md.
   //
-  // Deliberately NOT wired into openPositions/netting or auto-execute yet -
-  // LiveStrategyEngine tracks it in its OWN separate nwogPositions map
-  // (liveStrategyEngine.js), purely to log real outcomes during this
-  // observation phase. A human decides whether to act on each alert
-  // manually; nothing here places a real order. Plan (HANDOFF.md): 4-6 weeks
-  // of live alerts to sanity-check EXECUTION quality (does the proposed
-  // entry price hold up, does gap detection stay clean) - the STATISTICAL
-  // edge is already established (344 trades across train/test/2026), so this
-  // phase is not about re-proving that.
+  // Wired into the SAME openPositions/netting/auto-execute path as FVG and
+  // Divergence (liveStrategyEngine.js's _processNwogCandidate) - no
+  // special-cased position tracking left. A signal fires roughly weekly
+  // (the weekend gap), so the practical exposure/monitoring burden is low
+  // even though there is no manual review step before an order is placed.
   nwog: {
     symbols: ['US100'],
     rrMultiple: 3, // same convention already validated in src/backtest/nwog.js - not re-tuned here
