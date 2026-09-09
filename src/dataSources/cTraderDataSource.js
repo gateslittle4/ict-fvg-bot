@@ -409,6 +409,22 @@ export class CTraderDataSource {
   async _subscribeLiveCandles(accountId) {
     const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
 
+    // DIAGNOSTIC, temporary (2026-09-09): registered ONCE, unconditionally,
+    // before the per-symbol loop below (which registers its own filtered
+    // 'ProtoOASpotEvent' listener 3 times, once per symbol - not new, not
+    // touched here). This one exists purely to answer a yes/no question
+    // with zero ambiguity: does 'ProtoOASpotEvent' fire AT ALL on this
+    // connection, regardless of symbolId matching? If this line never logs
+    // either, the problem is upstream of anything in this file (event name,
+    // subscription itself, or the connection/library layer) - not the
+    // symbolId comparison fixed just above. Remove once confirmed.
+    let loggedAnySpotEvent = false;
+    this.connection.on('ProtoOASpotEvent', (event) => {
+      if (loggedAnySpotEvent) return;
+      loggedAnySpotEvent = true;
+      console.log('[diagnostic] first ProtoOASpotEvent on this connection, UNFILTERED:', JSON.stringify(event, (_k, v) => (typeof v === 'bigint' ? `${v}n` : v)));
+    });
+
     for (const symbolName of CONFIG.symbols) {
       const symbolId = this.symbolIdByName.get(symbolName);
       if (!symbolId) {
