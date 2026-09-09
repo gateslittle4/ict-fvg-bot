@@ -370,6 +370,40 @@ export class CTraderDataSource {
     return { ...result, balance: store.balance, equityEstimate: estimateEquity(store.balance, result.floatingPnlEstimate) };
   }
 
+  /**
+   * On-demand historical export (2026-09, ad-hoc research request: "peux-tu
+   * tester le bot sur les 8 derniers mois qui viennent de passer" - the
+   * existing 2019-2025 CSV backtests, and the live engine's own 90-day
+   * retained history, both stop short of covering that). Distinct from the
+   * 90-day _subscribeLiveCandles() warm-up above: that window is capped at
+   * 90 days ON PURPOSE (keeps boot time down), but the underlying cTrader
+   * API accepts up to 35 weeks (~245 days) in a SINGLE ProtoOAGetTrendbarsReq
+   * for the M15 bucket (see that method's own comment) - 8 months (~243
+   * days) fits in one call, no pagination needed.
+   *
+   * Read-only, no side effects on store/strategyEngine/live trading - this
+   * exists purely to export raw candles for offline research with the SAME
+   * backtestEngine.js used for the 2019-2025 CSVs, not to feed anything live.
+   */
+  async getHistoricalCandles({ symbol, days }) {
+    const symbolId = this.symbolIdByName.get(symbol);
+    if (!symbolId) throw new Error(`Unknown symbol "${symbol}" on this cTrader account`);
+    const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
+    const toTimestamp = Date.now();
+    const fromTimestamp = toTimestamp - days * 24 * 60 * 60 * 1000;
+    const count = days * 24 * 4; // M15 candles/day cap, same convention as the warm-up request below
+
+    const history = await sendCommandWithTimeout(
+      this.connection,
+      'ProtoOAGetTrendbarsReq',
+      { ctidTraderAccountId: Number(this.accountId), fromTimestamp, toTimestamp, symbolId, period, count },
+      60000 // can be tens of thousands of bars for an 8-month window - same generous timeout as the warm-up request
+    );
+    return (history.trendbar || [])
+      .map((bar) => this._trendbarToCandle(bar))
+      .sort((a, b) => a.time - b.time);
+  }
+
   async _subscribeLiveCandles(accountId) {
     const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
 

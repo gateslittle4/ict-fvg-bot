@@ -306,6 +306,44 @@ app.get('/api/trade-log', async (req, res) => {
   }
 });
 
+// Temporary research export (2026-09, ad-hoc: "peux-tu tester le bot sur les
+// 8 derniers mois"). Reuses the LIVE cTrader connection already running on
+// Render (see cTraderDataSource.js's getHistoricalCandles) to pull a wider
+// historical window than the 90-day warm-up keeps in memory, as CSV in the
+// SAME format backtestEngine.js's other data (data/backtest-input/*.csv)
+// already uses - so the exact same offline analysis scripts work on it
+// unchanged. Gated behind ADMIN_EXPORT_TOKEN (opt-in, same pattern as
+// keepAlive.js/supabaseTradeLog.js - unset means the endpoint is disabled
+// entirely, not "open with no token") so a cTrader-heavy request can't be
+// triggered by anyone who finds the URL.
+app.get('/api/admin/export-candles', async (req, res) => {
+  const configuredToken = process.env.ADMIN_EXPORT_TOKEN;
+  if (!configuredToken) {
+    return res.status(404).json({ error: 'not enabled' });
+  }
+  if (req.query.token !== configuredToken) {
+    return res.status(403).json({ error: 'invalid or missing token' });
+  }
+  const symbol = req.query.symbol;
+  if (!CONFIG.symbols.includes(symbol)) {
+    return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
+  }
+  const days = Math.min(Number(req.query.days) || 245, 245); // cTrader's own single-request cap for the M15 bucket (~35 weeks)
+  if (typeof store.liveDataSource?.getHistoricalCandles !== 'function') {
+    return res.status(503).json({ error: 'not connected to a live broker' });
+  }
+  try {
+    const candles = await store.liveDataSource.getHistoricalCandles({ symbol, days });
+    res.set('Content-Type', 'text/csv');
+    res.set('Content-Disposition', `attachment; filename="${symbol}.csv"`);
+    const lines = ['time,open,high,low,close'];
+    for (const c of candles) lines.push(`${c.time},${c.open},${c.high},${c.low},${c.close}`);
+    res.send(lines.join('\n'));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 app.post('/api/lot-calc', (req, res) => {
   try {
     const { symbol, entryPrice, stopPrice, riskPct, balance } = req.body || {};
