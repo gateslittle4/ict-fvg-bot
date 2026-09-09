@@ -103,6 +103,9 @@
       <div class="group">
         <button id="toggle-overlays" class="active">Zones FVG + signaux</button>
       </div>
+      <div class="group">
+        <button id="focus-price" title="Recadrer le graphique sur le prix actuel">⌖ Prix actuel</button>
+      </div>
     </div>
 
     <div class="price-header">
@@ -132,7 +135,7 @@
       <span>▲▼ signal validé · ○ signal bloqué (netting/garde-fou)</span>
     </div>
     <div class="meta" id="overlay-counts" style="margin-top:8px;"></div>
-    <div class="hint">Pince ou molette pour zoomer · glisse pour te déplacer · touche/survole une bougie pour voir son OHLC · double-clic pour réinitialiser le zoom.</div>
+    <div class="hint">Pince ou molette pour zoomer · glisse pour te déplacer · touche/survole une bougie pour voir son OHLC · bouton « ⌖ Prix actuel » pour recadrer sur le prix en cours.</div>
     <div id="chart-error" class="err"></div>
   </div>
 
@@ -265,11 +268,19 @@ function buildChart() {
       vertLines: { color: '#1c2530' },
       horzLines: { color: '#1c2530' },
     },
-    rightPriceScale: { borderColor: '#232d38' },
+    rightPriceScale: {
+      borderColor: '#232d38',
+      // Auto-fit the vertical price range to whatever bars are currently
+      // visible, so the current price is always framed in view rather than
+      // squeezed into a sliver at one edge - the whole point of loading the
+      // recent-bars window below instead of fitContent()'ing all 1500 bars.
+      autoScale: true,
+    },
     timeScale: {
       borderColor: '#232d38',
       timeVisible: true,      // intraday bars need the time, not just the date
       secondsVisible: false,
+      rightOffset: 6,         // a little empty space past the last bar so the live candle isn't glued to the right edge
     },
     crosshair: { mode: 0 },   // 0 = free crosshair, follows the pointer like a broker chart
     localization: {
@@ -288,6 +299,11 @@ function buildChart() {
     borderDownColor: '#f85149',
     wickUpColor: '#3fb950',
     wickDownColor: '#f85149',
+    // Draw a horizontal line at the LAST price across the whole chart, with
+    // its value labelled on the right axis - so "where is the price right
+    // now?" is answered at a glance, wherever the user has panned to.
+    priceLineVisible: true,
+    lastValueVisible: true,
   });
 
   zonesPrimitive = new FvgZonesPrimitive();
@@ -307,6 +323,22 @@ function buildChart() {
       `O <b>${fmt(bar.open, d)}</b>  H <b>${fmt(bar.high, d)}</b>  ` +
       `B <b>${fmt(bar.low, d)}</b>  C <b style="color:${color}">${fmt(bar.close, d)}</b>`;
   });
+}
+
+// Recent-bars window shown on load and by the "Prix actuel" button. ~140
+// bars is a readable zoom at any timeframe (about a day and a half of M15,
+// proportionally more on H1/H4/D1) with the newest bar - the live price - at
+// the right edge. autoScale on the price axis then fits the vertical range to
+// exactly these bars, centring the view on the current price with no manual
+// panning.
+const VISIBLE_BARS = 140;
+function focusOnCurrentPrice() {
+  const total = lastCandles.length;
+  if (total === 0) return;
+  const from = Math.max(0, total - VISIBLE_BARS);
+  // `to` runs a few bars past the last real bar to match the timeScale's
+  // rightOffset breathing room, so the live candle sits just inside the edge.
+  chart.timeScale().setVisibleLogicalRange({ from, to: total + 5 });
 }
 
 function setPositionLines(openPosition, decimals) {
@@ -404,7 +436,13 @@ async function loadChart({ keepView = false } = {}) {
     document.getElementById('chart-loading').hidden = lastCandles.length > 0;
     candleSeries.applyOptions({ priceFormat: { type: 'price', precision: decimals, minMove: 1 / 10 ** decimals } });
     candleSeries.setData(lastCandles.map(toChartCandle));
-    if (!keepView) chart.timeScale().fitContent();
+    // On a fresh load / symbol / timeframe switch, jump straight to the
+    // current price instead of fitContent()'ing all ~1500 bars (which
+    // compresses the whole window and leaves the live price a tiny sliver at
+    // the far right, forcing a manual zoom+pan to find it). keepView refreshes
+    // (the 60s in-place poll, the live tick) preserve wherever the user has
+    // scrolled to.
+    if (!keepView) focusOnCurrentPrice();
 
     const symbolStatus = (statusData.symbols || []).find((s) => s.symbol === currentSymbol);
     const openPosition = symbolStatus ? symbolStatus.openPosition : null;
@@ -441,6 +479,7 @@ document.getElementById('toggle-overlays').addEventListener('click', (e) => {
   e.currentTarget.classList.toggle('active', overlaysVisible);
   loadChart({ keepView: true });
 });
+document.getElementById('focus-price').addEventListener('click', focusOnCurrentPrice);
 wireGroup('symbol-group', 'symbol', (v) => { currentSymbol = v; });
 wireGroup('timeframe-group', 'timeframe', (v) => { currentTimeframe = v; });
 

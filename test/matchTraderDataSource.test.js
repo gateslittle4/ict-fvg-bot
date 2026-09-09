@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { M15CandleBuilder } from '../src/dataSources/matchTraderDataSource.js';
+import { M15CandleBuilder, MatchTraderDataSource } from '../src/dataSources/matchTraderDataSource.js';
+import { FIXED_EST_TO_UTC_OFFSET_MS, toRealNyHourMinute } from '../src/backtest/nySession.js';
 
 // Only M15CandleBuilder is unit-tested here, deliberately - everything else
 // in matchTraderDataSource.js is network I/O against an unverified live API
@@ -79,4 +80,74 @@ test('M15CandleBuilder: consecutive buckets each close with their own OHLC, in s
 
   assert.equal(c2.time, BUCKET0 + M15_MS);
   assert.deepEqual([c2.open, c2.high, c2.low, c2.close], [20, 20, 20, 20]);
+});
+
+// ---------------------------------------------------------------------------
+// Live-price display contract (fix 2026-09): the dashboard/chart show a
+// genuinely live price by reading builder.current every poll, not just the
+// closed candle. These guard the shape that fix depends on.
+// ---------------------------------------------------------------------------
+
+test('M15CandleBuilder.current tracks the live forming price before the bucket closes', () => {
+  const b = new M15CandleBuilder();
+  b.addSample({ time: BUCKET0 + 1000, bid: 100, ask: 100.2 }); // mid 100.1 -> open
+  b.addSample({ time: BUCKET0 + 2000, bid: 101, ask: 101.2 }); // mid 101.1 -> new high
+  b.addSample({ time: BUCKET0 + 3000, bid: 99, ask: 99.2 });   // mid 99.1  -> new low
+  b.addSample({ time: BUCKET0 + 4000, bid: 100.5, ask: 100.7 }); // mid 100.6 -> latest close
+
+  // Nothing has closed yet, but the forming bucket already carries a live,
+  // up-to-the-latest-sample price for display (store.lastCandleBySymbol).
+  assert.equal(b.current.bucketStart, BUCKET0);
+  assert.equal(b.current.open, 100.1);
+  assert.equal(b.current.high, 101.1);
+  assert.equal(b.current.low, 99.1);
+  assert.equal(b.current.close, 100.6);
+});
+
+// ---------------------------------------------------------------------------
+// NY-session time-convention (câblage live, fix 2026-09): the strategy engine
+// was validated against HistData's fixed-EST-as-UTC candle times, so the live
+// Match-Trader path MUST shift its genuine-UTC candles by
+// -FIXED_EST_TO_UTC_OFFSET_MS before ingestCandle - otherwise the Silver
+// Bullet / London-NY session windows are evaluated 5h off (the bug that had
+// been fixed on the cTrader path but never ported to this, the ACTIVE, one).
+// ---------------------------------------------------------------------------
+
+test('MatchTraderDataSource exposes candleTimeOffsetMs so /api/candles can undo the engine shift', () => {
+  const src = new MatchTraderDataSource();
+  assert.equal(src.candleTimeOffsetMs, FIXED_EST_TO_UTC_OFFSET_MS);
+});
+
+test('_toEngineCandle shifts a genuine-UTC candle so the session filter reads the REAL NY wall-clock hour', () => {
+  const src = new MatchTraderDataSource();
+
+  // A DST-aware reference formatter for America/New_York, independent of the
+  // code under test - the ground truth for "what NY hour is this UTC instant".
+  const nyFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
+  });
+  const realNy = (utcMs) => {
+    const p = nyFmt.formatToParts(new Date(utcMs));
+    return { hour: Number(p.find((x) => x.type === 'hour').value), minute: Number(p.find((x) => x.type === 'minute').value) };
+  };
+
+  // One winter instant (EST=UTC-5) and one summer instant (EDT=UTC-4), both
+  // genuine UTC, to prove the round-trip is correct across DST - not just for
+  // the fixed 5h offset. 2025-01-15 15:30 UTC -> 10:30 NY (winter);
+  // 2025-07-15 14:30 UTC -> 10:30 NY (summer, right inside the Silver Bullet window).
+  for (const utcMs of [Date.UTC(2025, 0, 15, 15, 30), Date.UTC(2025, 6, 15, 14, 30)]) {
+    const engineCandle = src._toEngineCandle({ time: utcMs, open: 1, high: 1, low: 1, close: 1 });
+    const viaFilter = toRealNyHourMinute(engineCandle.time); // what SessionFilteredFvgEngine actually computes
+    assert.deepEqual(viaFilter, realNy(utcMs), `NY hour mismatch for UTC ${new Date(utcMs).toISOString()}`);
+    assert.equal(viaFilter.hour, 10);
+    assert.equal(viaFilter.minute, 30);
+  }
+});
+
+test('feeding genuine UTC straight to the session filter (the pre-fix bug) is 5h off', () => {
+  // Documents WHY _toEngineCandle exists: the same instant, WITHOUT the shift,
+  // lands 5h later on the NY clock - well outside the killzone it belongs to.
+  const utcMs = Date.UTC(2025, 6, 15, 14, 30); // 10:30 NY (summer)
+  const unshifted = toRealNyHourMinute(utcMs); // what the buggy path computed
+  assert.equal(unshifted.hour, 15); // 10:30 -> 15:30, the 5h error
 });

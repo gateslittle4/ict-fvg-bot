@@ -76,6 +76,7 @@
 import { store, pushSignalEvents, setBalance, isAutoExecuteActive } from '../store.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
+import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 
 const M15_MS = 15 * 60 * 1000;
 
@@ -184,6 +185,31 @@ export class MatchTraderDataSource {
 
     this.pyramidOrderSymbolByOrderId = new Map();
     this.pyramidPositionKeyBySymbol = new Map(); // symbol -> a best-effort position identity (see file header point 3)
+
+    // How many ms to ADD to an engine-held candle time to recover a genuine
+    // UTC instant. Mirrors cTraderDataSource.js exactly: M15CandleBuilder
+    // produces genuine-UTC candles, but the shared filtered-engine pipeline
+    // (SessionFilteredFvgEngine -> nySession.js) was validated against
+    // HistData's FIXED EST-as-UTC convention (candle .time is 5h BEHIND true
+    // UTC). So the copy handed to the strategy engine is shifted by
+    // -FIXED_EST_TO_UTC_OFFSET_MS (see _toEngineCandle), and anything
+    // DISPLAYING the engine's retained candles (/api/candles, /api/overlays)
+    // adds this back. WITHOUT this shift the NY session windows (Silver
+    // Bullet 10-11h, London-NY overlap 7-10h) were evaluated 5h off on the
+    // live Match-Trader path - the identical bug found+fixed on the cTrader
+    // path 2026-09-08 but never ported here, even though Match-Trader is the
+    // ACTIVE broker (see config.js).
+    this.candleTimeOffsetMs = FIXED_EST_TO_UTC_OFFSET_MS;
+  }
+
+  // See candleTimeOffsetMs above and cTraderDataSource.js's _toEngineCandle()
+  // for the full rationale. Shifts ONLY the copy fed to the strategy engine
+  // into the backtest's fixed-EST-as-UTC convention; the original genuine-UTC
+  // candle stays what's stored in store.lastCandleBySymbol (display) and used
+  // for any real broker timestamp. 5h is an exact multiple of the M15 bucket
+  // width, so this only relabels bars - it never shifts an M15 boundary.
+  _toEngineCandle(candle) {
+    return { ...candle, time: candle.time - FIXED_EST_TO_UTC_OFFSET_MS };
   }
 
   async start() {
@@ -292,11 +318,33 @@ export class MatchTraderDataSource {
         bid: quote.bid,
         ask: quote.ask,
       });
+
+      // LIVE PRICE (fix 2026-09): expose the freshest price on EVERY poll,
+      // including the still-forming M15 bucket, so the dashboard/chart show a
+      // genuinely live price between M15 closes instead of freezing at the
+      // last closed candle for up to 15 minutes. This is DISPLAY-ONLY state
+      // (store.lastCandleBySymbol) and stays in genuine UTC - it is never fed
+      // to the strategy engine, so no-lookahead is preserved (only CLOSED
+      // candles below reach ingestCandle). builder.current is the bucket in
+      // progress; after a close it's already the NEW bucket's first sample.
+      const forming = builder.current;
+      if (forming) {
+        store.lastCandleBySymbol.set(symbol, {
+          time: forming.bucketStart,
+          open: forming.open,
+          high: forming.high,
+          low: forming.low,
+          close: forming.close,
+        });
+      }
+
       if (!closedCandle) continue;
 
-      const events = store.strategyEngine.ingestCandle(symbol, closedCandle);
+      // A bucket closed -> feed the ENGINE. _toEngineCandle shifts it into the
+      // backtest's fixed-EST-as-UTC convention so the NY session filter reads
+      // the correct wall-clock hour (see _toEngineCandle / candleTimeOffsetMs).
+      const events = store.strategyEngine.ingestCandle(symbol, this._toEngineCandle(closedCandle));
       pushSignalEvents(events);
-      store.lastCandleBySymbol.set(symbol, closedCandle);
 
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
       if (actionable.length > 0) this._notify(actionable);
