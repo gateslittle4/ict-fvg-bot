@@ -1,0 +1,121 @@
+// forwardTest.js
+// Forward-test validation: split historical candles at a cutoff date,
+// replay the strategy before and after, and compare performance.
+//
+// This answers: "Does the strategy perform consistently on data it hasn't
+// seen before?" If performance degrades sharply in the forward period,
+// it may indicate overfitting or regime change.
+//
+// Reuses buildRecentPerformanceReport's core logic (LiveStrategyEngine
+// replay) to guarantee alignment with the live signal production.
+
+import { LiveStrategyEngine } from '../liveStrategyEngine.js';
+import { GuardrailEngine } from '../engines/guardrailEngine.js';
+import { CONFIG } from '../config.js';
+
+const YIELD_EVERY = 200;
+
+/**
+ * Replay strategy on a specific candle slice and return trade summary.
+ * @private
+ */
+async function replayOnSlice(historyBySymbol, startMs, endMs) {
+  const guardrail = new GuardrailEngine({});
+  const engine = new LiveStrategyEngine({
+    symbols: CONFIG.symbols,
+    fvgConfig: CONFIG.fvg.perSymbol,
+    divergenceConfig: CONFIG.divergence,
+    guardrail,
+  });
+
+  const openById = new Map();
+  const trades = [];
+
+  for (const symbol of CONFIG.symbols) {
+    const all = historyBySymbol[symbol] || [];
+    if (all.length === 0) continue;
+    const candles = all.filter((c) => c.time >= startMs && c.time < endMs);
+
+    for (let i = 0; i < candles.length; i++) {
+      const events = engine.ingestCandle(symbol, candles[i]);
+      for (const e of events) {
+        if (e.type === 'validated' && !e.blockedReason) {
+          openById.set(e.id, e);
+        }
+        if (e.type === 'closed') {
+          const opened = openById.get(e.id);
+          if (!opened) continue;
+          openById.delete(e.id);
+          const rMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
+          trades.push({
+            symbol,
+            source: opened.source,
+            direction: opened.direction,
+            entryPrice: opened.entryPrice,
+            entryTime: opened.validatedAt,
+            exitTime: e.exitTime,
+            outcome: e.outcome,
+            rMultiple,
+          });
+        }
+      }
+      if (i % YIELD_EVERY === YIELD_EVERY - 1) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    }
+  }
+
+  trades.sort((a, b) => b.exitTime - a.exitTime);
+
+  const wins = trades.filter((t) => t.outcome === 'win').length;
+  const losses = trades.filter((t) => t.outcome === 'loss').length;
+  const timeouts = trades.filter((t) => t.outcome === 'timeout').length;
+  const totalR = trades.reduce((sum, t) => sum + (t.rMultiple || 0), 0);
+  const decided = wins + losses;
+
+  return {
+    trades,
+    summary: {
+      count: trades.length,
+      wins,
+      losses,
+      timeouts,
+      winRatePct: decided > 0 ? (wins / decided) * 100 : null,
+      totalR: Math.round(totalR * 100) / 100,
+    },
+  };
+}
+
+/**
+ * @param {Record<string, object[]>} historyBySymbol - symbol -> chronological candle array
+ * @param {object} opts
+ * @param {number} opts.cutoffMs - split point (milliseconds since epoch)
+ * @returns {Promise<{before: object, after: object, cutoffDate: string}>}
+ */
+export async function buildForwardTest(historyBySymbol, { cutoffMs }) {
+  // Find the latest candle time across all symbols to set the end boundary
+  let latestMs = 0;
+  for (const candles of Object.values(historyBySymbol)) {
+    if (candles.length > 0) {
+      latestMs = Math.max(latestMs, candles[candles.length - 1].time);
+    }
+  }
+
+  if (latestMs === 0) {
+    return {
+      before: { summary: { count: 0, wins: 0, losses: 0, timeouts: 0, winRatePct: null, totalR: 0 }, trades: [] },
+      after: { summary: { count: 0, wins: 0, losses: 0, timeouts: 0, winRatePct: null, totalR: 0 }, trades: [] },
+      cutoffDate: new Date(cutoffMs).toISOString(),
+      reason: 'no candle history available',
+    };
+  }
+
+  const beforeResult = await replayOnSlice(historyBySymbol, 0, cutoffMs);
+  const afterResult = await replayOnSlice(historyBySymbol, cutoffMs, latestMs + 1);
+
+  return {
+    before: beforeResult,
+    after: afterResult,
+    cutoffDate: new Date(cutoffMs).toISOString(),
+  };
+}
