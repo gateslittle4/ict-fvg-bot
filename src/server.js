@@ -14,6 +14,7 @@ import { resampleCandles } from './backtest/htfBias.js';
 import { buildChartOverlays } from './backtest/chartOverlays.js';
 import { startKeepAlive } from './keepAlive.js';
 import { fetchPerformanceBySymbol } from './dataSources/supabaseTradeLog.js';
+import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -342,6 +343,53 @@ app.get('/api/admin/export-candles', async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+});
+
+// Real-spread sanity check (2026-09, at the user's explicit request: "est-ce
+// que le spread est celui qu'on avait planifié?"). transactionCosts.js's
+// DEFAULT_SPREADS for US100/US500/XAUUSD are labelled "INDICATIVE, verify
+// against FundingPips cTrader spec" - NEVER actually confirmed (see
+// HANDOFF.md's pending checklist). Reports what's ACTUALLY been observed
+// from real bid/ask ticks (store.recentTicksBySymbol, populated by
+// cTraderDataSource.js's spot-event handler) since this process booted,
+// alongside the assumed value used in every backtest/net-cost calculation,
+// so the gap (if any) is visible rather than assumed away. Same
+// ADMIN_EXPORT_TOKEN gate as /api/admin/export-candles - opt-in, disabled
+// entirely when unset.
+app.get('/api/admin/spread-check', (req, res) => {
+  const configuredToken = process.env.ADMIN_EXPORT_TOKEN;
+  if (!configuredToken) {
+    return res.status(404).json({ error: 'not enabled' });
+  }
+  if (req.query.token !== configuredToken) {
+    return res.status(403).json({ error: 'invalid or missing token' });
+  }
+
+  const result = {};
+  for (const symbol of CONFIG.symbols) {
+    const ticks = store.recentTicksBySymbol.get(symbol) || [];
+    const assumedSpread = DEFAULT_SPREADS[symbol] ?? null;
+    if (ticks.length === 0) {
+      result[symbol] = { sampleCount: 0, assumedSpread, reason: 'no ticks observed yet since this process booted - try again once the market is open and a bit of time has passed' };
+      continue;
+    }
+    const spreads = ticks.map((t) => t.ask - t.bid);
+    const sum = spreads.reduce((s, v) => s + v, 0);
+    const avgSpread = sum / spreads.length;
+    const minSpread = Math.min(...spreads);
+    const maxSpread = Math.max(...spreads);
+    result[symbol] = {
+      sampleCount: ticks.length,
+      firstSampleAt: new Date(ticks[0].time).toISOString(),
+      lastSampleAt: new Date(ticks[ticks.length - 1].time).toISOString(),
+      avgSpread: Math.round(avgSpread * 100000) / 100000,
+      minSpread: Math.round(minSpread * 100000) / 100000,
+      maxSpread: Math.round(maxSpread * 100000) / 100000,
+      assumedSpread,
+      assumedVsAvgRatio: assumedSpread ? Math.round((avgSpread / assumedSpread) * 100) / 100 : null,
+    };
+  }
+  res.json(result);
 });
 
 app.post('/api/lot-calc', (req, res) => {

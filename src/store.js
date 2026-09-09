@@ -48,6 +48,16 @@ export const store = {
   broker: { name: null, isDemo: null },
   signalLog: [], // { ...event, loggedAt }
   lastCandleBySymbol: new Map(),
+  // Raw (bid, ask) tick samples per symbol - 2026-09, at the user's request
+  // to verify whether the REAL live spread matches the "INDICATIVE, verify
+  // against FundingPips cTrader spec" placeholder values in
+  // transactionCosts.js's DEFAULT_SPREADS (never actually confirmed - see
+  // that file's own comment, and the pending-checklist item in HANDOFF.md).
+  // ProtoOASpotEvent carries both bid AND ask on every tick (see
+  // foldLiveBidIntoCandle's own comment), but only bid was extracted before
+  // now. Small ring buffer (see MAX_SPREAD_SAMPLES in cTraderDataSource.js),
+  // display/diagnostic only - never fed into any trading decision.
+  recentTicksBySymbol: new Map(),
   // "Mode indisponible" - Esdras flips this HIMSELF (dashboard button / API
   // call) right before a period he knows he won't be able to click
   // Buy/Sell (typically fin de mois). While active AND not expired, the

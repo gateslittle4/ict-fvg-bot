@@ -44,6 +44,7 @@ const PORT = 5035;
 
 // cTrader trendbar period enum name for our configured timeframe.
 const PERIOD_BY_TIMEFRAME = { M1: 'M1', M5: 'M5', M15: 'M15', M30: 'M30', H1: 'H1' };
+const MAX_SPREAD_SAMPLES = 500; // ring buffer size for store.recentTicksBySymbol - a few hours of ticks, plenty for a spread sanity check
 
 // @reiryoku/ctrader-layer's sendCommand() has NO built-in timeout - its promise
 // only settles when a response with a matching clientMsgId arrives, so a
@@ -530,6 +531,20 @@ export class CTraderDataSource {
         const existing = store.lastCandleBySymbol.get(symbolName);
         const folded = foldLiveBidIntoCandle(existing, bid);
         if (folded && folded !== existing) store.lastCandleBySymbol.set(symbolName, folded);
+
+        // Real-spread sampling (2026-09, at the user's request: "est-ce que
+        // le spread est celui qu'on avait planifié?" - see store.js's
+        // recentTicksBySymbol comment). Same /100000 scaling assumption as
+        // bid above (VERIFY against a real response, same caveat). Only
+        // recorded when the SAME tick carries both sides - a tick with just
+        // one side updated doesn't represent a real spread at that instant.
+        const ask = typeof event.ask === 'number' ? event.ask / 100000 : null;
+        if (bid !== null && ask !== null) {
+          if (!store.recentTicksBySymbol.has(symbolName)) store.recentTicksBySymbol.set(symbolName, []);
+          const ticks = store.recentTicksBySymbol.get(symbolName);
+          ticks.push({ bid, ask, time: Date.now() });
+          if (ticks.length > MAX_SPREAD_SAMPLES) ticks.shift();
+        }
       });
     }
   }
