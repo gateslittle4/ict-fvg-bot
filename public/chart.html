@@ -4,6 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ICT FVG Assistant — Graphique</title>
+<!-- PWA - see public/index.html's own head for why (same manifest/scope covers this page too). -->
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#0b0f14" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="FVG Bot" />
 <style>
   :root {
     --bg: #0b0f14;
@@ -561,6 +568,13 @@ const BOOTING_REFRESH_MS = 3000; // still no data - the bot is very likely mid-w
 
 loadChart();
 startLiveTick();
+
+// PWA install support - see index.html's own copy of this for why.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

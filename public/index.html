@@ -4,6 +4,15 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ICT FVG Assistant</title>
+<!-- PWA (2026-09, at the user's request: "entrer direct sans passer par
+     Chrome") - installable on iOS/Android home screen, opens without browser
+     chrome (address bar/tabs). See public/manifest.json + sw.js. -->
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#0b0f14" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="FVG Bot" />
 <style>
   :root {
     --bg: #0b0f14;
@@ -558,6 +567,16 @@ setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a c
 setInterval(refreshRecentPerformance, 120000); // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
 setInterval(refreshTradeLog, 60000); // grows one row per resolved trade, no meaningful reason to poll faster
 setInterval(refreshAccount, 30000); // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
+
+// PWA install support - registering a service worker (even one that caches
+// nothing, see sw.js) is what makes Chrome/Android offer "Add to Home
+// Screen" as a real install rather than a plain bookmark shortcut. Silently
+// no-ops on browsers without support (older Safari) rather than erroring.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
