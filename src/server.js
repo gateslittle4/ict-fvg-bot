@@ -224,12 +224,22 @@ app.get('/api/overlays', (req, res) => {
 
 // "What would the bot have done over the last 90 days?" - at the user's
 // request, after realizing the warm-up replay already computes this and
-// throws it away. Expensive (same O(n^2) rebuild-and-replay as the live
-// warm-up, see recentPerformanceReport.js), so cached rather than
-// recomputed on every dashboard poll - candles only update every 15 minutes
-// anyway, so a 15-minute-old report is never actually stale.
+// throws it away. Cached rather than recomputed on every dashboard poll -
+// candles only update every 15 minutes anyway, so a 15-minute-old report is
+// never actually stale.
+//
+// The in-flight guard below is NOT belt-and-braces - it is the second half
+// of a real production outage fix (2026-09-09, see HANDOFF.md and
+// recentPerformanceReport.js's own comment). The cache is only written once
+// a report FINISHES, so while one was still computing, every subsequent
+// 120s dashboard poll started ANOTHER concurrent run. With the report's old
+// O(n^2) cost that stacked until the free tier's 0.15 CPU was pegged
+// permanently and the whole service stopped answering. The O(n^2) -> O(n)
+// fix makes each run cheap; this guard makes the stacking structurally
+// impossible regardless of how expensive a future report becomes.
 const RECENT_PERFORMANCE_CACHE_MS = 15 * 60 * 1000;
 let recentPerformanceCache = null; // { builtAt, report }
+let recentPerformanceInFlight = null; // Promise | null - at most ONE computation at a time; concurrent callers await the same one
 
 app.get('/api/recent-performance', async (req, res) => {
   if (recentPerformanceCache && Date.now() - recentPerformanceCache.builtAt < RECENT_PERFORMANCE_CACHE_MS) {
@@ -243,9 +253,19 @@ app.get('/api/recent-performance', async (req, res) => {
     return res.json({ trades: [], summary: null, reason: 'no candle history yet (still warming up or in demo mode)' });
   }
   try {
-    const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90 });
-    recentPerformanceCache = { builtAt: Date.now(), report };
-    res.json({ ...report, cachedAt: recentPerformanceCache.builtAt });
+    if (!recentPerformanceInFlight) {
+      recentPerformanceInFlight = (async () => {
+        try {
+          const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90 });
+          recentPerformanceCache = { builtAt: Date.now(), report };
+          return report;
+        } finally {
+          recentPerformanceInFlight = null;
+        }
+      })();
+    }
+    const report = await recentPerformanceInFlight;
+    res.json({ ...report, cachedAt: recentPerformanceCache?.builtAt ?? Date.now() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -13,8 +13,6 @@ import { LiveStrategyEngine } from '../liveStrategyEngine.js';
 import { GuardrailEngine } from '../engines/guardrailEngine.js';
 import { CONFIG } from '../config.js';
 
-const YIELD_EVERY = 200;
-
 /**
  * Replay strategy on a specific candle slice and return trade summary.
  * @private
@@ -28,42 +26,44 @@ async function replayOnSlice(historyBySymbol, startMs, endMs) {
     guardrail,
   });
 
-  const openById = new Map();
-  const trades = [];
-
+  const sliced = {};
   for (const symbol of CONFIG.symbols) {
     const all = historyBySymbol[symbol] || [];
     if (all.length === 0) continue;
-    const candles = all.filter((c) => c.time >= startMs && c.time < endMs);
-
-    for (let i = 0; i < candles.length; i++) {
-      const events = engine.ingestCandle(symbol, candles[i]);
-      for (const e of events) {
-        if (e.type === 'validated' && !e.blockedReason) {
-          openById.set(e.id, e);
-        }
-        if (e.type === 'closed') {
-          const opened = openById.get(e.id);
-          if (!opened) continue;
-          openById.delete(e.id);
-          const rMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
-          trades.push({
-            symbol,
-            source: opened.source,
-            direction: opened.direction,
-            entryPrice: opened.entryPrice,
-            entryTime: opened.validatedAt,
-            exitTime: e.exitTime,
-            outcome: e.outcome,
-            rMultiple,
-          });
-        }
-      }
-      if (i % YIELD_EVERY === YIELD_EVERY - 1) {
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-    }
+    sliced[symbol] = all.filter((c) => c.time >= startMs && c.time < endMs);
   }
+
+  const openById = new Map();
+  const trades = [];
+
+  // Same O(n^2) -> O(n) fix as recentPerformanceReport.js (see its own
+  // comment for the production incident this caused): one bulk warm-up pass
+  // instead of a per-candle ingestCandle() loop that rebuilt and replayed
+  // the whole history on every single candle.
+  engine.warmUp(sliced, {
+    onEvent: (e) => {
+      if (!e) return;
+      if (e.type === 'validated' && !e.blockedReason) {
+        openById.set(e.id, e);
+        return;
+      }
+      if (e.type !== 'closed') return;
+      const opened = openById.get(e.id);
+      if (!opened) return;
+      openById.delete(e.id);
+      const rMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
+      trades.push({
+        symbol: e.symbol,
+        source: opened.source,
+        direction: opened.direction,
+        entryPrice: opened.entryPrice,
+        entryTime: opened.validatedAt,
+        exitTime: e.exitTime,
+        outcome: e.outcome,
+        rMultiple,
+      });
+    },
+  });
 
   trades.sort((a, b) => b.exitTime - a.exitTime);
 

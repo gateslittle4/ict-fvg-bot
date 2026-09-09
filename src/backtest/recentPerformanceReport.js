@@ -21,16 +21,24 @@ import { LiveStrategyEngine } from '../liveStrategyEngine.js';
 import { GuardrailEngine } from '../engines/guardrailEngine.js';
 import { CONFIG } from '../config.js';
 
-// ingestCandle() rebuilds the whole filtered engine from scratch per candle
-// (see liveStrategyEngine.js's "rebuild-and-replay" header comment and
-// HANDOFF.md) - O(n) per call, so O(n^2) to replay a ~90-day window, the
-// same cost the live connector's warm-up pays at boot. Run this
-// synchronously inside an HTTP request handler and it blocks Node's event
-// loop for the same multi-minute stretch that starved the cTrader heartbeat
-// during warm-up (see cTraderDataSource.js's _toEngineCandle/YIELD_EVERY
-// fix for that exact bug). Yielding every YIELD_EVERY candles here keeps
-// this endpoint from re-introducing that failure mode.
-const YIELD_EVERY = 200;
+// PERFORMANCE (2026-09-09, real production incident - see HANDOFF.md):
+// this used to call engine.ingestCandle() once per historical candle. Each
+// such call rebuilds the whole filtered engine and replays the entire
+// retained history (liveStrategyEngine.js's "rebuild-and-replay" design) -
+// O(n) per call, so O(n^2) for the window: ~8600 candles x 3 symbols is
+// ~224 MILLION inner steps. On Render's free tier (0.15 CPU) that pegged
+// the CPU indefinitely, and because the cache is only written once the
+// report FINISHES, the dashboard's 120s poller kept stacking additional
+// concurrent runs on top - the service became permanently unreachable the
+// moment the dashboard was opened.
+//
+// warmUp({ onEvent }) reconstructs the identical event stream in ONE pass
+// (proven bit-for-bit equivalent to sequential ingestCandle() replay by
+// test/liveStrategyEngine.test.js's own equivalence test) - the same fix
+// already applied to the boot warm-up and to chartOverlays.js, which this
+// file was simply never migrated to. O(n^2) -> O(n): ~26k steps instead of
+// ~224M, fast enough that the old YIELD_EVERY event-loop yielding is no
+// longer needed at all.
 
 /**
  * @param {Record<string, object[]>} historyBySymbol - symbol -> chronological
@@ -49,43 +57,43 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
     guardrail,
   });
 
-  const openById = new Map();
-  const trades = [];
-
+  // Window each symbol against ITS OWN latest candle (unchanged from the
+  // per-symbol loop this replaced - symbols can have different last bars).
+  const windowed = {};
   for (const symbol of CONFIG.symbols) {
     const all = historyBySymbol[symbol] || [];
     if (all.length === 0) continue;
     const latestTime = all[all.length - 1].time;
-    const candles = all.filter((c) => c.time >= latestTime - windowMs);
-
-    for (let i = 0; i < candles.length; i++) {
-      const events = engine.ingestCandle(symbol, candles[i]);
-      for (const e of events) {
-        if (e.type === 'validated' && !e.blockedReason) {
-          openById.set(e.id, e);
-        }
-        if (e.type === 'closed') {
-          const opened = openById.get(e.id);
-          if (!opened) continue; // this position was already open before our window started - we don't know its real entry, so exclude it rather than guess
-          openById.delete(e.id);
-          const rMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
-          trades.push({
-            symbol,
-            source: opened.source,
-            direction: opened.direction,
-            entryPrice: opened.entryPrice,
-            entryTime: opened.validatedAt,
-            exitTime: e.exitTime,
-            outcome: e.outcome,
-            rMultiple,
-          });
-        }
-      }
-      if (i % YIELD_EVERY === YIELD_EVERY - 1) {
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-    }
+    windowed[symbol] = all.filter((c) => c.time >= latestTime - windowMs);
   }
+
+  const openById = new Map();
+  const trades = [];
+
+  engine.warmUp(windowed, {
+    onEvent: (e) => {
+      if (!e) return;
+      if (e.type === 'validated' && !e.blockedReason) {
+        openById.set(e.id, e);
+        return;
+      }
+      if (e.type !== 'closed') return;
+      const opened = openById.get(e.id);
+      if (!opened) return; // this position was already open before our window started - we don't know its real entry, so exclude it rather than guess
+      openById.delete(e.id);
+      const rMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
+      trades.push({
+        symbol: e.symbol,
+        source: opened.source,
+        direction: opened.direction,
+        entryPrice: opened.entryPrice,
+        entryTime: opened.validatedAt,
+        exitTime: e.exitTime,
+        outcome: e.outcome,
+        rMultiple,
+      });
+    },
+  });
 
   trades.sort((a, b) => b.exitTime - a.exitTime);
 

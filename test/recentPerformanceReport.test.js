@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildRecentPerformanceReport } from '../src/backtest/recentPerformanceReport.js';
+import { LiveStrategyEngine } from '../src/liveStrategyEngine.js';
+import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
+import { CONFIG } from '../src/config.js';
 
 function loadCsv(path) {
   const lines = fs.readFileSync(path, 'utf8').trim().split('\n').slice(1);
@@ -59,6 +62,61 @@ test('against real historical data: every trade resolves to a valid outcome and 
   } else {
     assert.equal(summary.winRatePct, null);
   }
+});
+
+// Regression guard for the 2026-09-09 production outage (see HANDOFF.md and
+// recentPerformanceReport.js's own comment): this report used to call
+// ingestCandle() once per candle - O(n^2), which pegged Render's 0.15 CPU
+// indefinitely and took the whole service down. It was migrated to the
+// single-pass warmUp({ onEvent }) path. The speedup only matters if the
+// OUTPUT is unchanged, so this pins that explicitly rather than trusting it.
+test('warmUp-based report is byte-identical to the old per-candle ingestCandle() replay it replaced', async () => {
+  const N = 2000; // enough to produce real trades; small enough that the reference O(n^2) loop below still finishes fast
+  const historyBySymbol = {
+    US100: loadCsv('data/backtest-input/US100.csv').slice(0, N),
+    US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
+    XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
+  };
+
+  // Reference implementation: the exact loop this file used to run.
+  const engine = new LiveStrategyEngine({
+    symbols: CONFIG.symbols,
+    fvgConfig: CONFIG.fvg.perSymbol,
+    divergenceConfig: CONFIG.divergence,
+    guardrail: new GuardrailEngine({}),
+  });
+  const windowMs = 90 * 24 * 60 * 60 * 1000;
+  const openById = new Map();
+  const referenceTrades = [];
+  for (const symbol of CONFIG.symbols) {
+    const all = historyBySymbol[symbol];
+    const latestTime = all[all.length - 1].time;
+    for (const candle of all.filter((c) => c.time >= latestTime - windowMs)) {
+      for (const e of engine.ingestCandle(symbol, candle)) {
+        if (e.type === 'validated' && !e.blockedReason) openById.set(e.id, e);
+        if (e.type === 'closed') {
+          const opened = openById.get(e.id);
+          if (!opened) continue;
+          openById.delete(e.id);
+          referenceTrades.push({
+            symbol,
+            source: opened.source,
+            direction: opened.direction,
+            entryPrice: opened.entryPrice,
+            entryTime: opened.validatedAt,
+            exitTime: e.exitTime,
+            outcome: e.outcome,
+            rMultiple: e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null,
+          });
+        }
+      }
+    }
+  }
+  referenceTrades.sort((a, b) => b.exitTime - a.exitTime);
+
+  const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90 });
+  assert.ok(referenceTrades.length > 0, 'fixture must produce at least one trade, or this comparison is vacuous');
+  assert.deepEqual(report.trades, referenceTrades);
 });
 
 test('a position already open before the report window started is excluded rather than guessed', async () => {
