@@ -132,6 +132,121 @@ export function runBacktest({
 }
 
 /**
+ * Variant of runBacktest() that lifts the "at most ONE open trade per
+ * symbol" netting rule (see the project-wide netting discipline documented
+ * in liveStrategyEngine.js / HANDOFF.md) and instead allows up to
+ * `maxConcurrentPositions` open at once - answers "how many signals does
+ * netting actually block, and is it worth relaxing?" empirically (2026-09,
+ * at the user's explicit question after the forward-test's low trade count:
+ * "et si on retire le netting, et on accepte 2 positions à la fois?").
+ *
+ * Same entry/stop/target logic as runBacktest() (identical FvgEngine
+ * events, identical no-lookahead resolution order), the ONLY difference is
+ * the entry gate: `openTrades.length < maxConcurrentPositions` instead of
+ * `!openTrade`. maxConcurrentPositions=1 reproduces runBacktest() exactly
+ * (kept as a SEPARATE function rather than folding this into runBacktest()
+ * itself, so the heavily-tested original stays untouched and this stays
+ * opt-in).
+ *
+ * Caveat worth knowing before trusting the numbers: summarizeTrades()'s
+ * maxDrawdownR walks the trade array in EXIT order and adds one trade's R at
+ * a time - a fair approximation when at most one trade is ever open, but an
+ * UNDERSTATEMENT here: two positions open at once both carry live risk
+ * simultaneously (up to 2R exposed, not 1R) between their entries and
+ * whichever exits first. Reported drawdown is therefore a lower bound, not
+ * the true worst case, when maxConcurrentPositions > 1.
+ */
+export function runBacktestMultiPosition({
+  candles,
+  symbol,
+  fvgEngine,
+  stopMode,
+  rrMultiple,
+  maxConcurrentPositions = 1,
+  swingLookback = 10,
+  maxHoldingCandles = 480,
+}) {
+  const formationIndexByFvgId = new Map();
+  const trades = [];
+  let openTrades = [];
+
+  for (let i = 0; i < candles.length; i++) {
+    const candle = candles[i];
+
+    // 1) Resolve any already-open trade using this candle (skip the entry
+    // candle itself, same no-lookahead rule as runBacktest). Iterate over a
+    // snapshot since trades close mid-loop.
+    const stillOpen = [];
+    for (const t of openTrades) {
+      if (i <= t.entryIndex) { stillOpen.push(t); continue; }
+      const hitStop = t.direction === 'bullish' ? candle.low <= t.stopPrice : candle.high >= t.stopPrice;
+      const hitTarget = t.direction === 'bullish' ? candle.high >= t.targetPrice : candle.low <= t.targetPrice;
+      const timedOut = i - t.entryIndex >= maxHoldingCandles;
+
+      if (hitStop || hitTarget || timedOut) {
+        let outcome, exitPrice, rMultiple;
+        if (hitStop) {
+          outcome = 'loss';
+          exitPrice = t.stopPrice;
+          rMultiple = -1;
+        } else if (hitTarget) {
+          outcome = 'win';
+          exitPrice = t.targetPrice;
+          rMultiple = rrMultiple;
+        } else {
+          outcome = 'timeout';
+          exitPrice = candle.close;
+          const signedMove = t.direction === 'bullish' ? exitPrice - t.entryPrice : t.entryPrice - exitPrice;
+          rMultiple = signedMove / t.distance;
+        }
+        trades.push({ ...t, exitIndex: i, exitTime: candle.time, exitPrice, outcome, rMultiple });
+      } else {
+        stillOpen.push(t);
+      }
+    }
+    openTrades = stillOpen;
+
+    // 2) Feed the candle to the FVG engine and act on its events.
+    const events = fvgEngine.processCandle(candle);
+    for (const e of events) {
+      if (e.type === 'watching') {
+        formationIndexByFvgId.set(e.id, i);
+      } else if (e.type === 'validated' && openTrades.length < maxConcurrentPositions) {
+        const c3Index = formationIndexByFvgId.get(e.id);
+        const c1Index = c3Index !== undefined ? c3Index - 2 : -1;
+        const entryPrice = e.direction === 'bullish' ? e.zone.top : e.zone.bottom;
+        const stopPrice = computeStop({
+          direction: e.direction,
+          zone: e.zone,
+          candles,
+          c1Index,
+          stopMode,
+          swingLookback,
+        });
+        const distance = Math.abs(entryPrice - stopPrice);
+        if (distance <= 0) continue;
+        const targetPrice =
+          e.direction === 'bullish' ? entryPrice + rrMultiple * distance : entryPrice - rrMultiple * distance;
+
+        openTrades.push({
+          symbol,
+          direction: e.direction,
+          entryIndex: i,
+          entryTime: candle.time,
+          entryPrice,
+          stopPrice,
+          targetPrice,
+          distance,
+        });
+      }
+    }
+  }
+
+  trades.sort((a, b) => a.exitIndex - b.exitIndex);
+  return trades;
+}
+
+/**
  * Variant of runBacktest() that adds active trade management on top of the
  * same fixed stop/target signals - answers "can we do better within the
  * winners and worse within the losers than a pure fixed 1:3?" empirically

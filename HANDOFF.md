@@ -185,6 +185,27 @@ Sur US100, le 1:5 fixe simple reste le meilleur choix — la gestion active fait
 
 **Statut : information, aucun changement de config décidé.** L'endpoint `/api/admin/export-candles` reste déployé (gated par token) — utile pour un futur forward-test similaire sans tout reconstruire.
 
+### Suite (même jour) — "et si on retire le netting, et on accepte 2 positions à la fois?" TESTÉ, REJETÉ
+
+Question posée après avoir vu le faible nombre de trades du forward-test. Nouvelle fonction `runBacktestMultiPosition()` (`backtestEngine.js`, +3 tests) — identique à `runBacktest()` (mêmes signaux/entrées/stops), seule la règle d'ouverture change : jusqu'à `maxConcurrentPositions` positions simultanées au lieu d'une seule. `maxConcurrentPositions=1` reproduit `runBacktest()` bit-pour-bit (test d'équivalence). Script `scripts/runMultiPositionAnalysis.js`, config de production inchangée (rrMultiple 5/5/4).
+
+| Symbole | Positions | Signaux train/test | R net moyen train/test | Max DD train/test* |
+|---|---|---|---|---|
+| US100 | 1 | 68/38 | 1.38/1.44 | 5.79/5.40 |
+| US100 | 2 | 79/44 (+16%) | **1.33/1.23 (pire)** | 8.31/7.63 (pire) |
+| US500 | 1 | 70/30 | 1.02/1.13 | 8.96/10.42 |
+| US500 | 2 | 80/33 (+14%) | **0.75/1.10 (pire)** | 11.22/11.55 (pire) |
+| XAUUSD | 1 | 82/41 | 0.88/0.61 | 6.80/6.20 |
+| XAUUSD | 2 | 108/58 (+32%) | **0.77/0.46 (pire)** | 8.51/8.42 (pire) |
+
+*avec 2 positions, le max drawdown est une BORNE BASSE — le calcul ne capture pas les 2R de risque réellement exposés simultanément (voir la mise en garde dans le code).
+
+**Verdict : plus de trades, mais de moins bonne qualité en moyenne, sur LES TROIS instruments, train ET test.** Le netting ne bloque pas des signaux au hasard — il bloque spécifiquement les signaux qui arrivent pendant qu'un trade est déjà en cours, et ces signaux-là sont en moyenne plus faibles (probablement des configurations redondantes dans une période déjà volatile, pas des opportunités vraiment distinctes). Rejeté.
+
+**Et sur le forward-test 2026 spécifiquement — ça n'aurait même pas aidé l'observation qui a motivé la question** : US100 et US500 obtiennent EXACTEMENT le même nombre de trades (3 et 4) avec 1 ou 2 positions — aucun chevauchement ne s'est produit sur ces 7 mois, donc le netting n'était PAS le facteur limitant pour ces deux instruments. XAUUSD gagne 1 trade de plus (7→8) mais le résultat empire (-2.15R → -3.17R, win rate 14.3%→12.5%) — plus de trades, mais encore pire.
+
+**Conclusion : le faible nombre de trades vient de la sélectivité voulue de la config (fenêtre de session étroite + biais HTF + structure + sweep), pas du netting.** Retirer le netting ajoute du risque (jusqu'à 2R simultané) sans ajouter de qualité. Aucun changement de code déployé.
+
 ## Résultats MITIGÉS — pas encore prêt pour la production (vérifications supplémentaires nécessaires)
 
 - **Judas Swing ICT (killzone Londres)** — NOUVEAU (session 2026-09-06, suite, à la demande explicite de continuer sur un concept ICT puisque c'est de là que vient la seule stratégie pleinement validée). Concept ICT publié jamais testé jusqu'ici, différent de l'Order Block/IFVG/Turtle Soup déjà rejetés et du FILTRE liquidity sweep déjà en place sur le FVG (celui-là utilise un pivot fractal à toute heure ; celui-ci utilise le plus-haut/plus-bas de la VEILLE (PDH/PDL), limité à la killzone Londres ICT 02h-05h NY). Signal = mèche qui dépasse le PDH/PDL PUIS clôture de l'autre côté, même bougie (même convention que `liquiditySweep.js`), un signal par direction par jour max. Entrée à l'ouverture de la bougie suivante, stop à l'extrême du sweep, cible fixe 1:3, timeout 480 bougies M15 (conventions déjà utilisées ailleurs, rien inventé pour la sortie). Testé sur les 5 instruments. Résultat, contrairement à tout ce qui a été testé récemment, MITIGÉ plutôt que clairement négatif :

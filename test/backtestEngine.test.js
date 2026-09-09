@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FvgEngine } from '../src/engines/fvgEngine.js';
-import { runBacktest, runBacktestManaged, runBacktestPyramidIndependentStops, summarizeTrades } from '../src/backtest/backtestEngine.js';
+import { runBacktest, runBacktestManaged, runBacktestPyramidIndependentStops, runBacktestMultiPosition, summarizeTrades } from '../src/backtest/backtestEngine.js';
 
 function c(time, open, high, low, close) {
   return { time, open, high, low, close };
@@ -347,4 +347,70 @@ test('summarizeTrades handles an all-winning series (profitFactor = Infinity, no
   assert.equal(summary.profitFactor, Infinity);
   assert.equal(summary.maxDrawdownR, 0);
   assert.equal(summary.winRate, 1);
+});
+
+// runBacktestMultiPosition — 2026-09, at the user's explicit question after
+// the forward-test's low trade count: "et si on retire le netting, et on
+// accepte 2 positions à la fois?"
+test('runBacktestMultiPosition: maxConcurrentPositions=1 reproduces runBacktest() exactly (equivalence)', () => {
+  const candles = [
+    ...bullishSetup(),
+    c(6, 105.8, 106, 105.5, 105.9),
+    c(7, 105.9, 105.9, 104, 104.2),
+    c(8, 104.2, 104.8, 103.9, 104.3),
+    c(9, 104.3, 105, 104.1, 104.6),
+    c(10, 104.6, 104.7, 103.0, 103.1),
+    c(11, 103.1, 108, 103, 107.5),
+  ];
+  const engineA = new FvgEngine({ symbol: 'TEST' });
+  const single = runBacktestMultiPosition({ candles, symbol: 'TEST', fvgEngine: engineA, stopMode: 'fvg-edge', rrMultiple: 2, maxConcurrentPositions: 1 });
+  const engineB = new FvgEngine({ symbol: 'TEST' });
+  const baseline = runBacktest({ candles, symbol: 'TEST', fvgEngine: engineB, stopMode: 'fvg-edge', rrMultiple: 2 });
+  assert.deepEqual(single, baseline);
+});
+
+test('runBacktestMultiPosition: maxConcurrentPositions=2 lets a second signal open while the first is still live, both resolve independently', () => {
+  const candles = [
+    ...bullishSetup(), // opens trade #1 (bullish): entry=103, stop=100.8, target=107.4 - still open
+    c(6, 105.8, 106, 105.5, 105.9),   // c1' of a second, independent bearish FVG
+    c(7, 105.9, 105.9, 104, 104.2),   // c2' impulsive down
+    c(8, 104.2, 104.8, 103.9, 104.3), // c3' -> bearish zone [104.8, 105.5]
+    c(9, 104.3, 105, 104.1, 104.6),   // validates the bearish FVG -> trade #2 opens (entry=104.8, stop=105.57, target=103.26)
+    // under plain runBacktest() (netting) this signal is blocked entirely (see the test above) -
+    // with maxConcurrentPositions=2 it opens as a SECOND live position instead.
+    c(10, 104.6, 104.7, 103.0, 103.1), // low 103.0 <= trade #2's target (103.26) -> trade #2 closes WIN, trade #1 still open (untouched: 103.0 > its stop 100.8)
+    c(11, 103.1, 108, 103, 107.5),     // high 108 >= trade #1's target (107.4) -> trade #1 closes WIN
+  ];
+  const engine = new FvgEngine({ symbol: 'TEST' });
+  const trades = runBacktestMultiPosition({ candles, symbol: 'TEST', fvgEngine: engine, stopMode: 'fvg-edge', rrMultiple: 2, maxConcurrentPositions: 2 });
+
+  assert.equal(trades.length, 2); // both resolve, vs 0 under netting (see "only one open trade..." test above)
+  assert.equal(trades[0].direction, 'bearish'); // exits first (index 9)
+  assert.equal(trades[0].outcome, 'win');
+  assert.equal(trades[0].entryPrice, 104.8);
+  assert.equal(trades[1].direction, 'bullish'); // exits second (index 10)
+  assert.equal(trades[1].outcome, 'win');
+  assert.equal(trades[1].entryPrice, 103);
+  // sorted by exit order, not entry order
+  assert.ok(trades[0].exitIndex < trades[1].exitIndex);
+});
+
+test('runBacktestMultiPosition: a THIRD signal is still blocked once maxConcurrentPositions=2 is already full', () => {
+  const candles = [
+    ...bullishSetup(), // trade #1 open
+    c(6, 105.8, 106, 105.5, 105.9),
+    c(7, 105.9, 105.9, 104, 104.2),
+    c(8, 104.2, 104.8, 103.9, 104.3),
+    c(9, 104.3, 105, 104.1, 104.6), // trade #2 opens - now 2/2 slots full
+    // A third, independent FVG forms and validates while both slots are occupied - its price action
+    // stays between both open trades' stop/target, so neither resolves here (isolates the cap itself).
+    c(10, 104.6, 104.7, 104.5, 104.6), // flat - c1'' (low=104.5)
+    c(11, 104.6, 104.6, 103.8, 103.9), // c2'' impulsive down
+    c(12, 103.9, 104.3, 103.7, 104.0), // c3'' (high=104.3 < c1''.low 104.5) -> bearish zone [104.3, 104.5]
+    c(13, 104.0, 104.4, 103.9, 104.1), // high=104.4 >= 104.3 -> would validate a third bearish FVG
+  ];
+  const engine = new FvgEngine({ symbol: 'TEST' });
+  const trades = runBacktestMultiPosition({ candles, symbol: 'TEST', fvgEngine: engine, stopMode: 'fvg-edge', rrMultiple: 2, maxConcurrentPositions: 2 });
+  // Neither of the first two trades resolves in this window, and the third must have been blocked by the cap -> 0 closed trades.
+  assert.equal(trades.length, 0);
 });
