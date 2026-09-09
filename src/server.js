@@ -12,6 +12,7 @@ import { buildRecentPerformanceReport } from './backtest/recentPerformanceReport
 import { resampleCandles } from './backtest/htfBias.js';
 import { buildChartOverlays } from './backtest/chartOverlays.js';
 import { startKeepAlive } from './keepAlive.js';
+import { fetchPerformanceBySymbol } from './dataSources/supabaseTradeLog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -243,6 +244,25 @@ app.get('/api/recent-performance', async (req, res) => {
     const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90 });
     recentPerformanceCache = { builtAt: Date.now(), report };
     res.json({ ...report, cachedAt: recentPerformanceCache.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Durable per-symbol journal (2026-09, at the user's explicit request:
+// "je perds beaucoup en US500, est-ce normal?" - unlike /api/recent-performance
+// above (a 90-day in-memory REPLAY that resets on every restart), this reads
+// real outcomes actually logged since persistence was turned on (see
+// supabaseTradeLog.js and cTraderDataSource.js's _logTradeOutcomes()) -
+// grows over calendar time, survives Render sleeping/redeploying. Returns
+// an explicit `reason` (not an error) when SUPABASE_URL/SUPABASE_SERVICE_KEY
+// aren't set - persistence is opt-in, same as keepAlive.js.
+app.get('/api/trade-log', async (req, res) => {
+  const client = store.liveDataSource?.tradeLogClient ?? null;
+  const days = req.query.days ? Number(req.query.days) : null;
+  try {
+    const result = await fetchPerformanceBySymbol(client, { days });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

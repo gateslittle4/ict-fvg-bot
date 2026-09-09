@@ -150,6 +150,12 @@
   </div>
 
   <div class="card">
+    <h2>Journal durable par instrument</h2>
+    <div class="meta" style="margin-bottom:8px;">Contrairement à la carte ci-dessus (une simulation en mémoire qui repart de zéro à chaque redémarrage), ceci est un vrai journal des trades résolus, enregistré en base au fur et à mesure — il survit aux redémarrages et grandit avec le temps. Vide tant que la persistance n'est pas activée (variables SUPABASE_URL / SUPABASE_SERVICE_KEY).</div>
+    <div id="trade-log-summary">Chargement…</div>
+  </div>
+
+  <div class="card">
     <h2>Journal de trading (7 derniers jours)</h2>
     <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L viennent directement de l'historique cTrader. Le stop/la cible prévus ne sont pas affichés ici : cTrader ne conserve pas cette info pour une position déjà fermée, donc plutôt que d'en inventer un, on ne montre que ce qui est vérifiable.</div>
     <div id="journal-summary" style="margin-bottom:10px;"></div>
@@ -448,6 +454,30 @@ async function refreshRecentPerformance() {
   }
 }
 
+async function refreshTradeLog() {
+  const el = document.getElementById('trade-log-summary');
+  try {
+    const res = await fetch('/api/trade-log');
+    const data = await res.json();
+    const symbols = Object.keys(data.bySymbol || {});
+    if (symbols.length === 0) {
+      el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+      return;
+    }
+    el.innerHTML = symbols.map((symbol) => {
+      const b = data.bySymbol[symbol];
+      const netWin = b.totalR >= 0;
+      return `
+        <div class="stat-row"><span class="label">${symbol}</span><span>${b.count} trade${b.count > 1 ? 's' : ''}</span></div>
+        <div class="stat-row"><span class="label">Taux de réussite</span><span>${b.winRatePct === null ? '—' : fmt(b.winRatePct, 0) + '%'} (${b.wins}G / ${b.losses}P${b.timeouts ? ' / ' + b.timeouts + ' exp.' : ''})</span></div>
+        <div class="stat-row" style="margin-bottom:10px;"><span class="label">Total en R</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(b.totalR)}R</span></div>
+      `;
+    }).join('');
+  } catch (err) {
+    el.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  }
+}
+
 async function refreshTradeHistory() {
   const list = document.getElementById('journal-list');
   try {
@@ -520,11 +550,13 @@ refreshStatus();
 refreshSignals();
 refreshTradeHistory();
 refreshRecentPerformance();
+refreshTradeLog();
 refreshAccount();
 setInterval(refreshStatus, 3000);
 setInterval(refreshSignals, 3000);
 setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
 setInterval(refreshRecentPerformance, 120000); // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
+setInterval(refreshTradeLog, 60000); // grows one row per resolved trade, no meaningful reason to poll faster
 setInterval(refreshAccount, 30000); // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
 </script>
 </body>

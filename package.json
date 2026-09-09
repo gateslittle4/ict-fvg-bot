@@ -16,6 +16,7 @@
   "type": "module",
   "dependencies": {
     "@reiryoku/ctrader-layer": "^2.2.0",
+    "@supabase/supabase-js": "^2.116.0",
     "express": "^5.2.1",
     "lightweight-charts": "^5.2.1",
     "node-fetch": "^3.3.2"

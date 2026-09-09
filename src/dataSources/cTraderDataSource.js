@@ -37,6 +37,7 @@ import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity } from './accountReconciliation.js';
+import { createTradeLogClient, logClosedTrade } from './supabaseTradeLog.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -121,6 +122,20 @@ export class CTraderDataSource {
     // re-derived from store.mode at each call site: the convention belongs
     // to whichever data source produced the candles, not to a global flag.
     this.candleTimeOffsetMs = FIXED_EST_TO_UTC_OFFSET_MS;
+
+    // Durable per-symbol trade journal (2026-09, at the user's explicit
+    // request after "je perds beaucoup en US500, est-ce normal?" turned out
+    // to be unanswerable - store.signalLog is capped at 200 entries AND
+    // lives only in memory, wiped on every Render restart/sleep. Opt-in,
+    // same pattern as keepAlive.js: createTradeLogClient() returns null
+    // (persistence silently skipped) unless SUPABASE_URL/SUPABASE_SERVICE_KEY
+    // are set. openTradesById pairs a 'closed' event back to the 'validated'
+    // event that opened it (same pairing recentPerformanceReport.js already
+    // does for its own in-memory replay) so the logged row has an
+    // entryTime/rrMultiple to work with - 'closed' events alone don't carry
+    // either (see liveStrategyEngine.js's _resolveOpenPosition()).
+    this.tradeLogClient = createTradeLogClient();
+    this.openTradesById = new Map();
   }
 
   async start() {
@@ -438,6 +453,8 @@ export class CTraderDataSource {
             if (e.type === 'pyramid-order-requested') this._handlePyramidOrderRequested(symbolName, symbolId, e);
             if (e.type === 'pyramid-order-cancel-requested') this._handlePyramidOrderCancelRequested(symbolName, e);
           }
+
+          this._logTradeOutcomes(events);
         }
       });
     }
@@ -679,6 +696,38 @@ export class CTraderDataSource {
           this.pyramidPositionIdBySymbol.set(symbolName, positionId);
           this._notifyText(`🔺 Pyramide auto : 2e unité REMPLIE sur ${symbolName} à ${filled.entryPrice} (stop ${filled.stopPrice}, cible ${filled.targetPrice})`);
         }
+      }
+    }
+  }
+
+  // Pairs each 'closed' event back to the 'validated' event that opened it
+  // (same id, matching recentPerformanceReport.js's own openById pairing)
+  // and persists the outcome via supabaseTradeLog.js. A no-op when
+  // tradeLogClient is null (SUPABASE_URL/SUPABASE_SERVICE_KEY unset) -
+  // logClosedTrade() already checks that, but skipping the pairing work
+  // entirely when it can't go anywhere avoids growing openTradesById for no
+  // reason on a bot that never configured persistence.
+  _logTradeOutcomes(events) {
+    if (!this.tradeLogClient) return;
+    for (const e of events) {
+      if (e.type === 'validated' && !e.blockedReason) {
+        this.openTradesById.set(e.id, e);
+      }
+      if (e.type === 'closed') {
+        const opened = this.openTradesById.get(e.id);
+        if (!opened) continue; // opened before this process started tracking (e.g. right after a restart) - no real entryTime to log, same "exclude rather than guess" call recentPerformanceReport.js makes
+        this.openTradesById.delete(e.id);
+        const rMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
+        logClosedTrade(this.tradeLogClient, {
+          symbol: e.symbol,
+          source: e.source,
+          direction: e.direction,
+          outcome: e.outcome,
+          rMultiple,
+          entryPrice: opened.entryPrice,
+          entryTime: opened.validatedAt,
+          exitTime: e.exitTime,
+        });
       }
     }
   }
