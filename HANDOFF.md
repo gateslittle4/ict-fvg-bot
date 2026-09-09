@@ -117,7 +117,48 @@ Question posée : "les pertes que j'ai vues à 1:4/1:5, est-ce que c'est le marc
 3. Comparer : cible dynamique (basée sur le bassin de liquidité réel) vs cible fixe actuelle (5/5/4), même entrées/stops, même split train/test.
 4. Attention à la discipline anti-data-snooping : les seuils (ex. "loin" = au-delà de combien de R) doivent être choisis AVANT de regarder si ça marche, pas ajustés après.
 
-**Statut : pas commencé, proposé comme prochaine piste de recherche** (voir aussi checklist de reprise en fin de fichier).
+**Statut : hypothèse TESTÉE (session suivante, même jour) — REJETÉE, voir ci-dessous.**
+
+### Suite (2026-09-09, même jour) — hypothèse "swing H4 le plus proche" testée sur les 5 trades eux-mêmes : ne tient pas
+
+Script jetable, réidentifie les 5 trades exacts par entryIndex (moteur FVG, pas une recherche heuristique par date — une première tentative par date a révélé un piège : rejouer le backtest avec gestion active décale QUELS signaux entrent, parce que la durée de vie des trades précédents change ; voir plus bas), puis calcule pour chacun (a) le MFE réel (jusqu'où le prix est allé avant de retourner) et (b) le swing H4 le plus proche confirmé avant l'entrée, du même côté que la cible :
+
+| Date | MFE atteint | Swing H4 le plus proche | Cohérent avec l'hypothèse? |
+|---|---|---|---|
+| 2019-02-26 | 4.55R | 0.29R | ❌ prix a traversé le swing sans réagir |
+| 2019-04-05 | 3.04R | 2.78R | ✅ seul cas cohérent |
+| 2022-11-11 | 3.21R | 0.41R | ❌ |
+| 2023-01-03 | 4.18R | 0.92R | ❌ |
+| 2025-01-13 | 4.74R | 2.49R | ❌ swing nettement plus proche que le vrai retournement |
+
+**1 cas cohérent sur 5.** Le swing H4 le plus proche ne prédit pas où le prix retourne réellement — dans 4 cas sur 5, le prix a traversé ce niveau largement avant de finalement faire demi-tour. **Conclusion : abandonner cette piste précise (swing H4 comme prédicteur) — pas assez de preuve pour la coder sans risquer de calibrer un seuil sur du bruit (5 points, aucune signification statistique).** La théorie ICT "draw on liquidity" n'est pas invalidée en soi, juste cette implémentation simple (swing le plus proche, une seule timeframe).
+
+**Découverte annexe en cours de route** : sur ce dataset, 141 trades entrent à 1:3 fixe mais seulement 140 à 1:5 fixe — un signal (7 nov. 2019) qui entre en trade dans le run 1:3 ne trouve JAMAIS l'occasion d'entrer dans le run 1:5, parce qu'une position antérieure y reste ouverte plus longtemps (cible plus loin) et bloque l'entrée suivante (règle "une seule position ouverte à la fois"). Le multiple R:R choisi influence donc indirectement QUELS signaux ont même la chance d'être pris, pas seulement comment ils se terminent — à garder en tête pour toute comparaison future entre configs à cible différente.
+
+### Suite — gestion active (breakeven/partiel/pyramide) testée à +3R avec cible 1:5, comme piste alternative
+
+Sur les 5 trades de retournement eux-mêmes (calcul à la main, entrée/stop tenus fixes pour éviter le piège de dérive d'entrée découvert ci-dessus) :
+
+| Mode | Résultat sur les 5 trades |
+|---|---|
+| Breakeven à +3R | 0.00R (scratch — sauve la perte, aucun gain capturé) |
+| **Partiel 50% à +3R + breakeven** | **+1.50R (meilleur des trois)** |
+| Pyramide (+1 lot à +3R, stop partagé) | **-3.00R (pire que ne rien faire!)** — la 2e unité entre à +3R avec son propre risque ; quand le prix retourne à l'entrée d'origine (stop partagé), c'est une vraie perte de -3R pour CETTE unité, pas juste une neutralisation |
+
+**Mais ça ne tient PAS une fois testé sur tout le dataset (train 2019-2023 / test 2024-2025), pas seulement ces 5 trades :**
+
+| Config US100 | Train | Test |
+|---|---|---|
+| 1:3 fixe (validé) | 0.79R | 0.70R |
+| **1:5 fixe (déjà le résultat le plus fort connu)** | **1.38R** | **1.44R** |
+| Breakeven à +3R, cible 1:5 | 1.26R | 1.47R |
+| Partiel à +3R, cible 1:5 | 1.18R | 1.35R |
+
+Sur US100, le 1:5 fixe simple reste le meilleur choix — la gestion active fait PIRE en train (1.26/1.18 vs 1.38) et à peine mieux en test (1.47 vs 1.44), pas assez pour compenser. **Leçon méthodologique explicite : un pattern prometteur sur 5 trades isolés ne se généralise pas forcément à l'ensemble — exactement le piège de data-snooping que la discipline de ce projet essaie d'éviter partout ailleurs.**
+
+**Découverte annexe utile, différente de ce qu'on cherchait** : sur US500, le breakeven à +3R (cible 1:5) BAT le 1:5 fixe sur les DEUX périodes (train 1.10R vs 1.02R, test 1.33R vs 1.13R) — signal réel, pas testé plus loin cette session, à garder en réserve pour une future piste dédiée (pas un ajout automatique à la config actuelle, un seul découpage historique comme toujours).
+
+**Conclusion finale pour la config actuelle : rien ne bat le 1:5 fixe déjà en place pour US100.** Les 5 trades de retournement restent une perte réelle mais rare (5/141 ≈ 3.5%) et, avec ce qu'on a testé jusqu'ici, non évitable sans sacrifier plus qu'on ne gagnerait ailleurs. Aucun changement de code proposé suite à cette recherche — statu quo justifié empiriquement, pas juste par défaut.
 
 ## Résultats MITIGÉS — pas encore prêt pour la production (vérifications supplémentaires nécessaires)
 
