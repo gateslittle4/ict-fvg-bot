@@ -188,6 +188,40 @@ Mesuré (pas estimé) : **~60 s en local** à la taille réelle de production �
 
 **Leçon pour la suite** : tout endpoint qui rejoue l'historique DOIT utiliser `warmUp({ onEvent })`, jamais `ingestCandle()` en boucle. Et tout cache écrit-après-calcul sur un endpoint sondé périodiquement a besoin d'un garde-fou in-flight, sinon il s'empile.
 
+### Suite — `KEEP_ALIVE_WINDOWS` : garder le bot éveillé UNIQUEMENT aux heures où il trade réellement
+
+Question d'Esdras juste après : « où se trouve la majorité de nos trades ? On pourrait programmer le keep-alive uniquement dans les heures où on a le plus de chance d'avoir un trade. »
+
+**Répondu empiriquement** (rejeu de la config de production exacte sur 2019-2025, 1120 entrées non bloquées, réparties par heure NY réelle DST-aware et par jour) — pas au jugé :
+
+| Source | Où elle tire vraiment |
+|---|---|
+| **FVG** (le cœur validé) | **100 % entre 07h et 10h NY, lun-ven** — zéro ailleurs. Ses filtres de session la contraignent déjà. |
+| **NWOG** | **351 sur 361 le DIMANCHE, 18h-19h NY** — c'est le gap de réouverture hebdomadaire. |
+| **Divergence** | Étalée sur les 24 h — seule source sans filtre de session, et donc la seule raison pour laquelle le gate actuel était 24/5. |
+
+**Arbitrage mesuré** pour `Mon-Fri@06:30-12:00,Sun@17:00-22:00` :
+
+| | Trades | Total R | Espérance | Heures/sem |
+|---|---|---|---|---|
+| Couverture 24/5 précédente | 1120 | +651 R | 0.581 R | 120 h |
+| **Fenêtre resserrée** | **926** | **+595 R (91 %)** | **0.643 R** | **30 h (−75 %)** |
+| Ce qui est coupé | 194 | +56 R | 0.289 R | — |
+
+**Les trades gardés sont de MEILLEURE qualité** (0.643 R vs 0.289 R), et **aucune entrée FVG n'est jamais perdue** — les 194 coupées sont de la Divergence (184) plus 10 NWOG isolées. Ce n'est pas gratuit pour autant : +56 R sur 7 ans ≈ **+8 R/an abandonnés**, dit clairement plutôt que présenté comme sans coût.
+
+**Implémentation** (`keepAlive.js`) :
+- `parseKeepAliveWindows()` : parseur pur pour des segments `Jour[-Jour]@HH:MM-HH:MM` en heure de New York. Les plages de jours peuvent enjamber la fin de semaine (`Fri-Mon`). **Rejette explicitement** une fenêtre qui traverse minuit (message actionnable : la découper en deux), un jour inconnu, une heure hors bornes — jamais d'analyse silencieusement fausse.
+- `isWithinKeepAliveWindows()` : prédicat pur, DST-aware, **fail OPEN** si la sortie locale n'est pas reconnue — même choix défensif que `isMarketOpen()`.
+- Quand `KEEP_ALIVE_WINDOWS` est défini, il **remplace** le gate heures-de-marché (il est strictement plus étroit par construction). **Un spec malformé émet un warning et retombe sur le gate PLUS LARGE** : une faute de frappe doit coûter des heures d'instance, jamais laisser le bot endormi pendant une session de trading.
+- +8 tests (301/301) : minutes de bordure exactes (06:00 vs 06:30, 12:00 vs 13:00), fenêtre NWOG du dimanche, samedi, plage de jours qui enjambe, chaque rejet du parseur, et le repli sur spec malformé. Les timestamps de fixture sont écrits avec leur équivalent NY pour qu'une régression DST ne passe pas inaperçue.
+
+**Variables d'environnement Render actives** : `KEEP_ALIVE=true`, `KEEP_ALIVE_WINDOWS=Mon-Fri@06:30-12:00,Sun@17:00-22:00`, `CTRADER_ACCOUNT_ID=48587457`.
+
+**Marge volontaire** : la fenêtre démarre à 06:30 alors que le premier FVG tire à 07h — le réveil (boot + warm-up + connexion cTrader) prend ~20-25 s et les pings sont espacés de 10 min, donc cette demi-heure garantit que le bot est chaud avant la première entrée possible.
+
+**Si Esdras veut plus de couverture** (chiffré sur les mêmes données) : `Mon-Fri@06:00-13:00,Sun@17:00-22:00` = 85 % des entrées pour 40 h/sem ; `Mon-Fri@06:00-22:00,Sun@17:00-23:00` = 97 % pour 86 h/sem. Le passage à 24/5 ne rachète que les ~3 % restants pour 34 h/sem de plus.
+
 ## Forward-test 2026 sur données RÉELLES cTrader (2026-09-09, à la demande explicite d'Esdras)
 
 "Peux-tu tester mon bot sur les 8 derniers mois qui viennent de passer?" — un vrai test out-of-sample, sur des données qui n'existaient pas quand la config a été choisie (2019-2025). Nécessitait d'exporter l'historique récent depuis le VRAI compte cTrader (ni les CSV 2019-2025 ni l'historique en mémoire du bot live — capé à 90 jours — ne couvraient cette période) :
