@@ -160,6 +160,31 @@ Sur US100, le 1:5 fixe simple reste le meilleur choix — la gestion active fait
 
 **Conclusion finale pour la config actuelle : rien ne bat le 1:5 fixe déjà en place pour US100.** Les 5 trades de retournement restent une perte réelle mais rare (5/141 ≈ 3.5%) et, avec ce qu'on a testé jusqu'ici, non évitable sans sacrifier plus qu'on ne gagnerait ailleurs. Aucun changement de code proposé suite à cette recherche — statu quo justifié empiriquement, pas juste par défaut.
 
+## Forward-test 2026 sur données RÉELLES cTrader (2026-09-09, à la demande explicite d'Esdras)
+
+"Peux-tu tester mon bot sur les 8 derniers mois qui viennent de passer?" — un vrai test out-of-sample, sur des données qui n'existaient pas quand la config a été choisie (2019-2025). Nécessitait d'exporter l'historique récent depuis le VRAI compte cTrader (ni les CSV 2019-2025 ni l'historique en mémoire du bot live — capé à 90 jours — ne couvraient cette période) :
+
+- Ajouté `getHistoricalCandles()` (`cTraderDataSource.js`) + `GET /api/admin/export-candles?symbol=X&days=N&token=...` (`server.js`, gated par `ADMIN_EXPORT_TOKEN`, opt-in) — réutilise la connexion cTrader déjà active en prod, cTrader accepte jusqu'à 35 semaines (~245 jours) en une requête. Session de code n'a PAS d'accès réseau direct à onrender.com (bloqué par la politique d'organisation, confirmé avec curl ET WebFetch) — Esdras a dû visiter les 3 URLs elle-même dans son navigateur pour télécharger les CSV, puis me les partager.
+- Données obtenues : 2026-02-05 → 2026-09-09 (~7 mois), sauvegardées dans `data/forward-test-2026/`.
+- Config de PRODUCTION utilisée telle quelle (`CONFIG.fvg.perSymbol` — rrMultiple 5/5/4) — pas de nouveau grid-search, script `scripts/runForwardTest2026.js`.
+
+**Résultat (détail complet : `data/forward-test-2026/results.md`)** :
+
+| Symbole | Signaux net | Win rate net | Total R net |
+|---|---|---|---|
+| US100 (1:5) | 3 | 66.7% | **+8.62R** |
+| US500 (1:5) | 4 | 75.0% | **+13.34R** |
+| XAUUSD (1:4) | 7 | 14.3% | **-2.15R** |
+| **Portefeuille** | **14** | | **+19.81R** |
+
+**US100/US500 : très positifs, cohérents avec le backtest 2019-2025 (win rate 66-75% dans la fourchette attendue), mais échantillon minuscule (3-4 trades) — direction confirmée, pas une preuve statistique.**
+
+**XAUUSD : signal d'alerte réel.** 1 seul gain sur 7 (14.3%), sous le seuil de rentabilité mécanique à 1:4 (20%), résultat net négatif sur la période. Cohérent avec ce qui était déjà su (XAUUSD = le plus fragile des trois, seul instrument dont l'edge redonne du terrain à 1:5). Ne justifie PAS de couper XAUUSD sur la base de 7 trades seuls, mais mérite une vigilance accrue sur les prochains mois plutôt qu'une confiance égale aux deux autres.
+
+**Effet de bord utile** : construire ceci a aussi produit une PWA installable (voir section dédiée plus bas) — demandé par Esdras en cours de route pour accéder plus facilement au dashboard depuis son téléphone.
+
+**Statut : information, aucun changement de config décidé.** L'endpoint `/api/admin/export-candles` reste déployé (gated par token) — utile pour un futur forward-test similaire sans tout reconstruire.
+
 ## Résultats MITIGÉS — pas encore prêt pour la production (vérifications supplémentaires nécessaires)
 
 - **Judas Swing ICT (killzone Londres)** — NOUVEAU (session 2026-09-06, suite, à la demande explicite de continuer sur un concept ICT puisque c'est de là que vient la seule stratégie pleinement validée). Concept ICT publié jamais testé jusqu'ici, différent de l'Order Block/IFVG/Turtle Soup déjà rejetés et du FILTRE liquidity sweep déjà en place sur le FVG (celui-là utilise un pivot fractal à toute heure ; celui-ci utilise le plus-haut/plus-bas de la VEILLE (PDH/PDL), limité à la killzone Londres ICT 02h-05h NY). Signal = mèche qui dépasse le PDH/PDL PUIS clôture de l'autre côté, même bougie (même convention que `liquiditySweep.js`), un signal par direction par jour max. Entrée à l'ouverture de la bougie suivante, stop à l'extrême du sweep, cible fixe 1:3, timeout 480 bougies M15 (conventions déjà utilisées ailleurs, rien inventé pour la sortie). Testé sur les 5 instruments. Résultat, contrairement à tout ce qui a été testé récemment, MITIGÉ plutôt que clairement négatif :
