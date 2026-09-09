@@ -9,6 +9,7 @@ import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
 import { summarizeTrades } from './dataSources/dealPairing.js';
 import { MatchTraderDataSource } from './dataSources/matchTraderDataSource.js';
 import { buildRecentPerformanceReport } from './backtest/recentPerformanceReport.js';
+import { buildForwardTest } from './backtest/forwardTest.js';
 import { resampleCandles } from './backtest/htfBias.js';
 import { buildChartOverlays } from './backtest/chartOverlays.js';
 import { startKeepAlive } from './keepAlive.js';
@@ -244,6 +245,43 @@ app.get('/api/recent-performance', async (req, res) => {
     const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90 });
     recentPerformanceCache = { builtAt: Date.now(), report };
     res.json({ ...report, cachedAt: recentPerformanceCache.builtAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Forward-test validation: split historical candles at a cutoff date,
+// replay the strategy before and after, compare performance. Query:
+// ?cutoff=2026-06-30 (ISO date) or ?cutoff=1719705600000 (milliseconds).
+// This answers: "Does the strategy perform consistently on unseen data?"
+app.get('/api/forward-test', async (req, res) => {
+  const cutoff = req.query.cutoff;
+  if (!cutoff) {
+    return res.status(400).json({ error: 'cutoff query parameter required (ISO date like 2026-06-30 or milliseconds)' });
+  }
+
+  let cutoffMs;
+  if (/^\d+$/.test(cutoff)) {
+    cutoffMs = Number(cutoff);
+  } else {
+    cutoffMs = new Date(cutoff).getTime();
+  }
+
+  if (Number.isNaN(cutoffMs)) {
+    return res.status(400).json({ error: `Invalid cutoff date: "${cutoff}". Use ISO format (2026-06-30) or milliseconds.` });
+  }
+
+  const historyBySymbol = {};
+  for (const symbol of CONFIG.symbols) {
+    historyBySymbol[symbol] = store.strategyEngine.getHistory(symbol);
+  }
+  if (Object.values(historyBySymbol).every((h) => h.length === 0)) {
+    return res.json({ reason: 'no candle history yet (still warming up or in demo mode)' });
+  }
+
+  try {
+    const result = await buildForwardTest(historyBySymbol, { cutoffMs });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
