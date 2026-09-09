@@ -496,20 +496,39 @@ export class CTraderDataSource {
       console.log(`[cTrader] ${symbolName}: subscribed to live ${period} candles`);
 
       this.connection.on('ProtoOASpotEvent', (event) => {
-        if (event.symbolId !== symbolId) return;
+        // 2026-09-09 fix: was `event.symbolId !== symbolId` (strict
+        // inequality). protobuf int64 fields are sometimes decoded as
+        // BigInt rather than Number depending on the specific field/library
+        // path - `1n !== 1` is ALWAYS true (different types), so if
+        // ProtoOASpotEvent.symbolId ever arrives as a BigInt while the
+        // `symbolId` captured from ProtoOASymbolsListReq's response is a
+        // plain Number (or vice versa), this guard silently rejected EVERY
+        // single spot event for EVERY symbol - no crash, no error, just
+        // nothing past this line ever running. This is the leading
+        // suspect for the spread-check endpoint's "zero samples after 10+
+        // minutes of a stable connection" symptom (see the diagnostic log
+        // below, added the same day to confirm one way or the other).
+        // Number() is safe for both BigInt and Number here: cTrader symbol
+        // ids are small, well within Number.MAX_SAFE_INTEGER.
+        if (Number(event.symbolId) !== Number(symbolId)) return;
 
         // DIAGNOSTIC, temporary (2026-09-09): the spread-check endpoint
         // reported zero samples after 10+ minutes of a stable connection -
-        // real market hours, no errors, same instance the whole time. The
-        // one unverified assumption is the raw shape of a ProtoOASpotEvent
-        // itself (this project's own discipline elsewhere already flags bid
-        // scaling as "VERIFY against a real response" - ask was never
-        // checked at all). Log the first event per symbol so the actual
-        // field names/types are known instead of assumed. Remove once
-        // confirmed either way.
+        // real market hours, no errors, same instance the whole time. Log
+        // the first event per symbol (BigInt-safe replacer, since a plain
+        // JSON.stringify throws on any BigInt field and would otherwise
+        // fail SILENTLY here - an uncaught exception inside an EventEmitter
+        // listener has no visible effect on this process, it just never
+        // finishes running) so the actual field names/types are known
+        // instead of assumed. Remove once confirmed either way.
         if (!this._loggedSpotShapeFor.has(symbolName)) {
           this._loggedSpotShapeFor.add(symbolName);
-          console.log(`[diagnostic] ${symbolName} first ProtoOASpotEvent shape:`, JSON.stringify(event));
+          try {
+            const safe = JSON.stringify(event, (_key, value) => (typeof value === 'bigint' ? `${value}n` : value));
+            console.log(`[diagnostic] ${symbolName} first ProtoOASpotEvent shape:`, safe);
+          } catch (err) {
+            console.log(`[diagnostic] ${symbolName} failed to stringify ProtoOASpotEvent:`, err.message, '- raw keys:', Object.keys(event));
+          }
         }
 
         // Signal detection is driven by full candle BARS (the trendbar
