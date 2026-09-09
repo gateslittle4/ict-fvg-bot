@@ -160,6 +160,34 @@ Sur US100, le 1:5 fixe simple reste le meilleur choix — la gestion active fait
 
 **Conclusion finale pour la config actuelle : rien ne bat le 1:5 fixe déjà en place pour US100.** Les 5 trades de retournement restent une perte réelle mais rare (5/141 ≈ 3.5%) et, avec ce qu'on a testé jusqu'ici, non évitable sans sacrifier plus qu'on ne gagnerait ailleurs. Aucun changement de code proposé suite à cette recherche — statu quo justifié empiriquement, pas juste par défaut.
 
+## ⚠️ INCIDENT DE PRODUCTION (2026-09-09) — site injoignable ~10 min à répétition : rapport O(n²) qui saturait le CPU
+
+**Symptôme rapporté** : « le site a un vrai problème de démarrage… à plusieurs reprises il veut pas monter. Ça fait 10 minutes et je ne peux pas monter sur le site. »
+
+**Diagnostic (métriques Render, pas une supposition)** :
+- CPU **collé exactement à la limite du plan gratuit (0.15)** en continu à partir de 12:16, sans redescendre — pendant que 12:13-12:15 était au repos (0.003-0.008).
+- Mémoire qui monte lentement (85 → 126 MB) — donc pas un OOM.
+- **Zéro requête HTTP terminée** dans les logs. Aucune erreur, aucun crash : le process tournait, mais l'event loop était affamé.
+
+**Cause racine** : `/api/recent-performance` appelait `buildRecentPerformanceReport()`, qui rejouait l'historique via `engine.ingestCandle()` **une fois par bougie**. Or chaque appel reconstruit tout le moteur filtré et rejoue TOUT l'historique retenu (design « rebuild-and-replay » de `liveStrategyEngine.js`) → le rapport était **O(n²)** : ~8600 bougies × 3 symboles ≈ **224 millions d'étapes internes**.
+
+Mesuré (pas estimé) : **~60 s en local** à la taille réelle de production — extrapolation quadratique cohérente depuis 3 tailles (500/1000/1500 bougies : 69 s / 54 s / 58 s). Sur le CPU bridé de Render (0.15), cela représente **~10-20 minutes pour UN seul calcul**.
+
+**Ce qui transformait ça en spirale de mort** : le cache n'est écrit qu'une fois le rapport TERMINÉ. Le dashboard sonde cet endpoint **toutes les 120 s** → pendant qu'un calcul de 10-20 min tournait, chaque sondage en démarrait un NOUVEAU par-dessus. Tous se disputaient les mêmes 0.15 CPU et se ralentissaient mutuellement → la file ne se vidait jamais. **Ouvrir le dashboard tuait le service de façon fiable et reproductible.**
+
+**C'est le MÊME piège O(n²) déjà corrigé deux fois dans ce projet** (le warm-up au boot, puis `chartOverlays.js`). `recentPerformanceReport.js` n'avait simplement jamais été migré vers `warmUp({ onEvent })`.
+
+**Correctifs appliqués** :
+1. `recentPerformanceReport.js` migré vers `warmUp({ onEvent })` (chemin O(n), déjà prouvé bit-pour-bit équivalent au replay séquentiel par le test d'équivalence existant). **Mesuré à la taille réelle de production (8639 × 3 symboles) : 99 ms**, contre ~60 s avant.
+2. `forwardTest.js` : même bug latent (écrit plus tôt le même jour), même correctif — cet endpoint aurait figé le service de la même façon s'il avait été appelé.
+3. `server.js` : garde-fou « in-flight » sur `/api/recent-performance` — au plus UN calcul à la fois, les appels concurrents attendent la même promesse. Le passage en O(n) rend chaque calcul trivial ; ce garde-fou rend l'empilement **structurellement impossible** quel que soit le coût futur.
+4. `KEEP_ALIVE=true` activé sur Render (il était codé depuis longtemps mais **jamais activé** — d'où aussi les démarrages à froid à chaque visite après 15 min d'inactivité). Ping borné aux heures de marché, donc compatible avec le quota d'heures du plan gratuit.
+5. `CTRADER_ACCOUNT_ID=48587457` épinglé (les logs le suggéraient eux-mêmes) — évite un aller-retour de découverte à chaque boot.
+
+**Discipline appliquée** : le gain de vitesse ne vaut que si la SORTIE est inchangée. Vérifié byte-pour-byte sur données réelles avant/après, puis **verrouillé par un test de non-régression permanent** qui exécute l'ancienne boucle par-bougie comme implémentation de référence et compare en `deepEqual`. 292/292.
+
+**Leçon pour la suite** : tout endpoint qui rejoue l'historique DOIT utiliser `warmUp({ onEvent })`, jamais `ingestCandle()` en boucle. Et tout cache écrit-après-calcul sur un endpoint sondé périodiquement a besoin d'un garde-fou in-flight, sinon il s'empile.
+
 ## Forward-test 2026 sur données RÉELLES cTrader (2026-09-09, à la demande explicite d'Esdras)
 
 "Peux-tu tester mon bot sur les 8 derniers mois qui viennent de passer?" — un vrai test out-of-sample, sur des données qui n'existaient pas quand la config a été choisie (2019-2025). Nécessitait d'exporter l'historique récent depuis le VRAI compte cTrader (ni les CSV 2019-2025 ni l'historique en mémoire du bot live — capé à 90 jours — ne couvraient cette période) :
