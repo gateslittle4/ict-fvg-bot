@@ -96,6 +96,29 @@ export function pickAccountOrThrow(accounts) {
   return accounts[0].ctidTraderAccountId;
 }
 
+/**
+ * Fold the latest live tick price into the displayed last candle (pure, so
+ * it's unit-testable without a broker connection). ProtoOASpotEvent carries
+ * bid/ask on EVERY tick, far more often than a trendbar update - without
+ * this, store.lastCandleBySymbol only moved when a trendbar arrived, which is
+ * why the chart's rightmost price looked stale ("prix ancien", a real
+ * reported observation). Display-only: the returned candle is never fed to
+ * the strategy engine (only closed trendbars are), so no-lookahead is
+ * untouched. Returns `existing` unchanged when there's nothing to fold yet
+ * (no candle seen, or a missing/non-finite price).
+ * @param {{open:number,high:number,low:number,close:number,time:number}|null|undefined} existing
+ * @param {number|null} price - the live tick price (e.g. bid), already unscaled
+ */
+export function foldLiveBidIntoCandle(existing, price) {
+  if (!existing || typeof price !== 'number' || !Number.isFinite(price)) return existing ?? null;
+  return {
+    ...existing,
+    close: price,
+    high: Math.max(existing.high, price),
+    low: Math.min(existing.low, price),
+  };
+}
+
 export class CTraderDataSource {
   constructor() {
     this.connection = null;
@@ -437,25 +460,42 @@ export class CTraderDataSource {
       console.log(`[cTrader] ${symbolName}: subscribed to live ${period} candles`);
 
       this.connection.on('ProtoOASpotEvent', (event) => {
-        if (event.symbolId !== symbolId || !event.trendbar) return;
-        for (const bar of event.trendbar) {
-          const candle = this._trendbarToCandle(bar);
-          const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle));
-          pushSignalEvents(events);
-          store.lastCandleBySymbol.set(symbolName, candle);
-          const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
-          if (actionable.length > 0) this._notify(actionable);
-          if (actionable.length > 0 && isAutoExecuteActive()) {
-            for (const sig of actionable) this._handleAutoExecuteEntry(symbolName, symbolId, sig);
-          }
+        if (event.symbolId !== symbolId) return;
 
-          for (const e of events) {
-            if (e.type === 'pyramid-order-requested') this._handlePyramidOrderRequested(symbolName, symbolId, e);
-            if (e.type === 'pyramid-order-cancel-requested') this._handlePyramidOrderCancelRequested(symbolName, e);
-          }
+        // Signal detection is driven by full candle BARS (the trendbar
+        // payload, present only on some spot events).
+        if (event.trendbar) {
+          for (const bar of event.trendbar) {
+            const candle = this._trendbarToCandle(bar);
+            const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle));
+            pushSignalEvents(events);
+            store.lastCandleBySymbol.set(symbolName, candle);
+            const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
+            if (actionable.length > 0) this._notify(actionable);
+            if (actionable.length > 0 && isAutoExecuteActive()) {
+              for (const sig of actionable) this._handleAutoExecuteEntry(symbolName, symbolId, sig);
+            }
 
-          this._logTradeOutcomes(events);
+            for (const e of events) {
+              if (e.type === 'pyramid-order-requested') this._handlePyramidOrderRequested(symbolName, symbolId, e);
+              if (e.type === 'pyramid-order-cancel-requested') this._handlePyramidOrderCancelRequested(symbolName, e);
+            }
+
+            this._logTradeOutcomes(events);
+          }
         }
+
+        // LIVE PRICE: bid/ask arrive on EVERY tick, far more often than a
+        // trendbar update. Fold the freshest bid into the displayed last
+        // candle so the chart/dashboard price is genuinely live between
+        // trendbar updates instead of frozen (see foldLiveBidIntoCandle).
+        // Same /100000 scaling as _trendbarToCandle - VERIFY against a real
+        // spot event's bid units before trusting the magnitude (display-only,
+        // so a scaling error is cosmetic, never a wrong order).
+        const bid = typeof event.bid === 'number' ? event.bid / 100000 : null;
+        const existing = store.lastCandleBySymbol.get(symbolName);
+        const folded = foldLiveBidIntoCandle(existing, bid);
+        if (folded && folded !== existing) store.lastCandleBySymbol.set(symbolName, folded);
       });
     }
   }

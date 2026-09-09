@@ -437,6 +437,32 @@ Session qui enchaîne directement sur "Deux vrais bugs trouvés et corrigés sur
 
 **État du dépôt à la fin de cette session** : `claude/lire-le-handoff-8bbrxx` et `claude/lire-handoff-hxisa5` pointent sur le même commit (`ab1b752`), working tree propre, `npm test` 245/245.
 
+## Câblage live vérifié + prix live corrigé (2 courtiers) + échelle de prix dynamique — 2026-09-09, nouvelle session Claude Code
+
+Session démarrée sur la branche de travail **`claude/nouvelle-session-p1lxw4`** (le harness l'a assignée). Trois demandes explicites de l'utilisatrice, dans l'ordre : (1) vérifier le câblage live, (2) « je veux le prix réel live, pas un prix ancien », (3) « les prix à droite sont statiques… il faudrait que l'échelle de prix soit dynamique, détecte où est le prix actuel et recadre le graphique là, comme ça pas besoin de manipuler le chart pour chercher le prix actuel ».
+
+**⚠️ Découverte de contexte à connaître avant tout** : le commentaire en tête de `config.js` (« cTrader ABANDONED 2026-09-07 in favor of Match-Trader… Match-Trader the active path ») est **PÉRIMÉ**. La section « cTrader — l'app a été APPROUVÉE par Spotware » plus haut, ET les logs Render du bilan 2026-09-09 (`[cTrader] connected and live for account 48587457`) confirment que **la production tourne en réalité sur cTrader**, pas Match-Trader. Attention : `getConfiguredPlatform()` **préfère toujours Match-Trader** si ses 4 identifiants (email/password/brokerId/platformUrl) sont tous posés — donc le jour où ces variables d'env existent sur Render, le bot basculerait sur Match-Trader. Les deux chemins ont donc été traités cette session.
+
+**1. Câblage live — vérifié, et un vrai bug trouvé sur le chemin Match-Trader (latent, corrigé)** :
+- Le moteur `LiveStrategyEngine` est fidèle au backtest : mêmes `buildFilteredEngine()` / helpers `correlation.js`, config copiée verbatim de `config.js`, netting/guardrail/spreads correctement injectés dans `store.js`. RAS.
+- **Bug (même classe que celui corrigé sur cTrader le 2026-09-08, jamais porté sur Match-Trader)** : `matchTraderDataSource.js` alimentait `ingestCandle` avec des bougies en **UTC réel**, sans le décalage « EST-as-UTC » qu'exige le filtre de session NY (`nySession.js` ajoute +5h en supposant la convention HistData). Résultat : sur le chemin Match-Trader, les fenêtres Silver Bullet (10-11h NY) et London-NY overlap (7-10h NY) étaient évaluées **5h à côté**. Corrigé : ajout de `_toEngineCandle()` (décale −5h la copie envoyée au moteur, comme cTrader) + propriété `candleTimeOffsetMs = FIXED_EST_TO_UTC_OFFSET_MS` pour que `/api/candles` et `/api/overlays` annulent le décalage à l'affichage. cTrader (chemin actif) était déjà correct sur ce point.
+
+**2. « Prix ancien / pas live » — corrigé sur LES DEUX chemins (affichage uniquement, no-lookahead préservé)** :
+- **cTrader (actif en prod)** : `store.lastCandleBySymbol` n'était mis à jour que sur les événements spot **portant un `trendbar`** (`if (… || !event.trendbar) return;`). Or `ProtoOASpotEvent` porte `bid`/`ask` sur CHAQUE tick, bien plus souvent qu'une mise à jour de trendbar → le prix affiché à droite semblait figé entre deux trendbars. Nouveau helper pur `foldLiveBidIntoCandle(existing, price)` : replie le dernier `bid` dans la bougie affichée (close = bid, high/low élargis pour rester valide) sur chaque tick spot. Le moteur, lui, ne reçoit toujours QUE les trendbars clos → détection de signaux inchangée.
+- **Match-Trader** : `store.lastCandleBySymbol` n'était écrit qu'à la **clôture** d'une bougie M15 (donc figé jusqu'à 15 min). Désormais la bougie **en cours de formation** (`builder.current`) est publiée à chaque poll de quotes (~15s). Là aussi le moteur ne reçoit que les bougies closes.
+- Réserve : l'unité exacte du `bid` cTrader (divisé par 100000, même convention que les trendbars — déjà notée « VERIFY » dans le fichier) n'est pas confirmée. C'est de l'affichage pur, donc une erreur d'échelle serait cosmétique (jamais un mauvais ordre), et c'est la même échelle que le close de trendbar déjà affiché.
+
+**3. Échelle de prix dynamique (`public/chart.html`)** :
+- Au chargement / changement de symbole ou de timeframe, le graphique se **cadre sur les ~140 dernières bougies** (`setVisibleLogicalRange`) avec `autoScale` sur l'axe des prix — au lieu de `fitContent()` sur les 1500 bougies, qui compressait tout et laissait le prix actuel en mince sliver à droite. L'auto-scale vertical suit donc automatiquement le prix courant.
+- Ajout d'une **ligne de prix actuel** tracée en travers du graphique avec son étiquette sur l'axe de droite (`priceLineVisible`/`lastValueVisible`), et d'un bouton **« ⌖ Prix actuel »** dans la barre d'outils pour recadrer à la demande. `rightOffset: 6` pour un peu d'air à droite. Les rafraîchissements en place (poll 60s, tick live 3s) conservent la vue de l'utilisatrice (`keepView`).
+- **Vérifié via Playwright** (Chromium pré-installé) : la page se rend sans erreur JS, le bouton est présent, la ligne de prix + étiquette d'axe s'affichent, le prix courant est bien cadré.
+
+**Tests** : +9 (4 Match-Trader : contrat prix-en-formation, `candleTimeOffsetMs`, round-trip d'heure NY de `_toEngineCandle` avec garde-fou DST été/hiver, régression « 5h à côté » ; 5 cTrader : `foldLiveBidIntoCandle` sous tous ses cas). **`npm test` = 254/254** (245 avant).
+
+**Fichiers touchés** : `src/dataSources/matchTraderDataSource.js`, `src/dataSources/cTraderDataSource.js`, `public/chart.html`, `test/matchTraderDataSource.test.js`, `test/cTraderDataSource.test.js`. Poussés sur `claude/nouvelle-session-p1lxw4` (commits `bbaa5cd` puis le commit du fix cTrader + handoff). **Rappel déploiement** : Render suit `claude/lire-handoff-hxisa5` — ces correctifs ne partiront en prod que lorsqu'on fera avancer `hxisa5` dessus (fast-forward), ce qui demande la permission explicite de l'utilisatrice (pas fait par défaut).
+
+**Réserves inchangées, à retenir** : les correctifs rendent le comportement live conforme au backtest et le prix vraiment live, mais l'unité `volume`/lot (cTrader ET Match-Trader) reste NON vérifiée contre une vraie réponse API — impératif avant tout capital réel. Pyramide et « mode indisponible » restent OFF par défaut.
+
 ## Prochaine session — check-list de reprise rapide
 
 1. Lire ce fichier en entier avant de supposer quoi que ce soit sur l'état du bot.
@@ -444,3 +470,6 @@ Session qui enchaîne directement sur "Deux vrais bugs trouvés et corrigés sur
 3. Ne pas répéter la question "combien de temps gratuit sur Render" sans re-vérifier — dernière fois, l'API ne donnait pas cette info, l'utilisatrice devait consulter la page "Usage" du dashboard elle-même.
 4. Le garde-fou "2 min autour des news majeures" reste à construire si l'utilisatrice le demande — voir ci-dessus, ne pas confondre avec l'exclusion de journées déjà rejetée.
 5. Toujours vérifier quelle branche Render déploie RÉELLEMENT avant de pousser quoi que ce soit en pensant que ça suffira (voir bug de process ci-dessus).
+6. **Le courtier actif en prod est cTrader**, pas Match-Trader — le commentaire de `config.js` est périmé (voir section 2026-09-09 « Câblage live vérifié… »). Vérifier le vrai courtier dans les logs de boot (`[cTrader] connected…` vs `[matchtrader] connected…`) avant de raisonner sur un comportement live. Rappel : `getConfiguredPlatform()` préfère Match-Trader si ses 4 identifiants sont posés.
+7. Les correctifs « prix live » + « échelle dynamique » + « session 5h Match-Trader » sont sur `claude/nouvelle-session-p1lxw4`. Pour les déployer, faire avancer la branche que Render suit (`hxisa5`) dessus — demander l'accord de l'utilisatrice d'abord.
+8. Avant d'activer pyramide / mode indisponible / tout ordre réel : confirmer l'unité `volume`/lot contre une VRAIE réponse API (cTrader `ProtoOASymbolsListReq.symbol.lotSize` ; Match-Trader specs FundingPips). Toujours non vérifié.
