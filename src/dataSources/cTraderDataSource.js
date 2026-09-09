@@ -125,6 +125,7 @@ export class CTraderDataSource {
     this.connection = null;
     this.symbolIdByName = new Map();
     this.symbolNameById = new Map();
+    this._loggedSpotShapeFor = new Set(); // diagnostic-only, see the ProtoOASpotEvent handler's own comment
     // Bookkeeping ONLY for the pyramid add-on leg, kept here (not in
     // LiveStrategyEngine) because by design that engine drops all tracking
     // of a pyramid leg the moment it's filled - see markPyramidOrderFilled()
@@ -496,6 +497,20 @@ export class CTraderDataSource {
 
       this.connection.on('ProtoOASpotEvent', (event) => {
         if (event.symbolId !== symbolId) return;
+
+        // DIAGNOSTIC, temporary (2026-09-09): the spread-check endpoint
+        // reported zero samples after 10+ minutes of a stable connection -
+        // real market hours, no errors, same instance the whole time. The
+        // one unverified assumption is the raw shape of a ProtoOASpotEvent
+        // itself (this project's own discipline elsewhere already flags bid
+        // scaling as "VERIFY against a real response" - ask was never
+        // checked at all). Log the first event per symbol so the actual
+        // field names/types are known instead of assumed. Remove once
+        // confirmed either way.
+        if (!this._loggedSpotShapeFor.has(symbolName)) {
+          this._loggedSpotShapeFor.add(symbolName);
+          console.log(`[diagnostic] ${symbolName} first ProtoOASpotEvent shape:`, JSON.stringify(event));
+        }
 
         // Signal detection is driven by full candle BARS (the trendbar
         // payload, present only on some spot events).
