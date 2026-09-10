@@ -811,3 +811,17 @@ Session qui a démarré sur l'investigation en cours du prix figé (voir section
 - Bug cosmétique préexistant corrigé au passage : les textes descriptifs (`class="meta"`) n'avaient aucune règle de couleur propre (seulement `.signal-item .meta`), donc s'affichaient en blanc vif comme une vraie donnée — ajouté une règle de base.
 
 Vérifié avec Playwright contre un serveur simulé couvrant toutes les cartes (desktop 1280px + mobile 390px) avant de pousser — rendu propre, zéro erreur console, contenu dynamique réaliste (source `[manuel/inconnu]`, badges bloqués, graphiques du journal) vérifié visuellement. 306/306 tests inchangés (aucune logique JS modifiée). Fichier : `public/index.html` uniquement.
+
+## Judas Swing activé en LIVE sur EURUSD — 2026-09-10, suite
+
+À la demande explicite d'Esdras ("on active juda swing"), après avoir vu que le rapport "90 jours" ne montrait que 26 trades / +8R (FVG+Divergence seuls — NWOG n'y est volontairement pas compté, voir plus haut). **EURUSD entre pour la première fois dans l'univers live** (`CONFIG.symbols`) — le FVG et la Divergence restent inchangés, non tradés dessus (jamais tenus out-of-sample), mais Judas Swing (sweep+reclaim du PDH/PDL en killzone Londres) y tient 6 années sur 8, et c'est un instrument SANS aucune autre stratégie dessus — vrai ajout de fréquence, pas une dilution.
+
+Câblé dans `LiveStrategyEngine` en suivant EXACTEMENT le même schéma que NWOG (`_computeJudasSwingCandidates`/`_detectJudasSwingSignal`/`_processJudasSwingCandidate`) : réutilise `detectJudasSwingEvents()` (`src/backtest/judasSwing.js`) telle quelle, écrit dans le VRAI `openPositions` partagé (netting réel avec FVG/Divergence/NWOG), inclut le garde-fou `validStopSide` (leçon du bug SMT Divergence) même si vérifié empiriquement absent sur EURUSD. `CONFIG.judasSwing` scope à EURUSD SEULEMENT (US100 tient aussi mais son edge décline année après année et a déjà 3 sources live dessus).
+
+**Étiquetage de source répliqué partout où NWOG l'avait fait** (notifications ntfy dans les deux connecteurs, regex `parseSourceFromLabel` du journal, `sourceLabel()` du dashboard) — sinon les trades Judas Swing se seraient affichés comme "FVG" par erreur (exactement le bug déjà trouvé et corrigé pour NWOG).
+
+**3 régressions de tests trouvées et corrigées** : deux tests d'équivalence bulk-warmup/séquentiel et un test "rapport identique à l'ancien" itéraient `CONFIG.symbols` directement sans que leurs fixtures locales aient d'entrée EURUSD — cassés par l'ajout du 4ᵉ symbole. Corrigé en détachant ces tests de `CONFIG.symbols` (liste explicite figée) plutôt que de juste rajouter EURUSD — pour que le prochain ajout de symbole ne recasse pas silencieusement les mêmes tests. 5 nouveaux tests dédiés à Judas Swing (mêmes scénarios que NWOG : timing/entrée, gain, perte, netting dans les deux sens). 311/311.
+
+**Déployé et confirmé en production** : logs de boot propres (`[cTrader] EURUSD: warm-up complete` → `subscribed to live M15 candles` → `connected and live`), et `/api/status` renvoie un vrai prix EURUSD (1.15916) aux côtés des 3 autres. Mode auto toujours actif (`AUTO_EXECUTE_ALWAYS_ON`), donc Judas Swing s'exécutera automatiquement dès son premier signal réel (fenêtre : killzone Londres 02h-05h NY, tous les jours).
+
+**Statut : LIVE, auto-exécuté. Aucun trade Judas Swing pris pour l'instant** (juste déployé). Comme pour NWOG, la prochaine étape naturelle est de surveiller que le premier vrai trade apparaît correctement dans le journal avec la source `[Judas Swing]`.
