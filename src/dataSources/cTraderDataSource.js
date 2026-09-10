@@ -125,7 +125,6 @@ export class CTraderDataSource {
     this.connection = null;
     this.symbolIdByName = new Map();
     this.symbolNameById = new Map();
-    this._loggedSpotShapeFor = new Set(); // diagnostic-only, see the ProtoOASpotEvent handler's own comment
     // Bookkeeping ONLY for the pyramid add-on leg, kept here (not in
     // LiveStrategyEngine) because by design that engine drops all tracking
     // of a pyramid leg the moment it's filled - see markPyramidOrderFilled()
@@ -218,7 +217,27 @@ export class CTraderDataSource {
     console.log('[cTrader] subscribing to live candles for', CONFIG.symbols.join(', '));
     await this._subscribeLiveCandles(accountId);
 
-    this.connection.on('ProtoOAExecutionEvent', (event) => this._handleExecutionEvent(event));
+    // ROOT CAUSE FIX (2026-09-10): connection.on(name, listener) delivers a
+    // CTraderLayerEvent WRAPPER, not the raw decoded payload - see
+    // CTraderLayerEmitter.notifyListeners() (`new CTraderLayerEvent({ type,
+    // date, descriptor })`) and CTraderLayerEvent itself (#type/#date/
+    // #descriptor are private class fields, only reachable via getters).
+    // The actual message fields (executionType, deal, order, position, ...)
+    // live under event.descriptor, NOT on event directly - `event.foo` is
+    // always undefined. This was silently swallowing every single push
+    // event since this code was written: _handleExecutionEvent() below was
+    // reading event.executionType etc. off the wrapper and finding nothing,
+    // so guardrail P&L updates / pyramid fill tracking from REAL broker
+    // executions never fired (a genuinely serious bug: the bot has been
+    // "flying blind" on live trade confirmations). Confirmed by adding a
+    // diagnostic JSON.stringify(event) log for ProtoOASpotEvent (same bug,
+    // see _subscribeLiveCandles below) - it printed `{}` on every boot,
+    // which looked like "the event never fires" but actually meant "the
+    // event fires constantly, JSON.stringify just can't see private fields
+    // behind getters". console.log(event) directly (util.inspect, not
+    // JSON.stringify) would have shown the wrapper's shape correctly and
+    // caught this immediately - lesson for next time.
+    this.connection.on('ProtoOAExecutionEvent', (event) => this._handleExecutionEvent(event.descriptor));
 
     store.mode = 'live';
     console.log('[cTrader] connected and live for account', accountId);
@@ -409,22 +428,6 @@ export class CTraderDataSource {
   async _subscribeLiveCandles(accountId) {
     const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
 
-    // DIAGNOSTIC, temporary (2026-09-09): registered ONCE, unconditionally,
-    // before the per-symbol loop below (which registers its own filtered
-    // 'ProtoOASpotEvent' listener 3 times, once per symbol - not new, not
-    // touched here). This one exists purely to answer a yes/no question
-    // with zero ambiguity: does 'ProtoOASpotEvent' fire AT ALL on this
-    // connection, regardless of symbolId matching? If this line never logs
-    // either, the problem is upstream of anything in this file (event name,
-    // subscription itself, or the connection/library layer) - not the
-    // symbolId comparison fixed just above. Remove once confirmed.
-    let loggedAnySpotEvent = false;
-    this.connection.on('ProtoOASpotEvent', (event) => {
-      if (loggedAnySpotEvent) return;
-      loggedAnySpotEvent = true;
-      console.log('[diagnostic] first ProtoOASpotEvent on this connection, UNFILTERED:', JSON.stringify(event, (_k, v) => (typeof v === 'bigint' ? `${v}n` : v)));
-    });
-
     for (const symbolName of CONFIG.symbols) {
       const symbolId = this.symbolIdByName.get(symbolName);
       if (!symbolId) {
@@ -511,41 +514,36 @@ export class CTraderDataSource {
       });
       console.log(`[cTrader] ${symbolName}: subscribed to live ${period} candles`);
 
-      this.connection.on('ProtoOASpotEvent', (event) => {
-        // 2026-09-09 fix: was `event.symbolId !== symbolId` (strict
-        // inequality). protobuf int64 fields are sometimes decoded as
-        // BigInt rather than Number depending on the specific field/library
-        // path - `1n !== 1` is ALWAYS true (different types), so if
-        // ProtoOASpotEvent.symbolId ever arrives as a BigInt while the
-        // `symbolId` captured from ProtoOASymbolsListReq's response is a
-        // plain Number (or vice versa), this guard silently rejected EVERY
-        // single spot event for EVERY symbol - no crash, no error, just
-        // nothing past this line ever running. This is the leading
-        // suspect for the spread-check endpoint's "zero samples after 10+
-        // minutes of a stable connection" symptom (see the diagnostic log
-        // below, added the same day to confirm one way or the other).
-        // Number() is safe for both BigInt and Number here: cTrader symbol
-        // ids are small, well within Number.MAX_SAFE_INTEGER.
-        if (Number(event.symbolId) !== Number(symbolId)) return;
+      this.connection.on('ProtoOASpotEvent', (rawEvent) => {
+        // ROOT CAUSE FIX (2026-09-10): rawEvent is a CTraderLayerEvent
+        // WRAPPER (see CTraderLayerEmitter.notifyListeners() and
+        // CTraderLayerEvent - #type/#date/#descriptor are private class
+        // fields, only reachable via getters). The real ProtoOASpotEvent
+        // fields (symbolId, bid, ask, trendbar, ...) live under
+        // rawEvent.descriptor, NOT on rawEvent itself - every access below
+        // used to read straight off rawEvent and silently get `undefined`
+        // for everything, all day, every boot: `Number(undefined) !==
+        // Number(symbolId)` is always true, so this listener body never ran
+        // past the guard below. That's the actual explanation for the
+        // frozen dashboard price AND the spread-check endpoint's "zero
+        // samples" - not the symbolId BigInt/Number type-mismatch fixed
+        // below (still correct and kept, but it was never the blocking
+        // issue - `undefined` fails a `Number()` comparison exactly the
+        // same way a BigInt/Number mismatch would). Confirmed by logging
+        // rawEvent with JSON.stringify(), which prints `{}` for ANY object
+        // whose only own fields are private class fields behind getters -
+        // that misleadingly looked like "the event never fires" when it
+        // actually meant "the event fires constantly, JSON.stringify just
+        // can't see it". console.log(rawEvent) directly (Node's
+        // util.inspect, not JSON.stringify) would have shown the wrapper's
+        // real shape immediately.
+        const event = rawEvent.descriptor;
 
-        // DIAGNOSTIC, temporary (2026-09-09): the spread-check endpoint
-        // reported zero samples after 10+ minutes of a stable connection -
-        // real market hours, no errors, same instance the whole time. Log
-        // the first event per symbol (BigInt-safe replacer, since a plain
-        // JSON.stringify throws on any BigInt field and would otherwise
-        // fail SILENTLY here - an uncaught exception inside an EventEmitter
-        // listener has no visible effect on this process, it just never
-        // finishes running) so the actual field names/types are known
-        // instead of assumed. Remove once confirmed either way.
-        if (!this._loggedSpotShapeFor.has(symbolName)) {
-          this._loggedSpotShapeFor.add(symbolName);
-          try {
-            const safe = JSON.stringify(event, (_key, value) => (typeof value === 'bigint' ? `${value}n` : value));
-            console.log(`[diagnostic] ${symbolName} first ProtoOASpotEvent shape:`, safe);
-          } catch (err) {
-            console.log(`[diagnostic] ${symbolName} failed to stringify ProtoOASpotEvent:`, err.message, '- raw keys:', Object.keys(event));
-          }
-        }
+        // protobuf int64 fields are sometimes decoded as BigInt rather than
+        // Number depending on the specific field/library path - `1n !== 1`
+        // is ALWAYS true (different types). Number() is safe for both here:
+        // cTrader symbol ids are small, well within Number.MAX_SAFE_INTEGER.
+        if (Number(event.symbolId) !== Number(symbolId)) return;
 
         // Signal detection is driven by full candle BARS (the trendbar
         // payload, present only on some spot events).
