@@ -21,9 +21,9 @@
 // (placed by hand, semi-automatic mode) or an unrecognized one is marked
 // source: null - NEVER guessed as one of the known strategies.
 
-const LABEL_SOURCE_RE = /^auto-(fvg|divergence|nwog)-/;
+const LABEL_SOURCE_RE = /^auto-(fvg|divergence|nwog|judaswing)-/;
 
-/** @returns {string|null} 'fvg'|'divergence'|'nwog'|'pyramid', or null if the label doesn't identify a known source */
+/** @returns {string|null} 'fvg'|'divergence'|'nwog'|'judaswing'|'pyramid', or null if the label doesn't identify a known source */
 export function parseSourceFromLabel(label) {
   if (!label) return null;
   const m = LABEL_SOURCE_RE.exec(label);

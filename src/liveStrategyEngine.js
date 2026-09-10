@@ -111,6 +111,7 @@ import { resampleCandles, TIMEFRAME_MS } from './backtest/htfBias.js';
 import { computeZScoreSeries, alignByTime } from './backtest/correlation.js';
 import { computeAtrSeries } from './backtest/rsiDivergence.js';
 import { detectNwogEvents } from './backtest/nwog.js';
+import { detectJudasSwingEvents } from './backtest/judasSwing.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
@@ -141,6 +142,11 @@ export class LiveStrategyEngine {
     // change) - not revisited here. Only store.js's ONE real live-tracking
     // engine passes this explicitly.
     nwogConfig = null,
+    // Same opt-in-only pattern as nwogConfig above (2026-09, at the user's
+    // explicit request: "on active Judas Swing" - see config.js's
+    // `judasSwing` comment and HANDOFF.md). Not defaulted so the three
+    // backtest/report engines don't silently start folding it in.
+    judasSwingConfig = null,
     guardrail,
     riskPctPerTrade = CONFIG.risk.riskPctPerTrade,
     spreads = {},
@@ -151,6 +157,7 @@ export class LiveStrategyEngine {
     this.fvgConfig = fvgConfig || {};
     this.divergenceConfig = divergenceConfig || null;
     this.nwogConfig = nwogConfig || null;
+    this.judasSwingConfig = judasSwingConfig || null;
     this.guardrail = guardrail;
     this.riskPctPerTrade = riskPctPerTrade;
     this.spreads = spreads;
@@ -159,7 +166,7 @@ export class LiveStrategyEngine {
 
     this.history = new Map(symbols.map((s) => [s, []])); // full retained candle history per symbol - never trimmed
     this.formationIndexBySymbol = new Map(symbols.map((s) => [s, new Map()])); // fvg id -> index (in that symbol's history) where it was first seen "watching"
-    this.openPositions = new Map(); // symbol -> { source, id, direction, entryIndex, entryTime, entryPrice, stopPrice, targetPrice, distance, rrMultiple, riskAmount, maxHoldingCandles } - shared by FVG, Divergence, AND NWOG (2026-09: NWOG auto-execute is live, at the user's explicit request - see HANDOFF.md - so it participates in the same real netting as the other two, no separate tracking)
+    this.openPositions = new Map(); // symbol -> { source, id, direction, entryIndex, entryTime, entryPrice, stopPrice, targetPrice, distance, rrMultiple, riskAmount, maxHoldingCandles } - shared by FVG, Divergence, NWOG, AND Judas Swing (each auto-execute source, at the user's explicit request - see HANDOFF.md - participates in the same real netting, no per-source tracking)
     this.pyramidPositions = new Map(symbols.map((s) => [s, null])); // symbol -> null | { status: 'requested'|'placed', direction, entryPrice, stopPrice, targetPrice, distance, riskAmount, brokerOrderId? } - see lifecycle note above
   }
 
@@ -212,6 +219,10 @@ export class LiveStrategyEngine {
 
     if (this.nwogConfig && this.nwogConfig.symbols.includes(symbol)) {
       events.push(...this._detectNwogSignal(symbol, candle));
+    }
+
+    if (this.judasSwingConfig && this.judasSwingConfig.symbols.includes(symbol)) {
+      events.push(...this._detectJudasSwingSignal(symbol, candle));
     }
 
     return events;
@@ -625,6 +636,108 @@ export class LiveStrategyEngine {
     return signal;
   }
 
+  /**
+   * Pure computation of every Judas Swing entry candidate implied by one
+   * symbol's full candle history - reuses detectJudasSwingEvents()
+   * (src/backtest/judasSwing.js) UNCHANGED (default London killzone
+   * 02:00-05:00 NY, PDH/PDL sweep+reclaim - not reimplemented here), then
+   * shifts each event forward one candle to its entry, same pattern as
+   * _computeNwogCandidates() above.
+   */
+  _computeJudasSwingCandidates(candles) {
+    const events = detectJudasSwingEvents(candles);
+    const candidates = [];
+    for (const e of events) {
+      const entryIndex = e.index + 1;
+      if (entryIndex >= candles.length) continue; // signal candle is the most recent one - entry hasn't printed yet
+      candidates.push({ direction: e.direction, entryTime: candles[entryIndex].time, stopReference: e.sweepExtreme });
+    }
+    return candidates;
+  }
+
+  _detectJudasSwingSignal(symbol, candle) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeJudasSwingCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processJudasSwingCandidate(symbol, candle, candidate)];
+  }
+
+  /**
+   * Shared tail of Judas Swing signal handling - same shape and same
+   * openPositions/netting/auto-execute participation as
+   * _processNwogCandidate() above (2026-09, at the user's explicit request
+   * to activate it, scoped to EURUSD only - see config.js's `judasSwing`
+   * comment). Includes the same validStopSide guard learned from the SMT
+   * Divergence bug even though judasSwing.js's own backtest never showed the
+   * failure mode on EURUSD specifically (checked before shipping this) -
+   * cheap, permanent insurance rather than assuming it can't happen here.
+   */
+  _processJudasSwingCandidate(symbol, candle, candidate) {
+    const cfg = this.judasSwingConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // judasSwing.js: "Entry at the OPEN of the next candle after the reclaim"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `judaswing-${symbol}-${candle.time}`;
+    const suggestedSide = bullish ? 'buy' : 'sell';
+
+    if (distance <= 0 || !validStopSide) {
+      return {
+        type: 'validated',
+        source: 'judaswing',
+        symbol,
+        id,
+        direction: candidate.direction,
+        suggestedSide,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this._blockReason(symbol, distance, candle);
+
+    const signal = {
+      type: 'validated',
+      source: 'judaswing',
+      symbol,
+      id,
+      direction: candidate.direction,
+      suggestedSide,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'judaswing',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
+  }
+
   // -------------------------------------------------------------------------
   // Bulk warm-up (2026-09): reconstructs this engine's state (history,
   // openPositions, pyramidPositions, formationIndexBySymbol) from a full
@@ -704,6 +817,14 @@ export class LiveStrategyEngine {
     const nwogCandidates =
       this.nwogConfig && this.nwogConfig.symbols.includes(symbol) ? this._computeNwogCandidates(candles) : null;
 
+    // Judas Swing candidates (2026-09, activated at the user's explicit
+    // request - see config.js's `judasSwing` comment). Same shape as NWOG's
+    // own precomputation above: only needs this symbol's own final history.
+    const judasSwingCandidates =
+      this.judasSwingConfig && this.judasSwingConfig.symbols.includes(symbol)
+        ? this._computeJudasSwingCandidates(candles)
+        : null;
+
     for (let i = 0; i < candles.length; i++) {
       const candle = candles[i];
       if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
@@ -741,6 +862,14 @@ export class LiveStrategyEngine {
         const candidate = nwogCandidates.find((cd) => cd.entryTime === candle.time);
         if (candidate) {
           const signal = this._processNwogCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (judasSwingCandidates) {
+        const candidate = judasSwingCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processJudasSwingCandidate(symbol, candle, candidate);
           if (onEvent) onEvent(signal, candle);
         }
       }

@@ -5,9 +5,13 @@
 // Divergence (US100/US500 log-ratio pairs mean-reversion) config, so the
 // live/demo bot can be wired to the SAME validated combo already proven in
 // scripts/runFtmo1StepAccountImpact.js (see HANDOFF.md "Câbler le bot live").
-// EURUSD/GBPUSD stay excluded: neither the FVG grid nor the Divergence
-// mechanism (re-tested 2026-09, see data/backtest-input/
-// divergence-eurusd-gbpusd-analysis.md) held up out-of-sample for that pair.
+// GBPUSD stays excluded: neither the FVG grid nor the Divergence mechanism
+// (re-tested 2026-09, see data/backtest-input/
+// divergence-eurusd-gbpusd-analysis.md) held up out-of-sample for that pair,
+// and no other concept tested on it has held up either. EURUSD is now
+// traded too, but ONLY via Judas Swing (see the `judasSwing` block below) -
+// the FVG grid and Divergence mechanism never held up on it either, same as
+// GBPUSD.
 // Every value below is copied VERBATIM from the already-validated backtest
 // script, not re-tuned here.
 
@@ -17,7 +21,7 @@ const SILVER_BULLET_WINDOW = { startHour: 10, endHour: 11 };
 const LONDON_NY_OVERLAP_WINDOW = { startHour: 7, endHour: 10 };
 
 export const CONFIG = {
-  symbols: ['US100', 'US500', 'XAUUSD'],
+  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD'],
   timeframe: 'M15',
   risk: {
     riskPctPerTrade: 0.5,
@@ -114,6 +118,28 @@ export const CONFIG = {
   nwog: {
     symbols: ['US100'],
     rrMultiple: 3, // same convention already validated in src/backtest/nwog.js - not re-tuned here
+    maxHoldingM15Candles: 480,
+  },
+  // Judas Swing (ICT London killzone PDH/PDL sweep+reclaim) - LIVE,
+  // auto-executed (2026-09), at the user's explicit request ("on active
+  // Judas Swing") after being shown the trade-off: EURUSD held up 6 of 8
+  // years (train exp=0.04R n=532, test exp=0.15R n=163), modest but real,
+  // and - unlike every other live source - on an instrument with NO other
+  // strategy competing for it (no netting dilution, a genuine addition to
+  // trade frequency). US100 also technically "tient" on this concept but
+  // its edge decays year over year (see HANDOFF.md "Résultats MITIGÉS") and
+  // already has FVG/Divergence/NWOG live on it, so it's deliberately left
+  // OUT here - EURUSD is the one instrument where this concept is both
+  // credible AND additive. GBPUSD/US500/XAUUSD were weaker or rejected on
+  // this same concept, see data/backtest-input/judas-swing-strategy-analysis.md.
+  //
+  // Wired into the SAME openPositions/netting/auto-execute path as FVG,
+  // Divergence and NWOG (liveStrategyEngine.js's _processJudasSwingCandidate)
+  // - no special-cased position tracking. Default London killzone window
+  // (02:00-05:00 NY) from src/backtest/judasSwing.js is used as-is.
+  judasSwing: {
+    symbols: ['EURUSD'],
+    rrMultiple: 3, // same convention already validated in src/backtest/judasSwing.js - not re-tuned here
     maxHoldingM15Candles: 480,
   },
   // Pyramid add-on ("stops indépendants, sans breakeven" - see HANDOFF.md):

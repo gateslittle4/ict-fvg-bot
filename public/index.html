@@ -89,7 +89,7 @@
 
   /* ---------- Ticker (live prices, prominent) ---------- */
   .ticker {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px;
     background: var(--panel-border);
     border: 1px solid var(--panel-border);
     border-radius: var(--radius);
@@ -210,7 +210,7 @@
       <div class="brand-mark">ICT</div>
       <div>
         <h1>FVG Assistant</h1>
-        <div class="subtitle">US100 · US500 · XAUUSD — FVG filtré + Divergence + NWOG</div>
+        <div class="subtitle">US100 · US500 · XAUUSD · EURUSD — FVG filtré + Divergence + NWOG + Judas Swing</div>
       </div>
     </div>
     <div id="banner" class="banner demo">Chargement…</div>
@@ -313,18 +313,20 @@ const fmtDuration = (ms) => {
 };
 // US indices and gold trade in whole-ish points (2dp is plenty); forex pairs need more precision.
 const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
-// NWOG (2026-09) - live, auto-executed (see config.js's `nwog` comment /
-// HANDOFF.md), same standing as FVG/Divergence now.
+// NWOG + Judas Swing (2026-09) - both live, auto-executed (see config.js's
+// `nwog`/`judasSwing` comments / HANDOFF.md), same standing as FVG/Divergence now.
 // Every caller except the trade journal (refreshTradeHistory) always has a
-// real `source` of exactly 'fvg'/'divergence'/'nwog' (LiveStrategyEngine's
-// own signal shapes), so the fallback below never fires for them. The
-// journal's trades come from real broker deal history instead, where the
-// source is only known when the opening order carried a recognizable label
-// (see dealPairing.js's parseSourceFromLabel) - a manually-placed or
-// unlabeled trade must show as unknown, never be guessed as "FVG".
+// real `source` of exactly 'fvg'/'divergence'/'nwog'/'judaswing'
+// (LiveStrategyEngine's own signal shapes), so the fallback below never
+// fires for them. The journal's trades come from real broker deal history
+// instead, where the source is only known when the opening order carried a
+// recognizable label (see dealPairing.js's parseSourceFromLabel) - a
+// manually-placed or unlabeled trade must show as unknown, never be guessed
+// as "FVG".
 const sourceLabel = (s) => {
   if (s.source === 'divergence') return 'Divergence';
   if (s.source === 'nwog') return 'NWOG';
+  if (s.source === 'judaswing') return 'Judas Swing';
   if (s.source === 'fvg') return 'FVG';
   if (s.source === 'pyramid') return 'Pyramide';
   return 'manuel/inconnu';

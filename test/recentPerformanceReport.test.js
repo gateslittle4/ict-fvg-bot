@@ -76,6 +76,12 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
     US100: loadCsv('data/backtest-input/US100.csv').slice(0, N),
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
+    // EURUSD included even though buildRecentPerformanceReport() deliberately
+    // doesn't pass judasSwingConfig (matching production - see this file's own
+    // header on NWOG's same exclusion) - exercises that a symbol with NO
+    // matching strategy config on this report just contributes history, no
+    // signals, same as the real code path.
+    EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
   };
 
   // Reference implementation: the exact loop this file used to run.
@@ -89,7 +95,8 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
   const openById = new Map();
   const referenceTrades = [];
   for (const symbol of CONFIG.symbols) {
-    const all = historyBySymbol[symbol];
+    const all = historyBySymbol[symbol] || []; // same defensive fallback as the real buildRecentPerformanceReport()
+    if (all.length === 0) continue;
     const latestTime = all[all.length - 1].time;
     for (const candle of all.filter((c) => c.time >= latestTime - windowMs)) {
       for (const e of engine.ingestCandle(symbol, candle)) {

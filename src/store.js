@@ -32,6 +32,9 @@ export const store = {
     // recentPerformanceReport.js) stay unaffected - whether to fold NWOG
     // into THOSE historical reports too is a separate, not-yet-made decision.
     nwogConfig: CONFIG.nwog,
+    // LIVE, auto-executed (2026-09) - see config.js's `judasSwing` comment.
+    // Same opt-in-only pattern as nwogConfig above.
+    judasSwingConfig: CONFIG.judasSwing,
     guardrail,
     riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
     spreads: DEFAULT_SPREADS,

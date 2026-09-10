@@ -652,7 +652,11 @@ export class MatchTraderDataSource {
     for (const e of events) {
       if (e.type !== 'validated') continue;
       const range = e.zone ? ` (${e.zone.bottom.toFixed(2)}-${e.zone.top.toFixed(2)})` : '';
-      const label = e.source === 'divergence' ? 'divergence' : e.source === 'nwog' ? 'NWOG (gap week-end)' : 'FVG rempli';
+      const label =
+        e.source === 'divergence' ? 'divergence' :
+        e.source === 'nwog' ? 'NWOG (gap week-end)' :
+        e.source === 'judaswing' ? 'Judas Swing (killzone Londres)' :
+        'FVG rempli';
       const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}`;
       fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
         console.warn('[ntfy] push failed', err.message)

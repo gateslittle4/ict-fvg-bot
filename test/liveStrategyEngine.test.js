@@ -375,6 +375,127 @@ test('LiveStrategyEngine: netting blocks a second NWOG signal while an earlier N
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
 
+// --- Judas Swing (ICT London killzone, EURUSD - 2026-09, activated at the
+// user's explicit request) - same openPositions/netting/auto-execute shared
+// path as FVG/Divergence/NWOG above, no Judas-Swing-specific tracking.
+
+const JUDAS_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+// January dates keep this simple: real NY time == the fixed-EST digits used
+// project-wide for candle .time (no DST in effect) - same convention as
+// test/judasSwing.test.js.
+function judasTime(y, m, d, h, min) {
+  return Date.UTC(y, m - 1, d, h, min, 0);
+}
+function judasDay1Fixture() {
+  return [
+    c(judasTime(2024, 1, 15, 0, 0), 100, 101, 99, 100),
+    c(judasTime(2024, 1, 15, 6, 0), 100, 110, 100, 108), // day high 110 -> PDH
+    c(judasTime(2024, 1, 15, 12, 0), 108, 109, 90, 95), // day low 90 -> PDL
+    c(judasTime(2024, 1, 15, 18, 0), 95, 100, 94, 99),
+  ];
+}
+
+test('LiveStrategyEngine (Judas Swing): a PDH sweep+reclaim in the London killzone fires a "validated" signal one candle later, entry = candle.open, and opens a REAL position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, judasSwingConfig: JUDAS_CFG, guardrail, riskPctPerTrade: 1,
+  });
+
+  const day2Signal = c(judasTime(2024, 1, 16, 2, 30), 100, 112, 99, 108); // high 112 > PDH 110, close 108 < 110 -> bearish
+  const day2Entry = c(judasTime(2024, 1, 16, 2, 45), 108, 109, 107, 108); // entry candle, open=108
+
+  for (const candle of judasDay1Fixture()) engine.ingestCandle('TEST1', candle);
+  const signalEvents = engine.ingestCandle('TEST1', day2Signal);
+  assert.equal(signalEvents.filter((e) => e.source === 'judaswing').length, 0, 'the signal candle itself does not fire a signal - entry waits one more candle');
+
+  const entryEvents = engine.ingestCandle('TEST1', day2Entry).filter((e) => e.source === 'judaswing');
+  assert.equal(entryEvents.length, 1);
+  const sig = entryEvents[0];
+  assert.equal(sig.direction, 'bearish');
+  assert.equal(sig.suggestedSide, 'sell'); // required by _handleAutoExecuteEntry's real order submission
+  assert.equal(sig.entryPrice, 108);
+  assert.equal(sig.stopPrice, 112); // the sweep's own extreme
+  assert.ok(Math.abs(sig.distance - 4) < 1e-9);
+  assert.ok(Math.abs(sig.targetPrice - 96) < 1e-9); // entry - 3R
+  assert.equal(sig.blockedReason, null);
+  assert.equal(engine.getOpenPosition('TEST1').source, 'judaswing', 'a clean Judas Swing signal now claims the REAL netting slot, same as FVG/Divergence/NWOG');
+});
+
+test('LiveStrategyEngine (Judas Swing): resolves to a WIN when the fixed 1:3 target is hit', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, judasSwingConfig: JUDAS_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const day2Signal = c(judasTime(2024, 1, 16, 2, 30), 100, 112, 99, 108);
+  const day2Entry = c(judasTime(2024, 1, 16, 2, 45), 108, 109, 107, 108);
+  const resolveCandle = c(judasTime(2024, 1, 16, 3, 0), 108, 108.5, 95, 96); // low 95 <= target 96 -> WIN
+
+  for (const candle of [...judasDay1Fixture(), day2Signal, day2Entry]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', resolveCandle).filter((e) => e.type === 'closed' && e.source === 'judaswing');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'win');
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+});
+
+test('LiveStrategyEngine (Judas Swing): resolves to a LOSS when the sweep extreme (stop) is retaken', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, judasSwingConfig: JUDAS_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const day2Signal = c(judasTime(2024, 1, 16, 2, 30), 100, 112, 99, 108);
+  const day2Entry = c(judasTime(2024, 1, 16, 2, 45), 108, 109, 107, 108);
+  const resolveCandle = c(judasTime(2024, 1, 16, 3, 0), 108, 113, 107, 110); // high 113 >= stop 112 -> LOSS
+
+  for (const candle of [...judasDay1Fixture(), day2Signal, day2Entry]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', resolveCandle).filter((e) => e.type === 'closed' && e.source === 'judaswing');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'loss');
+});
+
+test('LiveStrategyEngine: netting blocks a Judas Swing signal on a symbol that already has an open FVG position (and vice versa - same shared slot)', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, judasSwingConfig: JUDAS_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  // stop/target set FAR outside the fixture's price range (90-112) so this
+  // fake position doesn't accidentally resolve while day1/day2-signal candles
+  // feed through _resolveOpenPosition - it must still be open at entry time.
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake', direction: 'bullish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 50, targetPrice: 500, distance: 50, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const day2Signal = c(judasTime(2024, 1, 16, 2, 30), 100, 112, 99, 108);
+  const day2Entry = c(judasTime(2024, 1, 16, 2, 45), 108, 109, 107, 108);
+  for (const candle of [...judasDay1Fixture(), day2Signal]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', day2Entry).filter((e) => e.source === 'judaswing');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, matches how a blocked FVG/Divergence/NWOG signal is also still reported');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+  assert.equal(engine.getOpenPosition('TEST1').source, 'fvg', 'the pre-existing real position must remain untouched, no double-booking');
+});
+
+test('LiveStrategyEngine: netting blocks a second Judas Swing signal while an earlier Judas Swing position on the same symbol is still open', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, judasSwingConfig: JUDAS_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  engine.openPositions.set('TEST1', {
+    source: 'judaswing', id: 'fake-judaswing', direction: 'bullish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 50, targetPrice: 500, distance: 50, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const day2Signal = c(judasTime(2024, 1, 16, 2, 30), 100, 112, 99, 108);
+  const day2Entry = c(judasTime(2024, 1, 16, 2, 45), 108, 109, 107, 108);
+  for (const candle of [...judasDay1Fixture(), day2Signal]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', day2Entry).filter((e) => e.source === 'judaswing');
+
+  assert.equal(entryEvents.length, 1);
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+});
+
 // --- Pyramid add-on ("stops indépendants, sans breakeven") ---------------
 
 function engineWithPyramid(pyramidConfig = { enabled: true, addAtR: 1, symbols: ['TEST1'] }) {
@@ -554,13 +675,22 @@ function loadCsv(path) {
   });
 }
 
+// Hardcoded rather than read from CONFIG.symbols: this comparison needs to
+// stay pinned to the 4 symbols these tests actually load real CSV fixtures
+// for, independent of whatever CONFIG.symbols happens to list at any given
+// time (it's grown twice already - XAUUSD, then EURUSD - and a mutable
+// global here silently breaks this file every time, with a confusing
+// "not iterable" error instead of a clear one).
+const WARMUP_COMPARISON_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD'];
+
 function newEngineForWarmupComparison() {
   const guardrail = permissiveGuardrail();
   return new LiveStrategyEngine({
-    symbols: CONFIG.symbols,
+    symbols: WARMUP_COMPARISON_SYMBOLS,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
     nwogConfig: CONFIG.nwog, // exercise NWOG's bulk-vs-sequential equivalence too, not just FVG/Divergence/pyramid
+    judasSwingConfig: CONFIG.judasSwing, // same, for Judas Swing/EURUSD
     guardrail,
     riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
     pyramidConfig: { enabled: true, addAtR: 1, symbols: ['US100', 'US500'] }, // exercise _maybeRequestPyramid's bulk path too, not just the default-off case
@@ -579,6 +709,7 @@ test('warmUp(): bulk single-pass reconstruction is IDENTICAL to sequential inges
     US100: loadCsv('data/backtest-input/US100.csv').slice(0, N),
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
+    EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
   };
 
   const sequential = newEngineForWarmupComparison();
@@ -589,7 +720,7 @@ test('warmUp(): bulk single-pass reconstruction is IDENTICAL to sequential inges
   // ordering (including its pre-existing "first-processed leg of the
   // Divergence pair sees no partner history yet" quirk), not a supposedly
   // more correct chronologically-merged one.
-  for (const symbol of CONFIG.symbols) {
+  for (const symbol of WARMUP_COMPARISON_SYMBOLS) {
     for (const candle of candlesBySymbol[symbol]) {
       sequential.ingestCandle(symbol, candle);
     }
@@ -598,7 +729,7 @@ test('warmUp(): bulk single-pass reconstruction is IDENTICAL to sequential inges
   const bulk = newEngineForWarmupComparison();
   bulk.warmUp(candlesBySymbol);
 
-  for (const symbol of CONFIG.symbols) {
+  for (const symbol of WARMUP_COMPARISON_SYMBOLS) {
     assert.deepEqual(bulk.getHistory(symbol), sequential.getHistory(symbol), `history mismatch for ${symbol}`);
   }
   assert.deepEqual(bulk.openPositions, sequential.openPositions, 'openPositions mismatch');
@@ -608,7 +739,7 @@ test('warmUp(): bulk single-pass reconstruction is IDENTICAL to sequential inges
   // Sanity: this fixture must actually exercise real signal detection on
   // both paths, or the comparison above would be vacuous (two empty states
   // trivially match). At least one symbol must have formed FVG zones.
-  const totalWatched = CONFIG.symbols.reduce((sum, s) => sum + sequential.formationIndexBySymbol.get(s).size, 0);
+  const totalWatched = WARMUP_COMPARISON_SYMBOLS.reduce((sum, s) => sum + sequential.formationIndexBySymbol.get(s).size, 0);
   assert.ok(totalWatched > 0, 'expected at least one FVG zone to have formed in this fixture - comparison would be vacuous otherwise');
 });
 
@@ -621,21 +752,23 @@ test('warmUp(): after reconstructing state, a NEW live candle produces the same 
     US100: loadCsv('data/backtest-input/US100.csv').slice(0, N),
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
+    EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
   };
   const nextCandles = {
     US100: loadCsv('data/backtest-input/US100.csv').slice(N, N + 50),
     US500: loadCsv('data/backtest-input/US500.csv').slice(N, N + 50),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(N, N + 50),
+    EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(N, N + 50),
   };
 
   const sequential = newEngineForWarmupComparison();
-  for (const symbol of CONFIG.symbols) {
+  for (const symbol of WARMUP_COMPARISON_SYMBOLS) {
     for (const candle of candlesBySymbol[symbol]) sequential.ingestCandle(symbol, candle);
   }
   const bulk = newEngineForWarmupComparison();
   bulk.warmUp(candlesBySymbol);
 
-  for (const symbol of CONFIG.symbols) {
+  for (const symbol of WARMUP_COMPARISON_SYMBOLS) {
     for (const candle of nextCandles[symbol]) {
       const seqEvs = sequential.ingestCandle(symbol, candle);
       const bulkEvs = bulk.ingestCandle(symbol, candle);
