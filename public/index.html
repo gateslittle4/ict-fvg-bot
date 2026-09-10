@@ -131,7 +131,7 @@
 
   <div class="card" id="account-card">
     <h2>Compte réel (cTrader)</h2>
-    <div class="meta" style="margin-bottom:8px;">Solde et marge viennent directement du courtier. L'équité et le P&amp;L flottant sont une ESTIMATION (prix le plus récemment vu, pas un flux bid/ask à l'instant T) — voir le détail par position. Le tableau de réconciliation compare les positions RÉELLEMENT ouvertes chez le courtier à ce que le bot CROIT avoir ouvert d'après ses propres signaux (le bot est semi-automatique : s'il alerte et que tu ignores le signal, il ne le sait pas).</div>
+    <div class="meta" style="margin-bottom:8px;">Solde/marge réels du courtier ; équité et P&amp;L flottant estimés (dernier prix vu, pas un flux instantané).</div>
     <div id="account-body">—</div>
   </div>
 
@@ -153,20 +153,20 @@
 
   <div class="card">
     <h2>Performance récente (90 derniers jours, hypothétique)</h2>
-    <div class="meta" style="margin-bottom:8px;">Ce que le bot AURAIT signalé sur les 90 derniers jours de vrais prix de marché, calculé avec le même moteur que le combo déjà validé par backtest — ce ne sont PAS des trades réels (aucun ordre n'a été passé), juste une simulation sur les données les plus récentes.</div>
+    <div class="meta" style="margin-bottom:8px;">Simulation sur les 90 derniers jours de vrais prix — pas des trades réels.</div>
     <div id="recent-perf-summary">Chargement…</div>
     <div id="recent-perf-list" style="margin-top:8px;"></div>
   </div>
 
   <div class="card">
     <h2>Journal durable par instrument</h2>
-    <div class="meta" style="margin-bottom:8px;">Contrairement à la carte ci-dessus (une simulation en mémoire qui repart de zéro à chaque redémarrage), ceci est un vrai journal des trades résolus, enregistré en base au fur et à mesure — il survit aux redémarrages et grandit avec le temps. Vide tant que la persistance n'est pas activée (variables SUPABASE_URL / SUPABASE_SERVICE_KEY).</div>
+    <div class="meta" style="margin-bottom:8px;">Vrai journal des trades résolus, persisté en base (survit aux redémarrages).</div>
     <div id="trade-log-summary">Chargement…</div>
   </div>
 
   <div class="card">
     <h2>Journal de trading (7 derniers jours)</h2>
-    <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L viennent directement de l'historique cTrader. Le stop/la cible prévus ne sont pas affichés ici : cTrader ne conserve pas cette info pour une position déjà fermée, donc plutôt que d'en inventer un, on ne montre que ce qui est vérifiable.</div>
+    <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader) — stop/cible non affichés, cTrader ne les garde pas après clôture.</div>
     <div id="journal-summary" style="margin-bottom:10px;"></div>
     <div id="journal-list"></div>
   </div>
