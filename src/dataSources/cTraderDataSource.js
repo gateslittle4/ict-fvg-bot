@@ -545,16 +545,6 @@ export class CTraderDataSource {
         // cTrader symbol ids are small, well within Number.MAX_SAFE_INTEGER.
         if (Number(event.symbolId) !== Number(symbolId)) return;
 
-        // DIAGNOSTIC, temporary (2026-09-10): one-shot confirmation that the
-        // .descriptor unwrap above actually works in production, logging
-        // specific SCALAR fields only (not the whole object via
-        // JSON.stringify - that's exactly what hid this bug in the first
-        // place, see the comment above). Remove once confirmed.
-        if (!this._confirmedDescriptorFix?.has(symbolName)) {
-          (this._confirmedDescriptorFix ??= new Set()).add(symbolName);
-          console.log(`[diagnostic] ${symbolName} first real ProtoOASpotEvent - symbolId=${event.symbolId} bid=${event.bid} ask=${event.ask} hasTrendbar=${!!event.trendbar}`);
-        }
-
         // Signal detection is driven by full candle BARS (the trendbar
         // payload, present only on some spot events).
         if (event.trendbar) {
