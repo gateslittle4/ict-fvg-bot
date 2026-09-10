@@ -58,14 +58,15 @@ export const store = {
   // now. Small ring buffer (see MAX_SPREAD_SAMPLES in cTraderDataSource.js),
   // display/diagnostic only - never fed into any trading decision.
   recentTicksBySymbol: new Map(),
-  // "Mode indisponible" - Esdras flips this HIMSELF (dashboard button / API
-  // call) right before a period he knows he won't be able to click
-  // Buy/Sell (typically fin de mois). While active AND not expired, the
-  // bot auto-executes the ORIGINAL entry itself instead of only alerting -
-  // see isAutoExecuteActive()/_handleAutoExecuteEntry() in
-  // cTraderDataSource.js. Off by default - the semi-automatic
-  // alert-and-click flow is the norm; this is the deliberate, explicit
-  // exception Esdras opts into for a bounded window, not a permanent switch.
+  // "Mode indisponible" - flipped either by hand (dashboard button / API
+  // call, e.g. right before a period with no time to click Buy/Sell), or
+  // automatically at every boot when AUTO_EXECUTE_ALWAYS_ON=true (2026-09,
+  // at the user's explicit request - see server.js's boot sequence and
+  // MAX_AUTO_EXECUTE_HOURS below). While active AND not expired, the bot
+  // auto-executes the ORIGINAL entry itself instead of only alerting - see
+  // isAutoExecuteActive()/_handleAutoExecuteEntry() in cTraderDataSource.js.
+  // Off by default (opt-in) - the semi-automatic alert-and-click flow is
+  // still the norm for anyone who hasn't set AUTO_EXECUTE_ALWAYS_ON.
   autoExecute: { enabled: false, expiresAt: null, enabledAt: null },
   // Set by server.js once a live broker connection succeeds (CTraderDataSource
   // or MatchTraderDataSource instance) - lets routes like GET /api/trade-history
@@ -74,13 +75,24 @@ export const store = {
   liveDataSource: null,
 };
 
-const MAX_AUTO_EXECUTE_HOURS = 7 * 24; // hard ceiling - even an explicit request can't leave this on for months unattended
+// Hard ceiling on a SINGLE arm call - still true, still enforced below. This
+// does NOT rule out staying armed indefinitely: AUTO_EXECUTE_ALWAYS_ON
+// (server.js's boot sequence) re-arms a fresh MAX_AUTO_EXECUTE_HOURS window
+// on every single boot, which in practice never lets the window run out
+// given how often this process restarts on Render's free tier - a
+// deliberate choice (2026-09, explicit user request: "passive income", no
+// manual re-arming possible) over silently reverting to semi-automatic
+// without her noticing. Exported so server.js's boot sequence can reuse the
+// same ceiling rather than hard-coding a second number that could drift.
+export const MAX_AUTO_EXECUTE_HOURS = 7 * 24;
 
 /**
  * Turns the auto-execute window on for `hours` (required, capped at
- * MAX_AUTO_EXECUTE_HOURS) or off. Deliberately requires an explicit
- * duration to enable - no "on forever" option - so a forgotten toggle
- * reverts to the safer semi-automatic default on its own.
+ * MAX_AUTO_EXECUTE_HOURS) or off. A single call never leaves it on
+ * forever - the cap above still applies - but nothing stops a caller from
+ * calling this again before it expires (a human re-clicking the dashboard
+ * button, or AUTO_EXECUTE_ALWAYS_ON re-arming it at every boot - see that
+ * constant's comment).
  */
 export function setAutoExecute(enabled, hours, now = Date.now()) {
   if (!enabled) {

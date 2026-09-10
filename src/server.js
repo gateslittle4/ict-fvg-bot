@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG, isLiveConfigured, getConfiguredPlatform } from './config.js';
-import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive } from './store.js';
+import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive, MAX_AUTO_EXECUTE_HOURS } from './store.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
 import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
@@ -434,6 +434,27 @@ app.post('/api/lot-calc', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
+// AUTO_EXECUTE_ALWAYS_ON (2026-09, opt-in, off by default): re-arms
+// "mode indisponible" (store.autoExecute) for a fresh MAX_AUTO_EXECUTE_HOURS
+// window at every single boot, right after a live broker connection
+// succeeds. Explicit user request ("passive income", won't be there to
+// click Buy/Sell OR to re-click a time-boxed toggle): without this, the
+// dashboard's manual toggle is capped at 7 days AND lives only in
+// in-memory store.js state, so it silently reverts to semi-automatic the
+// next time this process restarts - which on Render's free tier happens
+// often (idle sleep/wake, deploys), likely well inside any 7-day window.
+// Re-arming at every boot sidesteps that: the window never actually gets
+// close to expiring as long as the process keeps restarting within 7 days
+// of its last boot, which it reliably does. The dashboard toggle still
+// works to pause it by hand in between boots - that pause just doesn't
+// survive the NEXT restart, by design (this env var is the durable
+// default, not a one-time nudge).
+export function armAutoExecuteIfConfigured() {
+  if (process.env.AUTO_EXECUTE_ALWAYS_ON !== 'true') return;
+  const result = setAutoExecute(true, MAX_AUTO_EXECUTE_HOURS);
+  console.log(`[boot] AUTO_EXECUTE_ALWAYS_ON=true - mode indisponible armed until ${new Date(result.expiresAt).toISOString()}`);
+}
+
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, async () => {
     console.log(`ICT-FVG assistant listening on :${PORT}`);
@@ -450,6 +471,7 @@ if (process.env.NODE_ENV !== 'test') {
         await live.start();
         store.liveDataSource = live;
         console.log('[boot] connected live to Match-Trader.');
+        armAutoExecuteIfConfigured();
       } catch (err) {
         console.error('[boot] live Match-Trader connection failed, falling back to demo mode:', err.message);
         startMockDataSource();
@@ -460,6 +482,7 @@ if (process.env.NODE_ENV !== 'test') {
         await live.start();
         store.liveDataSource = live;
         console.log('[boot] connected live to cTrader.');
+        armAutoExecuteIfConfigured();
       } catch (err) {
         console.error('[boot] live cTrader connection failed, falling back to demo mode:', err.message);
         startMockDataSource();

@@ -753,3 +753,21 @@ Conséquence : **tout le code de ce fichier qui lisait `event.xxx` directement l
 Soit (échelle /100000, convention déjà documentée) US100 ≈ 29 470,60 / US500 ≈ 7 658,93 / XAUUSD ≈ 4 393,98 — des prix de marché plausibles, avec `hasTrendbar=true` sur les trois : la détection de signaux reçoit maintenant bien des bougies réelles, pas seulement l'affichage du prix. Le log de diagnostic a été retiré immédiatement après cette confirmation (commit suivant), le code final ne contient plus rien de temporaire sur ce chemin.
 
 **npm test** : 301/301 (aucun nouveau test automatisé — la preuve vient des logs de production ci-dessus, voir "pourquoi ça n'a jamais été détecté avant" plus haut pour l'absence de couverture testable sur ce chemin).
+
+## Mode automatique VRAIMENT permanent (`AUTO_EXECUTE_ALWAYS_ON`) — 2026-09-10
+
+À la demande explicite de l'utilisatrice : "met le bot en mode automatique. je vais pas te mentir, je vais pas pouvoir trader de façon manuelle." Investigation avant d'agir (pas fait à l'aveugle) : le bouton "Mode indisponible" existant (`store.autoExecute`, capé à 7 jours par design — voir commentaire d'origine "no 'on forever' option") a DEUX limites qui, ensemble, l'empêchaient de vraiment fonctionner pour un usage passif :
+1. L'état vit uniquement EN MÉMOIRE (`store.js`) — aucune persistance.
+2. Le process redémarre souvent sur le plan gratuit Render (veille après inactivité, redéploiements) — observé plusieurs fois par jour dans les logs.
+
+Conséquence : même un clic sur "Activer 7 jours" retombait silencieusement en semi-automatique au redémarrage suivant, probablement en quelques heures, sans que l'utilisatrice le voie nulle part sur le dashboard.
+
+**Question posée avant de coder** (`AskUserQuestion`, pas décidé seul) : garder le principe d'un rappel périodique (corriger la persistance, alerte ntfy avant expiration, reclic hebdomadaire) OU rendre le mode auto **toujours actif dès le démarrage**, sans plus jamais avoir à y toucher. Réponse explicite : **toujours actif au démarrage**.
+
+**Implémentation** : nouvelle variable d'environnement opt-in `AUTO_EXECUTE_ALWAYS_ON=true` (même philosophie que `KEEP_ALIVE`/Supabase — absente, rien ne change). Quand elle est posée, `armAutoExecuteIfConfigured()` (`src/server.js`) réarme `store.autoExecute` pour une fenêtre fraîche de `MAX_AUTO_EXECUTE_HOURS` (toujours 7 jours, la limite elle-même n'a PAS été supprimée) juste après CHAQUE connexion live réussie au courtier — donc à CHAQUE démarrage. Comme le process redémarre de toute façon bien avant 7 jours dans les faits, la fenêtre ne s'approche jamais de l'expiration : en pratique, toujours actif, sans aucune action manuelle. Le bouton du dashboard reste utilisable pour mettre en pause à la main entre deux redémarrages — cette pause ne survit juste pas au redémarrage suivant (le réglage d'environnement reste la valeur par défaut durable, pas un geste ponctuel) : comportement volontaire et documenté dans le code, pas un oubli.
+
+**Ce que ça change concrètement** : combiné au correctif `event.descriptor` de la section précédente, le bot devrait maintenant réellement détecter ET exécuter automatiquement FVG/Divergence/NWOG dès qu'un signal valide passe tous les garde-fous (netting, spread, guardrail quotidien) — sans aucun clic. Le stop-loss reste toujours posé par le courtier sur chaque ordre, comme avant.
+
+**Fichiers touchés** : `src/store.js` (export de `MAX_AUTO_EXECUTE_HOURS`, commentaires mis à jour), `src/server.js` (`armAutoExecuteIfConfigured()`, appelée après connexion live cTrader ET Match-Trader). `npm test` : 301/301 (pas de nouveau test dédié — `armAutoExecuteIfConfigured()` n'est qu'un garde d'env var + délégation à `setAutoExecute()`, déjà entièrement testé ; aucun test existant n'importe `server.js` directement, choix cohérent avec le reste du projet).
+
+**Reste à faire à la prochaine reprise** : poser `AUTO_EXECUTE_ALWAYS_ON=true` sur Render (fait cette session si confirmé dans le message qui suit ce commit — vérifier les logs de boot pour la ligne `[boot] AUTO_EXECUTE_ALWAYS_ON=true - mode indisponible armed until ...`), puis confirmer sur le dashboard que la carte "Mode indisponible" affiche bien "🤖 ACTIF" en continu, y compris après plusieurs redémarrages naturels.
