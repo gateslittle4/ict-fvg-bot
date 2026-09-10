@@ -325,7 +325,28 @@ export class CTraderDataSource {
       fromTimestamp: from,
       toTimestamp: to,
     });
-    const trades = pairDealsIntoTrades(res.deal || []).slice(0, maxTrades);
+
+    // Which strategy generated each trade (2026-09, at Esdras's request) -
+    // ProtoOADeal itself has no label, only ProtoOAOrder.tradeData.label
+    // does (set at order placement, see _handleAutoExecuteEntry below), so a
+    // second request over the SAME window is needed. Best-effort: a failure
+    // here must not break the trade history itself, it just leaves every
+    // trade's source unknown (null) rather than guessed.
+    let orderLabelsById = new Map();
+    try {
+      const orderRes = await sendCommandWithTimeout(this.connection, 'ProtoOAOrderListReq', {
+        ctidTraderAccountId: Number(accountId),
+        fromTimestamp: from,
+        toTimestamp: to,
+      });
+      orderLabelsById = new Map(
+        (orderRes.order || []).map((o) => [o.orderId, o.tradeData && o.tradeData.label])
+      );
+    } catch (err) {
+      console.warn('[cTrader] trade history: failed to fetch order labels (source will show as unknown):', err.message);
+    }
+
+    const trades = pairDealsIntoTrades(res.deal || [], orderLabelsById).slice(0, maxTrades);
 
     const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
     const CHART_MARGIN_MS = 12 * 15 * 60 * 1000; // ~3h of M15 padding on each side, for visual context around the trade

@@ -215,7 +215,20 @@ const fmtDuration = (ms) => {
 const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
 // NWOG (2026-09) - live, auto-executed (see config.js's `nwog` comment /
 // HANDOFF.md), same standing as FVG/Divergence now.
-const sourceLabel = (s) => s.source === 'divergence' ? 'Divergence' : s.source === 'nwog' ? 'NWOG' : 'FVG';
+// Every caller except the trade journal (refreshTradeHistory) always has a
+// real `source` of exactly 'fvg'/'divergence'/'nwog' (LiveStrategyEngine's
+// own signal shapes), so the fallback below never fires for them. The
+// journal's trades come from real broker deal history instead, where the
+// source is only known when the opening order carried a recognizable label
+// (see dealPairing.js's parseSourceFromLabel) - a manually-placed or
+// unlabeled trade must show as unknown, never be guessed as "FVG".
+const sourceLabel = (s) => {
+  if (s.source === 'divergence') return 'Divergence';
+  if (s.source === 'nwog') return 'NWOG';
+  if (s.source === 'fvg') return 'FVG';
+  if (s.source === 'pyramid') return 'Pyramide';
+  return 'manuel/inconnu';
+};
 
 async function refreshStatus() {
   const res = await fetch('/api/status');
@@ -513,7 +526,7 @@ async function refreshTradeHistory() {
       return `
         <div class="journal-item">
           <div class="journal-head">
-            <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
+            <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} <span class="meta">[${sourceLabel(t)}]</span> · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
             <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
           </div>
           ${renderTradeChart(t, d)}

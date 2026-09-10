@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pairDealsIntoTrades, summarizeTrades } from '../src/dataSources/dealPairing.js';
+import { pairDealsIntoTrades, summarizeTrades, parseSourceFromLabel } from '../src/dataSources/dealPairing.js';
 
-function opening({ positionId, symbolId = 1, tradeSide = 'BUY', executionPrice = 100, executionTimestamp = 1000 }) {
-  return { positionId, symbolId, tradeSide, executionPrice, executionTimestamp, dealStatus: 'FILLED' };
+function opening({ positionId, symbolId = 1, tradeSide = 'BUY', executionPrice = 100, executionTimestamp = 1000, orderId }) {
+  return { positionId, symbolId, tradeSide, executionPrice, executionTimestamp, orderId, dealStatus: 'FILLED' };
 }
 function closing({ positionId, symbolId = 1, tradeSide = 'SELL', executionPrice = 110, executionTimestamp = 2000, grossProfit = 500 }) {
   return {
@@ -77,6 +77,37 @@ test('results are sorted newest-exit-first, across multiple positions', () => {
 test('empty/undefined input returns no trades', () => {
   assert.deepEqual(pairDealsIntoTrades([]), []);
   assert.deepEqual(pairDealsIntoTrades(undefined), []);
+});
+
+test('parseSourceFromLabel: recognizes each auto-executed source', () => {
+  assert.equal(parseSourceFromLabel('auto-fvg-US100'), 'fvg');
+  assert.equal(parseSourceFromLabel('auto-divergence-US500'), 'divergence');
+  assert.equal(parseSourceFromLabel('auto-nwog-US100'), 'nwog');
+  assert.equal(parseSourceFromLabel('pyramid-add-US100'), 'pyramid');
+});
+
+test('parseSourceFromLabel: no label, empty label, or an unrecognized one all return null (never guessed)', () => {
+  assert.equal(parseSourceFromLabel(undefined), null);
+  assert.equal(parseSourceFromLabel(null), null);
+  assert.equal(parseSourceFromLabel(''), null);
+  assert.equal(parseSourceFromLabel('some manual comment'), null);
+});
+
+test('pairDealsIntoTrades: without an orderLabelsById map, source is null (never guessed)', () => {
+  const deals = [opening({ positionId: 1, orderId: 42 }), closing({ positionId: 1 })];
+  assert.equal(pairDealsIntoTrades(deals)[0].source, null);
+});
+
+test('pairDealsIntoTrades: looks up the OPENING deal\'s orderId in orderLabelsById to attach a source', () => {
+  const deals = [opening({ positionId: 1, orderId: 42 }), closing({ positionId: 1 })];
+  const labels = new Map([[42, 'auto-divergence-US500']]);
+  assert.equal(pairDealsIntoTrades(deals, labels)[0].source, 'divergence');
+});
+
+test('pairDealsIntoTrades: an opening order missing from the label map (manual trade) gets source null', () => {
+  const deals = [opening({ positionId: 1, orderId: 99 }), closing({ positionId: 1 })];
+  const labels = new Map([[42, 'auto-fvg-US100']]); // a different order entirely
+  assert.equal(pairDealsIntoTrades(deals, labels)[0].source, null);
 });
 
 test('summarizeTrades: mix of wins and losses', () => {
