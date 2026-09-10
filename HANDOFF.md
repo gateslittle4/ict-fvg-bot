@@ -796,3 +796,18 @@ Session qui a démarré sur l'investigation en cours du prix figé (voir section
 **État du dépôt à la fin de cette session** : `claude/lire-handoff-hxisa5` (la branche que Render déploie) à jour avec tous les commits ci-dessus, working tree propre, `npm test` 301/301, dernier déploiement Render confirmé `live` sans erreur. `claude/lire-le-handoff-8bbrxx` (branche assignée par le harness à cette session) reste en retard de plusieurs commits — comme documenté plus haut dans ce fichier, Render suit `hxisa5`, pas `8bbrxx`, donc c'est `hxisa5` qui doit recevoir tout nouveau travail destiné à la prod.
 
 **Priorité n°1 pour la prochaine session** : lire ce fichier en entier, puis vérifier qu'un vrai trade s'est bien auto-exécuté depuis le déploiement de ces deux correctifs (dashboard, ou logs Render, ou historique cTrader) — ce sera la première preuve de bout en bout que "détection → exécution automatique" fonctionne réellement en conditions réelles, pas seulement que les prix bougent.
+
+## Refonte visuelle du dashboard + correction d'une note obsolète — 2026-09-10, suite
+
+**⚠️ Correction d'une note plus haut dans ce fichier (section "Forward-test 2026") : l'accès réseau direct à `onrender.com` n'est PLUS bloqué dans cette session** — vérifié en direct (`curl https://ict-fvg-bot.onrender.com/api/status` a renvoyé du vrai JSON, code 200). La politique réseau a dû changer entre les deux sessions (ou était propre à celle-là). **Ne pas supposer d'un blocage sans re-tester** — une future session devrait juste essayer `curl`/`WebFetch` directement plutôt que de présumer que c'est fermé.
+
+**Utilisé pour diagnostiquer un signalement de "prix figé" (2026-09-10)** : vérifié en direct via `/api/status` à deux reprises à 20s d'intervalle — les prix bougeaient réellement (US100 29414.10→29413.35, XAUUSD 4417.38→4417.08). Conclusion : pas un bug, le service venait de redémarrer (mes propres déploiements l'ont réveillé) après une période probable de mise en veille (hors fenêtre `KEEP_ALIVE_WINDOWS`). Si "prix figé" est resignalé, revérifier `/api/status` directement avant de supposer une régression du bug `event.descriptor`.
+
+**Refonte visuelle complète du dashboard, à la demande explicite** ("le site n'est pas pro du tout, je veux un site très pro pour un trader"). Purement visuel — aucune logique serveur touchée, chaque `id`/classe lu ou modifié par le JS existant a été préservé à l'identique (pas de risque de casse fonctionnelle) :
+- Vrai bandeau d'en-tête (logo, titre, pastille de statut LIVE/DEMO avec point pulsant).
+- Prix en direct sortis d'une petite carte et promus en bandeau ticker pleine largeur, chiffres en police monospace tabulaire, avec un flash vert/rouge bref à chaque changement RÉEL de prix (comparé côté client au prix précédent).
+- Police monospace pour toutes les valeurs numériques (prix, R, soldes) — le choix typographique qui fait "vrai terminal de trading".
+- Cartes/pills/boutons/formulaires affinés (profondeur subtile, en-têtes de section en petites majuscules avec filet).
+- Bug cosmétique préexistant corrigé au passage : les textes descriptifs (`class="meta"`) n'avaient aucune règle de couleur propre (seulement `.signal-item .meta`), donc s'affichaient en blanc vif comme une vraie donnée — ajouté une règle de base.
+
+Vérifié avec Playwright contre un serveur simulé couvrant toutes les cartes (desktop 1280px + mobile 390px) avant de pousser — rendu propre, zéro erreur console, contenu dynamique réaliste (source `[manuel/inconnu]`, badges bloqués, graphiques du journal) vérifié visuellement. 306/306 tests inchangés (aucune logique JS modifiée). Fichier : `public/index.html` uniquement.
