@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setAutoExecute, isAutoExecuteActive, setRiskPctPerTrade, store } from '../src/store.js';
+import { setAutoExecute, isAutoExecuteActive, setRiskPctPerTrade, store, pushSignalEvents } from '../src/store.js';
 import { MIN_RISK_PCT, MAX_RISK_PCT } from '../src/config.js';
 
 const HOUR = 3600 * 1000;
+const DAY_MS = 24 * HOUR;
 
 test('store.autoExecute: off by default - the semi-automatic alert-and-click flow is the norm', () => {
   // Fresh process state (this file doesn't touch it before this point).
@@ -69,4 +70,56 @@ test('setRiskPctPerTrade: the bounds themselves are valid, inclusive', () => {
   setRiskPctPerTrade(MAX_RISK_PCT);
   assert.equal(store.strategyEngine.riskPctPerTrade, MAX_RISK_PCT);
   setRiskPctPerTrade(0.5); // restore
+});
+
+// pushSignalEvents' volatility-regime OBSERVATION tagging (2026-09, at
+// Esdras's explicit request for a forward-test démo before changing any
+// real position sizing - see HANDOFF.md and src/backtest/volatilityRegime.js).
+// Purely additive fields for later comparison - never feeds back into real
+// order sizing (setRiskPctPerTrade/riskAmount untouched by any of this).
+
+test('pushSignalEvents: tags a validated fvg/divergence signal with a volatility regime once enough history exists', () => {
+  const symbol = 'US100';
+  const base = Date.parse('2020-01-01T00:00:00Z');
+  // 200 quiet, flat, day-spaced candles - enough to warm up ATR(14)/SMA(100)
+  // (fed via ingestCandle purely to populate history for resampling; this
+  // symbol's own trading logic/events are irrelevant to this test).
+  for (let i = 0; i < 200; i++) {
+    store.strategyEngine.ingestCandle(symbol, { time: base + i * DAY_MS, open: 100, high: 100.5, low: 99.5, close: 100 });
+  }
+  const entryTime = base + 200 * DAY_MS;
+  pushSignalEvents([{ type: 'validated', source: 'fvg', symbol, validatedAt: entryTime, direction: 'bullish', id: 'vol-test-1' }]);
+  const logged = store.signalLog[store.signalLog.length - 1];
+  assert.equal(logged.id, 'vol-test-1');
+  assert.ok(['low', 'normal', 'high'].includes(logged.volRegime));
+  assert.equal(typeof logged.suggestedRiskPct, 'number');
+});
+
+test('pushSignalEvents: does not tag sources outside the volatility-regime research (nwog/judaswing/pyramid)', () => {
+  pushSignalEvents([{ type: 'validated', source: 'nwog', symbol: 'US100', validatedAt: Date.now(), id: 'vol-test-2' }]);
+  const logged = store.signalLog[store.signalLog.length - 1];
+  assert.equal(logged.id, 'vol-test-2');
+  assert.equal(logged.volRegime, undefined);
+  assert.equal(logged.suggestedRiskPct, undefined);
+});
+
+test('pushSignalEvents: does not tag a blocked signal (blockedReason set) even for fvg/divergence', () => {
+  pushSignalEvents([{ type: 'validated', source: 'fvg', symbol: 'US100', validatedAt: Date.now(), blockedReason: 'netting', id: 'vol-test-3' }]);
+  const logged = store.signalLog[store.signalLog.length - 1];
+  assert.equal(logged.id, 'vol-test-3');
+  assert.equal(logged.volRegime, undefined);
+});
+
+test('pushSignalEvents: no history yet for the symbol -> tags nothing, never throws', () => {
+  pushSignalEvents([{ type: 'validated', source: 'fvg', symbol: 'XAUUSD', validatedAt: Date.now(), id: 'vol-test-4' }]);
+  const logged = store.signalLog[store.signalLog.length - 1];
+  assert.equal(logged.id, 'vol-test-4');
+  assert.equal(logged.volRegime, undefined);
+});
+
+test('pushSignalEvents: a non-"validated" event (e.g. "closed") is never tagged', () => {
+  pushSignalEvents([{ type: 'closed', source: 'fvg', symbol: 'US100', outcome: 'win', id: 'vol-test-5' }]);
+  const logged = store.signalLog[store.signalLog.length - 1];
+  assert.equal(logged.id, 'vol-test-5');
+  assert.equal(logged.volRegime, undefined);
 });

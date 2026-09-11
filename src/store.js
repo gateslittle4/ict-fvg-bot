@@ -12,6 +12,8 @@ import { LiveStrategyEngine } from './liveStrategyEngine.js';
 import { GuardrailEngine } from './engines/guardrailEngine.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT } from './config.js';
+import { resampleCandles } from './backtest/htfBias.js';
+import { makeVolatilityRegimeLookup, DAY_MS, LOW_REGIME_RISK_SCALE } from './backtest/volatilityRegime.js';
 
 const MAX_LOG_LENGTH = 200;
 
@@ -145,10 +147,41 @@ export function setRiskPctPerTrade(pct) {
   store.strategyEngine.setRiskPctPerTrade(pct);
 }
 
+// Sources covered by the volatility-regime research (checkVolatilityRegimeImpactFullCombo.js /
+// runFtmo1StepVolAdaptiveRiskAccountImpact.js) - NWOG/Judas Swing/pyramid were never part of
+// that study, so tagging them would imply a finding that was never actually tested.
+const VOL_REGIME_SOURCES = new Set(['fvg', 'divergence']);
+
+/**
+ * Forward-test OBSERVATION ONLY (2026-09, at Esdras's explicit request:
+ * "forward-test démo d'abord" before changing any real position sizing) -
+ * tags a validated signal with the volatility regime (src/backtest/
+ * volatilityRegime.js) and what its risk % WOULD be under the tested
+ * low-vol-half-size scheme, purely for later comparison against what
+ * actually happened. Does NOT feed back into riskAmount/lot sizing anywhere
+ * - store.strategyEngine.riskPctPerTrade (and therefore every real order)
+ * stays completely untouched by this. Wrapped in try/catch: an observation
+ * tag must never be able to break real signal logging.
+ */
+export function tagVolatilityObservation(evt) {
+  if (evt.type !== 'validated' || evt.blockedReason || !VOL_REGIME_SOURCES.has(evt.source)) return evt;
+  try {
+    const history = store.strategyEngine.getHistory(evt.symbol);
+    const daily = resampleCandles(history, DAY_MS);
+    const volRegime = makeVolatilityRegimeLookup(daily)(evt.validatedAt);
+    if (!volRegime) return evt;
+    const currentRiskPct = store.strategyEngine.riskPctPerTrade;
+    const suggestedRiskPct = volRegime === 'low' ? currentRiskPct * LOW_REGIME_RISK_SCALE : currentRiskPct;
+    return { ...evt, volRegime, suggestedRiskPct };
+  } catch {
+    return evt;
+  }
+}
+
 export function pushSignalEvents(events) {
   if (!events || events.length === 0) return;
   for (const evt of events) {
-    store.signalLog.push({ ...evt, loggedAt: Date.now() });
+    store.signalLog.push({ ...tagVolatilityObservation(evt), loggedAt: Date.now() });
   }
   if (store.signalLog.length > MAX_LOG_LENGTH) {
     store.signalLog.splice(0, store.signalLog.length - MAX_LOG_LENGTH);

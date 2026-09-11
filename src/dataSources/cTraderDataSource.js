@@ -31,7 +31,7 @@
 // account's symbol list.
 
 import { CTraderConnection } from '@reiryoku/ctrader-layer';
-import { store, pushSignalEvents, setBalance, setBrokerInfo, isAutoExecuteActive } from '../store.js';
+import { store, pushSignalEvents, setBalance, setBrokerInfo, isAutoExecuteActive, tagVolatilityObservation } from '../store.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
@@ -918,7 +918,15 @@ export class CTraderDataSource {
         e.source === 'nwog' ? 'NWOG (gap week-end)' :
         e.source === 'judaswing' ? 'Judas Swing (killzone Londres)' :
         'FVG rempli';
-      const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}`;
+      // Forward-test démo OBSERVATION ONLY (2026-09) - re-tags here rather than
+      // reusing pushSignalEvents' already-tagged copy, so this stays a pure
+      // addition with zero effect on `events`/`actionable` (used above for
+      // auto-execute) - see store.js's tagVolatilityObservation() and HANDOFF.md.
+      const tagged = tagVolatilityObservation(e);
+      const volNote = tagged.volRegime
+        ? ` [obs. vol: ${tagged.volRegime}, taille sugg. ${tagged.suggestedRiskPct.toFixed(2)}% — non appliqué]`
+        : '';
+      const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}${volNote}`;
       fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
         console.warn('[ntfy] push failed', err.message)
       );
