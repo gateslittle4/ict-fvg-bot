@@ -1107,3 +1107,28 @@ Suite directe de la section précédente. Esdras a relancé : "on le cherche en 
 **Conclusion : scalping M5 sur USDJPY ne tient pas, avec cette mécanique (Judas Swing).** Ne clôt pas nécessairement toute idée de scalping (une autre mécanique ou un autre RR pourrait donner un résultat différent), mais confirme que le passage à M5 n'est pas un simple raccourci vers plus de fréquence — le coût réel du spread mord fort, exactement comme anticipé avant de tester.
 
 **Fichiers** : `data/backtest-input/USDJPY_M5.csv` (nouveau, donnée), `scripts/convertHistData.js` (argument optionnel `bucketMinutes`, rétrocompatible), `scripts/runUsdjpyM5ScalpAnalysis.js` (nouveau, script exploratoire, pas de nouveaux tests unitaires — réutilise une fonction déjà testée), `data/backtest-input/usdjpy-m5-scalp-analysis.md`. `npm test` : 354/354 (inchangé).
+
+## "Gap and Go" (continuation de gap) — concept réellement nouveau proposé, testé et rejeté — 2026-09-12
+
+À la demande explicite d'Esdras ("tu pourrais pas inventer une stratégie novatrice ?") après une longue série de concepts publiés (ICT et non-ICT) tous rejetés ou fragiles. Plutôt qu'une invention arbitraire (risque de construction ad hoc sans justification, contraire à la discipline de ce projet), l'idée retenue est l'exact opposé d'un mécanisme DÉJÀ testé ici : NWOG et NDOG parient tous les deux sur le COMBLEMENT d'un gap (fade) — jamais sur sa CONTINUATION, un vrai concept ("gap and go") cité dans la littérature générale de trading d'indices (pas ICT-spécifique), trouvé pendant la recherche sur le scalping de la section précédente.
+
+**Méthode** (`src/backtest/gapContinuation.js`, nouveau module autonome — ne modifie ni `nwog.js` ni `ndog.js`, duplique juste leur détection de gap déjà testée) : mêmes seuils de gap que NWOG (20-100h) et NDOG (1-3h) — PAS re-choisis, ce sont les mêmes vrais gaps déjà détectés dans ce projet, seul le sens du pari change. Entrée une bougie après le gap, stop au-delà de l'extrême de la bougie de gap (du côté adapté à la nouvelle direction), cible fixe 1:3, timeout 480 bougies M15. Testé aux deux échelles (quotidien et hebdomadaire) sur les 6 instruments. 7 tests unitaires.
+
+**Résultat, un seul passage, aucun paramètre retouché après coup** :
+
+| Échelle | Symbole | Train (n/exp) | Test (n/exp) | Verdict |
+|---|---|---|---|---|
+| Quotidien | US100 | 983/-0.05R | 300/+0.03R | ⚠️ affaibli |
+| Quotidien | US500 | 793/-0.12R | 271/+0.13R | ⚠️ affaibli |
+| Quotidien | XAUUSD | 485/-0.14R | 215/-0.11R | ❌ ne tient pas |
+| Quotidien | EUR/GBP/JPY | n test = 1-4 | — | ❓ pas assez de trades (confirme la disparition de la pause quotidienne forex post-2024 déjà notée dans l'étude NDOG) |
+| Hebdo | US100 | 211/+0.10R | 92/-0.13R | ❌ ne tient pas |
+| Hebdo | US500 | 190/+0.06R | 96/-0.23R | ❌ ne tient pas |
+| Hebdo | XAUUSD | 155/-0.10R | 77/+0.30R | ⚠️ affaibli |
+| Hebdo | EUR/GBP/JPY | tous négatifs des deux côtés | | ❌ ne tient pas |
+
+**Rejeté partout, aucun "✅ tient"** — y compris US100/US500 en hebdomadaire, qui montrent le profil "train positif, test négatif" (0.10R→-0.13R, 0.06R→-0.23R) déjà traité comme du bruit ailleurs dans ce document. **L'idée que le sens INVERSE (comblement) tienne mieux que la continuation sur US100/US500 spécifiquement (NWOG hebdo y tenait, voir plus haut) est cohérente et vient s'ajouter au dossier** : sur ces deux indices, le pari du comblement bat le pari de la continuation — pas une surprise complète (un gap sur indice se comble plus souvent qu'il ne se poursuit, historiquement), mais bon d'avoir vérifié plutôt que supposé.
+
+**Conclusion : encore un rejet nickel, mais celui-ci ferme une vraie question ouverte** (comblement vs continuation) plutôt que de retester une énième variante ICT. Non activé en production.
+
+**Fichiers** : `src/backtest/gapContinuation.js` (nouveau, 7 tests unitaires), `test/gapContinuation.test.js`, `scripts/runGapContinuationStrategyAnalysis.js`, `data/backtest-input/gap-continuation-strategy-analysis.md`. `npm test` : 361/361 (354 + 7 nouveaux).
