@@ -93,27 +93,9 @@
   .err { color: var(--red); font-size: 13px; margin-top: 8px; }
   .meta { color: var(--muted); font-size: 12px; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
-  /* Embedded mode (2026-09) - when this page loads inside index.html's
-     <iframe id="embedded-chart">, the outer page already has its own nav
-     and the card already has its own "Graphique" header, so this page's OWN
-     nav/title/subtitle would just be a redundant second banner eating
-     vertical space (confirmed via a Playwright screenshot before this fix -
-     genuinely awkward, not a hypothetical). Detected client-side (see
-     script below) rather than a URL param, so the SAME chart.html keeps
-     working identically whether reached directly or embedded - no
-     duplicated markup, no route to keep in sync. */
-  body.embedded .topnav, body.embedded h1, body.embedded .subtitle { display: none; }
-  body.embedded { padding-top: 12px; }
-  body.embedded .card { margin-bottom: 0; border: 0; border-radius: 0; background: var(--bg); }
 </style>
 </head>
 <body>
-  <script>
-    // Runs synchronously, before the nav/h1 below are parsed, so there's no
-    // flash of the standalone layout before this class hides it - see the
-    // "Embedded mode" CSS comment above for why this exists at all.
-    if (window.self !== window.top) document.body.classList.add('embedded');
-  </script>
   <nav class="topnav">
     <a href="/">Dashboard</a>
     <a href="/chart.html" class="active">Graphique</a>

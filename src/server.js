@@ -182,8 +182,15 @@ app.get('/api/trade-history', async (req, res) => {
   if (store.mode !== 'live' || typeof store.liveDataSource?.getTradeHistory !== 'function') {
     return res.json({ trades: [], reason: 'not connected to a live broker' });
   }
+  // ?days=N (2026-09, dashboard filter) - getTradeHistory() itself already
+  // clamps to 7 (ProtoOADealListReq's own hard cap on the from/to span, see
+  // its own comment), this just parses+validates the query param before
+  // passing it through. Any non-finite/non-positive value falls back to the
+  // function's own default (7) rather than sending NaN/0 downstream.
+  const requestedDays = Number(req.query.days);
+  const days = Number.isFinite(requestedDays) && requestedDays > 0 ? requestedDays : undefined;
   try {
-    const trades = await store.liveDataSource.getTradeHistory();
+    const trades = await store.liveDataSource.getTradeHistory({ days });
     res.json({ trades, summary: summarizeTrades(trades) });
   } catch (err) {
     res.status(502).json({ error: err.message });
