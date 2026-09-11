@@ -963,3 +963,16 @@ Suite directe de la section précédente. Esdras a fourni les vraies règles Fun
 **Verdict global, donné directement à Esdras** : le bot actuel ne serait PAS conforme à FundingPips Zero sans changements — deux interdictions strictes enfreintes régulièrement (pas de simple dépassement de risque), plus un profil de trailing drawdown structurellement plus dangereux (2 bust/7 ans déjà mesuré) que ce pour quoi le bot a été conçu et validé (FTMO 1-Step, 10% trailing). Pour rendre le bot compatible avec Zero, il faudrait au minimum : un vrai filtre news, une fermeture forcée des positions avant le week-end, et soit réduire le risque par trade soit ajouter un frein sur drawdown. **Rien codé ici — analyse seulement, à la demande explicite ("juste vérifie si notre bot peut fonctionner avec ces règles"), pas de décision de modifier le bot prise.**
 
 **Fichier** : `scripts/runFundingPipsZeroAccountImpact.js` (ajout de `spansWeekend()`/colonne dédiée), `data/backtest-input/fundingpips-zero-account-impact.md` (régénéré). `npm test` : 338/338 (inchangé).
+
+## Nouveau workflow : une branche isolée par type de challenge — 2026-09-11
+
+À la demande explicite d'Esdras, qui veut tester plusieurs types de challenge (FundingPips Zero, potentiellement d'autres prop firms/modèles plus tard) sans jamais risquer la branche de production : **chaque spécialisation vit désormais dans sa propre branche isolée**, avec la convention `challenge/<nom>`.
+
+**`challenge/fundingpips-zero`** (cette branche) : créée à partir de `claude/lire-handoff-hxisa5` (donc avec tout l'historique + l'analyse FundingPips Zero déjà faite, voir les deux sections juste au-dessus). C'est ici que les adaptations pour rendre le bot conforme à FundingPips Zero seront construites — **pas encore commencé, juste le point de départ posé**. Rappel du chantier identifié (voir verdict ci-dessus) :
+1. Un vrai filtre news (bloquer les nouvelles entrées autour des horaires NFP/CPI/FOMC connus).
+2. Fermeture forcée de toute position ouverte avant le week-end (actuellement 15-20% des trades en traversent un — changement de comportement réel, pas juste un garde-fou, nécessite un nouveau backtest pour confirmer que l'edge survit).
+3. Réduire le risque par trade ou ajouter un frein sur drawdown (le trailing à 5% de Zero a busté 2 comptes sur 7 ans dans la simulation, contre zéro sous FTMO 1-Step à 10%).
+
+**Important pour la prochaine reprise** : `claude/lire-handoff-hxisa5` reste la SEULE branche que Render déploie en production — rien de ce qui se construit sur `challenge/fundingpips-zero` (ou une future `challenge/<autre>`) n'atteint le bot en direct tant qu'aucune fusion explicite n'est demandée par Esdras.
+
+**Note technique** : un commit de fin d'analyse (`002e328`) a été auto-committé sur `claude/lire-handoff-hxisa5` par le hook de fin de session juste avant que cette bascule vers une branche isolée soit décidée — contenu inoffensif (script de recherche + doc, aucun changement de comportement du bot), laissé tel quel plutôt que de réécrire l'historique de la branche de production.
