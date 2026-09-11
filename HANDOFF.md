@@ -864,3 +864,27 @@ Nouveau concept ICT recherché et testé à la suite de l'activation de Judas Sw
 **Fichiers touchés au total sur ces 4 features** : `src/server.js`, `src/store.js`, `src/config.js`, `src/liveStrategyEngine.js`, `public/index.html`, `public/chart.html`, `test/store.test.js`.
 
 **Reste ouvert** : recherche demandée sur GBPUSD (seul instrument des 5 déjà testés sans AUCUNE stratégie dessus — Judas Swing y a été testé et rejeté ❌) pour ajouter de la fréquence sans diluer le netting déjà occupé ailleurs. Objectif donné par l'utilisatrice : 2-4 trades/semaine max, tous mécanismes confondus. Estimation faite avant de lancer cette recherche (à partir des chiffres déjà mesurés, pas une nouvelle recherche) : FVG+Divergence ~2/semaine + NWOG ~1/semaine + Judas Swing/EURUSD ~1,5-1,7/semaine ≈ **déjà ~4,5-5/semaine au total** — probablement déjà au-dessus de l'objectif une fois l'exécution réellement vivante (voir le bug critique corrigé plus haut). Recommandation donnée : observer les vrais chiffres de production 1-2 semaines avant d'ajouter quoi que ce soit — pas encore tranché avec elle au moment d'écrire cette note.
+
+## NDOG (New Day Opening Gap) testé et rejeté — 2026-09-11, recherche GBPUSD
+
+À la demande explicite d'Esdras d'inventer un concept vraiment nouveau pour GBPUSD, sans faire de data-snooping, après le constat que 9 mécanismes différents (Judas Swing, Asian Range Breakout, Asian Range Fade, Power of Three, Divergence EUR/GBP, MACD, Weekly Liquidity Sweep, NWOG déjà bruit, Breaker Block) avaient déjà été rejetés sur GBPUSD spécifiquement.
+
+**Concept** : NDOG, le sibling quotidien du NWOG déjà en prod sur US100 (même pari sur le comblement d'un gap d'ouverture, mais la pause quotidienne du courtier au lieu de la pause de week-end) — un concept ICT publié listé comme piste "vue mais jamais codée" dans une note antérieure de ce fichier, jamais implémenté avant cette session.
+
+**Discipline anti-data-snooping suivie explicitement** : avant d'écrire une ligne de logique de trading, vérifié l'histogramme RÉEL des écarts de temps entre bougies sur GBPUSD (169 956 écarts normaux de 15min, 586 de 75min, 98 de 135min — une vraie pause quotidienne récurrente d'environ 1h, pas un artefact). Le seuil de détection (1h-3h) a été fixé À PARTIR DE CET HISTOGRAMME, avant d'avoir regardé un seul résultat de trade — jamais ajusté après coup. `src/backtest/ndog.js` réutilise ensuite EXACTEMENT les mêmes conventions que `nwog.js` (comblement du gap, entrée une bougie après, stop à l'extrême de la bougie de gap, cible 1:3, timeout 480 bougies).
+
+**Résultat, obtenu en un seul passage, aucun paramètre retouché après coup** :
+
+| Symbole | Train (n / exp) | Test (n / exp) | Verdict |
+|---|---|---|---|
+| US100 | 1032 / -0.10R | 315 / 0.03R | ⚠️ affaibli |
+| US500 | 884 / -0.09R | 274 / -0.22R | ❌ ne tient pas |
+| XAUUSD | 511 / -0.16R | 249 / -0.29R | ❌ ne tient pas |
+| EURUSD | 245 / 0.09R | **1** / 2.74R | ❓ pas assez de trades |
+| GBPUSD | 219 / -0.25R | **2** / -1.08R | ❓ pas assez de trades |
+
+**Rejeté partout où le nombre de trades permet de juger.** Constat honnête supplémentaire, pas une excuse pour retenter : sur EURUSD ET GBPUSD, le nombre de trades train (219-245) s'effondre à presque zéro en test (1-2) — la pause quotidienne d'environ 1h semble avoir structurellement disparu des données forex (EURUSD/GBPUSD) à partir de 2024, alors qu'elle reste présente sur les indices/l'or (US100/US500/XAUUSD, où le volume train/test reste proportionnel). Probablement un changement côté fournisseur de données pour les paires forex majeures, pas un signal de trading — mais ça veut dire que même si le mécanisme avait eu un edge, il ne serait plus exploitable sur EURUSD/GBPUSD aujourd'hui vu qu'il ne se déclenche presque plus.
+
+**Conclusion sur la recherche GBPUSD dans son ensemble** : 10 mécanismes désormais testés sur GBPUSD (les 9 précédents + NDOG), tous rejetés ou bruit. Aucune piste restante identifiée qui ne soit pas déjà une redite d'un mécanisme déjà écarté. Recommandation inchangée : ne pas continuer à chercher sur GBPUSD spécifiquement (risque de faux positif par comparaisons multiples qui augmente), revenir au plan déjà proposé — observer les vrais chiffres de fréquence en production 1-2 semaines avant d'ajouter quoi que ce soit.
+
+**Fichiers** : `src/backtest/ndog.js` (nouveau, 10 tests unitaires), `test/ndog.test.js`, `scripts/runNdogStrategyAnalysis.js`, `data/backtest-input/ndog-strategy-analysis.md`. **Non activé en production** — recherche uniquement, comme demandé. `npm test` : 338/338 (328 + 10 nouveaux).
