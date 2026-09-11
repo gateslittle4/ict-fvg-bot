@@ -397,9 +397,16 @@ export class CTraderDataSource {
     for (const [symbol, candle] of store.lastCandleBySymbol) {
       currentPriceBySymbol[symbol] = candle.close;
     }
+    // The believed-open SOURCE (fvg/divergence/nwog/judasSwing), not just a
+    // boolean - reconcileAccount() below only needs truthiness for
+    // botBelievesOpen (a string is truthy), but carrying the source through
+    // lets the dashboard explain a "believed-only" mismatch precisely
+    // (e.g. an FVG LIMIT order that never got a fill, vs a MARKET-order
+    // source where "believed-only" is a real submission problem worth
+    // checking - see _handleAutoExecuteEntry()'s own order-type comment).
     const believedOpenBySymbol = {};
     for (const symbol of CONFIG.symbols) {
-      believedOpenBySymbol[symbol] = Boolean(store.strategyEngine.getOpenPosition(symbol));
+      believedOpenBySymbol[symbol] = store.strategyEngine.getOpenPosition(symbol)?.source ?? null;
     }
 
     const result = reconcileAccount({
@@ -900,8 +907,13 @@ export class CTraderDataSource {
           outcome: e.outcome,
           rMultiple,
           entryPrice: opened.entryPrice,
-          entryTime: opened.validatedAt,
-          exitTime: e.exitTime,
+          // opened.validatedAt/e.exitTime are engine-internal candle times,
+          // shifted -5h from real wall-clock (see _toEngineCandle() above) -
+          // shift back before this reaches Supabase, same correction as
+          // server.js's buildStatusPayload()/buildSignalsPayload() apply for
+          // the dashboard, so the durable journal isn't silently 5h off too.
+          entryTime: opened.validatedAt + this.candleTimeOffsetMs,
+          exitTime: e.exitTime + this.candleTimeOffsetMs,
         });
       }
     }

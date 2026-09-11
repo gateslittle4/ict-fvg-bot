@@ -194,6 +194,12 @@
   .result { margin-top: 14px; padding: 14px; border-radius: var(--radius); background: var(--bg-inset); border: 1px solid var(--panel-border); font-size: 13.5px; }
   .result .big { font-size: 26px; font-weight: 800; color: var(--blue); font-family: var(--mono); margin: 4px 0; }
   .warn { color: var(--amber); font-size: 12px; margin-top: 6px; }
+  .mismatch-alert {
+    margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+    background: rgba(232,179,57,0.1); border: 1px solid rgba(232,179,57,0.35);
+    color: var(--amber); font-size: 12.5px; line-height: 1.5;
+  }
+  .mismatch-alert strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 12px; }
   .err { color: var(--red); font-size: 13px; margin-top: 8px; }
   .win { color: var(--green); }
 
@@ -478,11 +484,24 @@ function renderStatus(data) {
   document.getElementById('settings-symbols-current').textContent = data.symbols.map((s) => s.symbol).join(' · ');
 }
 
-const reconciliationLabel = {
-  match: '✓ correspond',
-  'real-only': '⚠ position réelle sans alerte du bot (trade manuel ?)',
-  'believed-only': '⚠ alerte du bot sans position réelle (signal non pris ?)',
-};
+const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judasSwing: 'Judas Swing' };
+function reconciliationExplanation(r) {
+  if (r.status === 'match') return '✓ correspond';
+  if (r.status === 'real-only') return `⚠ ${r.symbol} : position réelle chez le courtier sans alerte du bot (trade manuel ?)`;
+  if (r.status === 'believed-only') {
+    const src = sourceLabelFull[r.source] || r.source || 'un signal';
+    // FVG enters on a LIMIT order at the gap's own edge with a ~1h
+    // expiration (see cTraderDataSource.js's _handleAutoExecuteEntry) - the
+    // most common reason this shows up is simply that price never came
+    // back to fill it, not a bug. Other sources (Divergence/NWOG/Judas
+    // Swing) enter on a MARKET order instead, so "believed-only" there is
+    // more likely a real submission problem worth checking manually.
+    return r.source === 'fvg'
+      ? `⚠ ${r.symbol} : le bot a validé un signal ${src} et pose un ordre LIMITE à l'entrée, mais rien n'est ouvert chez le courtier — le plus probable : le prix n'est jamais revenu remplir la limite avant son expiration (~1h), pas une erreur.`
+      : `⚠ ${r.symbol} : le bot croit avoir une position ${src} ouverte (ordre au marché normalement), mais rien n'est ouvert chez le courtier — à vérifier, l'envoi de l'ordre a peut-être échoué.`;
+  }
+  return '⚠ statut inconnu';
+}
 
 async function refreshAccount() {
   const bodyEl = document.getElementById('account-body');
@@ -518,7 +537,7 @@ async function refreshAccount() {
     }
 
     if (mismatches.length > 0) {
-      html += `<div class="warn" style="margin-top:8px;">${mismatches.map((r) => `${r.symbol}: ${reconciliationLabel[r.status]}`).join(' · ')}</div>`;
+      html += mismatches.map((r) => `<div class="mismatch-alert"><strong>Écart bot/courtier</strong>${reconciliationExplanation(r)}</div>`).join('');
     }
 
     bodyEl.innerHTML = html;

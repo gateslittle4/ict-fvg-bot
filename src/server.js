@@ -15,6 +15,7 @@ import { buildChartOverlays } from './backtest/chartOverlays.js';
 import { startKeepAlive } from './keepAlive.js';
 import { fetchPerformanceBySymbol } from './dataSources/supabaseTradeLog.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
+import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -29,6 +30,25 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/vendor/lightweight-charts', express.static(path.join(__dirname, '..', 'node_modules', 'lightweight-charts', 'dist')));
 
 const BOOTED_AT = Date.now();
+
+// LiveStrategyEngine runs on candle timestamps shifted -5h (see
+// cTraderDataSource.js's _toEngineCandle()/nySession.js's
+// FIXED_EST_TO_UTC_OFFSET_MS) so its NY-session-window checks match the
+// backtest's fixed-EST-as-UTC HistData convention. That shift is correct
+// and required INSIDE the engine, but must never reach the dashboard - a
+// signal validated at real NY session open would otherwise display 5h
+// early. This is the one place engine-timestamped fields (entryTime on an
+// open position, validatedAt on a signal) cross into an API response -
+// shift them back to real wall-clock time here, not in the engine itself.
+function toRealTime(ms) {
+  return typeof ms === 'number' ? ms + FIXED_EST_TO_UTC_OFFSET_MS : ms;
+}
+function withRealTimePosition(position) {
+  return position ? { ...position, entryTime: toRealTime(position.entryTime) } : null;
+}
+function withRealTimeSignal(signal) {
+  return { ...signal, validatedAt: toRealTime(signal.validatedAt) };
+}
 
 // Deliberately the cheapest possible endpoint: no broker round-trip, no
 // engine work, no allocation of anything meaningful. It exists so the
@@ -68,7 +88,7 @@ function buildStatusPayload() {
       lastOpen: last ? last.open : null,
       lastHigh: last ? last.high : null,
       lastLow: last ? last.low : null,
-      openPosition: store.strategyEngine.getOpenPosition(symbol),
+      openPosition: withRealTimePosition(store.strategyEngine.getOpenPosition(symbol)),
     };
   });
 
@@ -97,9 +117,10 @@ function buildSignalsPayload() {
   const watching = store.signalLog
     .filter((e) => e.type === 'watching')
     .slice(-30)
-    .reverse();
+    .reverse()
+    .map(withRealTimeSignal);
   return {
-    actionable: getActionableSignals(),
+    actionable: getActionableSignals().map(withRealTimeSignal),
     watching,
   };
 }

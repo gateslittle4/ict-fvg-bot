@@ -116,13 +116,20 @@ export function reconcileAccount({ realPositions, symbolNameById, currentPriceBy
   const allSymbols = new Set([...bySymbolCount.keys(), ...Object.keys(believedOpenBySymbol)]);
   const reconciliation = [...allSymbols].sort().map((symbol) => {
     const realOpenCount = bySymbolCount.get(symbol) || 0;
-    const botBelievesOpen = Boolean(believedOpenBySymbol[symbol]);
+    // believedOpenBySymbol[symbol] is the believed position's SOURCE string
+    // (fvg/divergence/nwog/judasSwing) or null - kept as `source` below so
+    // the dashboard can explain a mismatch precisely; botBelievesOpen stays
+    // a plain boolean for the match/real-only/believed-only logic, which
+    // only ever needed truthiness (a source string still passes an older
+    // caller that sent a boolean here, e.g. an existing test).
+    const source = believedOpenBySymbol[symbol] || null;
+    const botBelievesOpen = Boolean(source);
     let status;
     if (realOpenCount > 0 && botBelievesOpen) status = 'match';
     else if (realOpenCount > 0 && !botBelievesOpen) status = 'real-only'; // a position exists at the broker the bot doesn't know about (manual trade, or the bot's belief already cleared)
     else if (realOpenCount === 0 && botBelievesOpen) status = 'believed-only'; // the bot thinks a trade should be open (an alert it fired) but nothing is actually open - most likely the alert wasn't taken
     else status = 'none';
-    return { symbol, realOpenCount, botBelievesOpen, status };
+    return { symbol, realOpenCount, botBelievesOpen, source, status };
   });
 
   return { positions: enriched, marginUsedReal, floatingPnlEstimate, floatingPnlIsPartial, reconciliation };
