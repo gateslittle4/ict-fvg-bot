@@ -946,3 +946,20 @@ Session qui a repris directement sur l'investigation du bug critique du flux liv
 **Conclusion pratique** : avec la config actuelle (0.5% de risque par trade, aucune réduction dynamique), **ce combo ne serait probablement PAS adapté à un compte FundingPips Zero tel quel** — il faudrait soit réduire le risque par trade (le sizing par volatilité déjà exploré plus haut dans ce document, jamais activé, redevient pertinent ici), soit un frein sur drawdown, avant d'y risquer un vrai compte Zero. **Pas encore décidé avec Esdras** — priorité avant toute chose : confirmer les règles réelles de FundingPips Zero à la source (le blocage réseau de cette session a empêché une vérification directe).
 
 **Fichier** : `scripts/runFundingPipsZeroAccountImpact.js` (nouveau, adapté de `runFtmo1StepAccountImpact.js`), `data/backtest-input/fundingpips-zero-account-impact.md`. Pas de nouveaux tests (script exploratoire, même convention que les autres `run*AccountImpact.js`). `npm test` : 338/338 (inchangé).
+
+## FundingPips Zero — verdict final : bot actuel NON conforme (news + week-end), suite et clôture — 2026-09-11
+
+Suite directe de la section précédente. Esdras a fourni les vraies règles FundingPips Zero, sourcées (citations directes de `help.fundingpips.com` et `fundingpips.com/zero`), corrigeant/complétant les estimations par recherche web de la section précédente :
+
+- **Perte quotidienne max 3%** (confirmé, notre garde-fou à 2% reste plus strict — OK).
+- **Drawdown trailing 5%, verrouillé au seuil de rentabilité (breakeven) une fois +5% de profit atteint** — confirme exactement l'interprétation déjà simulée dans `runFundingPipsZeroAccountImpact.js`.
+- **Risque max par position : -1% du solde de départ (ou 3% sous 50k$/2% à 50k$+ sur positions corrélées)** — plus nuancé que la simple limite agrégée à 1% déjà simulée, mais notre simulation (risque ouvert réel jamais au-dessus de ~1.00-1.01%) reste une bonne approximation, probablement même large.
+- **⚠️ NOUVEAU, pas modélisé avant, et CRITIQUE : trading autour des news et maintien de position sur le week-end sont STRICTEMENT INTERDITS sur Zero** (pas juste une limite de risque — une interdiction, potentiellement une clôture de compte immédiate).
+
+**Deux vérifications faites contre le bot RÉEL, pas de nouvelles suppositions** :
+1. **Filtre news** : confirmé qu'il n'en existe AUCUN en production (déjà noté ailleurs dans ce fichier — ni `config.js` ni `guardrailEngine.js`). **Non conforme tel quel.**
+2. **Maintien de position sur le week-end** : ajout d'un suivi précis (`spansWeekend()`, vérifie si une date calendaire UTC samedi/dimanche tombe entre l'entrée et la sortie d'un trade) au script de simulation déjà existant, sur le même combo validé (FVG x3 + Divergence). **Résultat : 15-20% des trades traversent un week-end chaque année** (5 à 26 trades selon l'année, sur 24-148 trades/an) — pas un cas rare, un schéma régulier. **Non conforme tel quel.**
+
+**Verdict global, donné directement à Esdras** : le bot actuel ne serait PAS conforme à FundingPips Zero sans changements — deux interdictions strictes enfreintes régulièrement (pas de simple dépassement de risque), plus un profil de trailing drawdown structurellement plus dangereux (2 bust/7 ans déjà mesuré) que ce pour quoi le bot a été conçu et validé (FTMO 1-Step, 10% trailing). Pour rendre le bot compatible avec Zero, il faudrait au minimum : un vrai filtre news, une fermeture forcée des positions avant le week-end, et soit réduire le risque par trade soit ajouter un frein sur drawdown. **Rien codé ici — analyse seulement, à la demande explicite ("juste vérifie si notre bot peut fonctionner avec ces règles"), pas de décision de modifier le bot prise.**
+
+**Fichier** : `scripts/runFundingPipsZeroAccountImpact.js` (ajout de `spansWeekend()`/colonne dédiée), `data/backtest-input/fundingpips-zero-account-impact.md` (régénéré). `npm test` : 338/338 (inchangé).

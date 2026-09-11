@@ -182,6 +182,7 @@ function simulateYear(m15CandlesBySymbolFull, divergenceCandidatesFull, year) {
   let fvgTrades = 0;
   let goldTrades = 0;
   let divTrades = 0;
+  let weekendSpanningTrades = 0; // FundingPips Zero prohibits holding ANY position over the weekend - real compliance question, not a risk-sizing one
 
   const currentOpenRiskPct = () => {
     let riskSum = 0;
@@ -190,7 +191,23 @@ function simulateYear(m15CandlesBySymbolFull, divergenceCandidatesFull, year) {
     return balance > 0 ? (riskSum / balance) * 100 : 0;
   };
 
-  const resolveClose = (symbol, netR, exitTime, riskAmount, isDivergence, outcome) => {
+  // A trade "spans the weekend" if any UTC calendar date between its entry and exit
+  // (inclusive) is a Saturday or Sunday - markets are closed those days regardless of
+  // instrument, so a position still open at that point was held THROUGH the pause, not
+  // just near it. Simple day-by-day walk, not gap-detection - correct regardless of the
+  // NWOG/NDOG "convention HistData" timestamp offset question (this only cares about
+  // calendar dates, not session hours).
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const spansWeekend = (entryTime, exitTime) => {
+    for (let t = entryTime - (entryTime % DAY_MS); t <= exitTime; t += DAY_MS) {
+      const dow = new Date(t).getUTCDay();
+      if (dow === 0 || dow === 6) return true;
+    }
+    return false;
+  };
+
+  const resolveClose = (symbol, netR, entryTime, exitTime, riskAmount, isDivergence, outcome) => {
+    if (spansWeekend(entryTime, exitTime)) weekendSpanningTrades++;
     const pnl = riskAmount * netR;
     balance += pnl;
     peak = Math.max(peak, balance);
@@ -231,7 +248,7 @@ function simulateYear(m15CandlesBySymbolFull, divergenceCandidatesFull, year) {
           outcome = 'timeout';
         }
         const costR = spread > 0 ? spread / openF.distance : 0;
-        resolveClose(symbol, legR - costR, candle.time, openF.riskAmount, false, outcome);
+        resolveClose(symbol, legR - costR, openF.entryTime, candle.time, openF.riskAmount, false, outcome);
         openFvg[symbol] = null;
       }
     }
@@ -247,7 +264,7 @@ function simulateYear(m15CandlesBySymbolFull, divergenceCandidatesFull, year) {
         else { legR = (candle.close - openDivergence.entryPrice) / openDivergence.distance; outcome = 'timeout'; }
         const divSpread = DEFAULT_SPREADS[symbol] ?? 0;
         const costR = divSpread > 0 ? divSpread / openDivergence.distance : 0;
-        resolveClose(symbol, legR - costR, candle.time, openDivergence.riskAmount, true, outcome);
+        resolveClose(symbol, legR - costR, openDivergence.entryTime, candle.time, openDivergence.riskAmount, true, outcome);
         openDivergence = null;
       }
     }
@@ -310,15 +327,17 @@ function simulateYear(m15CandlesBySymbolFull, divergenceCandidatesFull, year) {
     finalBalance: balance,
     maxOpenRiskPct,
     openRiskBreaches,
+    weekendSpanningTrades,
   };
 }
 
 function fmtRow(year, r) {
-  if (!r) return `| ${year}${TRAIN_YEARS.has(year) ? ' (train)' : ' (test)'} | — | | | | | | |`;
+  if (!r) return `| ${year}${TRAIN_YEARS.has(year) ? ' (train)' : ' (test)'} | — | | | | | | | |`;
   const wr = r.winRate !== null ? (r.winRate * 100).toFixed(1) + '%' : '—';
   const bustCell = r.busted ? `**OUI** (${r.bustDate})` : 'non';
   const riskCell = r.maxOpenRiskPct > MAX_OPEN_RISK_PCT ? `**${r.maxOpenRiskPct.toFixed(2)}%** (${r.openRiskBreaches}x)` : `${r.maxOpenRiskPct.toFixed(2)}%`;
-  return `| ${year}${TRAIN_YEARS.has(year) ? ' (train)' : ' (test)'} | ${r.trades} (${r.fvgTrades} FVG-idx + ${r.goldTrades} FVG-or + ${r.divTrades} div.) | ${wr} | ${r.trailingDrawdownPct.toFixed(1)}% | ${bustCell} | ${riskCell} | $${r.finalBalance.toFixed(0)} |`;
+  const weekendCell = r.weekendSpanningTrades > 0 ? `**${r.weekendSpanningTrades}**` : '0';
+  return `| ${year}${TRAIN_YEARS.has(year) ? ' (train)' : ' (test)'} | ${r.trades} (${r.fvgTrades} FVG-idx + ${r.goldTrades} FVG-or + ${r.divTrades} div.) | ${wr} | ${r.trailingDrawdownPct.toFixed(1)}% | ${bustCell} | ${riskCell} | ${weekendCell} | $${r.finalBalance.toFixed(0)} |`;
 }
 
 function main() {
@@ -353,8 +372,8 @@ function main() {
       "ici (question différente)."
   );
   md.push('');
-  md.push('| Année | Trades (détail) | Win rate | Drawdown trailing max | Busté (-5% trailing, plafonné au solde de départ)? | Risque ouvert max (limite 1%) | Solde final |');
-  md.push('|---|---|---|---|---|---|---|');
+  md.push('| Année | Trades (détail) | Win rate | Drawdown trailing max | Busté (-5% trailing, plafonné au solde de départ)? | Risque ouvert max (limite 1%) | Trades traversant un week-end (interdit sur Zero) | Solde final |');
+  md.push('|---|---|---|---|---|---|---|---|');
   for (const year of YEARS) {
     const r = simulateYear(m15CandlesBySymbolFull, divergenceCandidatesFull, year);
     md.push(fmtRow(year, r));
