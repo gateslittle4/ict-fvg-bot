@@ -1087,3 +1087,23 @@ Direction cohérente train ET test (le régime "élevé" fait mieux dans les deu
 4. **Coût d'infrastructure.** `LiveStrategyEngine` reconstruit et rejoue tout l'historique retenu à chaque nouvelle bougie ("rebuild-and-replay", déjà source d'un vrai incident de production sur Render — voir plus haut, "Bug critique... le flux d'événements live"). Passer de M15 à M1 multiplierait par ~15 le nombre de bougies traitées par unité de temps réel, sur un plan Render gratuit (0.15 CPU) déjà identifié comme fragile à ce genre de charge.
 
 **Conclusion (recherche seulement, aucune décision prise)** : le scalping ICT est un concept réel et documenté, pas une invention — mais dans CE projet précis, trois obstacles concrets (conformité prop-firm à vérifier sérieusement, données M1 manquantes pour 5 des 6 instruments, sensibilité au spread nettement plus forte) rendent ce chantier bien plus lourd qu'un simple changement de timeframe. Pas recommandé de s'y lancer sans, au minimum, une confirmation écrite des règles FTMO/FundingPips sur la durée minimale de détention. Rien codé, rien testé — recherche documentée comme demandé.
+
+## Scalp M5 testé sur USDJPY — rejeté, confirme l'obstacle #3 (spread) déjà documenté — 2026-09-12, suite
+
+Suite directe de la section précédente. Esdras a relancé : "on le cherche en USDJPY ? de toute façon on a pas de stratégie pour lui" — logique solide (seul instrument avec du vrai M1 source, et aucune stratégie déjà validée dessus, donc rien à perdre à essayer). Cette fois un vrai test, pas juste de la doc.
+
+**Méthode, aucun nouveau mécanisme** : `runJudasSwingBacktest()` (`src/backtest/judasSwing.js`) réutilisée TELLE QUELLE — sa logique est déjà agnostique au timeframe (fenêtre horaire en heure murale, PDH/PDL rééchantillonné en jour peu importe la taille de bougie d'entrée). Seuls changements : bougies M5 au lieu de M15, et deux paramètres décidés depuis la recherche AVANT de voir un résultat — RR 1:2 (au lieu de 1:3+ ailleurs, conforme aux cibles ~30-50 pips citées par les sources ICT scalping) et timeout 480 bougies (même constante littérale que partout ailleurs dans ce projet, appliquée à des bougies M5 cette fois — 40h au lieu de 5 jours en M15).
+
+**`scripts/convertHistData.js` étendu** (rétrocompatible : 4ᵉ argument optionnel `bucketMinutes`, défaut 15 — reconverti et diffé le M15 existant pour confirmer zéro régression avant de l'utiliser) pour produire `data/backtest-input/USDJPY_M5.csv` (736 827 bougies M5, même source/convention HistData que le M15 déjà en place).
+
+**Résultat, un seul passage, aucun paramètre retouché après coup** :
+
+| Trades train | Espérance train | Trades test | Espérance test | Verdict |
+|---|---|---|---|---|
+| 387 (365 rejetés non-viables sur 752 bruts) | -0.17R | 150 (62 rejetés sur 212 bruts) | -0.16R | ❌ ne tient pas |
+
+**Rejeté proprement — train ET test négatifs, cohérents entre eux** (pas le profil "train négatif, test positif" qu'on traite habituellement comme du bruit ; ici c'est un rejet net des deux côtés). Le taux de gain (34.2%/33.3%) est quasiment collé au seuil d'équilibre mécanique d'un RR 1:2 (33.3%) — une fois les coûts appliqués, ça repasse sous zéro. **Confirme empiriquement l'obstacle #3 déjà documenté** : près de la moitié des signaux bruts en train (365/752) sont rejetés comme non viables (stop trop proche du spread) — la sensibilité au spread à cette granularité est bien aussi lourde que redouté, pas juste une inquiétude théorique.
+
+**Conclusion : scalping M5 sur USDJPY ne tient pas, avec cette mécanique (Judas Swing).** Ne clôt pas nécessairement toute idée de scalping (une autre mécanique ou un autre RR pourrait donner un résultat différent), mais confirme que le passage à M5 n'est pas un simple raccourci vers plus de fréquence — le coût réel du spread mord fort, exactement comme anticipé avant de tester.
+
+**Fichiers** : `data/backtest-input/USDJPY_M5.csv` (nouveau, donnée), `scripts/convertHistData.js` (argument optionnel `bucketMinutes`, rétrocompatible), `scripts/runUsdjpyM5ScalpAnalysis.js` (nouveau, script exploratoire, pas de nouveaux tests unitaires — réutilise une fonction déjà testée), `data/backtest-input/usdjpy-m5-scalp-analysis.md`. `npm test` : 354/354 (inchangé).
