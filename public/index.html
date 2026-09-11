@@ -132,6 +132,20 @@
   }
   .meta { color: var(--muted); font-size: 12px; }
 
+  /* ---------- Journal filters + CSV export ---------- */
+  .btn-ghost {
+    text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 11.5px;
+    background: transparent; color: var(--blue); border: 1px solid var(--panel-border-strong);
+    border-radius: 6px; padding: 4px 9px; margin: 0; cursor: pointer;
+  }
+  .btn-ghost:hover { background: rgba(76,158,255,0.1); }
+  .journal-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filter-select {
+    padding: 6px 9px; border-radius: 7px; border: 1px solid var(--panel-border);
+    background: var(--bg-inset); color: var(--text); font-size: 12.5px; font-family: var(--sans);
+  }
+  .filter-select:focus { outline: none; border-color: var(--blue); }
+
   /* ---------- Nav tabs ---------- */
   .topnav { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--panel-border); }
   .topnav a {
@@ -295,8 +309,27 @@
   </div>
 
   <div class="card">
-    <h2>Journal de trading (7 derniers jours)</h2>
+    <h2 id="journal-heading">Journal de trading<button type="button" id="export-csv-btn" class="btn-ghost" title="Exporter les trades affichés (selon les filtres actifs) en CSV">⬇ CSV</button></h2>
     <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader) — stop/cible non affichés, cTrader ne les garde pas après clôture.</div>
+    <!-- Filtres (2026-09, "un vrai site... filtres + export CSV du journal") -
+         symbole/stratégie filtrent CÔTÉ CLIENT sur les trades déjà reçus (pas
+         de round-trip courtier pour un simple filtre d'affichage) ; la
+         fenêtre en jours EST envoyée au serveur (?days=N sur
+         /api/trade-history) car c'est la borne réelle de la requête
+         ProtoOADealListReq - voir buildJournalFilterOptions()/refreshTradeHistory()
+         plus bas. Les options symbole/stratégie sont reconstruites à partir
+         des trades RÉELLEMENT reçus (pas une liste figée dans ce fichier) -
+         pas de liste à tenir manuellement à jour à chaque nouvelle stratégie
+         ou instrument. -->
+    <div class="journal-toolbar">
+      <select id="filter-days" class="filter-select" title="Fenêtre (limite du courtier: 7 jours max)">
+        <option value="7">7 jours</option>
+        <option value="3">3 jours</option>
+        <option value="1">24 h</option>
+      </select>
+      <select id="filter-symbol" class="filter-select"><option value="">Tous symboles</option></select>
+      <select id="filter-source" class="filter-select"><option value="">Toutes stratégies</option></select>
+    </div>
     <div id="journal-summary" style="margin-bottom:10px;"></div>
     <div id="journal-list"></div>
   </div>
@@ -730,41 +763,128 @@ async function refreshTradeLog() {
   }
 }
 
+// Unfiltered trades from the last fetch - the symbol/source filters below
+// re-render from this WITHOUT refetching (pure display filter, see the
+// card's own comment for why only `days` goes to the server).
+let allJournalTrades = [];
+
 async function refreshTradeHistory() {
   const list = document.getElementById('journal-list');
+  const days = document.getElementById('filter-days').value;
   try {
-    const res = await fetch('/api/trade-history');
+    const res = await fetch(`/api/trade-history?days=${encodeURIComponent(days)}`);
     const data = await res.json();
-    const summaryEl = document.getElementById('journal-summary');
-    if (!data.trades || data.trades.length === 0) {
-      summaryEl.innerHTML = '';
-      list.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur les 7 derniers jours.'}</div>`;
+    allJournalTrades = data.trades || [];
+    populateJournalFilterOptions(allJournalTrades);
+    if (allJournalTrades.length === 0) {
+      document.getElementById('journal-summary').innerHTML = '';
+      list.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur cette fenêtre.'}</div>`;
       return;
     }
-    const s = data.summary;
-    const netWin = s.netPnl >= 0;
-    summaryEl.innerHTML = `
-      <div class="stat-row"><span class="label">Trades (7j)</span><span>${s.count}</span></div>
-      <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt(s.winRatePct, 0)}% (${s.wins}/${s.count})</span></div>
-      <div class="stat-row"><span class="label">P&amp;L net</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.netPnl)}</span></div>
-    `;
-    list.innerHTML = data.trades.map((t) => {
-      const d = priceDecimals(t.symbol);
-      const win = t.pnl >= 0;
-      return `
-        <div class="journal-item">
-          <div class="journal-head">
-            <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} <span class="meta">[${sourceLabel(t)}]</span> · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
-            <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
-          </div>
-          ${renderTradeChart(t, d)}
-        </div>
-      `;
-    }).join('');
+    renderJournalList();
   } catch (err) {
     list.innerHTML = `<div class="err">Erreur de chargement du journal: ${err.message}</div>`;
   }
 }
+
+// Rebuilds the symbol/strategy <select> OPTIONS from the trades ACTUALLY
+// present in the current window - not a list hardcoded in this file, so a
+// newly-activated symbol or strategy (Judas Swing/EURUSD, NWOG before it...)
+// shows up here automatically instead of needing a matching update. Keeps
+// the current selection if it's still a valid choice.
+function populateJournalFilterOptions(trades) {
+  const symbolSel = document.getElementById('filter-symbol');
+  const sourceSel = document.getElementById('filter-source');
+  const rebuild = (sel, values, allLabel) => {
+    const prev = sel.value;
+    sel.innerHTML = `<option value="">${allLabel}</option>` +
+      values.map((v) => `<option value="${v}"${v === prev ? ' selected' : ''}>${v}</option>`).join('');
+  };
+  rebuild(symbolSel, [...new Set(trades.map((t) => t.symbol))].sort(), 'Tous symboles');
+  rebuild(sourceSel, [...new Set(trades.map((t) => sourceLabel(t)))].sort(), 'Toutes stratégies');
+}
+
+function filteredJournalTrades() {
+  const symbolFilter = document.getElementById('filter-symbol').value;
+  const sourceFilter = document.getElementById('filter-source').value;
+  return allJournalTrades.filter((t) =>
+    (!symbolFilter || t.symbol === symbolFilter) && (!sourceFilter || sourceLabel(t) === sourceFilter)
+  );
+}
+
+function renderJournalList() {
+  const list = document.getElementById('journal-list');
+  const summaryEl = document.getElementById('journal-summary');
+  const filtered = filteredJournalTrades();
+
+  if (filtered.length === 0) {
+    summaryEl.innerHTML = '';
+    list.innerHTML = '<div class="meta">Aucun trade ne correspond à ces filtres.</div>';
+    return;
+  }
+
+  const wins = filtered.filter((t) => t.pnl >= 0).length;
+  const netPnl = filtered.reduce((sum, t) => sum + t.pnl, 0);
+  const netWin = netPnl >= 0;
+  summaryEl.innerHTML = `
+    <div class="stat-row"><span class="label">Trades</span><span>${filtered.length}</span></div>
+    <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt((wins / filtered.length) * 100, 0)}% (${wins}/${filtered.length})</span></div>
+    <div class="stat-row"><span class="label">P&amp;L net</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(netPnl)}</span></div>
+  `;
+
+  list.innerHTML = filtered.map((t) => {
+    const d = priceDecimals(t.symbol);
+    const win = t.pnl >= 0;
+    return `
+      <div class="journal-item">
+        <div class="journal-head">
+          <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} <span class="meta">[${sourceLabel(t)}]</span> · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
+          <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
+        </div>
+        ${renderTradeChart(t, d)}
+      </div>
+    `;
+  }).join('');
+}
+
+// CSV of whatever's CURRENTLY DISPLAYED (i.e. respects the active filters) -
+// exporting "everything regardless of filters" would be a silent surprise
+// (the button next to a filtered view exporting unfiltered data).
+function exportJournalCsv() {
+  const filtered = filteredJournalTrades();
+  if (filtered.length === 0) return;
+
+  const escapeCsv = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const headers = ['symbole', 'direction', 'stratégie', 'entrée', 'sortie', 'prix_entrée', 'prix_sortie', 'pnl'];
+  const rows = filtered.map((t) => [
+    t.symbol,
+    t.direction === 'bullish' ? 'achat' : 'vente',
+    sourceLabel(t),
+    new Date(t.entryTime).toISOString(),
+    new Date(t.exitTime).toISOString(),
+    t.entryPrice,
+    t.exitPrice,
+    t.pnl,
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `journal-trading-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('filter-days').addEventListener('change', refreshTradeHistory);
+document.getElementById('filter-symbol').addEventListener('change', renderJournalList);
+document.getElementById('filter-source').addEventListener('change', renderJournalList);
+document.getElementById('export-csv-btn').addEventListener('click', exportJournalCsv);
 
 document.getElementById('calc-form').addEventListener('submit', async (e) => {
   e.preventDefault();
