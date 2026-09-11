@@ -25,6 +25,7 @@
 // heavier "candle-history persistence" task - a different piece of work).
 
 import { createClient } from '@supabase/supabase-js';
+import { summarizeTrades } from '../backtest/backtestEngine.js';
 
 const TABLE = 'bot_trade_events';
 
@@ -78,37 +79,67 @@ export async function logClosedTrade(client, trade, { log = console } = {}) {
   }
 }
 
+function accumulate(bucket, row) {
+  bucket.count++;
+  if (row.outcome === 'win') bucket.wins++;
+  else if (row.outcome === 'loss') bucket.losses++;
+  else bucket.timeouts++;
+  bucket.totalR += row.r_multiple || 0;
+}
+
+function finalizeBucket(b) {
+  const decided = b.wins + b.losses;
+  b.winRatePct = decided > 0 ? Math.round((b.wins / decided) * 1000) / 10 : null;
+  b.totalR = Math.round(b.totalR * 100) / 100;
+}
+
 /**
- * Per-symbol win/loss/timeout/R aggregation over a real, durable window -
- * unlike /api/recent-performance (recentPerformanceReport.js), this reads
- * whatever has actually been logged since persistence was turned on, so it
- * survives restarts and grows over calendar time rather than being capped
- * to a fixed in-memory replay window.
+ * Per-symbol/per-strategy win/loss/timeout/R aggregation over a real,
+ * durable window - unlike /api/recent-performance (recentPerformanceReport.js),
+ * this reads whatever has actually been logged since persistence was turned
+ * on, so it survives restarts and grows over calendar time rather than being
+ * capped to a fixed in-memory replay window.
+ *
+ * `overall` and `equityCurve` reuse summarizeTrades() (backtestEngine.js) -
+ * the SAME profitFactor/expectancy/maxDrawdown math already used everywhere
+ * else in this project, rather than reimplementing it a second way here -
+ * so a "pro" dashboard card built on this can show the same vocabulary
+ * (espérance, profit factor, drawdown) as every strategy-analysis report.
+ * summarizeTrades() expects trades in chronological (oldest-first) order
+ * for a meaningful equity curve, so the query's own descending order (kept
+ * for the existing bySymbol/bySource "most recent first" use) is reversed
+ * locally rather than issuing a second query.
  */
 export async function fetchPerformanceBySymbol(client, { days = null } = {}) {
-  if (!client) return { bySymbol: {}, reason: 'not configured' };
-  let query = client.from(TABLE).select('symbol, outcome, r_multiple, exit_time').order('exit_time', { ascending: false });
+  if (!client) return { bySymbol: {}, bySource: {}, overall: null, equityCurve: [], reason: 'not configured' };
+  let query = client.from(TABLE).select('symbol, source, outcome, r_multiple, exit_time').order('exit_time', { ascending: false });
   if (days != null) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     query = query.gte('exit_time', since);
   }
   const { data, error } = await query;
-  if (error) return { bySymbol: {}, reason: error.message };
+  if (error) return { bySymbol: {}, bySource: {}, overall: null, equityCurve: [], reason: error.message };
 
   const bySymbol = {};
+  const bySource = {};
   for (const row of data || []) {
     bySymbol[row.symbol] ??= { wins: 0, losses: 0, timeouts: 0, totalR: 0, count: 0 };
-    const b = bySymbol[row.symbol];
-    b.count++;
-    if (row.outcome === 'win') b.wins++;
-    else if (row.outcome === 'loss') b.losses++;
-    else b.timeouts++;
-    b.totalR += row.r_multiple || 0;
+    accumulate(bySymbol[row.symbol], row);
+    if (row.source) {
+      bySource[row.source] ??= { wins: 0, losses: 0, timeouts: 0, totalR: 0, count: 0 };
+      accumulate(bySource[row.source], row);
+    }
   }
-  for (const b of Object.values(bySymbol)) {
-    const decided = b.wins + b.losses;
-    b.winRatePct = decided > 0 ? Math.round((b.wins / decided) * 1000) / 10 : null;
-    b.totalR = Math.round(b.totalR * 100) / 100;
-  }
-  return { bySymbol };
+  for (const b of Object.values(bySymbol)) finalizeBucket(b);
+  for (const b of Object.values(bySource)) finalizeBucket(b);
+
+  const chronological = [...(data || [])].reverse();
+  const overall = chronological.length > 0
+    ? summarizeTrades(chronological.map((row) => ({ outcome: row.outcome, rMultiple: row.r_multiple ?? 0 })))
+    : null;
+  const equityCurve = overall
+    ? chronological.map((row, i) => ({ time: row.exit_time, cumulativeR: overall.equityCurve[i] }))
+    : [];
+
+  return { bySymbol, bySource, overall, equityCurve };
 }

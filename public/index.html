@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ICT FVG Assistant</title>
+<title>Apex FVG</title>
 <!-- PWA (2026-09, at the user's request: "entrer direct sans passer par
      Chrome") - installable on iOS/Android home screen, opens without browser
      chrome (address bar/tabs). See public/manifest.json + sw.js. -->
@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="FVG Bot" />
+<meta name="apple-mobile-web-app-title" content="Apex FVG" />
 <style>
   :root {
     --bg: #05070a;
@@ -202,14 +202,27 @@
   .journal-pnl.win { color: var(--green); font-weight: 700; }
   .journal-pnl.loss { color: var(--red); font-weight: 700; }
   .journal-chart { width: 100%; height: 130px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; }
+
+  /* ---------- Performance overview (equity curve + key metrics) ---------- */
+  .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .metric-tile { background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; padding: 10px 12px; }
+  .metric-tile .metric-label { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; }
+  .metric-tile .metric-value { font-family: var(--mono); font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .metric-tile .metric-value.win { color: var(--green); }
+  .metric-tile .metric-value.loss { color: var(--red); }
+  .equity-chart { width: 100%; height: 140px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; margin-bottom: 14px; }
+  .strategy-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .strategy-table th { text-align: left; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border); }
+  .strategy-table td { padding: 7px 8px; border-bottom: 1px solid var(--panel-border); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .strategy-table tr:last-child td { border-bottom: none; }
 </style>
 </head>
 <body>
   <header class="topbar">
     <div class="topbar-brand">
-      <div class="brand-mark">ICT</div>
+      <div class="brand-mark">AX</div>
       <div>
-        <h1>FVG Assistant</h1>
+        <h1>Apex FVG</h1>
         <div class="subtitle">US100 · US500 · XAUUSD · EURUSD — FVG filtré + Divergence + NWOG + Judas Swing</div>
       </div>
     </div>
@@ -258,8 +271,14 @@
   </div>
 
   <div class="card">
+    <h2>Performance globale (journal durable)</h2>
+    <div class="meta" style="margin-bottom:8px;">Vrai journal des trades résolus, persisté en base (survit aux redémarrages) — courbe d'équité, métriques et répartition par stratégie.</div>
+    <div id="overview-body">Chargement…</div>
+  </div>
+
+  <div class="card">
     <h2>Journal durable par instrument</h2>
-    <div class="meta" style="margin-bottom:8px;">Vrai journal des trades résolus, persisté en base (survit aux redémarrages).</div>
+    <div class="meta" style="margin-bottom:8px;">Même journal, détaillé par instrument.</div>
     <div id="trade-log-summary">Chargement…</div>
   </div>
 
@@ -591,11 +610,86 @@ async function refreshRecentPerformance() {
   }
 }
 
+// Inline SVG line chart of cumulative R over time (no library, same
+// no-dependency convention as renderTradeChart's candlestick chart below).
+// A flat zero-baseline is drawn for reference since "above/below zero" is
+// the only threshold that actually matters for an equity curve.
+function renderEquityCurve(equityCurve) {
+  if (!equityCurve || equityCurve.length < 2) {
+    return '<div class="meta">Pas encore assez de trades clôturés pour tracer une courbe.</div>';
+  }
+  const W = 600, H = 140, PAD_L = 40, PAD_R = 10, PAD_T = 10, PAD_B = 10;
+  const values = equityCurve.map((p) => p.cumulativeR);
+  const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
+  const range = (maxR - minR) || 1;
+  const y = (v) => PAD_T + (1 - (v - minR) / range) * (H - PAD_T - PAD_B);
+  const plotW = W - PAD_L - PAD_R;
+  const x = (i) => PAD_L + (equityCurve.length === 1 ? 0 : (i / (equityCurve.length - 1)) * plotW);
+
+  const finalR = values[values.length - 1];
+  const color = finalR >= 0 ? 'var(--green)' : 'var(--red)';
+  const points = values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const zeroY = y(0);
+
+  return `
+    <svg class="equity-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <line x1="${PAD_L}" y1="${zeroY}" x2="${W - PAD_R}" y2="${zeroY}" stroke="var(--panel-border-strong)" stroke-width="1" stroke-dasharray="4,3" />
+      <text x="2" y="${zeroY + 4}" fill="var(--muted)" font-size="10">0R</text>
+      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" />
+    </svg>
+  `;
+}
+
+function renderOverview(data) {
+  const el = document.getElementById('overview-body');
+  const overall = data.overall;
+  if (!overall || overall.totalSignals === 0) {
+    el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+    return;
+  }
+  const netWin = overall.finalEquityR >= 0;
+  const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
+  const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);
+
+  const tiles = `
+    <div class="metric-tiles">
+      <div class="metric-tile"><div class="metric-label">Trades</div><div class="metric-value">${overall.totalSignals}</div></div>
+      <div class="metric-tile"><div class="metric-label">Taux de réussite</div><div class="metric-value">${winRatePct === null ? '—' : fmt(winRatePct, 0) + '%'}</div></div>
+      <div class="metric-tile"><div class="metric-label">Profit factor</div><div class="metric-value">${pf}</div></div>
+      <div class="metric-tile"><div class="metric-label">Espérance</div><div class="metric-value ${overall.expectancyR >= 0 ? 'win' : 'loss'}">${overall.expectancyR >= 0 ? '+' : ''}${fmt(overall.expectancyR)}R</div></div>
+      <div class="metric-tile"><div class="metric-label">Drawdown max</div><div class="metric-value loss">-${fmt(overall.maxDrawdownR)}R</div></div>
+      <div class="metric-tile"><div class="metric-label">Total en R</div><div class="metric-value ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(overall.finalEquityR)}R</div></div>
+    </div>
+  `;
+
+  const sources = Object.keys(data.bySource || {});
+  const strategyTable = sources.length === 0 ? '' : `
+    <table class="strategy-table">
+      <thead><tr><th>Stratégie</th><th>Trades</th><th>Taux</th><th>Total R</th></tr></thead>
+      <tbody>
+        ${sources.map((source) => {
+          const b = data.bySource[source];
+          const netWinS = b.totalR >= 0;
+          return `<tr>
+            <td style="font-family:inherit;">${sourceLabel({ source })}</td>
+            <td>${b.count}</td>
+            <td>${b.winRatePct === null ? '—' : fmt(b.winRatePct, 0) + '%'}</td>
+            <td class="journal-pnl ${netWinS ? 'win' : 'loss'}">${netWinS ? '+' : ''}${fmt(b.totalR)}R</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+
+  el.innerHTML = tiles + renderEquityCurve(data.equityCurve) + strategyTable;
+}
+
 async function refreshTradeLog() {
   const el = document.getElementById('trade-log-summary');
   try {
     const res = await fetch('/api/trade-log');
     const data = await res.json();
+    renderOverview(data);
     const symbols = Object.keys(data.bySymbol || {});
     if (symbols.length === 0) {
       el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
@@ -612,6 +706,7 @@ async function refreshTradeLog() {
     }).join('');
   } catch (err) {
     el.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+    document.getElementById('overview-body').innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
   }
 }
 

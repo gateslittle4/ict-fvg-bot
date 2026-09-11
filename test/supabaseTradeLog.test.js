@@ -113,6 +113,9 @@ test('logClosedTrade: a thrown network error is swallowed too', async () => {
 test('fetchPerformanceBySymbol: not configured (null client) returns an explicit reason, not a throw', async () => {
   const result = await fetchPerformanceBySymbol(null);
   assert.deepEqual(result.bySymbol, {});
+  assert.deepEqual(result.bySource, {});
+  assert.equal(result.overall, null);
+  assert.deepEqual(result.equityCurve, []);
   assert.equal(result.reason, 'not configured');
 });
 
@@ -120,10 +123,10 @@ test('fetchPerformanceBySymbol: aggregates wins/losses/timeouts and totalR per s
   const client = fakeClient({
     selectResult: {
       data: [
-        { symbol: 'US500', outcome: 'win', r_multiple: 5, exit_time: '2026-09-01T00:00:00Z' },
-        { symbol: 'US500', outcome: 'loss', r_multiple: -1, exit_time: '2026-09-02T00:00:00Z' },
-        { symbol: 'US500', outcome: 'loss', r_multiple: -1, exit_time: '2026-09-03T00:00:00Z' },
-        { symbol: 'XAUUSD', outcome: 'timeout', r_multiple: null, exit_time: '2026-09-04T00:00:00Z' },
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, exit_time: '2026-09-01T00:00:00Z' },
+        { symbol: 'US500', source: 'fvg', outcome: 'loss', r_multiple: -1, exit_time: '2026-09-02T00:00:00Z' },
+        { symbol: 'US500', source: 'divergence', outcome: 'loss', r_multiple: -1, exit_time: '2026-09-03T00:00:00Z' },
+        { symbol: 'XAUUSD', source: 'fvg', outcome: 'timeout', r_multiple: null, exit_time: '2026-09-04T00:00:00Z' },
       ],
       error: null,
     },
@@ -137,10 +140,58 @@ test('fetchPerformanceBySymbol: aggregates wins/losses/timeouts and totalR per s
   assert.equal(bySymbol.XAUUSD.winRatePct, null); // no decided trades yet
 });
 
+test('fetchPerformanceBySymbol: aggregates the same rows by strategy source, independent of symbol grouping', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, exit_time: '2026-09-01T00:00:00Z' },
+        { symbol: 'XAUUSD', source: 'fvg', outcome: 'loss', r_multiple: -1, exit_time: '2026-09-02T00:00:00Z' },
+        { symbol: 'US500', source: 'divergence', outcome: 'win', r_multiple: 3, exit_time: '2026-09-03T00:00:00Z' },
+      ],
+      error: null,
+    },
+  });
+  const { bySource } = await fetchPerformanceBySymbol(client);
+  assert.equal(bySource.fvg.wins, 1);
+  assert.equal(bySource.fvg.losses, 1);
+  assert.equal(bySource.fvg.totalR, 4);
+  assert.equal(bySource.divergence.wins, 1);
+  assert.equal(bySource.divergence.totalR, 3);
+});
+
+test('fetchPerformanceBySymbol: overall/equityCurve reuse summarizeTrades() math in chronological (oldest-first) order', async () => {
+  // Query itself returns most-recent-first (matches the real .order('exit_time', {ascending:false})
+  // used everywhere else in this file) - the function must reverse this internally.
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'loss', r_multiple: -1, exit_time: '2026-09-03T00:00:00Z' },
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 3, exit_time: '2026-09-02T00:00:00Z' },
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, exit_time: '2026-09-01T00:00:00Z' },
+      ],
+      error: null,
+    },
+  });
+  const { overall, equityCurve } = await fetchPerformanceBySymbol(client);
+  assert.equal(overall.totalSignals, 3);
+  assert.equal(overall.finalEquityR, 7); // 5 + 3 - 1
+  assert.equal(equityCurve.length, 3);
+  // oldest trade (exit_time 09-01, +5R) resolved first
+  assert.equal(equityCurve[0].time, '2026-09-01T00:00:00Z');
+  assert.equal(equityCurve[0].cumulativeR, 5);
+  assert.equal(equityCurve[1].time, '2026-09-02T00:00:00Z');
+  assert.equal(equityCurve[1].cumulativeR, 8);
+  assert.equal(equityCurve[2].time, '2026-09-03T00:00:00Z');
+  assert.equal(equityCurve[2].cumulativeR, 7);
+});
+
 test('fetchPerformanceBySymbol: a query error surfaces as a reason rather than throwing or silently returning empty', async () => {
   const client = fakeClient({ selectResult: { data: null, error: { message: 'relation does not exist' } } });
-  const { bySymbol, reason } = await fetchPerformanceBySymbol(client);
+  const { bySymbol, bySource, overall, equityCurve, reason } = await fetchPerformanceBySymbol(client);
   assert.deepEqual(bySymbol, {});
+  assert.deepEqual(bySource, {});
+  assert.equal(overall, null);
+  assert.deepEqual(equityCurve, []);
   assert.match(reason, /relation does not exist/);
 });
 

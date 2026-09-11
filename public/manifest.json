@@ -1,6 +1,6 @@
 {
-  "name": "ICT FVG Assistant",
-  "short_name": "FVG Bot",
+  "name": "Apex FVG",
+  "short_name": "Apex FVG",
   "description": "Dashboard du bot de trading ICT FVG — signaux, positions, journal de trades",
   "start_url": "/",
   "scope": "/",
