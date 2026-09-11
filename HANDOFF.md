@@ -1020,3 +1020,37 @@ Après la découverte que le "✅ tient" d'Asian Range Breakout/USDJPY était fr
 **Rejeté partout, y compris (et surtout) sur les deux instruments prioritaires** : US500 rejeté franchement (train ET test négatifs) ; US100 "affaibli" mais avec un train déjà négatif (-0.04R) — le même profil "train qui ne passe pas la barre" déjà traité comme du bruit ailleurs dans ce document, pas un edge. Aucun instrument n'atteint un vrai "✅ tient" (train ET test positifs, test ≥ 30% du train). **Conclusion : encore un concept ICT publié qui ne produit pas d'edge net une fois testé rigoureusement, y compris sur les instruments où ce projet a pourtant un edge réel avec d'autres mécanismes (FVG/Divergence) — confirme que l'edge de ce projet est spécifique au FVG/Divergence déjà en production, pas à "tout concept ICT sur ces deux instruments".**
 
 **Fichiers** : `src/backtest/unicornModel.js` (nouveau, 5 tests unitaires), `test/unicornModel.test.js`, `scripts/runUnicornModelStrategyAnalysis.js`, `data/backtest-input/unicorn-model-strategy-analysis.md`. **Non activé en production.** `npm test` : 343/343 (338 + 5 nouveaux).
+
+## Filtre macro (régime VIX) sur le combo déjà validé — testé, pas concluant — 2026-09-12
+
+Question directe d'Esdras après avoir dropé l'idée d'un nouvel instrument macro : **"est-ce que le macro pourrait améliorer le combo [déjà validé] ?"** — pas une tentative de sauver un instrument faible, mais un vrai test sur le combo FVG (US100+US500+XAUUSD) + Divergence (US100/US500) déjà en production.
+
+**Proxy macro** : VIX (indice de volatilité CBOE), récupéré directement depuis FRED (`fred.stlouisfed.org/series/VIXCLS`, accès réseau direct confirmé fonctionnel) — `data/backtest-input/macro-vix-daily.csv`, 9572 points quotidiens, 1990-2026. **Seuil de régime décidé AVANT de voir un seul résultat** : VIX < 20 = "calme", VIX ≥ 20 = "élevé" (convention standard CBOE/médias financiers, pas ajustée sur ces données). Régime lu depuis la dernière clôture VIX STRICTEMENT AVANT le jour d'entrée du trade (aucun regard en avant). Réutilise `LiveStrategyEngine` + `CONFIG.fvg.perSymbol`/`CONFIG.divergence` EXACTEMENT comme la production (même schéma que `recentPerformanceReport.js`), pas une réimplémentation séparée.
+
+**Résultat agrégé, à première vue prometteur** :
+
+| Période | Calme (n / exp) | Élevé (n / exp) |
+|---|---|---|
+| TRAIN (2019-2023) | 315 / 0.64R | 232 / 0.75R |
+| TEST (2024-2025) | 183 / 0.67R | 29 / 1.10R |
+
+Direction cohérente train ET test (le régime "élevé" fait mieux dans les deux) — à première vue, le genre de signal qu'on cherche.
+
+**Mais décomposé par instrument/source, la cohérence disparaît complètement** — l'agrégat mélange 4 sous-populations qui réagissent dans des sens OPPOSÉS au régime VIX :
+
+| Période | Instrument/source | Calme (n/exp) | Élevé (n/exp) |
+|---|---|---|---|
+| TRAIN | US100/FVG | 50/1.28R | 46/1.48R |
+| TRAIN | US500/FVG | 35/0.54R | 53/1.38R |
+| TRAIN | XAUUSD/FVG | 65/1.03R | 22/0.64R |
+| TRAIN | US500/Divergence | 165/0.31R | 111/0.16R |
+| TEST | US100/FVG | 36/1.17R | 8/3.50R |
+| TEST | US500/FVG | 25/1.28R | 1/-1.00R |
+| TEST | XAUUSD/FVG | 37/0.78R | 4/-1.00R |
+| TEST | US500/Divergence | 85/0.22R | 16/0.56R |
+
+**Dès le TRAIN** (le jeu censé trancher), XAUUSD/FVG et US500/Divergence favorisent le régime CALME, alors qu'US100/FVG et US500/FVG favorisent le régime ÉLEVÉ — contradictoire, pas un effet macro unifié. Seul US100/FVG est dans le même sens sur les deux périodes (1.28→1.48R train, 1.17→3.50R test), mais l'échantillon test y est minuscule (n=8) et le X3.50R sent le même artefact de petit échantillon que USDJPY plus haut dans ce document.
+
+**Conclusion : NON concluant, ne pas ajouter en production.** Le signal agrégé qui semblait prometteur est un artefact de mélange (Simpson's paradox-like) — une fois décomposé par instrument/source, aucun effet cohérent et large-échantillon ne survit. Répondre honnêtement à la question posée : le régime VIX ne montre PAS d'effet fiable et généralisable sur le combo actuel. Piste dérivée mais PAS explorée (question différente, pas posée) : un sizing par volatilité (augmenter la taille de position en régime élevé, jamais activé — voir plus haut dans ce document) serait une utilisation différente du même signal, pas testée ici.
+
+**Fichiers** : `data/backtest-input/macro-vix-daily.csv` (donnée source, FRED), `scripts/runVixRegimeFilterAnalysis.js` (nouveau, script exploratoire, pas de nouveaux tests unitaires — même convention que les autres `run*Analysis.js` non câblés en live), `data/backtest-input/vix-regime-filter-analysis.md`. `npm test` : 343/343 (inchangé).
