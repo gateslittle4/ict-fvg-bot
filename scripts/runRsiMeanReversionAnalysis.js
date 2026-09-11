@@ -57,7 +57,7 @@ const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
 // instrument with room in netting. Zero parameters changed for this
 // addition - every rule above is copied from Connors' published system,
 // unchanged; this only adds a third loop iteration.
-const SYMBOLS = ['US100', 'US500', 'GBPUSD'];
+const SYMBOLS = ['US100', 'US500', 'GBPUSD', 'USDJPY'];
 
 function computeSma(values, period) {
   const sma = new Array(values.length).fill(null);

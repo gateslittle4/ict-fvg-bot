@@ -963,3 +963,35 @@ Suite directe de la section précédente. Esdras a fourni les vraies règles Fun
 **Verdict global, donné directement à Esdras** : le bot actuel ne serait PAS conforme à FundingPips Zero sans changements — deux interdictions strictes enfreintes régulièrement (pas de simple dépassement de risque), plus un profil de trailing drawdown structurellement plus dangereux (2 bust/7 ans déjà mesuré) que ce pour quoi le bot a été conçu et validé (FTMO 1-Step, 10% trailing). Pour rendre le bot compatible avec Zero, il faudrait au minimum : un vrai filtre news, une fermeture forcée des positions avant le week-end, et soit réduire le risque par trade soit ajouter un frein sur drawdown. **Rien codé ici — analyse seulement, à la demande explicite ("juste vérifie si notre bot peut fonctionner avec ces règles"), pas de décision de modifier le bot prise.**
 
 **Fichier** : `scripts/runFundingPipsZeroAccountImpact.js` (ajout de `spansWeekend()`/colonne dédiée), `data/backtest-input/fundingpips-zero-account-impact.md` (régénéré). `npm test` : 338/338 (inchangé).
+
+## USDJPY — 11 mécanismes déjà validés/testés étendus au 6ᵉ instrument — 2026-09-11/12, à la demande explicite
+
+À la demande explicite d'Esdras ("faisons le test sur usdjpy avant le funding pips"), après qu'elle a fourni les 10 années HistData M1 (2016-2025), converties précédemment en M15 (`data/backtest-input/USDJPY.csv`, même script/convention `convertHistData.js` que les 5 autres instruments — voir section dédiée plus haut).
+
+**Méthode : aucun nouveau réglage, uniquement l'extension de `SYMBOLS`** dans 11 scripts `scripts/run*StrategyAnalysis.js` déjà existants (paramètres tous fixés AVANT de voir un seul résultat USDJPY) : Judas Swing, NWOG, NDOG, Breaker Block, Asian Range Breakout, Asian Range Fade, Weekly Liquidity Sweep, MACD Trend, DMI Trend, RSI Divergence classique, RSI(2) Connors.
+
+**⚠️ Bug réel trouvé et corrigé AVANT de croire le premier passage** : `USDJPY` était absent de `DEFAULT_SPREADS` (`src/backtest/transactionCosts.js`) → coût de transaction traité comme ZÉRO sur cet instrument (`DEFAULT_SPREADS[symbol] ?? 0`), contrairement aux 5 autres qui ont tous un spread réaliste modélisé. Le premier passage montrait des résultats spectaculaires (NWOG test +0.56R, Judas Swing test +0.33R...) — beaucoup trop beaux, et le signe classique d'un coût manquant. Ajouté `USDJPY: 0.012` (~1.2 pip, même statut "INDICATIVE, à vérifier chez FundingPips" que les autres entrées), puis TOUT réexécuté. Les résultats se sont largement dégonflés une fois le coût appliqué — confirme que c'était bien un artefact, pas un edge réel.
+
+**Deuxième bug trouvé au passage, corrigé aussi** : `scripts/runDmiTrendStrategyAnalysis.js` avait une fonction `verdict()` sans le garde-fou standard "n < 10 → pas assez de trades" (présent dans tous les autres scripts) — donnait "✅ tient" sur USDJPY avec seulement 9 trades test. Corrigé pour appliquer la même règle partout ailleurs (`MIN_TRADES_FOR_VERDICT = 10` sur train ET test).
+
+**Résultat final (coût réel appliqué, règle de verdict standard partout), triés par robustesse** :
+
+| Stratégie | Train (n / exp) | Test (n / exp) | Verdict |
+|---|---|---|---|
+| **Asian Range Breakout** | 872 / **+0.03R** | 226 / **+0.24R** | **✅ TIENT** |
+| RSI(2) Connors | 322 / +0.029R | 45 / +0.0085R | ⚠️ affaibli (échoue de justesse le seuil 0.3×train : 0.0085 < 0.0086 — vérifié en pleine précision, pas un arrondi trompeur) |
+| NWOG | 228 / -0.01R | 68 / +0.49R | ⚠️ affaibli (train négatif malgré un test très fort) |
+| Judas Swing | 498 / -0.11R | 159 / +0.23R | ⚠️ affaibli (même profil) |
+| Asian Range Fade | 988 / -0.12R | 334 / +0.03R | ⚠️ affaibli |
+| Weekly Liquidity Sweep | 300 / -0.26R | 84 / +0.18R | ⚠️ affaibli |
+| Breaker Block | 792 / -0.08R | 256 / -0.18R | ❌ ne tient pas |
+| MACD Trend | 208 / -0.11R | 47 / -0.14R | ❌ ne tient pas |
+| RSI Divergence classique | 27 / -0.05R | 10 / -0.02R | ❌ ne tient pas |
+| NDOG | 285 / -0.13R | **7** / +0.03R | ❓ pas assez de trades |
+| DMI Trend | 39 / 0.00R | **9** / +0.04R | ❓ pas assez de trades |
+
+**Seul Asian Range Breakout tient vraiment** — grand échantillon des deux côtés (872 train / 226 test), train ET test positifs, test très largement au-dessus du seuil 0.3×train. Un candidat sérieux pour la production sur USDJPY. Les 4 "affaibli" (NWOG, Judas Swing, Asian Range Fade, Weekly Liquidity Sweep, RSI Connors) partagent tous le même profil suspect déjà documenté ailleurs dans ce fichier (train négatif ou quasi nul, test positif) — traité comme du bruit, pas un edge, cohérent avec la discipline du projet.
+
+**Pas encore fait** : activer Asian Range Breakout en production sur USDJPY (décision à prendre avec Esdras) ; vérifier le netting si activé aux côtés d'autres stratégies potentielles sur USDJPY à l'avenir.
+
+**Fichiers** : `src/backtest/transactionCosts.js` (ajout `USDJPY`), `scripts/runDmiTrendStrategyAnalysis.js` (fix verdict), 11 scripts `run*StrategyAnalysis.js` (SYMBOLS étendu), 11 fichiers `data/backtest-input/*-analysis.md` régénérés. Pas de nouveau test unitaire (scripts exploratoires non testés unitairement, comme le reste de cette famille). `npm test` : 338/338 (inchangé — aucune logique testée touchée, seulement des constantes de config et des scripts exploratoires).

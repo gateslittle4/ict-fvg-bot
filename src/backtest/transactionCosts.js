@@ -19,6 +19,7 @@ export const DEFAULT_SPREADS = {
   // price units (e.g. 0.0001 = 1 pip for a 4-decimal forex pair)
   EURUSD: 0.00010, // ~1.0 pip round-turn — typical standard-account retail/prop spread
   GBPUSD: 0.00015, // ~1.5 pips — GBP pairs typically run a bit wider than EURUSD
+  USDJPY: 0.012, // ~1.2 pips (1 pip = 0.01 for this pair) — INDICATIVE, verify against FundingPips cTrader spec
   US100: 1.0, // 1.0 point — INDICATIVE, verify against FundingPips cTrader spec
   US500: 0.4, // 0.4 point — INDICATIVE, verify against FundingPips cTrader spec
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec

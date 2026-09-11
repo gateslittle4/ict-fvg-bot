@@ -48,7 +48,7 @@ const TRAIN_CUTOFF = new Date('2024-01-01T00:00:00Z').getTime();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
 const MIN_TRADES_FOR_VERDICT = 10;
-const SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GBPUSD'];
+const SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY'];
 
 function withCosts(trades, symbol) {
   const spread = DEFAULT_SPREADS[symbol] ?? 0;

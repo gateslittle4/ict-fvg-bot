@@ -45,7 +45,7 @@ import { runDmiTrendBacktest } from '../src/backtest/dmiTrend.js';
 const TRAIN_CUTOFF = new Date('2024-01-01T00:00:00Z').getTime();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
-const SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GBPUSD'];
+const SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY'];
 
 function withCosts(trades, symbol) {
   const spread = DEFAULT_SPREADS[symbol] ?? 0;
@@ -66,7 +66,9 @@ function median(values) {
 
 function fmtPct(x) { return x !== null && x !== undefined ? (x * 100).toFixed(1) + '%' : '—'; }
 function fmtNum(x, d = 2) { return x !== null && x !== undefined && isFinite(x) ? x.toFixed(d) : (x === Infinity ? '∞' : '—'); }
-function verdict(trainExp, testExp) {
+const MIN_TRADES_FOR_VERDICT = 10;
+function verdict(trainExp, testExp, trainN, testN) {
+  if (trainN < MIN_TRADES_FOR_VERDICT || testN < MIN_TRADES_FOR_VERDICT) return '❓ pas assez de trades';
   if (testExp === null || testExp === undefined) return '❓ pas assez de trades';
   if (testExp <= 0) return '❌ ne tient pas';
   if (trainExp > 0 && testExp >= 0.3 * trainExp) return '✅ tient';
@@ -116,7 +118,7 @@ function main() {
     const { net: testNet } = withCosts(testTrades, symbol);
     const ts = summarizeTrades(trainNet);
     const es = summarizeTrades(testNet);
-    const v = verdict(ts.expectancyR, es.expectancyR);
+    const v = verdict(ts.expectancyR, es.expectancyR, ts.totalSignals, es.totalSignals);
     const holdingDays = trainNet.map((t) => t.exitIndex - t.entryIndex);
     const medHold = median(holdingDays);
 
