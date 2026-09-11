@@ -997,3 +997,26 @@ Suite directe de la section précédente. Esdras a fourni les vraies règles Fun
 **Pas encore fait** : rien à activer en production pour l'instant sur USDJPY, vu ce qui précède ; vérifier le netting si une stratégie y était activée un jour aux côtés d'autres stratégies potentielles.
 
 **Fichiers** : `src/backtest/transactionCosts.js` (ajout `USDJPY`), `scripts/runDmiTrendStrategyAnalysis.js` (fix verdict), 11 scripts `run*StrategyAnalysis.js` (SYMBOLS étendu), 11 fichiers `data/backtest-input/*-analysis.md` régénérés. Pas de nouveau test unitaire (scripts exploratoires non testés unitairement, comme le reste de cette famille). `npm test` : 338/338 (inchangé — aucune logique testée touchée, seulement des constantes de config et des scripts exploratoires).
+
+## Unicorn Model (ICT) testé et rejeté — 2026-09-12, à la demande explicite ("focus sur US100/US500")
+
+Après la découverte que le "✅ tient" d'Asian Range Breakout/USDJPY était fragile (voir juste au-dessus), Esdras a explicitement redirigé l'effort : abandonner le macro (jugé pas rentable comme prochain investissement, voir discussion) et se concentrer sur US100/US500, les deux seuls instruments avec un edge réellement solide dans ce projet.
+
+**Recherche faite avant de coder** (luxalgo.com, quantvps.com, fluxcharts.com, innercircletrader.net, icttradingstrategy.com) : le concept ICT "Unicorn Model" — la zone de SUPERPOSITION entre un Breaker Block et un Fair Value Gap, deux PD arrays déjà détectés séparément dans ce projet mais jamais requis de coïncider. Distinct du Breaker Block déjà testé/rejeté (celui-ci entre sur n'importe quel retest du niveau médian du breaker, sans exigence de FVG) et du FVG de production (aucune exigence de breaker/BOS).
+
+**Méthode** (`src/backtest/unicornModel.js`, 5 tests unitaires) : réutilise la mécanique BOS/Order-Block/cassure de `breakerBlock.js` (dupliquée localement, pas importée, même convention que `weeklyLiquiditySweep.js` pour ne pas toucher un fichier déjà testé) ; une fois le breaker confirmé, une fenêtre bornée (20 bougies) attend qu'un FVG standard (même test c1/c3 à 3 bougies que le FvgEngine) de MÊME SENS se forme ET chevauche la zone du breaker ; entrée sur retest de cette zone de chevauchement (pas le niveau médian du breaker), stop au-delà de l'extrême du breaker, cible fixe 1:3, timeout 480 bougies M15. Priorité donnée à US100/US500, mais testé sur les 6 instruments pour la comparaison habituelle.
+
+**Résultat, un seul passage, aucun paramètre retouché après coup** :
+
+| Symbole | Train (n / exp) | Test (n / exp) | Verdict |
+|---|---|---|---|
+| US100 | 489 / -0.04R | 198 / +0.05R | ⚠️ affaibli |
+| US500 | 450 / -0.16R | 187 / -0.19R | ❌ ne tient pas |
+| XAUUSD | 379 / -0.05R | 208 / +0.19R | ⚠️ affaibli |
+| EURUSD | 515 / -0.00R | 176 / +0.04R | ⚠️ affaibli |
+| GBPUSD | 393 / -0.11R | 167 / -0.21R | ❌ ne tient pas |
+| USDJPY | 619 / -0.13R | 198 / -0.00R | ❌ ne tient pas |
+
+**Rejeté partout, y compris (et surtout) sur les deux instruments prioritaires** : US500 rejeté franchement (train ET test négatifs) ; US100 "affaibli" mais avec un train déjà négatif (-0.04R) — le même profil "train qui ne passe pas la barre" déjà traité comme du bruit ailleurs dans ce document, pas un edge. Aucun instrument n'atteint un vrai "✅ tient" (train ET test positifs, test ≥ 30% du train). **Conclusion : encore un concept ICT publié qui ne produit pas d'edge net une fois testé rigoureusement, y compris sur les instruments où ce projet a pourtant un edge réel avec d'autres mécanismes (FVG/Divergence) — confirme que l'edge de ce projet est spécifique au FVG/Divergence déjà en production, pas à "tout concept ICT sur ces deux instruments".**
+
+**Fichiers** : `src/backtest/unicornModel.js` (nouveau, 5 tests unitaires), `test/unicornModel.test.js`, `scripts/runUnicornModelStrategyAnalysis.js`, `data/backtest-input/unicorn-model-strategy-analysis.md`. **Non activé en production.** `npm test` : 343/343 (338 + 5 nouveaux).
