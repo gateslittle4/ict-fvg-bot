@@ -888,3 +888,23 @@ Nouveau concept ICT recherché et testé à la suite de l'activation de Judas Sw
 **Conclusion sur la recherche GBPUSD dans son ensemble** : 10 mécanismes désormais testés sur GBPUSD (les 9 précédents + NDOG), tous rejetés ou bruit. Aucune piste restante identifiée qui ne soit pas déjà une redite d'un mécanisme déjà écarté. Recommandation inchangée : ne pas continuer à chercher sur GBPUSD spécifiquement (risque de faux positif par comparaisons multiples qui augmente), revenir au plan déjà proposé — observer les vrais chiffres de fréquence en production 1-2 semaines avant d'ajouter quoi que ce soit.
 
 **Fichiers** : `src/backtest/ndog.js` (nouveau, 10 tests unitaires), `test/ndog.test.js`, `scripts/runNdogStrategyAnalysis.js`, `data/backtest-input/ndog-strategy-analysis.md`. **Non activé en production** — recherche uniquement, comme demandé. `npm test` : 338/338 (328 + 10 nouveaux).
+
+## RSI(2) Connors (non-ICT, déjà validé) étendu à GBPUSD — 2026-09-11, suite recherche GBPUSD
+
+À la demande explicite d'Esdras ("t'as pas d'autre stratégie autre que ICT à tester ?"), après 10 concepts ICT rejetés sur GBPUSD. Contrairement aux 10 précédents, celui-ci n'est PAS un nouveau concept inventé pour l'occasion : **RSI(2) Connors (mean-reversion, Larry Connors 2004) est le SEUL mécanisme non-ICT déjà VALIDÉ dans ce projet** (tient sur US100/US500), explicitement noté plus haut dans ce fichier comme "à garder en réserve pour un FUTUR nouvel instrument, pas à empiler sur US100/US500 déjà occupés" — GBPUSD est exactement ce scénario (aucune autre stratégie dessus).
+
+**Zéro paramètre modifié pour ce test** : `scripts/runRsiMeanReversionAnalysis.js` avait `SYMBOLS = ['US100', 'US500']` — ajout d'une seule ligne (`GBPUSD`), aucune règle touchée (EMA200 filtre de tendance, RSI(2)<5/>95, stop 2xATR(14), sortie SMA(5)/10 jours max — toutes des conventions publiées de Connors, jamais retouchées).
+
+**Résultat** :
+
+| Symbole | Train (n / WR / PF / exp) | Test (n / WR / PF / exp) | Verdict |
+|---|---|---|---|
+| US100 | 176 / 71.0% / 1.52 / 0.12R | 54 / 70.4% / 1.38 / 0.09R | ✅ tient (déjà connu) |
+| US500 | 181 / 64.6% / 1.29 / 0.07R | 58 / 63.8% / 1.26 / 0.07R | ✅ tient (déjà connu) |
+| **GBPUSD** | 171 / 59.1% / **0.96** / **-0.01R** | 60 / 63.3% / 1.62 / **0.12R** | **⚠️ affaibli** |
+
+**GBPUSD ne tient PAS non plus** — profit factor train sous 1 (0.96), espérance train quasi nulle/négative (-0.01R), alors que le test est positif (0.12R). C'est exactement la signature "train qui ne passe pas la barre, test positif" que ce projet traite systématiquement comme du bruit plutôt qu'un edge réel (même remarque déjà faite ailleurs dans ce document pour d'autres candidats similaires) — pas rejeté aussi nettement que les 10 précédents, mais pas un signal fiable non plus.
+
+**Bilan GBPUSD mis à jour : 11 mécanismes testés (10 ICT + 1 non-ICT déjà validé ailleurs), AUCUN ne tient proprement.** Même le meilleur mécanisme disponible dans tout ce projet (RSI(2) Connors, edge réel et répété sur 2 autres instruments) ne passe pas la barre sur GBPUSD. Signal cumulatif maintenant très fort : cette paire semble structurellement ne pas porter d'edge exploitable dans ce système, peu importe la famille de mécanisme (ICT ou non, retournement, continuation, tendance, mean-reversion, gap). Recommandation réaffirmée avec plus de conviction : abandonner la recherche sur GBPUSD spécifiquement.
+
+**Fichier** : `scripts/runRsiMeanReversionAnalysis.js` (SYMBOLS étendu), `data/backtest-input/rsi-mean-reversion-analysis.md` (régénéré). Pas de nouveau module (`src/backtest/`) ni de nouveaux tests — script exploratoire ponctuel, même convention que les autres `scripts/run*StrategyAnalysis.js` non câblés en live. `npm test` : 338/338 (inchangé, seule une ligne de SYMBOLS a changé dans un script, aucune logique testée touchée).
