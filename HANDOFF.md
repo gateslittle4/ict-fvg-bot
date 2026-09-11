@@ -920,3 +920,29 @@ Session qui a repris directement sur l'investigation du bug critique du flux liv
 **État du dépôt à la fin de cette session** : `claude/lire-handoff-hxisa5` (branche que Render déploie) à jour, working tree propre, `npm test` 338/338, dernier déploiement Render confirmé `live` sans erreur.
 
 **Priorité n°1 pour la prochaine session** : lire ce fichier en entier, puis vérifier si Esdras a fourni un CSV USDJPY/AUDUSD — si oui, lancer la recherche dessus (même discipline train/test que partout ailleurs, décider les paramètres AVANT de regarder les résultats). Si non fourni, ne pas relancer la recherche GBPUSD sans qu'elle le redemande explicitement — la conclusion "abandonnée" est documentée et argumentée, pas un oubli.
+
+## FundingPips Zero simulé — le combo validé bustait 2 fois sur 7 ans (vs jamais sous FTMO 1-Step) — 2026-09-11
+
+À la demande explicite d'Esdras ("check funding pip zero model pour voir si le bot se serait fonctionner"). **⚠ Règles NON vérifiées à la source primaire** — `fundingpips.com` et `help.fundingpips.com` étaient bloqués par la politique réseau de cette session (confirmé après plusieurs tentatives WebFetch directes), donc les règles utilisées viennent de deux recherches web indépendantes qui convergent, pas d'une lecture officielle. **À reconfirmer avant toute décision réelle.**
+
+**Règles modélisées** : pas de cible de profit (financement instantané) ; perte max **TRAILING 5%** depuis le plus haut solde (nettement plus strict que le 10% de FTMO 1-Step déjà validé), plafonnée au solde de départ une fois ce seuil dépassé (interprétation de "locks at the starting size" — elle-même non vérifiée) ; perte quotidienne max 3% (notre garde-fou à 2% reste plus strict, pas de souci) ; **nouveauté testée : limite de risque ouvert total à 1% du solde, tous symboles confondus** (jamais vérifiée avant sur ce bot).
+
+**Résultat, même combo déjà validé (FVG US100+US500+XAUUSD + Divergence US100/US500, netting)** :
+
+| Année | Busté (-5% trailing) ? | Risque ouvert max |
+|---|---|---|
+| 2019 | non | ~1.00% |
+| 2020 | non | ~1.00% |
+| **2021** | **OUI (2021-07-06)** | ~1.00% |
+| **2022** | **OUI (2022-03-21)** | ~0.50% |
+| 2023 | non | ~1.01% |
+| 2024 (test) | non | ~1.00% |
+| 2025 (test) | non | ~1.00% |
+
+**Deux constats, l'un rassurant, l'autre pas** :
+1. **La limite de risque ouvert à 1% n'est PAS un problème structurel** : malgré jusqu'à 4 positions théoriquement simultanées possibles (FVG x3 + Divergence, une par instrument sous le netting), le risque ouvert réel observé reste collé à ~1.00-1.01% (jamais 1.5-2%) — en pratique, au plus 2 positions coïncident réellement, jamais plus.
+2. **Le trailing à 5% (au lieu de 10% chez FTMO 1-Step) fait vraiment sauter le compte** : 2 années sur 7 bustées (2021, 2022 — toutes deux en TRAIN, pas un mauvais tirage isolé sur le test), contre ZÉRO bust sur les 7 mêmes années sous FTMO 1-Step avec le même combo, même risque par trade (0.5%). La marge de manœuvre est directement proportionnelle à la largeur du trailing — diviser le trailing par 2 a fait passer le taux de bust de 0% à ~29% des années testées, sans changer un seul paramètre de stratégie.
+
+**Conclusion pratique** : avec la config actuelle (0.5% de risque par trade, aucune réduction dynamique), **ce combo ne serait probablement PAS adapté à un compte FundingPips Zero tel quel** — il faudrait soit réduire le risque par trade (le sizing par volatilité déjà exploré plus haut dans ce document, jamais activé, redevient pertinent ici), soit un frein sur drawdown, avant d'y risquer un vrai compte Zero. **Pas encore décidé avec Esdras** — priorité avant toute chose : confirmer les règles réelles de FundingPips Zero à la source (le blocage réseau de cette session a empêché une vérification directe).
+
+**Fichier** : `scripts/runFundingPipsZeroAccountImpact.js` (nouveau, adapté de `runFtmo1StepAccountImpact.js`), `data/backtest-input/fundingpips-zero-account-impact.md`. Pas de nouveaux tests (script exploratoire, même convention que les autres `run*AccountImpact.js`). `npm test` : 338/338 (inchangé).
