@@ -6,29 +6,39 @@
 <title>Apex FVG — Graphique</title>
 <!-- PWA - see public/index.html's own head for why (same manifest/scope covers this page too). -->
 <link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#0b0f14" />
+<meta name="theme-color" content="#05070a" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Apex FVG" />
 <style>
+  /* 2026-09: synced to public/index.html's "Apex FVG" terminal palette (was
+     still the pre-redesign colors - this page was only touched for its
+     <title> during the rebrand, not its visual style, until now). Same
+     token names/values as index.html's :root so the two pages read as one
+     product rather than two different looks glued together - relevant now
+     that this chart is ALSO embedded inline on the dashboard (see index.html's
+     "Graphique" card), not just reachable via the top nav. */
   :root {
-    --bg: #0b0f14;
-    --panel: #131a22;
-    --panel-border: #232d38;
-    --text: #e6edf3;
+    --bg: #05070a;
+    --panel: #0e141b;
+    --panel-2: #131a22;
+    --panel-border: #202b37;
+    --text: #eaf0f6;
     --muted: #8b98a5;
-    --green: #3fb950;
-    --red: #f85149;
-    --amber: #d29922;
-    --blue: #58a6ff;
+    --green: #2fd480;
+    --red: #ff5c5f;
+    --amber: #e8b339;
+    --blue: #4c9eff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
     padding: 16px;
     max-width: 1100px;
     margin: 0 auto;
@@ -58,7 +68,7 @@
   .toolbar button.active { background: var(--blue); color: #fff; }
   .toolbar .spacer { flex: 1; }
   .price-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-  .price-header .last { font-size: 26px; font-weight: 700; }
+  .price-header .last { font-size: 26px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .price-header .meta { color: var(--muted); font-size: 12px; }
   .chart-wrap { position: relative; }
   #chart { width: 100%; height: 460px; }
@@ -68,14 +78,14 @@
   }
   #chart-loading[hidden] { display: none; } /* the ID rule above sets its own `display`, which otherwise overrides the [hidden] attribute's native display:none - verified broken without this, via Playwright, before shipping */
   #chart-loading .spinner {
-    width: 28px; height: 28px; border: 3px solid #232d38; border-top-color: var(--blue);
+    width: 28px; height: 28px; border: 3px solid #202b37; border-top-color: var(--blue);
     border-radius: 50%; animation: spin 0.8s linear infinite;
   }
   #chart-loading .label { color: var(--muted); font-size: 13px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .ohlc-readout {
     font-size: 12px; color: var(--muted); min-height: 18px; margin-bottom: 6px;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--mono); font-variant-numeric: tabular-nums;
   }
   .ohlc-readout b { color: var(--text); font-weight: 600; }
   .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }
@@ -83,9 +93,27 @@
   .err { color: var(--red); font-size: 13px; margin-top: 8px; }
   .meta { color: var(--muted); font-size: 12px; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  /* Embedded mode (2026-09) - when this page loads inside index.html's
+     <iframe id="embedded-chart">, the outer page already has its own nav
+     and the card already has its own "Graphique" header, so this page's OWN
+     nav/title/subtitle would just be a redundant second banner eating
+     vertical space (confirmed via a Playwright screenshot before this fix -
+     genuinely awkward, not a hypothetical). Detected client-side (see
+     script below) rather than a URL param, so the SAME chart.html keeps
+     working identically whether reached directly or embedded - no
+     duplicated markup, no route to keep in sync. */
+  body.embedded .topnav, body.embedded h1, body.embedded .subtitle { display: none; }
+  body.embedded { padding-top: 12px; }
+  body.embedded .card { margin-bottom: 0; border: 0; border-radius: 0; background: var(--bg); }
 </style>
 </head>
 <body>
+  <script>
+    // Runs synchronously, before the nav/h1 below are parsed, so there's no
+    // flash of the standalone layout before this class hides it - see the
+    // "Embedded mode" CSS comment above for why this exists at all.
+    if (window.self !== window.top) document.body.classList.add('embedded');
+  </script>
   <nav class="topnav">
     <a href="/">Dashboard</a>
     <a href="/chart.html" class="active">Graphique</a>
@@ -99,6 +127,10 @@
         <button data-symbol="US100" class="active">US100</button>
         <button data-symbol="US500">US500</button>
         <button data-symbol="XAUUSD">XAUUSD</button>
+        <!-- EURUSD added 2026-09 (Judas Swing went live on it) - was missing
+             here entirely, a real gap: no way to chart the one symbol a
+             newly-activated live strategy actually trades. -->
+        <button data-symbol="EURUSD">EURUSD</button>
       </div>
       <span class="spacer"></span>
       <div class="group" id="timeframe-group">
@@ -137,8 +169,8 @@
       <span><span class="dot" style="background:var(--red)"></span>Baisse</span>
       <span><span class="dot" style="background:var(--blue)"></span>Entrée (position ouverte)</span>
       <span><span class="dot" style="background:var(--amber)"></span>Stop / Cible</span>
-      <span><span class="dot" style="background:rgba(88,166,255,0.45)"></span>Zone FVG haussière</span>
-      <span><span class="dot" style="background:rgba(248,81,73,0.45)"></span>Zone FVG baissière</span>
+      <span><span class="dot" style="background:rgba(76,158,255,0.45)"></span>Zone FVG haussière</span>
+      <span><span class="dot" style="background:rgba(255,92,95,0.45)"></span>Zone FVG baissière</span>
       <span>▲▼ signal validé · ○ signal bloqué (netting/garde-fou)</span>
     </div>
     <div class="meta" id="overlay-counts" style="margin-top:8px;"></div>
@@ -276,7 +308,7 @@ function buildChart() {
       horzLines: { color: '#1c2530' },
     },
     rightPriceScale: {
-      borderColor: '#232d38',
+      borderColor: '#202b37',
       // Auto-fit the vertical price range to whatever bars are currently
       // visible, so the current price is always framed in view rather than
       // squeezed into a sliver at one edge - the whole point of loading the
@@ -284,7 +316,7 @@ function buildChart() {
       autoScale: true,
     },
     timeScale: {
-      borderColor: '#232d38',
+      borderColor: '#202b37',
       timeVisible: true,      // intraday bars need the time, not just the date
       secondsVisible: false,
       rightOffset: 6,         // a little empty space past the last bar so the live candle isn't glued to the right edge
@@ -300,12 +332,12 @@ function buildChart() {
   });
 
   candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
-    upColor: '#3fb950',
-    downColor: '#f85149',
-    borderUpColor: '#3fb950',
-    borderDownColor: '#f85149',
-    wickUpColor: '#3fb950',
-    wickDownColor: '#f85149',
+    upColor: '#2fd480',
+    downColor: '#ff5c5f',
+    borderUpColor: '#2fd480',
+    borderDownColor: '#ff5c5f',
+    wickUpColor: '#2fd480',
+    wickDownColor: '#ff5c5f',
     // Draw a horizontal line at the LAST price across the whole chart, with
     // its value labelled on the right axis - so "where is the price right
     // now?" is answered at a glance, wherever the user has panned to.
@@ -354,9 +386,9 @@ function setPositionLines(openPosition, decimals) {
   if (!openPosition) return;
 
   const specs = [
-    { price: openPosition.entryPrice, color: '#58a6ff', title: 'Entrée' },
-    { price: openPosition.stopPrice, color: '#d29922', title: 'Stop' },
-    { price: openPosition.targetPrice, color: '#d29922', title: 'Cible' },
+    { price: openPosition.entryPrice, color: '#4c9eff', title: 'Entrée' },
+    { price: openPosition.stopPrice, color: '#e8b339', title: 'Stop' },
+    { price: openPosition.targetPrice, color: '#e8b339', title: 'Cible' },
   ];
   for (const spec of specs) {
     if (typeof spec.price !== 'number') continue;
@@ -403,7 +435,7 @@ function renderOverlays(overlays, decimals) {
       time,
       position: bullish ? 'belowBar' : 'aboveBar',
       shape: blocked ? 'circle' : bullish ? 'arrowUp' : 'arrowDown',
-      color: blocked ? '#8b98a5' : sig.outcome === 'win' ? '#3fb950' : sig.outcome === 'loss' ? '#f85149' : '#58a6ff',
+      color: blocked ? '#8b98a5' : sig.outcome === 'win' ? '#2fd480' : sig.outcome === 'loss' ? '#ff5c5f' : '#4c9eff',
       text: blocked
         ? `${sig.source === 'divergence' ? 'DIV' : 'FVG'} bloqué (${sig.blockedReason})`
         : `${sig.source === 'divergence' ? 'DIV' : 'FVG'} ${fmt(sig.entryPrice, decimals)}${outcomeLabel}`,

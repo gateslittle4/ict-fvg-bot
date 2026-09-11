@@ -9,6 +9,7 @@
      chrome (address bar/tabs). See public/manifest.json + sw.js. -->
 <link rel="manifest" href="/manifest.json" />
 <meta name="theme-color" content="#0b0f14" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -131,6 +132,23 @@
   }
   .meta { color: var(--muted); font-size: 12px; }
 
+  /* ---------- Embedded chart card ---------- */
+  .card-link {
+    text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 12px;
+    color: var(--blue); text-decoration: none;
+  }
+  .card-link:hover { text-decoration: underline; }
+  #chart-card { padding: 0; overflow: hidden; } /* chart.html paints its own padding/background - an outer padding here would just double it up */
+  #chart-card h2 { margin: 16px 18px 12px; }
+  #embedded-chart {
+    display: block; width: 100%; height: 640px; border: 0;
+    /* iframe.html has no idea it's embedded until it loads - this keeps the
+       seam invisible in the meantime (both pages share --bg now, see
+       chart.html's own palette-sync comment). */
+    background: var(--bg);
+  }
+  @media (max-width: 640px) { #embedded-chart { height: 560px; } }
+
   /* ---------- Nav tabs ---------- */
   .topnav { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--panel-border); }
   .topnav a {
@@ -235,6 +253,20 @@
   </nav>
 
   <div class="ticker" id="prices-body"><div class="ticker-cell"><span class="ticker-sym">Chargement…</span></div></div>
+
+  <!-- Graphique intégré (2026-09, à la demande explicite: "un vrai site...
+       graphique intégré à l'accueil") - réutilise chart.html tel quel dans
+       un <iframe> plutôt que de dupliquer ~500 lignes de logique
+       lightweight-charts/overlays ici : zéro risque de divergence entre les
+       deux, et chart.html vient d'être resynchronisé sur cette même palette
+       (voir son propre commentaire de tête) donc les deux pages se lisent
+       comme UN seul produit, pas deux collées ensemble. Le lien "Graphique"
+       du menu du haut reste utile à part : vue plein écran, sans le reste
+       du dashboard autour. -->
+  <div class="card" id="chart-card">
+    <h2>Graphique<a href="/chart.html" class="card-link">Plein écran ↗</a></h2>
+    <iframe src="/chart.html" id="embedded-chart" title="Graphique des marchés"></iframe>
+  </div>
 
   <div class="card">
     <h2>Garde-fous</h2>
