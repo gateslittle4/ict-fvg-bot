@@ -174,6 +174,14 @@ export class LiveStrategyEngine {
     this.balance = balance;
   }
 
+  // 2026-09, "page réglages" - see store.js's setRiskPctPerTrade() and
+  // config.js's RISK_PCT_PER_TRADE comment for the full picture (bounds
+  // enforced by the caller, not here - this is a plain property mutation
+  // like setBalance() above).
+  setRiskPctPerTrade(pct) {
+    this.riskPctPerTrade = pct;
+  }
+
   getOpenPosition(symbol) {
     return this.openPositions.get(symbol) || null;
   }

@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONFIG, isLiveConfigured, getConfiguredPlatform } from './config.js';
-import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive, MAX_AUTO_EXECUTE_HOURS } from './store.js';
+import { CONFIG, isLiveConfigured, getConfiguredPlatform, MIN_RISK_PCT, MAX_RISK_PCT } from './config.js';
+import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive, MAX_AUTO_EXECUTE_HOURS, setRiskPctPerTrade } from './store.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
 import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
@@ -77,7 +77,13 @@ function buildStatusPayload() {
     timeframe: CONFIG.timeframe,
     balance: store.balance,
     guardrail: guardrailStatus,
-    riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
+    // Live value (2026-09, page réglages), not the boot-time CONFIG default -
+    // store.strategyEngine.riskPctPerTrade is what setRiskPctPerTrade()
+    // actually mutates, and the two can differ once someone's changed it
+    // from the dashboard without restarting. CONFIG.risk.riskPctPerTrade
+    // stays the BOOT default (and the RISK_PCT_PER_TRADE env override target)
+    // - see that file's own comment.
+    riskPctPerTrade: store.strategyEngine.riskPctPerTrade,
     symbols,
     liveConfigured: isLiveConfigured(),
     autoExecute: { ...store.autoExecute, active: isAutoExecuteActive() },
@@ -114,6 +120,24 @@ app.post('/api/auto-execute', (req, res) => {
     }
     const result = setAutoExecute(enabled, hours);
     res.json({ ...result, active: isAutoExecuteActive() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// "Page réglages" (2026-09, at the user's request) - changes the LIVE risk %
+// per trade immediately (next signal onward). Does NOT persist across a
+// restart on its own - see config.js's RISK_PCT_PER_TRADE comment. The
+// symbol list is deliberately NOT editable from here (see the settings
+// card's own explanation in index.html): it's wired into warm-up/live
+// subscriptions at boot (cTraderDataSource.js) and netting/history keys
+// (LiveStrategyEngine's constructor), none of which safely re-run without a
+// restart - changing it live risks orphaning an open position's tracking.
+app.post('/api/settings/risk', (req, res) => {
+  try {
+    const { riskPctPerTrade } = req.body || {};
+    setRiskPctPerTrade(riskPctPerTrade);
+    res.json({ riskPctPerTrade: store.strategyEngine.riskPctPerTrade, min: MIN_RISK_PCT, max: MAX_RISK_PCT });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

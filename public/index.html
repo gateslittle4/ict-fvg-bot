@@ -195,6 +195,7 @@
   .result .big { font-size: 26px; font-weight: 800; color: var(--blue); font-family: var(--mono); margin: 4px 0; }
   .warn { color: var(--amber); font-size: 12px; margin-top: 6px; }
   .err { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .win { color: var(--green); }
 
   /* ---------- Live price card (legacy list form, still used) ---------- */
   .price-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; font-family: var(--mono); }
@@ -276,6 +277,27 @@
   <div class="card" id="auto-execute-card">
     <h2>Mode indisponible (exécution automatique des entrées)</h2>
     <div id="auto-execute-body">—</div>
+  </div>
+
+  <!-- Réglages (2026-09, 4ème et dernière "feature terminal pro" choisie) -
+       le risque % est réellement modifiable en direct (setRiskPctPerTrade(),
+       effectif immédiatement, voir sa note ci-dessous pour la nuance
+       redémarrage). La liste des symboles est affichée mais PAS modifiable
+       depuis ce site: elle est câblée à la souscription live/au warm-up 90
+       jours au démarrage (cTraderDataSource.js) et aux clés netting/historique
+       de LiveStrategyEngine - la changer sans redémarrer risquerait de
+       désynchroniser le suivi d'une position déjà ouverte. Pas une limite
+       artificielle, une vraie contrainte du câblage actuel. -->
+  <div class="card" id="settings-card">
+    <h2>Réglages</h2>
+    <div class="stat-row"><span class="label">Risque actuel par trade</span><span id="settings-risk-current">—</span></div>
+    <div class="journal-toolbar">
+      <input type="number" id="settings-risk-input" class="filter-select" step="0.05" min="0.05" max="2" placeholder="ex: 0.5" style="width:100px;" />
+      <button type="button" id="settings-risk-save" class="btn-ghost">Enregistrer</button>
+    </div>
+    <div class="meta" id="settings-risk-note" style="margin-top:6px;">Effectif immédiatement sur les prochains signaux (jamais rétroactif) — revient à la valeur par défaut au prochain redémarrage, sauf si tu me demandes de la rendre permanente.</div>
+    <div class="stat-row" style="margin-top:14px;"><span class="label">Symboles actifs</span><span id="settings-symbols-current">—</span></div>
+    <div class="meta">Non modifiable ici — câblé à la connexion live au démarrage (souscription courtier + 90 jours d'historique par symbole). Demande-moi directement pour ajouter/retirer un symbole (redéploiement nécessaire).</div>
   </div>
 
   <div class="grid">
@@ -447,6 +469,13 @@ function renderStatus(data) {
   }).join('');
 
   renderAutoExecute(data.autoExecute);
+
+  // Réglages (2026-09) - live values only, never overwrites what the user
+  // is actively typing in #settings-risk-input (that field is populated
+  // once at load, see initSettingsCard() below, not on every push/poll -
+  // otherwise a value mid-edit would get clobbered by the next SSE frame).
+  document.getElementById('settings-risk-current').textContent = `${fmt(data.riskPctPerTrade, 2)}%`;
+  document.getElementById('settings-symbols-current').textContent = data.symbols.map((s) => s.symbol).join(' · ');
 }
 
 const reconciliationLabel = {
@@ -885,6 +914,44 @@ document.getElementById('filter-days').addEventListener('change', refreshTradeHi
 document.getElementById('filter-symbol').addEventListener('change', renderJournalList);
 document.getElementById('filter-source').addEventListener('change', renderJournalList);
 document.getElementById('export-csv-btn').addEventListener('click', exportJournalCsv);
+
+// Réglages - risque % (2026-09). Pre-fills the input ONCE from the first
+// /api/status response (not re-synced on every push/poll - see
+// renderStatus()'s own comment for why) so it starts at the real current
+// value instead of blank, without ever fighting the user mid-edit.
+(async () => {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    document.getElementById('settings-risk-input').value = data.riskPctPerTrade;
+  } catch {
+    // Non-fatal - the input just starts blank, current value is still shown
+    // in #settings-risk-current via the normal renderStatus() flow.
+  }
+})();
+
+document.getElementById('settings-risk-save').addEventListener('click', async () => {
+  const input = document.getElementById('settings-risk-input');
+  const noteEl = document.getElementById('settings-risk-note');
+  const value = parseFloat(input.value);
+  if (!Number.isFinite(value)) {
+    noteEl.innerHTML = '<span class="err">Entre un nombre valide.</span>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/settings/risk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ riskPctPerTrade: value }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+    document.getElementById('settings-risk-current').textContent = `${fmt(data.riskPctPerTrade, 2)}%`;
+    noteEl.innerHTML = `<span class="win">✓ Changé à ${fmt(data.riskPctPerTrade, 2)}% (effectif immédiatement, jusqu'au prochain redémarrage).</span>`;
+  } catch (err) {
+    noteEl.innerHTML = `<span class="err">${err.message}</span>`;
+  }
+});
 
 document.getElementById('calc-form').addEventListener('submit', async (e) => {
   e.preventDefault();
