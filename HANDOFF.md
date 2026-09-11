@@ -1132,3 +1132,17 @@ Suite directe de la section précédente. Esdras a relancé : "on le cherche en 
 **Conclusion : encore un rejet nickel, mais celui-ci ferme une vraie question ouverte** (comblement vs continuation) plutôt que de retester une énième variante ICT. Non activé en production.
 
 **Fichiers** : `src/backtest/gapContinuation.js` (nouveau, 7 tests unitaires), `test/gapContinuation.test.js`, `scripts/runGapContinuationStrategyAnalysis.js`, `data/backtest-input/gap-continuation-strategy-analysis.md`. `npm test` : 361/361 (354 + 7 nouveaux).
+
+## Divergence Momentum (opposé de la Divergence de production) — "tient" mécaniquement mais confondu avec la dérive du marché, rejeté en pratique — 2026-09-12
+
+Suite directe à "Gap and Go", à la demande explicite d'Esdras de continuer à chercher des inversions de mécanismes déjà testés ("on continue à chercher d'autres idées comme ça"). La Divergence de production (validée, en direct sur US100/US500) achète TOUJOURS le retardataire (laggard) du z-score du log-ratio, pariant sur la convergence. L'inversion testée ici : acheter le LEADER à la place, pariant sur la CONTINUATION de l'écart (momentum) plutôt que sa convergence — même déclencheur/entrée/stop/cible/timeout, seul le choix du symbole change.
+
+**Nouveau module autonome** `src/backtest/divergenceMomentum.js` (ne touche pas `liveStrategyEngine.js`, la Divergence de production reste inchangée), 6 tests unitaires. Testé sur US100/US500 (la paire réellement validée/live) et EURUSD/GBPUSD (même comparaison déjà faite pour la version convergence).
+
+**Résultat brut** : US100/US500 train n=540 exp=+0.10R, test n=217 exp=+0.08R → **✅ tient** selon la règle mécanique. EURUSD/GBPUSD rejeté franchement (train -0.08R, test -0.17R).
+
+**⚠️ Vérifié avant de croire ce chiffre flatteur (même discipline que pour USDJPY/VIX plus haut)** : cette version est TOUJOURS acheteuse, sur des instruments en tendance haussière marquée sur toute la période. Test de référence construit : "toujours acheteur, entrée à intervalle fixe ARBITRAIRE (aucun signal de divergence), même stop 1.5×ATR/cible 1:3/timeout" → US100 train +0.09R (n=2096) / test +0.11R (n=835) ; US500 train +0.11R (n=2144) / test +0.05R (n=808). **Quasiment le même ordre de grandeur que le signal "testé"** — le déclencheur de divergence n'ajoute donc aucun pouvoir sélectif réel, l'edge observé est presque entièrement la dérive haussière générale captée par n'importe quelle entrée longue avec cette structure, pas un signal spécifique. (Ce contrôle NE remet PAS en cause la Divergence de production elle-même : son espérance validée, 0.7-2R, est un ordre de grandeur trop élevé pour s'expliquer par la seule dérive.)
+
+**Conclusion révisée : rejeté en pratique malgré le "✅ tient" mécanique — ne pas activer.** Bon rappel méthodologique : pour toute stratégie "toujours dans un seul sens" sur un instrument en tendance marquée, vérifier systématiquement contre une référence d'entrée arbitraire avant de faire confiance à un résultat positif mais modeste.
+
+**Fichiers** : `src/backtest/divergenceMomentum.js` (nouveau, 6 tests unitaires), `test/divergenceMomentum.test.js`, `scripts/runDivergenceMomentumStrategyAnalysis.js`, `data/backtest-input/divergence-momentum-strategy-analysis.md` (inclut le test de référence). `npm test` : 367/367 (361 + 6 nouveaux).
