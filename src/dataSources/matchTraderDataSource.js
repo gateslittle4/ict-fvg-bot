@@ -73,7 +73,7 @@
 // trades today" instead of true history, same graceful degradation as an
 // empty response would already produce.
 
-import { store, pushSignalEvents, setBalance, isAutoExecuteActive } from '../store.js';
+import { store, pushSignalEvents, setBalance, isAutoExecuteActive, tagVolatilityObservation } from '../store.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
@@ -657,7 +657,13 @@ export class MatchTraderDataSource {
         e.source === 'nwog' ? 'NWOG (gap week-end)' :
         e.source === 'judaswing' ? 'Judas Swing (killzone Londres)' :
         'FVG rempli';
-      const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}`;
+      // Forward-test démo OBSERVATION ONLY (2026-09) - see cTraderDataSource.js's
+      // own _notify() and store.js's tagVolatilityObservation()/HANDOFF.md.
+      const tagged = tagVolatilityObservation(e);
+      const volNote = tagged.volRegime
+        ? ` [obs. vol: ${tagged.volRegime}, taille sugg. ${tagged.suggestedRiskPct.toFixed(2)}% — non appliqué]`
+        : '';
+      const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}${volNote}`;
       fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
         console.warn('[ntfy] push failed', err.message)
       );

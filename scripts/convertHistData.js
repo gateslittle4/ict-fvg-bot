@@ -2,12 +2,17 @@
 // convertHistData.js
 // Converts HistData.com "Generic ASCII" M1 exports (semicolon-delimited,
 // no header, "YYYYMMDD HHMMSS;open;high;low;close;volume", split into one
-// file per year) into a single M15 CSV per symbol that csvLoader.js /
-// runBacktestReport.js can consume directly.
+// file per year) into a single CSV per symbol that csvLoader.js /
+// runBacktestReport.js can consume directly. Defaults to M15 (this
+// project's live/production timeframe); pass a 4th argument to build a
+// different granularity instead (2026-09, at Esdras's request to research
+// scalping on USDJPY M5 - the only instrument with real M1 source data in
+// this project).
 //
-// Usage: node scripts/convertHistData.js <rawDir> <outFile> <SYMBOL>
+// Usage: node scripts/convertHistData.js <rawDir> <outFile> <SYMBOL> [bucketMinutes]
 //   rawDir: folder containing one or more DAT_ASCII_<SYMBOL>_M1_*.csv files
-//   outFile: path to write the merged M15 CSV to
+//   outFile: path to write the merged CSV to
+//   bucketMinutes: candle size in minutes (default 15)
 //
 // Note on time: HistData timestamps are in a fixed EST offset (no DST) per
 // their own documentation. We parse the digits as-is (as if UTC) rather than
@@ -33,9 +38,14 @@ function parseHistDataLine(line) {
 }
 
 function main() {
-  const [rawDir, outFile, symbol] = process.argv.slice(2);
+  const [rawDir, outFile, symbol, bucketMinutesArg] = process.argv.slice(2);
   if (!rawDir || !outFile || !symbol) {
-    console.error('Usage: node scripts/convertHistData.js <rawDir> <outFile> <SYMBOL>');
+    console.error('Usage: node scripts/convertHistData.js <rawDir> <outFile> <SYMBOL> [bucketMinutes]');
+    process.exit(1);
+  }
+  const bucketMinutes = bucketMinutesArg ? Number(bucketMinutesArg) : 15;
+  if (!Number.isFinite(bucketMinutes) || bucketMinutes <= 0) {
+    console.error(`Invalid bucketMinutes: "${bucketMinutesArg}"`);
     process.exit(1);
   }
 
@@ -65,14 +75,14 @@ function main() {
     deduped.push(c);
   }
 
-  const m15 = resampleCandles(deduped, 15 * 60 * 1000);
+  const resampled = resampleCandles(deduped, bucketMinutes * 60 * 1000);
 
   const header = 'time,open,high,low,close';
-  const rows = m15.map((c) => `${c.time},${c.open},${c.high},${c.low},${c.close}`);
+  const rows = resampled.map((c) => `${c.time},${c.open},${c.high},${c.low},${c.close}`);
   fs.writeFileSync(outFile, [header, ...rows].join('\n'));
 
-  console.log(`\n${symbol}: ${deduped.length} M1 candles -> ${m15.length} M15 candles`);
-  console.log(`  from ${new Date(m15[0].time).toISOString()} to ${new Date(m15[m15.length - 1].time).toISOString()}`);
+  console.log(`\n${symbol}: ${deduped.length} M1 candles -> ${resampled.length} M${bucketMinutes} candles`);
+  console.log(`  from ${new Date(resampled[0].time).toISOString()} to ${new Date(resampled[resampled.length - 1].time).toISOString()}`);
   console.log(`Wrote ${outFile}`);
 }
 

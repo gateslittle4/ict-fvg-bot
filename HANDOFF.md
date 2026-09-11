@@ -976,3 +976,205 @@ Suite directe de la section précédente. Esdras a fourni les vraies règles Fun
 **Important pour la prochaine reprise** : `claude/lire-handoff-hxisa5` reste la SEULE branche que Render déploie en production — rien de ce qui se construit sur `challenge/fundingpips-zero` (ou une future `challenge/<autre>`) n'atteint le bot en direct tant qu'aucune fusion explicite n'est demandée par Esdras.
 
 **Note technique** : un commit de fin d'analyse (`002e328`) a été auto-committé sur `claude/lire-handoff-hxisa5` par le hook de fin de session juste avant que cette bascule vers une branche isolée soit décidée — contenu inoffensif (script de recherche + doc, aucun changement de comportement du bot), laissé tel quel plutôt que de réécrire l'historique de la branche de production.
+## USDJPY — 11 mécanismes déjà validés/testés étendus au 6ᵉ instrument — 2026-09-11/12, à la demande explicite
+
+À la demande explicite d'Esdras ("faisons le test sur usdjpy avant le funding pips"), après qu'elle a fourni les 10 années HistData M1 (2016-2025), converties précédemment en M15 (`data/backtest-input/USDJPY.csv`, même script/convention `convertHistData.js` que les 5 autres instruments — voir section dédiée plus haut).
+
+**Méthode : aucun nouveau réglage, uniquement l'extension de `SYMBOLS`** dans 11 scripts `scripts/run*StrategyAnalysis.js` déjà existants (paramètres tous fixés AVANT de voir un seul résultat USDJPY) : Judas Swing, NWOG, NDOG, Breaker Block, Asian Range Breakout, Asian Range Fade, Weekly Liquidity Sweep, MACD Trend, DMI Trend, RSI Divergence classique, RSI(2) Connors.
+
+**⚠️ Bug réel trouvé et corrigé AVANT de croire le premier passage** : `USDJPY` était absent de `DEFAULT_SPREADS` (`src/backtest/transactionCosts.js`) → coût de transaction traité comme ZÉRO sur cet instrument (`DEFAULT_SPREADS[symbol] ?? 0`), contrairement aux 5 autres qui ont tous un spread réaliste modélisé. Le premier passage montrait des résultats spectaculaires (NWOG test +0.56R, Judas Swing test +0.33R...) — beaucoup trop beaux, et le signe classique d'un coût manquant. Ajouté `USDJPY: 0.012` (~1.2 pip, même statut "INDICATIVE, à vérifier chez FundingPips" que les autres entrées), puis TOUT réexécuté. Les résultats se sont largement dégonflés une fois le coût appliqué — confirme que c'était bien un artefact, pas un edge réel.
+
+**Deuxième bug trouvé au passage, corrigé aussi** : `scripts/runDmiTrendStrategyAnalysis.js` avait une fonction `verdict()` sans le garde-fou standard "n < 10 → pas assez de trades" (présent dans tous les autres scripts) — donnait "✅ tient" sur USDJPY avec seulement 9 trades test. Corrigé pour appliquer la même règle partout ailleurs (`MIN_TRADES_FOR_VERDICT = 10` sur train ET test).
+
+**Résultat final (coût réel appliqué, règle de verdict standard partout), triés par robustesse** :
+
+| Stratégie | Train (n / exp) | Test (n / exp) | Verdict |
+|---|---|---|---|
+| **Asian Range Breakout** | 872 / **+0.03R** | 226 / **+0.24R** | **✅ TIENT** |
+| RSI(2) Connors | 322 / +0.029R | 45 / +0.0085R | ⚠️ affaibli (échoue de justesse le seuil 0.3×train : 0.0085 < 0.0086 — vérifié en pleine précision, pas un arrondi trompeur) |
+| NWOG | 228 / -0.01R | 68 / +0.49R | ⚠️ affaibli (train négatif malgré un test très fort) |
+| Judas Swing | 498 / -0.11R | 159 / +0.23R | ⚠️ affaibli (même profil) |
+| Asian Range Fade | 988 / -0.12R | 334 / +0.03R | ⚠️ affaibli |
+| Weekly Liquidity Sweep | 300 / -0.26R | 84 / +0.18R | ⚠️ affaibli |
+| Breaker Block | 792 / -0.08R | 256 / -0.18R | ❌ ne tient pas |
+| MACD Trend | 208 / -0.11R | 47 / -0.14R | ❌ ne tient pas |
+| RSI Divergence classique | 27 / -0.05R | 10 / -0.02R | ❌ ne tient pas |
+| NDOG | 285 / -0.13R | **7** / +0.03R | ❓ pas assez de trades |
+| DMI Trend | 39 / 0.00R | **9** / +0.04R | ❓ pas assez de trades |
+
+**Seul Asian Range Breakout passe la règle mécanique** — grand échantillon des deux côtés (872 train / 226 test), train ET test positifs, test très largement au-dessus du seuil 0.3×train. Les 4 "affaibli" (NWOG, Judas Swing, Asian Range Fade, Weekly Liquidity Sweep, RSI Connors) partagent tous le même profil suspect déjà documenté ailleurs dans ce fichier (train négatif ou quasi nul, test positif) — traité comme du bruit, pas un edge, cohérent avec la discipline du projet.
+
+**⚠️ MISE À JOUR IMPORTANTE (2026-09-12) — le "✅ tient" d'Asian Range Breakout/USDJPY est BEAUCOUP plus fragile qu'il n'y paraît, à ne pas prendre pour argent comptant.** Question légitime posée par Esdras ("pourquoi USDJPY est aussi haut, n'est-ce pas du flanc/smoothing ?") après avoir vu le comparatif chiffré (USDJPY +53,7R sur le test, le plus fort des 6 instruments — voir tableau comparatif plus bas dans cette section). Vérifié concrètement plutôt que rassuré à l'aveugle : **73% du profit total du test (39,05R sur 53,66R) vient d'UNE SEULE fenêtre de 5 mois (juillet-novembre 2025 sur 24 mois de test)** — 44 trades sur 226 (19%), avec un taux de gain de 47,4% dans cette fenêtre contre seulement 25,6% le reste du temps. Hors de cette fenêtre, l'espérance retombe à +0,08R/trade sur 182 trades — banale, comparable à XAUUSD (+0,08R) et inférieure à US100 (+0,11R), pas du tout le chiffre spectaculaire de +0,24R affiché sur l'ensemble de la période. **Pas un bug ni du data-snooping** (paramètres fixés avant tout résultat USDJPY, coût de transaction déjà corrigé) — mais une vraie fenêtre de marché exceptionnellement favorable (forte tendance directionnelle sur USDJPY) qui gonfle la moyenne globale bien au-delà de ce qui est probablement reproductible. **Conclusion révisée : NE PAS activer en production sur cette seule base** — le verdict "tient" est mécaniquement vrai mais la robustesse réelle est faible, du même ordre que les candidats "affaibli" une fois cette fenêtre exclue. Traiter comme non concluant plutôt que comme un edge validé, tant qu'aucune nouvelle période de test ne vient confirmer que l'edge résiste HORS de cette fenêtre spécifique.
+
+**Pas encore fait** : rien à activer en production pour l'instant sur USDJPY, vu ce qui précède ; vérifier le netting si une stratégie y était activée un jour aux côtés d'autres stratégies potentielles.
+
+**Fichiers** : `src/backtest/transactionCosts.js` (ajout `USDJPY`), `scripts/runDmiTrendStrategyAnalysis.js` (fix verdict), 11 scripts `run*StrategyAnalysis.js` (SYMBOLS étendu), 11 fichiers `data/backtest-input/*-analysis.md` régénérés. Pas de nouveau test unitaire (scripts exploratoires non testés unitairement, comme le reste de cette famille). `npm test` : 338/338 (inchangé — aucune logique testée touchée, seulement des constantes de config et des scripts exploratoires).
+
+## Unicorn Model (ICT) testé et rejeté — 2026-09-12, à la demande explicite ("focus sur US100/US500")
+
+Après la découverte que le "✅ tient" d'Asian Range Breakout/USDJPY était fragile (voir juste au-dessus), Esdras a explicitement redirigé l'effort : abandonner le macro (jugé pas rentable comme prochain investissement, voir discussion) et se concentrer sur US100/US500, les deux seuls instruments avec un edge réellement solide dans ce projet.
+
+**Recherche faite avant de coder** (luxalgo.com, quantvps.com, fluxcharts.com, innercircletrader.net, icttradingstrategy.com) : le concept ICT "Unicorn Model" — la zone de SUPERPOSITION entre un Breaker Block et un Fair Value Gap, deux PD arrays déjà détectés séparément dans ce projet mais jamais requis de coïncider. Distinct du Breaker Block déjà testé/rejeté (celui-ci entre sur n'importe quel retest du niveau médian du breaker, sans exigence de FVG) et du FVG de production (aucune exigence de breaker/BOS).
+
+**Méthode** (`src/backtest/unicornModel.js`, 5 tests unitaires) : réutilise la mécanique BOS/Order-Block/cassure de `breakerBlock.js` (dupliquée localement, pas importée, même convention que `weeklyLiquiditySweep.js` pour ne pas toucher un fichier déjà testé) ; une fois le breaker confirmé, une fenêtre bornée (20 bougies) attend qu'un FVG standard (même test c1/c3 à 3 bougies que le FvgEngine) de MÊME SENS se forme ET chevauche la zone du breaker ; entrée sur retest de cette zone de chevauchement (pas le niveau médian du breaker), stop au-delà de l'extrême du breaker, cible fixe 1:3, timeout 480 bougies M15. Priorité donnée à US100/US500, mais testé sur les 6 instruments pour la comparaison habituelle.
+
+**Résultat, un seul passage, aucun paramètre retouché après coup** :
+
+| Symbole | Train (n / exp) | Test (n / exp) | Verdict |
+|---|---|---|---|
+| US100 | 489 / -0.04R | 198 / +0.05R | ⚠️ affaibli |
+| US500 | 450 / -0.16R | 187 / -0.19R | ❌ ne tient pas |
+| XAUUSD | 379 / -0.05R | 208 / +0.19R | ⚠️ affaibli |
+| EURUSD | 515 / -0.00R | 176 / +0.04R | ⚠️ affaibli |
+| GBPUSD | 393 / -0.11R | 167 / -0.21R | ❌ ne tient pas |
+| USDJPY | 619 / -0.13R | 198 / -0.00R | ❌ ne tient pas |
+
+**Rejeté partout, y compris (et surtout) sur les deux instruments prioritaires** : US500 rejeté franchement (train ET test négatifs) ; US100 "affaibli" mais avec un train déjà négatif (-0.04R) — le même profil "train qui ne passe pas la barre" déjà traité comme du bruit ailleurs dans ce document, pas un edge. Aucun instrument n'atteint un vrai "✅ tient" (train ET test positifs, test ≥ 30% du train). **Conclusion : encore un concept ICT publié qui ne produit pas d'edge net une fois testé rigoureusement, y compris sur les instruments où ce projet a pourtant un edge réel avec d'autres mécanismes (FVG/Divergence) — confirme que l'edge de ce projet est spécifique au FVG/Divergence déjà en production, pas à "tout concept ICT sur ces deux instruments".**
+
+**Fichiers** : `src/backtest/unicornModel.js` (nouveau, 5 tests unitaires), `test/unicornModel.test.js`, `scripts/runUnicornModelStrategyAnalysis.js`, `data/backtest-input/unicorn-model-strategy-analysis.md`. **Non activé en production.** `npm test` : 343/343 (338 + 5 nouveaux).
+
+## Filtre macro (régime VIX) sur le combo déjà validé — testé, pas concluant — 2026-09-12
+
+Question directe d'Esdras après avoir dropé l'idée d'un nouvel instrument macro : **"est-ce que le macro pourrait améliorer le combo [déjà validé] ?"** — pas une tentative de sauver un instrument faible, mais un vrai test sur le combo FVG (US100+US500+XAUUSD) + Divergence (US100/US500) déjà en production.
+
+**Proxy macro** : VIX (indice de volatilité CBOE), récupéré directement depuis FRED (`fred.stlouisfed.org/series/VIXCLS`, accès réseau direct confirmé fonctionnel) — `data/backtest-input/macro-vix-daily.csv`, 9572 points quotidiens, 1990-2026. **Seuil de régime décidé AVANT de voir un seul résultat** : VIX < 20 = "calme", VIX ≥ 20 = "élevé" (convention standard CBOE/médias financiers, pas ajustée sur ces données). Régime lu depuis la dernière clôture VIX STRICTEMENT AVANT le jour d'entrée du trade (aucun regard en avant). Réutilise `LiveStrategyEngine` + `CONFIG.fvg.perSymbol`/`CONFIG.divergence` EXACTEMENT comme la production (même schéma que `recentPerformanceReport.js`), pas une réimplémentation séparée.
+
+**Résultat agrégé, à première vue prometteur** :
+
+| Période | Calme (n / exp) | Élevé (n / exp) |
+|---|---|---|
+| TRAIN (2019-2023) | 315 / 0.64R | 232 / 0.75R |
+| TEST (2024-2025) | 183 / 0.67R | 29 / 1.10R |
+
+Direction cohérente train ET test (le régime "élevé" fait mieux dans les deux) — à première vue, le genre de signal qu'on cherche.
+
+**Mais décomposé par instrument/source, la cohérence disparaît complètement** — l'agrégat mélange 4 sous-populations qui réagissent dans des sens OPPOSÉS au régime VIX :
+
+| Période | Instrument/source | Calme (n/exp) | Élevé (n/exp) |
+|---|---|---|---|
+| TRAIN | US100/FVG | 50/1.28R | 46/1.48R |
+| TRAIN | US500/FVG | 35/0.54R | 53/1.38R |
+| TRAIN | XAUUSD/FVG | 65/1.03R | 22/0.64R |
+| TRAIN | US500/Divergence | 165/0.31R | 111/0.16R |
+| TEST | US100/FVG | 36/1.17R | 8/3.50R |
+| TEST | US500/FVG | 25/1.28R | 1/-1.00R |
+| TEST | XAUUSD/FVG | 37/0.78R | 4/-1.00R |
+| TEST | US500/Divergence | 85/0.22R | 16/0.56R |
+
+**Dès le TRAIN** (le jeu censé trancher), XAUUSD/FVG et US500/Divergence favorisent le régime CALME, alors qu'US100/FVG et US500/FVG favorisent le régime ÉLEVÉ — contradictoire, pas un effet macro unifié. Seul US100/FVG est dans le même sens sur les deux périodes (1.28→1.48R train, 1.17→3.50R test), mais l'échantillon test y est minuscule (n=8) et le X3.50R sent le même artefact de petit échantillon que USDJPY plus haut dans ce document.
+
+**Conclusion : NON concluant, ne pas ajouter en production.** Le signal agrégé qui semblait prometteur est un artefact de mélange (Simpson's paradox-like) — une fois décomposé par instrument/source, aucun effet cohérent et large-échantillon ne survit. Répondre honnêtement à la question posée : le régime VIX ne montre PAS d'effet fiable et généralisable sur le combo actuel. Piste dérivée mais PAS explorée (question différente, pas posée) : un sizing par volatilité (augmenter la taille de position en régime élevé, jamais activé — voir plus haut dans ce document) serait une utilisation différente du même signal, pas testée ici.
+
+**Fichiers** : `data/backtest-input/macro-vix-daily.csv` (donnée source, FRED), `scripts/runVixRegimeFilterAnalysis.js` (nouveau, script exploratoire, pas de nouveaux tests unitaires — même convention que les autres `run*Analysis.js` non câblés en live), `data/backtest-input/vix-regime-filter-analysis.md`. `npm test` : 343/343 (inchangé).
+
+## Statut cible étendue + sizing par volatilité, et forward-test démo du sizing câblé — 2026-09-12
+
+À la demande explicite d'Esdras de "focus sur la cible étendue et le sizing par volatilité" après l'épisode VIX ci-dessus.
+
+**Cible étendue (1:4/1:5)** : déjà activée en production depuis le 2026-09-07 (`src/config.js` : US100/US500 en 1:5, XAUUSD en 1:4) — voir section dédiée plus haut dans ce document. Rien à refaire, juste confirmé à Esdras que c'est déjà en place.
+
+**Sizing par volatilité (réduire à 0,25% en régime ATR calme)** : déjà recherché en profondeur (voir section "Position sizing dynamique" plus haut), jamais activé. Recommandation historique : faire un forward-test démo avant d'activer pour de vrai. **Question posée directement à Esdras, réponse : forward-test démo d'abord (pas d'activation directe).**
+
+**Câblage du forward-test démo, en OBSERVATION SEULE — aucun effet sur le risque réel** :
+- `src/backtest/volatilityRegime.js` (nouveau) : extraction propre des fonctions déjà utilisées dans `scripts/checkVolatilityRegimeImpactFullCombo.js`/`runFtmo1StepVolAdaptiveRiskAccountImpact.js` (mêmes constantes ATR(14)/SMA(100)/seuils 0.8-1.5, rien retouché) — `classifyVolatilityRegimeSeries()`, `makeVolatilityRegimeLookup()` (no-lookahead, même convention binary-search que `runMarketRegimeAnalysis.js`). 6 tests unitaires.
+- `src/store.js` : `pushSignalEvents()` (le point UNIQUE où tous les événements validés passent, quel que soit le connecteur cTrader/Match-Trader/mock) tague chaque signal `fvg`/`divergence` non bloqué avec `volRegime` + `suggestedRiskPct` (= risque actuel × 0.5 si régime 'low', inchangé sinon) — calculé depuis l'historique déjà retenu par `LiveStrategyEngine` (`getHistory()` → `resampleCandles()` en D1), enveloppé dans un `try/catch` (une observation ne doit jamais casser le vrai flux de signaux). **NWOG/Judas Swing/pyramide exclus délibérément** — la recherche ne portait que sur le combo FVG+Divergence, les taguer aurait affirmé un résultat jamais testé. 5 tests unitaires (`test/store.test.js`).
+- **Aucun changement sur le sizing réel** : `calculateLotSize()`/`CONFIG.risk.riskPctPerTrade` (`cTraderDataSource.js`) restent totalement intacts — vérifié explicitement, c'est le point central de cette phase.
+- Visible à deux endroits, toujours étiqueté "obs./non appliqué" pour ne jamais être confondu avec une vraie action : la carte "Signaux d'entrée validés" du dashboard (`public/index.html`), et le texte des notifications ntfy (`cTraderDataSource.js` ET `matchTraderDataSource.js` — même convention que l'extension d'étiquette de source déjà appliquée aux deux connecteurs pour NWOG/Judas Swing).
+
+**Vérifié avec Playwright** (route interception sur `/api/signals`, l'app utilise maintenant un flux SSE `/api/stream` pour le temps réel — ajouté par une autre session cette même période — donc il faut soit intercepter `/api/stream` aussi, soit compter sur l'appel `refreshSignals()` initial qui a lieu indépendamment au chargement de la page) : le tag s'affiche correctement, ex. "Régime vol: low (obs., taille suggérée 0.25% — non appliqué)". `npm test` : 354/354 (343 + 11 nouveaux : 6 pour `volatilityRegime.js`, 5 pour le tagging dans `store.js`).
+
+**Prochaine étape (pas encore faite)** : laisser tourner en observation quelques semaines (comparer manuellement, ou via une future requête sur `store.signalLog`/les logs serveur, si le régime 'low' continue réellement à sous-performer en conditions live comme en historique) avant de décider d'activer le sizing pour de vrai. Aucune persistance durable (Supabase) de cette observation pour l'instant — visible seulement dans le signal log en mémoire (200 dernières entrées) et les notifications, pas dans le journal durable ; à ajouter plus tard si l'observation s'avère utile sur la durée.
+
+## Scalping (M1/M5) — recherche documentée SEULEMENT, rien codé — 2026-09-12
+
+À la demande explicite d'Esdras après une question sur le trading haute fréquence : elle a confirmé vouloir explorer une "version réaliste" du HFT — le scalping ICT sur M1/M5 — mais **explicitement en recherche/documentation uniquement, sans rien coder dans le bot**. Ce qui suit est donc un résumé de faisabilité, pas une implémentation.
+
+**Concept ICT scalping (recherché en ligne, sourcé)** : entrées/sorties sur M1-M5, contexte directionnel pris sur un timeframe supérieur (M15/H1) — même logique de biais HTF que le FVG de production, juste transposée à une échelle plus fine. Repose sur les mêmes briques déjà présentes dans ce projet (Market Structure Shift/BOS, structure interne vs externe, confluence multi-timeframe) mais appliquées à un scalp rapide. Cible typique citée : 30-50 pips, RR autour de 1:2 (donc plus bas que le 1:3-1:5 déjà en production).
+
+**Trois obstacles concrets identifiés, propres à ce projet précis, avant même de parler d'edge** :
+
+1. **Règles des prop firms — risque réel, pas juste théorique.** FTMO et FundingPips interdisent explicitement le "tick scalping"/HFT et signalent les trades tenus moins de ~2 minutes comme suspects (source : recherche web, PAS vérifié à la source primaire FTMO/FundingPips — même réserve que pour l'épisode FundingPips Zero plus haut dans ce document). Un scalp ICT "normal" (plusieurs minutes de détention, cible 30-50 pips) ne serait probablement PAS dans la zone interdite, mais ça reste à confirmer noir sur blanc avant d'y risquer un vrai compte — l'enjeu (compte suspendu/challenge invalidé) est trop grand pour se contenter d'une recherche web.
+2. **Données manquantes.** Ce projet n'a du M1 que pour USDJPY (les fichiers HistData bruts, déjà agrégés en M15 pour l'analyse — voir plus haut). US100/US500/XAUUSD/EURUSD/GBPUSD n'existent qu'en M15 dans ce dépôt. Tester sérieusement du scalping demanderait de sourcer du M1 pour les 5 autres instruments — un chantier de données à part entière, pas fait ici.
+3. **Coût du spread proportionnellement plus lourd.** Le garde-fou déjà en place partout (`MIN_DISTANCE_SPREAD_MULTIPLE = 3`, distance du stop ≥ 3× le spread) est nettement plus dur à satisfaire sur un scalp M1/M5 : la distance typique d'un stop y est mécaniquement bien plus petite qu'en M15 (mouvements de bien plus faible amplitude par bougie), alors que le spread reste constant en valeur absolue — donc soit beaucoup plus de signaux rejetés comme non viables, soit un edge net rongé bien plus fort par les coûts qu'aujourd'hui.
+4. **Coût d'infrastructure.** `LiveStrategyEngine` reconstruit et rejoue tout l'historique retenu à chaque nouvelle bougie ("rebuild-and-replay", déjà source d'un vrai incident de production sur Render — voir plus haut, "Bug critique... le flux d'événements live"). Passer de M15 à M1 multiplierait par ~15 le nombre de bougies traitées par unité de temps réel, sur un plan Render gratuit (0.15 CPU) déjà identifié comme fragile à ce genre de charge.
+
+**Conclusion (recherche seulement, aucune décision prise)** : le scalping ICT est un concept réel et documenté, pas une invention — mais dans CE projet précis, trois obstacles concrets (conformité prop-firm à vérifier sérieusement, données M1 manquantes pour 5 des 6 instruments, sensibilité au spread nettement plus forte) rendent ce chantier bien plus lourd qu'un simple changement de timeframe. Pas recommandé de s'y lancer sans, au minimum, une confirmation écrite des règles FTMO/FundingPips sur la durée minimale de détention. Rien codé, rien testé — recherche documentée comme demandé.
+
+## Scalp M5 testé sur USDJPY — rejeté, confirme l'obstacle #3 (spread) déjà documenté — 2026-09-12, suite
+
+Suite directe de la section précédente. Esdras a relancé : "on le cherche en USDJPY ? de toute façon on a pas de stratégie pour lui" — logique solide (seul instrument avec du vrai M1 source, et aucune stratégie déjà validée dessus, donc rien à perdre à essayer). Cette fois un vrai test, pas juste de la doc.
+
+**Méthode, aucun nouveau mécanisme** : `runJudasSwingBacktest()` (`src/backtest/judasSwing.js`) réutilisée TELLE QUELLE — sa logique est déjà agnostique au timeframe (fenêtre horaire en heure murale, PDH/PDL rééchantillonné en jour peu importe la taille de bougie d'entrée). Seuls changements : bougies M5 au lieu de M15, et deux paramètres décidés depuis la recherche AVANT de voir un résultat — RR 1:2 (au lieu de 1:3+ ailleurs, conforme aux cibles ~30-50 pips citées par les sources ICT scalping) et timeout 480 bougies (même constante littérale que partout ailleurs dans ce projet, appliquée à des bougies M5 cette fois — 40h au lieu de 5 jours en M15).
+
+**`scripts/convertHistData.js` étendu** (rétrocompatible : 4ᵉ argument optionnel `bucketMinutes`, défaut 15 — reconverti et diffé le M15 existant pour confirmer zéro régression avant de l'utiliser) pour produire `data/backtest-input/USDJPY_M5.csv` (736 827 bougies M5, même source/convention HistData que le M15 déjà en place).
+
+**Résultat, un seul passage, aucun paramètre retouché après coup** :
+
+| Trades train | Espérance train | Trades test | Espérance test | Verdict |
+|---|---|---|---|---|
+| 387 (365 rejetés non-viables sur 752 bruts) | -0.17R | 150 (62 rejetés sur 212 bruts) | -0.16R | ❌ ne tient pas |
+
+**Rejeté proprement — train ET test négatifs, cohérents entre eux** (pas le profil "train négatif, test positif" qu'on traite habituellement comme du bruit ; ici c'est un rejet net des deux côtés). Le taux de gain (34.2%/33.3%) est quasiment collé au seuil d'équilibre mécanique d'un RR 1:2 (33.3%) — une fois les coûts appliqués, ça repasse sous zéro. **Confirme empiriquement l'obstacle #3 déjà documenté** : près de la moitié des signaux bruts en train (365/752) sont rejetés comme non viables (stop trop proche du spread) — la sensibilité au spread à cette granularité est bien aussi lourde que redouté, pas juste une inquiétude théorique.
+
+**Conclusion : scalping M5 sur USDJPY ne tient pas, avec cette mécanique (Judas Swing).** Ne clôt pas nécessairement toute idée de scalping (une autre mécanique ou un autre RR pourrait donner un résultat différent), mais confirme que le passage à M5 n'est pas un simple raccourci vers plus de fréquence — le coût réel du spread mord fort, exactement comme anticipé avant de tester.
+
+**Fichiers** : `data/backtest-input/USDJPY_M5.csv` (nouveau, donnée), `scripts/convertHistData.js` (argument optionnel `bucketMinutes`, rétrocompatible), `scripts/runUsdjpyM5ScalpAnalysis.js` (nouveau, script exploratoire, pas de nouveaux tests unitaires — réutilise une fonction déjà testée), `data/backtest-input/usdjpy-m5-scalp-analysis.md`. `npm test` : 354/354 (inchangé).
+
+## "Gap and Go" (continuation de gap) — concept réellement nouveau proposé, testé et rejeté — 2026-09-12
+
+À la demande explicite d'Esdras ("tu pourrais pas inventer une stratégie novatrice ?") après une longue série de concepts publiés (ICT et non-ICT) tous rejetés ou fragiles. Plutôt qu'une invention arbitraire (risque de construction ad hoc sans justification, contraire à la discipline de ce projet), l'idée retenue est l'exact opposé d'un mécanisme DÉJÀ testé ici : NWOG et NDOG parient tous les deux sur le COMBLEMENT d'un gap (fade) — jamais sur sa CONTINUATION, un vrai concept ("gap and go") cité dans la littérature générale de trading d'indices (pas ICT-spécifique), trouvé pendant la recherche sur le scalping de la section précédente.
+
+**Méthode** (`src/backtest/gapContinuation.js`, nouveau module autonome — ne modifie ni `nwog.js` ni `ndog.js`, duplique juste leur détection de gap déjà testée) : mêmes seuils de gap que NWOG (20-100h) et NDOG (1-3h) — PAS re-choisis, ce sont les mêmes vrais gaps déjà détectés dans ce projet, seul le sens du pari change. Entrée une bougie après le gap, stop au-delà de l'extrême de la bougie de gap (du côté adapté à la nouvelle direction), cible fixe 1:3, timeout 480 bougies M15. Testé aux deux échelles (quotidien et hebdomadaire) sur les 6 instruments. 7 tests unitaires.
+
+**Résultat, un seul passage, aucun paramètre retouché après coup** :
+
+| Échelle | Symbole | Train (n/exp) | Test (n/exp) | Verdict |
+|---|---|---|---|---|
+| Quotidien | US100 | 983/-0.05R | 300/+0.03R | ⚠️ affaibli |
+| Quotidien | US500 | 793/-0.12R | 271/+0.13R | ⚠️ affaibli |
+| Quotidien | XAUUSD | 485/-0.14R | 215/-0.11R | ❌ ne tient pas |
+| Quotidien | EUR/GBP/JPY | n test = 1-4 | — | ❓ pas assez de trades (confirme la disparition de la pause quotidienne forex post-2024 déjà notée dans l'étude NDOG) |
+| Hebdo | US100 | 211/+0.10R | 92/-0.13R | ❌ ne tient pas |
+| Hebdo | US500 | 190/+0.06R | 96/-0.23R | ❌ ne tient pas |
+| Hebdo | XAUUSD | 155/-0.10R | 77/+0.30R | ⚠️ affaibli |
+| Hebdo | EUR/GBP/JPY | tous négatifs des deux côtés | | ❌ ne tient pas |
+
+**Rejeté partout, aucun "✅ tient"** — y compris US100/US500 en hebdomadaire, qui montrent le profil "train positif, test négatif" (0.10R→-0.13R, 0.06R→-0.23R) déjà traité comme du bruit ailleurs dans ce document. **L'idée que le sens INVERSE (comblement) tienne mieux que la continuation sur US100/US500 spécifiquement (NWOG hebdo y tenait, voir plus haut) est cohérente et vient s'ajouter au dossier** : sur ces deux indices, le pari du comblement bat le pari de la continuation — pas une surprise complète (un gap sur indice se comble plus souvent qu'il ne se poursuit, historiquement), mais bon d'avoir vérifié plutôt que supposé.
+
+**Conclusion : encore un rejet nickel, mais celui-ci ferme une vraie question ouverte** (comblement vs continuation) plutôt que de retester une énième variante ICT. Non activé en production.
+
+**Fichiers** : `src/backtest/gapContinuation.js` (nouveau, 7 tests unitaires), `test/gapContinuation.test.js`, `scripts/runGapContinuationStrategyAnalysis.js`, `data/backtest-input/gap-continuation-strategy-analysis.md`. `npm test` : 361/361 (354 + 7 nouveaux).
+
+## Divergence Momentum (opposé de la Divergence de production) — "tient" mécaniquement mais confondu avec la dérive du marché, rejeté en pratique — 2026-09-12
+
+Suite directe à "Gap and Go", à la demande explicite d'Esdras de continuer à chercher des inversions de mécanismes déjà testés ("on continue à chercher d'autres idées comme ça"). La Divergence de production (validée, en direct sur US100/US500) achète TOUJOURS le retardataire (laggard) du z-score du log-ratio, pariant sur la convergence. L'inversion testée ici : acheter le LEADER à la place, pariant sur la CONTINUATION de l'écart (momentum) plutôt que sa convergence — même déclencheur/entrée/stop/cible/timeout, seul le choix du symbole change.
+
+**Nouveau module autonome** `src/backtest/divergenceMomentum.js` (ne touche pas `liveStrategyEngine.js`, la Divergence de production reste inchangée), 6 tests unitaires. Testé sur US100/US500 (la paire réellement validée/live) et EURUSD/GBPUSD (même comparaison déjà faite pour la version convergence).
+
+**Résultat brut** : US100/US500 train n=540 exp=+0.10R, test n=217 exp=+0.08R → **✅ tient** selon la règle mécanique. EURUSD/GBPUSD rejeté franchement (train -0.08R, test -0.17R).
+
+**⚠️ Vérifié avant de croire ce chiffre flatteur (même discipline que pour USDJPY/VIX plus haut)** : cette version est TOUJOURS acheteuse, sur des instruments en tendance haussière marquée sur toute la période. Test de référence construit : "toujours acheteur, entrée à intervalle fixe ARBITRAIRE (aucun signal de divergence), même stop 1.5×ATR/cible 1:3/timeout" → US100 train +0.09R (n=2096) / test +0.11R (n=835) ; US500 train +0.11R (n=2144) / test +0.05R (n=808). **Quasiment le même ordre de grandeur que le signal "testé"** — le déclencheur de divergence n'ajoute donc aucun pouvoir sélectif réel, l'edge observé est presque entièrement la dérive haussière générale captée par n'importe quelle entrée longue avec cette structure, pas un signal spécifique. (Ce contrôle NE remet PAS en cause la Divergence de production elle-même : son espérance validée, 0.7-2R, est un ordre de grandeur trop élevé pour s'expliquer par la seule dérive.)
+
+**Conclusion révisée : rejeté en pratique malgré le "✅ tient" mécanique — ne pas activer.** Bon rappel méthodologique : pour toute stratégie "toujours dans un seul sens" sur un instrument en tendance marquée, vérifier systématiquement contre une référence d'entrée arbitraire avant de faire confiance à un résultat positif mais modeste.
+
+**Fichiers** : `src/backtest/divergenceMomentum.js` (nouveau, 6 tests unitaires), `test/divergenceMomentum.test.js`, `scripts/runDivergenceMomentumStrategyAnalysis.js`, `data/backtest-input/divergence-momentum-strategy-analysis.md` (inclut le test de référence). `npm test` : 367/367 (361 + 6 nouveaux).
+
+## RSI(2) Momentum (opposé de Connors, déjà validé) — même piège de dérive de tendance, rejeté en pratique — 2026-09-12
+
+Troisième inversion testée dans la même veine ("on continue à chercher d'autres idées comme ça"). RSI(2) Connors (déjà validé sur US100/US500, seul mécanisme non-ICT retenu de ce projet) achète le SURVENDU en tendance haussière, pariant sur un rebond vers la SMA(5). L'inversion testée : acheter le SURACHETÉ en tendance haussière à la place (et vendre le survendu en tendance baissière), pariant sur la continuation plutôt que le retour à la moyenne. Même filtre EMA200/RSI(2)/stop 2×ATR(14)/plafond 10 jours que Connors ; seule la cible change (1:3 fixe, convention momentum déjà utilisée ailleurs — ORB, Asian Range Breakout — au lieu de la cible SMA5 de Connors qui n'a pas de sens pour un pari de continuation).
+
+**Nouveau module** `src/backtest/rsiMomentum.js` (n'existait pas de version testable de Connors lui-même — vivait en script exploratoire ; celui-ci suit la même rigueur que les autres inversions de cette session), 5 tests unitaires.
+
+**Résultat brut** : US100 train n=121 exp=+0.05R, test n=38 exp=+0.12R → ✅ tient (mécaniquement). US500 train n=127 exp=+0.01R, test n=35 exp=+0.13R → ✅ tient. GBPUSD/USDJPY rejetés franchement.
+
+**⚠️ Signal d'alerte immédiat, vérifié avant de croire ce chiffre** : le taux de gain réel (cible 1:3 atteinte) est de **0% sur US100, 2% sur US500** — presque aucun trade ne touche jamais la cible, la quasi-totalité sortent en timeout à 10 jours avec un R moyen modérément positif (+0.68) simplement parce que le prix a globalement dérivé dans le bon sens. **Même piège que Divergence Momentum ci-dessus** : test de référence "trade AVEC la tendance EMA200 à intervalle arbitraire, sans aucun RSI" → US100 train +0.078R/test **+0.212R**, US500 train +0.091R/test **+0.245R** — même ordre de grandeur, voire supérieur, à ce que le signal RSI "testé" produit. Le déclencheur RSI extrême n'ajoute aucun pouvoir sélectif réel, c'est encore la dérive de tendance qui porte tout.
+
+**Conclusion révisée : rejeté en pratique malgré le "✅ tient" mécanique — ne pas activer.** (Ne remet pas en cause la validation initiale de Connors elle-même — sélection et règle de sortie différentes, taux de gain documenté nettement plus élevé — seulement cette inversion momentum.) Troisième fois cette session qu'un contrôle de référence "dérive de marché" démasque un faux positif mécanique — devient un réflexe systématique à appliquer à toute stratégie testée sur un instrument en tendance marquée, ICT ou non.
+
+**Fichiers** : `src/backtest/rsiMomentum.js` (nouveau, 5 tests unitaires), `test/rsiMomentum.test.js`, `scripts/runRsiMomentumStrategyAnalysis.js`, `data/backtest-input/rsi-momentum-strategy-analysis.md` (inclut le test de référence). `npm test` : 372/372 (367 + 5 nouveaux).
+
+## Réconciliation : USDJPY/exploration fusionné dans `challenge/fundingpips-zero` — 2026-09-11
+
+Ce travail (11 mécanismes USDJPY, Unicorn Model, filtre VIX, forward-test observation du sizing par volatilité, recherche scalping + test M5, Gap and Go, Divergence Momentum, RSI(2) Momentum — toutes les sections juste au-dessus) a été poussé directement sur `claude/lire-handoff-hxisa5` (branche de production) par une autre session, **après** que le workflow "une branche isolée par type de challenge" ait été établi et documenté juste au-dessus. Contradiction relevée et remontée à Esdras explicitement.
+
+**Décision d'Esdras** : laisser tel quel sur la production (le code est vérifié sûr — recherche exploratoire + observation seule, aucun changement de sizing/risque réel touché), et fusionner ce même travail dans `challenge/fundingpips-zero` pour que la suite (mise en conformité FundingPips Zero) ait tout le contexte au même endroit. C'est ce que fait ce commit de fusion. Le workflow par branche isolée s'applique à partir de maintenant pour tout nouveau travail, pas rétroactivement.

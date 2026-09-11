@@ -573,12 +573,17 @@ function renderSignals(data) {
         const detail = s.zone
           ? `Zone FVG: ${fmt(s.zone.bottom, d)} – ${fmt(s.zone.top, d)}`
           : `Entrée ${fmt(s.entryPrice, d)} · Stop ${fmt(s.stopPrice, d)} · Cible ${fmt(s.targetPrice, d)}`;
+        // Forward-test démo OBSERVATION ONLY (2026-09, à la demande explicite - voir HANDOFF.md) :
+        // n'affecte PAS la taille réelle de la position, juste un repère pour comparer plus tard.
+        const volNote = s.volRegime
+          ? ` · Régime vol: ${s.volRegime} (obs., taille suggérée ${fmt(s.suggestedRiskPct, 2)}% — non appliqué)`
+          : '';
         return `
       <li class="signal-item">
         <span class="dir-${s.direction}">${s.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${s.symbol}
         <span class="meta">[${sourceLabel(s)}]</span>
         ${s.actionable ? '<span class="badge-actionable">ACTIONNABLE</span>' : `<span class="badge-blocked">BLOQUÉ: ${s.blockedReasons.join(', ')}</span>`}
-        <div class="meta">${detail} · validé ${fmtTime(s.validatedAt)}</div>
+        <div class="meta">${detail} · validé ${fmtTime(s.validatedAt)}${volNote}</div>
       </li>
     `;
       }).join('')

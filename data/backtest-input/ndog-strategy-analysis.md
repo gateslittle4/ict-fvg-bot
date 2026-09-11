@@ -9,3 +9,4 @@
 | XAUUSD | 511 | 25.5% | 0.82 | -0.16 | 249 | 21.7% | 0.68 | -0.29 | ❌ ne tient pas |
 | EURUSD | 245 | 31.8% | 1.11 | 0.09 | 1 | 100.0% | ∞ | 2.74 | ❓ pas assez de trades |
 | GBPUSD | 219 | 23.7% | 0.73 | -0.25 | 2 | 0.0% | 0.00 | -1.08 | ❓ pas assez de trades |
+| USDJPY | 285 | 25.7% | 0.85 | -0.13 | 7 | 28.6% | 1.04 | 0.03 | ❓ pas assez de trades |
