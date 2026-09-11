@@ -351,10 +351,16 @@ const sourceLabel = (s) => {
   return 'manuel/inconnu';
 };
 
+// Split fetch (refreshStatus) from render (renderStatus) so the SSE stream
+// below can drive the exact same rendering with a PUSHED payload instead of
+// its own fetch - one rendering code path either way, see the SSE section
+// near the bottom of this script for why.
 async function refreshStatus() {
   const res = await fetch('/api/status');
-  const data = await res.json();
+  renderStatus(await res.json());
+}
 
+function renderStatus(data) {
   const banner = document.getElementById('banner');
   if (data.mode === 'demo') {
     banner.className = 'banner demo';
@@ -481,8 +487,10 @@ function renderAutoExecute(ae) {
 
 async function refreshSignals() {
   const res = await fetch('/api/signals');
-  const data = await res.json();
+  renderSignals(await res.json());
+}
 
+function renderSignals(data) {
   const actionableList = document.getElementById('actionable-list');
   actionableList.innerHTML = data.actionable.length
     ? data.actionable.map((s) => {
@@ -778,14 +786,47 @@ document.getElementById('calc-form').addEventListener('submit', async (e) => {
   }
 });
 
+// Temps réel (2026-09): a single EventSource replaces the two fastest polls
+// (status + signals, previously 3s each) with a server push every 1s (see
+// GET /api/stream in server.js) - same renderStatus()/renderSignals()
+// functions, just fed a pushed payload instead of a fetched one, so there is
+// only ever one rendering code path to keep correct. Falls back to the old
+// 3s polling automatically if the stream never opens or drops (a proxy that
+// buffers/kills long-lived connections, a network blip) - the dashboard
+// keeps working either way, just less snappy on the fallback path.
+function startLiveStream() {
+  let fallbackTimers = null;
+  const startFallbackPolling = () => {
+    if (fallbackTimers) return; // already polling - don't stack a second pair of intervals
+    fallbackTimers = [setInterval(refreshStatus, 3000), setInterval(refreshSignals, 3000)];
+  };
+  const stopFallbackPolling = () => {
+    if (!fallbackTimers) return;
+    fallbackTimers.forEach(clearInterval);
+    fallbackTimers = null;
+  };
+
+  const es = new EventSource('/api/stream');
+  es.onmessage = (event) => {
+    stopFallbackPolling(); // a message arrived - the stream is alive, no need for the safety net right now
+    const payload = JSON.parse(event.data);
+    renderStatus(payload.status);
+    renderSignals(payload.signals);
+  };
+  es.onerror = () => {
+    // EventSource retries the connection on its own - this only covers the
+    // gap while it's down (or if this browser/proxy can't do SSE at all).
+    startFallbackPolling();
+  };
+}
+
 refreshStatus();
 refreshSignals();
 refreshTradeHistory();
 refreshRecentPerformance();
 refreshTradeLog();
 refreshAccount();
-setInterval(refreshStatus, 3000);
-setInterval(refreshSignals, 3000);
+startLiveStream();
 setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
 setInterval(refreshRecentPerformance, 120000); // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
 setInterval(refreshTradeLog, 60000); // grows one row per resolved trade, no meaningful reason to poll faster
