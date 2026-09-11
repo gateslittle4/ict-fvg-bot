@@ -11,7 +11,7 @@
 import { LiveStrategyEngine } from './liveStrategyEngine.js';
 import { GuardrailEngine } from './engines/guardrailEngine.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
-import { CONFIG } from './config.js';
+import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT } from './config.js';
 
 const MAX_LOG_LENGTH = 200;
 
@@ -123,6 +123,26 @@ export function setBalance(balance, now = Date.now()) {
   store.balance = balance;
   store.guardrail.setBalance(balance, now);
   store.strategyEngine.setBalance(balance);
+}
+
+/**
+ * Changes the LIVE risk % per trade with immediate effect (2026-09, "page
+ * réglages") - sizes every new position from the next signal onward, never
+ * retroactively. Bounds enforced HERE (not trusted from the caller/HTTP
+ * body) using config.js's MIN_RISK_PCT/MAX_RISK_PCT - this number scales
+ * every live order, so a fat-fingered or malformed request must fail loud
+ * rather than silently clamp-and-continue. Does NOT persist across a
+ * restart by itself - see config.js's RISK_PCT_PER_TRADE comment for how to
+ * make a change durable.
+ */
+export function setRiskPctPerTrade(pct) {
+  if (typeof pct !== 'number' || !Number.isFinite(pct)) {
+    throw new Error('riskPctPerTrade must be a finite number');
+  }
+  if (pct < MIN_RISK_PCT || pct > MAX_RISK_PCT) {
+    throw new Error(`riskPctPerTrade must be between ${MIN_RISK_PCT} and ${MAX_RISK_PCT}`);
+  }
+  store.strategyEngine.setRiskPctPerTrade(pct);
 }
 
 export function pushSignalEvents(events) {

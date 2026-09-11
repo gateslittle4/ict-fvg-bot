@@ -20,11 +20,34 @@
 const SILVER_BULLET_WINDOW = { startHour: 10, endHour: 11 };
 const LONDON_NY_OVERLAP_WINDOW = { startHour: 7, endHour: 10 };
 
+// RISK_PCT_PER_TRADE (2026-09, opt-in, "page réglages" - see HANDOFF.md):
+// the validated backtest value is 0.5, hardcoded below. This env var lets
+// that DEFAULT be overridden durably (survives a restart, same pattern as
+// AUTO_EXECUTE_ALWAYS_ON) without editing this file - set it via Render
+// when the user explicitly asks to change her permanent risk %. The
+// dashboard's own settings card can ALSO change it live for the running
+// process (POST /api/settings/risk, see server.js) - that takes effect
+// immediately but reverts to whichever value boots next (this env var, or
+// the 0.5 default if unset) on the next restart, exactly like the
+// auto-execute toggle's own "pause vs durable default" distinction.
+// Clamped to a sane range - a fat-fingered/misconfigured value here sizes
+// EVERY live position, so this is not a place to trust blindly.
+// Exported so the live setter (store.js's setRiskPctPerTrade(), used by
+// POST /api/settings/risk) enforces the SAME bounds rather than a second
+// hardcoded pair of numbers that could drift from this one.
+export const MIN_RISK_PCT = 0.05;
+export const MAX_RISK_PCT = 2;
+function resolveRiskPctPerTrade() {
+  const raw = Number(process.env.RISK_PCT_PER_TRADE);
+  if (!Number.isFinite(raw) || raw <= 0) return 0.5;
+  return Math.min(Math.max(raw, MIN_RISK_PCT), MAX_RISK_PCT);
+}
+
 export const CONFIG = {
   symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD'],
   timeframe: 'M15',
   risk: {
-    riskPctPerTrade: 0.5,
+    riskPctPerTrade: resolveRiskPctPerTrade(),
   },
   guardrails: {
     maxTradesPerDay: 2,

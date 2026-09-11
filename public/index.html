@@ -9,6 +9,7 @@
      chrome (address bar/tabs). See public/manifest.json + sw.js. -->
 <link rel="manifest" href="/manifest.json" />
 <meta name="theme-color" content="#0b0f14" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -131,6 +132,20 @@
   }
   .meta { color: var(--muted); font-size: 12px; }
 
+  /* ---------- Journal filters + CSV export ---------- */
+  .btn-ghost {
+    text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 11.5px;
+    background: transparent; color: var(--blue); border: 1px solid var(--panel-border-strong);
+    border-radius: 6px; padding: 4px 9px; margin: 0; cursor: pointer;
+  }
+  .btn-ghost:hover { background: rgba(76,158,255,0.1); }
+  .journal-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filter-select {
+    padding: 6px 9px; border-radius: 7px; border: 1px solid var(--panel-border);
+    background: var(--bg-inset); color: var(--text); font-size: 12.5px; font-family: var(--sans);
+  }
+  .filter-select:focus { outline: none; border-color: var(--blue); }
+
   /* ---------- Nav tabs ---------- */
   .topnav { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--panel-border); }
   .topnav a {
@@ -180,6 +195,7 @@
   .result .big { font-size: 26px; font-weight: 800; color: var(--blue); font-family: var(--mono); margin: 4px 0; }
   .warn { color: var(--amber); font-size: 12px; margin-top: 6px; }
   .err { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .win { color: var(--green); }
 
   /* ---------- Live price card (legacy list form, still used) ---------- */
   .price-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; font-family: var(--mono); }
@@ -236,6 +252,17 @@
 
   <div class="ticker" id="prices-body"><div class="ticker-cell"><span class="ticker-sym">Chargement…</span></div></div>
 
+  <!-- Le graphique N'EST PAS intégré ici (revenu en arrière le 2026-09,
+       même session) - essayé un temps en <iframe> depuis chart.html, mais
+       l'utilisatrice a explicitement demandé de le retirer de ce premier
+       onglet : elle ne veut PAS qu'un graphique en chandelles - le visuel le
+       plus reconnaissable "je suis en train de trader" au premier coup
+       d'œil - soit visible sur la page qu'elle garde ouverte au travail.
+       Reste accessible via l'onglet "Graphique" du menu du haut (page à
+       part, jamais affichée par défaut). Ne pas le réintégrer ici sans
+       redemander explicitement - discrétion au travail, pas une préférence
+       esthétique. -->
+
   <div class="card">
     <h2>Garde-fous</h2>
     <div id="guardrail-body">—</div>
@@ -250,6 +277,27 @@
   <div class="card" id="auto-execute-card">
     <h2>Mode indisponible (exécution automatique des entrées)</h2>
     <div id="auto-execute-body">—</div>
+  </div>
+
+  <!-- Réglages (2026-09, 4ème et dernière "feature terminal pro" choisie) -
+       le risque % est réellement modifiable en direct (setRiskPctPerTrade(),
+       effectif immédiatement, voir sa note ci-dessous pour la nuance
+       redémarrage). La liste des symboles est affichée mais PAS modifiable
+       depuis ce site: elle est câblée à la souscription live/au warm-up 90
+       jours au démarrage (cTraderDataSource.js) et aux clés netting/historique
+       de LiveStrategyEngine - la changer sans redémarrer risquerait de
+       désynchroniser le suivi d'une position déjà ouverte. Pas une limite
+       artificielle, une vraie contrainte du câblage actuel. -->
+  <div class="card" id="settings-card">
+    <h2>Réglages</h2>
+    <div class="stat-row"><span class="label">Risque actuel par trade</span><span id="settings-risk-current">—</span></div>
+    <div class="journal-toolbar">
+      <input type="number" id="settings-risk-input" class="filter-select" step="0.05" min="0.05" max="2" placeholder="ex: 0.5" style="width:100px;" />
+      <button type="button" id="settings-risk-save" class="btn-ghost">Enregistrer</button>
+    </div>
+    <div class="meta" id="settings-risk-note" style="margin-top:6px;">Effectif immédiatement sur les prochains signaux (jamais rétroactif) — revient à la valeur par défaut au prochain redémarrage, sauf si tu me demandes de la rendre permanente.</div>
+    <div class="stat-row" style="margin-top:14px;"><span class="label">Symboles actifs</span><span id="settings-symbols-current">—</span></div>
+    <div class="meta">Non modifiable ici — câblé à la connexion live au démarrage (souscription courtier + 90 jours d'historique par symbole). Demande-moi directement pour ajouter/retirer un symbole (redéploiement nécessaire).</div>
   </div>
 
   <div class="grid">
@@ -283,8 +331,27 @@
   </div>
 
   <div class="card">
-    <h2>Journal de trading (7 derniers jours)</h2>
+    <h2 id="journal-heading">Journal de trading<button type="button" id="export-csv-btn" class="btn-ghost" title="Exporter les trades affichés (selon les filtres actifs) en CSV">⬇ CSV</button></h2>
     <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader) — stop/cible non affichés, cTrader ne les garde pas après clôture.</div>
+    <!-- Filtres (2026-09, "un vrai site... filtres + export CSV du journal") -
+         symbole/stratégie filtrent CÔTÉ CLIENT sur les trades déjà reçus (pas
+         de round-trip courtier pour un simple filtre d'affichage) ; la
+         fenêtre en jours EST envoyée au serveur (?days=N sur
+         /api/trade-history) car c'est la borne réelle de la requête
+         ProtoOADealListReq - voir buildJournalFilterOptions()/refreshTradeHistory()
+         plus bas. Les options symbole/stratégie sont reconstruites à partir
+         des trades RÉELLEMENT reçus (pas une liste figée dans ce fichier) -
+         pas de liste à tenir manuellement à jour à chaque nouvelle stratégie
+         ou instrument. -->
+    <div class="journal-toolbar">
+      <select id="filter-days" class="filter-select" title="Fenêtre (limite du courtier: 7 jours max)">
+        <option value="7">7 jours</option>
+        <option value="3">3 jours</option>
+        <option value="1">24 h</option>
+      </select>
+      <select id="filter-symbol" class="filter-select"><option value="">Tous symboles</option></select>
+      <select id="filter-source" class="filter-select"><option value="">Toutes stratégies</option></select>
+    </div>
     <div id="journal-summary" style="margin-bottom:10px;"></div>
     <div id="journal-list"></div>
   </div>
@@ -351,10 +418,16 @@ const sourceLabel = (s) => {
   return 'manuel/inconnu';
 };
 
+// Split fetch (refreshStatus) from render (renderStatus) so the SSE stream
+// below can drive the exact same rendering with a PUSHED payload instead of
+// its own fetch - one rendering code path either way, see the SSE section
+// near the bottom of this script for why.
 async function refreshStatus() {
   const res = await fetch('/api/status');
-  const data = await res.json();
+  renderStatus(await res.json());
+}
 
+function renderStatus(data) {
   const banner = document.getElementById('banner');
   if (data.mode === 'demo') {
     banner.className = 'banner demo';
@@ -396,6 +469,13 @@ async function refreshStatus() {
   }).join('');
 
   renderAutoExecute(data.autoExecute);
+
+  // Réglages (2026-09) - live values only, never overwrites what the user
+  // is actively typing in #settings-risk-input (that field is populated
+  // once at load, see initSettingsCard() below, not on every push/poll -
+  // otherwise a value mid-edit would get clobbered by the next SSE frame).
+  document.getElementById('settings-risk-current').textContent = `${fmt(data.riskPctPerTrade, 2)}%`;
+  document.getElementById('settings-symbols-current').textContent = data.symbols.map((s) => s.symbol).join(' · ');
 }
 
 const reconciliationLabel = {
@@ -481,8 +561,10 @@ function renderAutoExecute(ae) {
 
 async function refreshSignals() {
   const res = await fetch('/api/signals');
-  const data = await res.json();
+  renderSignals(await res.json());
+}
 
+function renderSignals(data) {
   const actionableList = document.getElementById('actionable-list');
   actionableList.innerHTML = data.actionable.length
     ? data.actionable.map((s) => {
@@ -710,41 +792,166 @@ async function refreshTradeLog() {
   }
 }
 
+// Unfiltered trades from the last fetch - the symbol/source filters below
+// re-render from this WITHOUT refetching (pure display filter, see the
+// card's own comment for why only `days` goes to the server).
+let allJournalTrades = [];
+
 async function refreshTradeHistory() {
   const list = document.getElementById('journal-list');
+  const days = document.getElementById('filter-days').value;
   try {
-    const res = await fetch('/api/trade-history');
+    const res = await fetch(`/api/trade-history?days=${encodeURIComponent(days)}`);
     const data = await res.json();
-    const summaryEl = document.getElementById('journal-summary');
-    if (!data.trades || data.trades.length === 0) {
-      summaryEl.innerHTML = '';
-      list.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur les 7 derniers jours.'}</div>`;
+    allJournalTrades = data.trades || [];
+    populateJournalFilterOptions(allJournalTrades);
+    if (allJournalTrades.length === 0) {
+      document.getElementById('journal-summary').innerHTML = '';
+      list.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur cette fenêtre.'}</div>`;
       return;
     }
-    const s = data.summary;
-    const netWin = s.netPnl >= 0;
-    summaryEl.innerHTML = `
-      <div class="stat-row"><span class="label">Trades (7j)</span><span>${s.count}</span></div>
-      <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt(s.winRatePct, 0)}% (${s.wins}/${s.count})</span></div>
-      <div class="stat-row"><span class="label">P&amp;L net</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.netPnl)}</span></div>
-    `;
-    list.innerHTML = data.trades.map((t) => {
-      const d = priceDecimals(t.symbol);
-      const win = t.pnl >= 0;
-      return `
-        <div class="journal-item">
-          <div class="journal-head">
-            <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} <span class="meta">[${sourceLabel(t)}]</span> · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
-            <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
-          </div>
-          ${renderTradeChart(t, d)}
-        </div>
-      `;
-    }).join('');
+    renderJournalList();
   } catch (err) {
     list.innerHTML = `<div class="err">Erreur de chargement du journal: ${err.message}</div>`;
   }
 }
+
+// Rebuilds the symbol/strategy <select> OPTIONS from the trades ACTUALLY
+// present in the current window - not a list hardcoded in this file, so a
+// newly-activated symbol or strategy (Judas Swing/EURUSD, NWOG before it...)
+// shows up here automatically instead of needing a matching update. Keeps
+// the current selection if it's still a valid choice.
+function populateJournalFilterOptions(trades) {
+  const symbolSel = document.getElementById('filter-symbol');
+  const sourceSel = document.getElementById('filter-source');
+  const rebuild = (sel, values, allLabel) => {
+    const prev = sel.value;
+    sel.innerHTML = `<option value="">${allLabel}</option>` +
+      values.map((v) => `<option value="${v}"${v === prev ? ' selected' : ''}>${v}</option>`).join('');
+  };
+  rebuild(symbolSel, [...new Set(trades.map((t) => t.symbol))].sort(), 'Tous symboles');
+  rebuild(sourceSel, [...new Set(trades.map((t) => sourceLabel(t)))].sort(), 'Toutes stratégies');
+}
+
+function filteredJournalTrades() {
+  const symbolFilter = document.getElementById('filter-symbol').value;
+  const sourceFilter = document.getElementById('filter-source').value;
+  return allJournalTrades.filter((t) =>
+    (!symbolFilter || t.symbol === symbolFilter) && (!sourceFilter || sourceLabel(t) === sourceFilter)
+  );
+}
+
+function renderJournalList() {
+  const list = document.getElementById('journal-list');
+  const summaryEl = document.getElementById('journal-summary');
+  const filtered = filteredJournalTrades();
+
+  if (filtered.length === 0) {
+    summaryEl.innerHTML = '';
+    list.innerHTML = '<div class="meta">Aucun trade ne correspond à ces filtres.</div>';
+    return;
+  }
+
+  const wins = filtered.filter((t) => t.pnl >= 0).length;
+  const netPnl = filtered.reduce((sum, t) => sum + t.pnl, 0);
+  const netWin = netPnl >= 0;
+  summaryEl.innerHTML = `
+    <div class="stat-row"><span class="label">Trades</span><span>${filtered.length}</span></div>
+    <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt((wins / filtered.length) * 100, 0)}% (${wins}/${filtered.length})</span></div>
+    <div class="stat-row"><span class="label">P&amp;L net</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(netPnl)}</span></div>
+  `;
+
+  list.innerHTML = filtered.map((t) => {
+    const d = priceDecimals(t.symbol);
+    const win = t.pnl >= 0;
+    return `
+      <div class="journal-item">
+        <div class="journal-head">
+          <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} <span class="meta">[${sourceLabel(t)}]</span> · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
+          <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
+        </div>
+        ${renderTradeChart(t, d)}
+      </div>
+    `;
+  }).join('');
+}
+
+// CSV of whatever's CURRENTLY DISPLAYED (i.e. respects the active filters) -
+// exporting "everything regardless of filters" would be a silent surprise
+// (the button next to a filtered view exporting unfiltered data).
+function exportJournalCsv() {
+  const filtered = filteredJournalTrades();
+  if (filtered.length === 0) return;
+
+  const escapeCsv = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const headers = ['symbole', 'direction', 'stratégie', 'entrée', 'sortie', 'prix_entrée', 'prix_sortie', 'pnl'];
+  const rows = filtered.map((t) => [
+    t.symbol,
+    t.direction === 'bullish' ? 'achat' : 'vente',
+    sourceLabel(t),
+    new Date(t.entryTime).toISOString(),
+    new Date(t.exitTime).toISOString(),
+    t.entryPrice,
+    t.exitPrice,
+    t.pnl,
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `journal-trading-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('filter-days').addEventListener('change', refreshTradeHistory);
+document.getElementById('filter-symbol').addEventListener('change', renderJournalList);
+document.getElementById('filter-source').addEventListener('change', renderJournalList);
+document.getElementById('export-csv-btn').addEventListener('click', exportJournalCsv);
+
+// Réglages - risque % (2026-09). Pre-fills the input ONCE from the first
+// /api/status response (not re-synced on every push/poll - see
+// renderStatus()'s own comment for why) so it starts at the real current
+// value instead of blank, without ever fighting the user mid-edit.
+(async () => {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    document.getElementById('settings-risk-input').value = data.riskPctPerTrade;
+  } catch {
+    // Non-fatal - the input just starts blank, current value is still shown
+    // in #settings-risk-current via the normal renderStatus() flow.
+  }
+})();
+
+document.getElementById('settings-risk-save').addEventListener('click', async () => {
+  const input = document.getElementById('settings-risk-input');
+  const noteEl = document.getElementById('settings-risk-note');
+  const value = parseFloat(input.value);
+  if (!Number.isFinite(value)) {
+    noteEl.innerHTML = '<span class="err">Entre un nombre valide.</span>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/settings/risk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ riskPctPerTrade: value }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+    document.getElementById('settings-risk-current').textContent = `${fmt(data.riskPctPerTrade, 2)}%`;
+    noteEl.innerHTML = `<span class="win">✓ Changé à ${fmt(data.riskPctPerTrade, 2)}% (effectif immédiatement, jusqu'au prochain redémarrage).</span>`;
+  } catch (err) {
+    noteEl.innerHTML = `<span class="err">${err.message}</span>`;
+  }
+});
 
 document.getElementById('calc-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -778,14 +985,47 @@ document.getElementById('calc-form').addEventListener('submit', async (e) => {
   }
 });
 
+// Temps réel (2026-09): a single EventSource replaces the two fastest polls
+// (status + signals, previously 3s each) with a server push every 1s (see
+// GET /api/stream in server.js) - same renderStatus()/renderSignals()
+// functions, just fed a pushed payload instead of a fetched one, so there is
+// only ever one rendering code path to keep correct. Falls back to the old
+// 3s polling automatically if the stream never opens or drops (a proxy that
+// buffers/kills long-lived connections, a network blip) - the dashboard
+// keeps working either way, just less snappy on the fallback path.
+function startLiveStream() {
+  let fallbackTimers = null;
+  const startFallbackPolling = () => {
+    if (fallbackTimers) return; // already polling - don't stack a second pair of intervals
+    fallbackTimers = [setInterval(refreshStatus, 3000), setInterval(refreshSignals, 3000)];
+  };
+  const stopFallbackPolling = () => {
+    if (!fallbackTimers) return;
+    fallbackTimers.forEach(clearInterval);
+    fallbackTimers = null;
+  };
+
+  const es = new EventSource('/api/stream');
+  es.onmessage = (event) => {
+    stopFallbackPolling(); // a message arrived - the stream is alive, no need for the safety net right now
+    const payload = JSON.parse(event.data);
+    renderStatus(payload.status);
+    renderSignals(payload.signals);
+  };
+  es.onerror = () => {
+    // EventSource retries the connection on its own - this only covers the
+    // gap while it's down (or if this browser/proxy can't do SSE at all).
+    startFallbackPolling();
+  };
+}
+
 refreshStatus();
 refreshSignals();
 refreshTradeHistory();
 refreshRecentPerformance();
 refreshTradeLog();
 refreshAccount();
-setInterval(refreshStatus, 3000);
-setInterval(refreshSignals, 3000);
+startLiveStream();
 setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
 setInterval(refreshRecentPerformance, 120000); // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
 setInterval(refreshTradeLog, 60000); // grows one row per resolved trade, no meaningful reason to poll faster

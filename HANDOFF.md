@@ -846,3 +846,120 @@ Nouveau concept ICT recherché et testé à la suite de l'activation de Judas Sw
 **Vérifié avec Playwright** (route interception sur `/api/trade-log` avec des données de test réalistes, car l'environnement de développement n'a pas de vraies données Supabase) contre le vrai serveur, desktop (1280px) ET mobile (390px) : rendu propre, zéro erreur console, tuiles/courbe/tableau lisibles aux deux largeurs, `<title>`/`<h1>` confirmés "Apex FVG". 324/324 tests unitaires (5 nouveaux). Fichiers touchés : `src/dataSources/supabaseTradeLog.js`, `public/index.html`, `public/chart.html`, `public/manifest.json`, `test/supabaseTradeLog.test.js`.
 
 **Non fait dans cette session (hors scope demandé)** : les icônes PWA elles-mêmes n'ont pas été redessinées (déjà neutres, pas besoin) ; aucune régression sur `/api/status`/`/api/recent-performance`/le reste du dashboard (aucune de leurs routes ni leur JS n'a été touchée).
+
+## Site "terminal pro" — 4 features choisies par l'utilisatrice, 2026-09-11
+
+À sa demande explicite ("un vrai site comme ça, style terminal trading pro"), 4 axes choisis via une question à choix multiple (multi-sélection, pas décidé seul) : temps réel, graphique intégré à l'accueil, filtres+export CSV du journal, page réglages. Traités dans cet ordre, chacun testé/déployé/vérifié avant de passer au suivant.
+
+**1. Temps réel** — `GET /api/stream` (SSE) remplace le polling 3s de `/api/status`+`/api/signals` par un push serveur toutes les secondes (intervalle fixe côté serveur, pas d'`emit()` câblé dans chaque point de mutation — bien moins d'endroits où se tromper). Repli automatique sur l'ancien polling si le flux ne s'ouvre pas/tombe. Confirmé en prod : CPU/mémoire stables, aucune erreur, aucune fuite.
+
+**2. Graphique intégré → ESSAYÉ PUIS RETIRÉ, à ne pas refaire sans redemander** : intégré dans une `<iframe>` sur l'accueil, déployé, puis l'utilisatrice a changé d'avis immédiatement en le voyant en direct : **elle ne veut PAS qu'un graphique en chandelles soit visible sur la page qu'elle garde ouverte au travail** — discrétion, pas une question de goût. Retiré le jour même. `chart.html` reste une page à part (onglet "Graphique"), jamais affichée par défaut — c'est la seule place où le graphique existe désormais. Les correctifs faits au passage restent (palette resynchronisée sur le thème "Apex FVG", bouton EURUSD ajouté — manquait depuis l'activation de Judas Swing, favicon ajouté sur les deux pages).
+
+**3. Filtres + export CSV** — carte "Journal de trading" : filtres symbole/stratégie (client-side, sur les trades déjà reçus) + fenêtre en jours (`?days=N` sur `/api/trade-history`, envoyé au serveur car c'est la vraie limite du courtier). Les options de filtre se reconstruisent depuis les trades RÉELLEMENT reçus, pas une liste figée dans le fichier — leçon tirée du bug EURUSD manquant sur `chart.html` (une liste codée en dur se désynchronise silencieusement). Export CSV respecte les filtres actifs.
+
+**4. Page réglages** — carte "Réglages" sur le dashboard (pas de nouvel onglet). Risque % par trade **réellement modifiable en direct** (`POST /api/settings/risk` → `setRiskPctPerTrade()`, bornes 0.05-2% imposées côté serveur, jamais fait confiance à l'entrée brute) : effectif immédiatement sur les prochains signaux, mais **revient à la valeur par défaut au redémarrage** sauf si `RISK_PCT_PER_TRADE` est posée comme variable d'environnement (même schéma que `AUTO_EXECUTE_ALWAYS_ON`) — nuance affichée explicitement dans l'interface, pas cachée. Liste des symboles affichée en LECTURE SEULE : câblée à la souscription live/au warm-up 90 jours au démarrage (`cTraderDataSource.js`) et aux clés netting/historique de `LiveStrategyEngine` — la changer à chaud risquerait de désynchroniser le suivi d'une position déjà ouverte. Pas une limite artificielle posée par manque de temps ; une vraie contrainte du câblage actuel, à ne pas contourner avec une fausse UI qui prétendrait que ça marche.
+
+**Tests** : +4 (`setRiskPctPerTrade` : effet immédiat, rejet des valeurs non-finies, rejet hors bornes en gardant l'ancienne valeur, bornes inclusives). `npm test` : 328/328. Vérifié à chaque étape avec un script Playwright (route interception pour simuler des données réalistes là où le mode démo n'a rien à montrer), captures d'écran inspectées directement, pas juste des assertions.
+
+**Fichiers touchés au total sur ces 4 features** : `src/server.js`, `src/store.js`, `src/config.js`, `src/liveStrategyEngine.js`, `public/index.html`, `public/chart.html`, `test/store.test.js`.
+
+**Reste ouvert** : recherche demandée sur GBPUSD (seul instrument des 5 déjà testés sans AUCUNE stratégie dessus — Judas Swing y a été testé et rejeté ❌) pour ajouter de la fréquence sans diluer le netting déjà occupé ailleurs. Objectif donné par l'utilisatrice : 2-4 trades/semaine max, tous mécanismes confondus. Estimation faite avant de lancer cette recherche (à partir des chiffres déjà mesurés, pas une nouvelle recherche) : FVG+Divergence ~2/semaine + NWOG ~1/semaine + Judas Swing/EURUSD ~1,5-1,7/semaine ≈ **déjà ~4,5-5/semaine au total** — probablement déjà au-dessus de l'objectif une fois l'exécution réellement vivante (voir le bug critique corrigé plus haut). Recommandation donnée : observer les vrais chiffres de production 1-2 semaines avant d'ajouter quoi que ce soit — pas encore tranché avec elle au moment d'écrire cette note.
+
+## NDOG (New Day Opening Gap) testé et rejeté — 2026-09-11, recherche GBPUSD
+
+À la demande explicite d'Esdras d'inventer un concept vraiment nouveau pour GBPUSD, sans faire de data-snooping, après le constat que 9 mécanismes différents (Judas Swing, Asian Range Breakout, Asian Range Fade, Power of Three, Divergence EUR/GBP, MACD, Weekly Liquidity Sweep, NWOG déjà bruit, Breaker Block) avaient déjà été rejetés sur GBPUSD spécifiquement.
+
+**Concept** : NDOG, le sibling quotidien du NWOG déjà en prod sur US100 (même pari sur le comblement d'un gap d'ouverture, mais la pause quotidienne du courtier au lieu de la pause de week-end) — un concept ICT publié listé comme piste "vue mais jamais codée" dans une note antérieure de ce fichier, jamais implémenté avant cette session.
+
+**Discipline anti-data-snooping suivie explicitement** : avant d'écrire une ligne de logique de trading, vérifié l'histogramme RÉEL des écarts de temps entre bougies sur GBPUSD (169 956 écarts normaux de 15min, 586 de 75min, 98 de 135min — une vraie pause quotidienne récurrente d'environ 1h, pas un artefact). Le seuil de détection (1h-3h) a été fixé À PARTIR DE CET HISTOGRAMME, avant d'avoir regardé un seul résultat de trade — jamais ajusté après coup. `src/backtest/ndog.js` réutilise ensuite EXACTEMENT les mêmes conventions que `nwog.js` (comblement du gap, entrée une bougie après, stop à l'extrême de la bougie de gap, cible 1:3, timeout 480 bougies).
+
+**Résultat, obtenu en un seul passage, aucun paramètre retouché après coup** :
+
+| Symbole | Train (n / exp) | Test (n / exp) | Verdict |
+|---|---|---|---|
+| US100 | 1032 / -0.10R | 315 / 0.03R | ⚠️ affaibli |
+| US500 | 884 / -0.09R | 274 / -0.22R | ❌ ne tient pas |
+| XAUUSD | 511 / -0.16R | 249 / -0.29R | ❌ ne tient pas |
+| EURUSD | 245 / 0.09R | **1** / 2.74R | ❓ pas assez de trades |
+| GBPUSD | 219 / -0.25R | **2** / -1.08R | ❓ pas assez de trades |
+
+**Rejeté partout où le nombre de trades permet de juger.** Constat honnête supplémentaire, pas une excuse pour retenter : sur EURUSD ET GBPUSD, le nombre de trades train (219-245) s'effondre à presque zéro en test (1-2) — la pause quotidienne d'environ 1h semble avoir structurellement disparu des données forex (EURUSD/GBPUSD) à partir de 2024, alors qu'elle reste présente sur les indices/l'or (US100/US500/XAUUSD, où le volume train/test reste proportionnel). Probablement un changement côté fournisseur de données pour les paires forex majeures, pas un signal de trading — mais ça veut dire que même si le mécanisme avait eu un edge, il ne serait plus exploitable sur EURUSD/GBPUSD aujourd'hui vu qu'il ne se déclenche presque plus.
+
+**Conclusion sur la recherche GBPUSD dans son ensemble** : 10 mécanismes désormais testés sur GBPUSD (les 9 précédents + NDOG), tous rejetés ou bruit. Aucune piste restante identifiée qui ne soit pas déjà une redite d'un mécanisme déjà écarté. Recommandation inchangée : ne pas continuer à chercher sur GBPUSD spécifiquement (risque de faux positif par comparaisons multiples qui augmente), revenir au plan déjà proposé — observer les vrais chiffres de fréquence en production 1-2 semaines avant d'ajouter quoi que ce soit.
+
+**Fichiers** : `src/backtest/ndog.js` (nouveau, 10 tests unitaires), `test/ndog.test.js`, `scripts/runNdogStrategyAnalysis.js`, `data/backtest-input/ndog-strategy-analysis.md`. **Non activé en production** — recherche uniquement, comme demandé. `npm test` : 338/338 (328 + 10 nouveaux).
+
+## RSI(2) Connors (non-ICT, déjà validé) étendu à GBPUSD — 2026-09-11, suite recherche GBPUSD
+
+À la demande explicite d'Esdras ("t'as pas d'autre stratégie autre que ICT à tester ?"), après 10 concepts ICT rejetés sur GBPUSD. Contrairement aux 10 précédents, celui-ci n'est PAS un nouveau concept inventé pour l'occasion : **RSI(2) Connors (mean-reversion, Larry Connors 2004) est le SEUL mécanisme non-ICT déjà VALIDÉ dans ce projet** (tient sur US100/US500), explicitement noté plus haut dans ce fichier comme "à garder en réserve pour un FUTUR nouvel instrument, pas à empiler sur US100/US500 déjà occupés" — GBPUSD est exactement ce scénario (aucune autre stratégie dessus).
+
+**Zéro paramètre modifié pour ce test** : `scripts/runRsiMeanReversionAnalysis.js` avait `SYMBOLS = ['US100', 'US500']` — ajout d'une seule ligne (`GBPUSD`), aucune règle touchée (EMA200 filtre de tendance, RSI(2)<5/>95, stop 2xATR(14), sortie SMA(5)/10 jours max — toutes des conventions publiées de Connors, jamais retouchées).
+
+**Résultat** :
+
+| Symbole | Train (n / WR / PF / exp) | Test (n / WR / PF / exp) | Verdict |
+|---|---|---|---|
+| US100 | 176 / 71.0% / 1.52 / 0.12R | 54 / 70.4% / 1.38 / 0.09R | ✅ tient (déjà connu) |
+| US500 | 181 / 64.6% / 1.29 / 0.07R | 58 / 63.8% / 1.26 / 0.07R | ✅ tient (déjà connu) |
+| **GBPUSD** | 171 / 59.1% / **0.96** / **-0.01R** | 60 / 63.3% / 1.62 / **0.12R** | **⚠️ affaibli** |
+
+**GBPUSD ne tient PAS non plus** — profit factor train sous 1 (0.96), espérance train quasi nulle/négative (-0.01R), alors que le test est positif (0.12R). C'est exactement la signature "train qui ne passe pas la barre, test positif" que ce projet traite systématiquement comme du bruit plutôt qu'un edge réel (même remarque déjà faite ailleurs dans ce document pour d'autres candidats similaires) — pas rejeté aussi nettement que les 10 précédents, mais pas un signal fiable non plus.
+
+**Bilan GBPUSD mis à jour : 11 mécanismes testés (10 ICT + 1 non-ICT déjà validé ailleurs), AUCUN ne tient proprement.** Même le meilleur mécanisme disponible dans tout ce projet (RSI(2) Connors, edge réel et répété sur 2 autres instruments) ne passe pas la barre sur GBPUSD. Signal cumulatif maintenant très fort : cette paire semble structurellement ne pas porter d'edge exploitable dans ce système, peu importe la famille de mécanisme (ICT ou non, retournement, continuation, tendance, mean-reversion, gap). Recommandation réaffirmée avec plus de conviction : abandonner la recherche sur GBPUSD spécifiquement.
+
+**Fichier** : `scripts/runRsiMeanReversionAnalysis.js` (SYMBOLS étendu), `data/backtest-input/rsi-mean-reversion-analysis.md` (régénéré). Pas de nouveau module (`src/backtest/`) ni de nouveaux tests — script exploratoire ponctuel, même convention que les autres `scripts/run*StrategyAnalysis.js` non câblés en live. `npm test` : 338/338 (inchangé, seule une ligne de SYMBOLS a changé dans un script, aucune logique testée touchée).
+
+## Bilan de fin de session — 2026-09-11, site terminal pro + recherche GBPUSD
+
+Session qui a repris directement sur l'investigation du bug critique du flux live (voir section dédiée plus haut), puis enchaîné sur plusieurs demandes explicites d'Esdras. Elle a annoncé changer de session — état exact laissé :
+
+1. **Site "terminal pro" — les 4 features choisies sont TOUTES déployées et confirmées en prod** (voir section dédiée plus haut pour le détail complet) : temps réel (SSE), filtres+export CSV du journal, page réglages (risque % live-éditable). Le graphique intégré a été essayé puis **retiré définitivement de l'accueil à sa demande explicite** (discrétion au travail — ne pas le réintégrer sans redemander).
+2. **Recherche GBPUSD — conclusion : abandonnée, avec de bonnes raisons documentées.** 11 mécanismes testés au total (10 concepts ICT + RSI(2) Connors, la seule stratégie non-ICT déjà validée ailleurs dans ce projet) — **aucun ne tient sur GBPUSD**, y compris le meilleur mécanisme disponible dans tout le projet. Signal cumulatif jugé assez fort pour recommander d'arrêter de chercher sur cette paire spécifiquement (voir les 3 sections dédiées plus haut : Judas Swing+9 autres, NDOG, RSI(2) Connors/GBPUSD).
+3. **Nouvelle direction proposée et en attente d'action de sa part : USDJPY** (ou AUDUSD en alternative) comme 6ᵉ instrument — vraie diversification (pas de corrélation USD/EUR/GBP), paire la plus utilisée par la communauté ICT elle-même, fuseau horaire Tokyo qui correspond naturellement à la session asiatique déjà utilisée dans ce projet. **Bloqué sur une action d'Esdras** : elle doit télécharger l'historique M15 2019-2025 sur **histdata.com** (source confirmée par la convention de fuseau horaire "HistData" déjà câblée dans le code, `FIXED_EST_TO_UTC_OFFSET_MS`) et partager le CSV — rien à faire côté code tant que ce fichier n'est pas fourni.
+
+**État du dépôt à la fin de cette session** : `claude/lire-handoff-hxisa5` (branche que Render déploie) à jour, working tree propre, `npm test` 338/338, dernier déploiement Render confirmé `live` sans erreur.
+
+**Priorité n°1 pour la prochaine session** : lire ce fichier en entier, puis vérifier si Esdras a fourni un CSV USDJPY/AUDUSD — si oui, lancer la recherche dessus (même discipline train/test que partout ailleurs, décider les paramètres AVANT de regarder les résultats). Si non fourni, ne pas relancer la recherche GBPUSD sans qu'elle le redemande explicitement — la conclusion "abandonnée" est documentée et argumentée, pas un oubli.
+
+## FundingPips Zero simulé — le combo validé bustait 2 fois sur 7 ans (vs jamais sous FTMO 1-Step) — 2026-09-11
+
+À la demande explicite d'Esdras ("check funding pip zero model pour voir si le bot se serait fonctionner"). **⚠ Règles NON vérifiées à la source primaire** — `fundingpips.com` et `help.fundingpips.com` étaient bloqués par la politique réseau de cette session (confirmé après plusieurs tentatives WebFetch directes), donc les règles utilisées viennent de deux recherches web indépendantes qui convergent, pas d'une lecture officielle. **À reconfirmer avant toute décision réelle.**
+
+**Règles modélisées** : pas de cible de profit (financement instantané) ; perte max **TRAILING 5%** depuis le plus haut solde (nettement plus strict que le 10% de FTMO 1-Step déjà validé), plafonnée au solde de départ une fois ce seuil dépassé (interprétation de "locks at the starting size" — elle-même non vérifiée) ; perte quotidienne max 3% (notre garde-fou à 2% reste plus strict, pas de souci) ; **nouveauté testée : limite de risque ouvert total à 1% du solde, tous symboles confondus** (jamais vérifiée avant sur ce bot).
+
+**Résultat, même combo déjà validé (FVG US100+US500+XAUUSD + Divergence US100/US500, netting)** :
+
+| Année | Busté (-5% trailing) ? | Risque ouvert max |
+|---|---|---|
+| 2019 | non | ~1.00% |
+| 2020 | non | ~1.00% |
+| **2021** | **OUI (2021-07-06)** | ~1.00% |
+| **2022** | **OUI (2022-03-21)** | ~0.50% |
+| 2023 | non | ~1.01% |
+| 2024 (test) | non | ~1.00% |
+| 2025 (test) | non | ~1.00% |
+
+**Deux constats, l'un rassurant, l'autre pas** :
+1. **La limite de risque ouvert à 1% n'est PAS un problème structurel** : malgré jusqu'à 4 positions théoriquement simultanées possibles (FVG x3 + Divergence, une par instrument sous le netting), le risque ouvert réel observé reste collé à ~1.00-1.01% (jamais 1.5-2%) — en pratique, au plus 2 positions coïncident réellement, jamais plus.
+2. **Le trailing à 5% (au lieu de 10% chez FTMO 1-Step) fait vraiment sauter le compte** : 2 années sur 7 bustées (2021, 2022 — toutes deux en TRAIN, pas un mauvais tirage isolé sur le test), contre ZÉRO bust sur les 7 mêmes années sous FTMO 1-Step avec le même combo, même risque par trade (0.5%). La marge de manœuvre est directement proportionnelle à la largeur du trailing — diviser le trailing par 2 a fait passer le taux de bust de 0% à ~29% des années testées, sans changer un seul paramètre de stratégie.
+
+**Conclusion pratique** : avec la config actuelle (0.5% de risque par trade, aucune réduction dynamique), **ce combo ne serait probablement PAS adapté à un compte FundingPips Zero tel quel** — il faudrait soit réduire le risque par trade (le sizing par volatilité déjà exploré plus haut dans ce document, jamais activé, redevient pertinent ici), soit un frein sur drawdown, avant d'y risquer un vrai compte Zero. **Pas encore décidé avec Esdras** — priorité avant toute chose : confirmer les règles réelles de FundingPips Zero à la source (le blocage réseau de cette session a empêché une vérification directe).
+
+**Fichier** : `scripts/runFundingPipsZeroAccountImpact.js` (nouveau, adapté de `runFtmo1StepAccountImpact.js`), `data/backtest-input/fundingpips-zero-account-impact.md`. Pas de nouveaux tests (script exploratoire, même convention que les autres `run*AccountImpact.js`). `npm test` : 338/338 (inchangé).
+
+## FundingPips Zero — verdict final : bot actuel NON conforme (news + week-end), suite et clôture — 2026-09-11
+
+Suite directe de la section précédente. Esdras a fourni les vraies règles FundingPips Zero, sourcées (citations directes de `help.fundingpips.com` et `fundingpips.com/zero`), corrigeant/complétant les estimations par recherche web de la section précédente :
+
+- **Perte quotidienne max 3%** (confirmé, notre garde-fou à 2% reste plus strict — OK).
+- **Drawdown trailing 5%, verrouillé au seuil de rentabilité (breakeven) une fois +5% de profit atteint** — confirme exactement l'interprétation déjà simulée dans `runFundingPipsZeroAccountImpact.js`.
+- **Risque max par position : -1% du solde de départ (ou 3% sous 50k$/2% à 50k$+ sur positions corrélées)** — plus nuancé que la simple limite agrégée à 1% déjà simulée, mais notre simulation (risque ouvert réel jamais au-dessus de ~1.00-1.01%) reste une bonne approximation, probablement même large.
+- **⚠️ NOUVEAU, pas modélisé avant, et CRITIQUE : trading autour des news et maintien de position sur le week-end sont STRICTEMENT INTERDITS sur Zero** (pas juste une limite de risque — une interdiction, potentiellement une clôture de compte immédiate).
+
+**Deux vérifications faites contre le bot RÉEL, pas de nouvelles suppositions** :
+1. **Filtre news** : confirmé qu'il n'en existe AUCUN en production (déjà noté ailleurs dans ce fichier — ni `config.js` ni `guardrailEngine.js`). **Non conforme tel quel.**
+2. **Maintien de position sur le week-end** : ajout d'un suivi précis (`spansWeekend()`, vérifie si une date calendaire UTC samedi/dimanche tombe entre l'entrée et la sortie d'un trade) au script de simulation déjà existant, sur le même combo validé (FVG x3 + Divergence). **Résultat : 15-20% des trades traversent un week-end chaque année** (5 à 26 trades selon l'année, sur 24-148 trades/an) — pas un cas rare, un schéma régulier. **Non conforme tel quel.**
+
+**Verdict global, donné directement à Esdras** : le bot actuel ne serait PAS conforme à FundingPips Zero sans changements — deux interdictions strictes enfreintes régulièrement (pas de simple dépassement de risque), plus un profil de trailing drawdown structurellement plus dangereux (2 bust/7 ans déjà mesuré) que ce pour quoi le bot a été conçu et validé (FTMO 1-Step, 10% trailing). Pour rendre le bot compatible avec Zero, il faudrait au minimum : un vrai filtre news, une fermeture forcée des positions avant le week-end, et soit réduire le risque par trade soit ajouter un frein sur drawdown. **Rien codé ici — analyse seulement, à la demande explicite ("juste vérifie si notre bot peut fonctionner avec ces règles"), pas de décision de modifier le bot prise.**
+
+**Fichier** : `scripts/runFundingPipsZeroAccountImpact.js` (ajout de `spansWeekend()`/colonne dédiée), `data/backtest-input/fundingpips-zero-account-impact.md` (régénéré). `npm test` : 338/338 (inchangé).

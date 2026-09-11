@@ -50,7 +50,14 @@ const ATR_PERIOD = 14;
 const STOP_ATR_MULTIPLE = 2;
 const MAX_HOLDING_DAYS = 10; // mean reversion is meant to resolve fast - not a real published Connors rule, added here as a sane safety cap
 const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
-const SYMBOLS = ['US100', 'US500'];
+// GBPUSD added 2026-09-11, at Esdras's explicit request - this strategy was
+// deliberately held back from US100/US500 (already validated there, but
+// "diminishing returns" stacking a 3rd source on instruments already
+// carrying FVG+Divergence, per HANDOFF.md) specifically FOR a future new
+// instrument with room in netting. Zero parameters changed for this
+// addition - every rule above is copied from Connors' published system,
+// unchanged; this only adds a third loop iteration.
+const SYMBOLS = ['US100', 'US500', 'GBPUSD'];
 
 function computeSma(values, period) {
   const sma = new Array(values.length).fill(null);

@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONFIG, isLiveConfigured, getConfiguredPlatform } from './config.js';
-import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive, MAX_AUTO_EXECUTE_HOURS } from './store.js';
+import { CONFIG, isLiveConfigured, getConfiguredPlatform, MIN_RISK_PCT, MAX_RISK_PCT } from './config.js';
+import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive, MAX_AUTO_EXECUTE_HOURS, setRiskPctPerTrade } from './store.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
 import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
@@ -44,7 +44,10 @@ app.get('/healthz', (req, res) => {
   });
 });
 
-app.get('/api/status', (req, res) => {
+// Shared by GET /api/status (polled fallback / first paint) and the SSE
+// stream below (pushed) - one source of truth for the payload shape so the
+// two paths can never silently drift apart.
+function buildStatusPayload() {
   const guardrailStatus = store.guardrail.getStatus();
   const symbols = CONFIG.symbols.map((symbol) => {
     const last = store.lastCandleBySymbol.get(symbol);
@@ -69,17 +72,40 @@ app.get('/api/status', (req, res) => {
     };
   });
 
-  res.json({
+  return {
     mode: store.mode,
     timeframe: CONFIG.timeframe,
     balance: store.balance,
     guardrail: guardrailStatus,
-    riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
+    // Live value (2026-09, page réglages), not the boot-time CONFIG default -
+    // store.strategyEngine.riskPctPerTrade is what setRiskPctPerTrade()
+    // actually mutates, and the two can differ once someone's changed it
+    // from the dashboard without restarting. CONFIG.risk.riskPctPerTrade
+    // stays the BOOT default (and the RISK_PCT_PER_TRADE env override target)
+    // - see that file's own comment.
+    riskPctPerTrade: store.strategyEngine.riskPctPerTrade,
     symbols,
     liveConfigured: isLiveConfigured(),
     autoExecute: { ...store.autoExecute, active: isAutoExecuteActive() },
     broker: store.broker,
-  });
+  };
+}
+
+// Shared by GET /api/signals and the SSE stream below - same reasoning as
+// buildStatusPayload() above.
+function buildSignalsPayload() {
+  const watching = store.signalLog
+    .filter((e) => e.type === 'watching')
+    .slice(-30)
+    .reverse();
+  return {
+    actionable: getActionableSignals(),
+    watching,
+  };
+}
+
+app.get('/api/status', (req, res) => {
+  res.json(buildStatusPayload());
 });
 
 // "Mode indisponible" - see the comment on store.autoExecute. POST
@@ -99,15 +125,61 @@ app.post('/api/auto-execute', (req, res) => {
   }
 });
 
+// "Page réglages" (2026-09, at the user's request) - changes the LIVE risk %
+// per trade immediately (next signal onward). Does NOT persist across a
+// restart on its own - see config.js's RISK_PCT_PER_TRADE comment. The
+// symbol list is deliberately NOT editable from here (see the settings
+// card's own explanation in index.html): it's wired into warm-up/live
+// subscriptions at boot (cTraderDataSource.js) and netting/history keys
+// (LiveStrategyEngine's constructor), none of which safely re-run without a
+// restart - changing it live risks orphaning an open position's tracking.
+app.post('/api/settings/risk', (req, res) => {
+  try {
+    const { riskPctPerTrade } = req.body || {};
+    setRiskPctPerTrade(riskPctPerTrade);
+    res.json({ riskPctPerTrade: store.strategyEngine.riskPctPerTrade, min: MIN_RISK_PCT, max: MAX_RISK_PCT });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get('/api/signals', (req, res) => {
-  const watching = store.signalLog
-    .filter((e) => e.type === 'watching')
-    .slice(-30)
-    .reverse();
-  res.json({
-    actionable: getActionableSignals(),
-    watching,
+  res.json(buildSignalsPayload());
+});
+
+// SSE push stream (2026-09, "vrai temps réel" - the dashboard used to poll
+// /api/status + /api/signals every 3s; this pushes the same two payloads to
+// every connected client once a second instead, so the ticker/signals feel
+// instant rather than catching up on the next poll tick). A fixed 1s
+// server-side interval rather than wiring an emit() call into every mutation
+// site in cTraderDataSource.js/matchTraderDataSource.js/liveStrategyEngine.js
+// (spot ticks, execution events, warm-up, guardrail updates, auto-execute
+// toggles, ...) - far fewer places to get wrong, and the payload is small
+// (a handful of numbers) so pushing it every second is cheap even against
+// Render's free-tier CPU, especially at the realistic client count here (1).
+// GET, not a dedicated event name, so a plain EventSource('/api/stream')
+// with its default 'message' handler just works - see public/index.html.
+app.get('/api/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    // Disable any intermediary buffering (nginx-style proxies) that would
+    // otherwise hold the first chunk back and defeat the whole point.
+    'X-Accel-Buffering': 'no',
   });
+  res.flushHeaders();
+
+  const send = () => {
+    // A push mid-response-teardown (client just disconnected) would throw
+    // into an unhandled context - res.writableEnded guards against that.
+    if (res.writableEnded) return;
+    res.write(`data: ${JSON.stringify({ status: buildStatusPayload(), signals: buildSignalsPayload() })}\n\n`);
+  };
+  send(); // first paint - don't make the client wait a full second for the initial frame
+  const interval = setInterval(send, 1000);
+
+  req.on('close', () => clearInterval(interval));
 });
 
 // Real broker account picture (equity estimate, real margin used, real open
@@ -134,8 +206,15 @@ app.get('/api/trade-history', async (req, res) => {
   if (store.mode !== 'live' || typeof store.liveDataSource?.getTradeHistory !== 'function') {
     return res.json({ trades: [], reason: 'not connected to a live broker' });
   }
+  // ?days=N (2026-09, dashboard filter) - getTradeHistory() itself already
+  // clamps to 7 (ProtoOADealListReq's own hard cap on the from/to span, see
+  // its own comment), this just parses+validates the query param before
+  // passing it through. Any non-finite/non-positive value falls back to the
+  // function's own default (7) rather than sending NaN/0 downstream.
+  const requestedDays = Number(req.query.days);
+  const days = Number.isFinite(requestedDays) && requestedDays > 0 ? requestedDays : undefined;
   try {
-    const trades = await store.liveDataSource.getTradeHistory();
+    const trades = await store.liveDataSource.getTradeHistory({ days });
     res.json({ trades, summary: summarizeTrades(trades) });
   } catch (err) {
     res.status(502).json({ error: err.message });

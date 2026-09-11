@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setAutoExecute, isAutoExecuteActive, store } from '../src/store.js';
+import { setAutoExecute, isAutoExecuteActive, setRiskPctPerTrade, store } from '../src/store.js';
+import { MIN_RISK_PCT, MAX_RISK_PCT } from '../src/config.js';
 
 const HOUR = 3600 * 1000;
 
@@ -39,4 +40,33 @@ test('setAutoExecute(true, hours) caps the duration at 7 days - a forgotten togg
   const now = 1_000_000_000;
   const result = setAutoExecute(true, 24 * 365, now); // ask for a full year
   assert.equal(result.expiresAt, now + 7 * 24 * HOUR); // capped to 7 days
+});
+
+test('setRiskPctPerTrade: changes the live engine value immediately', () => {
+  setRiskPctPerTrade(0.75);
+  assert.equal(store.strategyEngine.riskPctPerTrade, 0.75);
+  setRiskPctPerTrade(0.5); // restore the default so later tests/other files aren't affected by ordering
+  assert.equal(store.strategyEngine.riskPctPerTrade, 0.5);
+});
+
+test('setRiskPctPerTrade: rejects non-finite input rather than silently clamping', () => {
+  assert.throws(() => setRiskPctPerTrade('0.5'), /finite number/);
+  assert.throws(() => setRiskPctPerTrade(NaN), /finite number/);
+  assert.throws(() => setRiskPctPerTrade(undefined), /finite number/);
+});
+
+test('setRiskPctPerTrade: rejects out-of-bounds values - this number sizes every live order', () => {
+  assert.throws(() => setRiskPctPerTrade(MIN_RISK_PCT - 0.01), /between/);
+  assert.throws(() => setRiskPctPerTrade(MAX_RISK_PCT + 0.01), /between/);
+  assert.throws(() => setRiskPctPerTrade(50)); // the exact fat-finger scenario this guards against
+  // the engine value from the last SUCCESSFUL call above is untouched by a rejected one
+  assert.equal(store.strategyEngine.riskPctPerTrade, 0.5);
+});
+
+test('setRiskPctPerTrade: the bounds themselves are valid, inclusive', () => {
+  setRiskPctPerTrade(MIN_RISK_PCT);
+  assert.equal(store.strategyEngine.riskPctPerTrade, MIN_RISK_PCT);
+  setRiskPctPerTrade(MAX_RISK_PCT);
+  assert.equal(store.strategyEngine.riskPctPerTrade, MAX_RISK_PCT);
+  setRiskPctPerTrade(0.5); // restore
 });
