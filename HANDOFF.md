@@ -2174,3 +2174,30 @@ Esdras a demandé si le réglage 0.5%/0.3% (challenge/live) testé pour CTI s'ap
 **Conclusion** : si un compte CTI est un jour financé, il faudrait un réglage de risque **spécifique à CTI (~0.15%)**, distinct du 0.3% générique utilisé pour FTMO — le système `ACCOUNTS_JSON` le permet déjà (`riskPctPerTrade` est un champ PAR COMPTE, pas seulement dérivé de `ACCOUNT_MODE`), donc architecturalement rien à construire, juste à configurer différemment le jour où un vrai compte CTI existe. Confirme une fois de plus que le mécanisme du plancher (statique vs trailing, et son ampleur) compte plus que l'étiquette "challenge" ou "live".
 
 **Fichiers** : `scripts/runCti1StepAllLiveStrategiesCycleAccountImpact.js` (2 scénarios ajoutés), rapport `.md` mis à jour. Aucun changement dans `src/` — le mécanisme de risque par compte existait déjà, recherche seulement.
+
+## Test de connexion cTrader "ouvrir + fermer une position réelle" — incident + état en cours — 2026-09-12
+
+Esdras : *"Je veux tester ma platform pour la connection"* puis *"vérifie qu'une position peut s'ouvrir et fermer"*. Comme c'est un samedi (marchés forex/indices/métaux fermés), elle a proposé de tester une paire ouverte le week-end.
+
+**Ce qui a été construit** (tout en production, branche `claude/lire-handoff-hxisa5`) :
+- `GET /api/admin/list-symbols` (gated `ADMIN_EXPORT_TOKEN`) — expose la liste COMPLÈTE des ~1002 symboles offerts par ce broker (pas juste les 4 symboles de stratégie), déjà chargée dans `CTraderDataSource.symbolIdByName`. A confirmé la présence de BTCUSD (id 101), ETHUSD, SOLUSD — tradeables le week-end contrairement aux 4 symboles de stratégie.
+- `POST /api/admin/test-order-cycle?symbol=BTCUSD` (même gate) — contourne complètement le moteur de stratégie, parle directement au broker : récupère le `minVolume` RÉEL du symbole via `ProtoOASymbolByIdReq` (jamais deviné), soumet un ordre `MARKET BUY` minimal via `ProtoOANewOrderReq`, attend la confirmation réelle `ORDER_FILLED`, puis ferme via `ProtoOAClosePositionReq` (PAS un ordre inverse — un ordre inverse ne fermerait pas vraiment sur un compte en mode hedging, seulement en netting).
+- `sendCommandWithTimeout` exporté de `cTraderDataSource.js` pour réutilisation.
+
+**⚠️ INCIDENT réel en production** (1er essai, commit `3d83d4b`) : le code utilisait `connection.off(...)` pour désabonner un écouteur d'événement, en supposant une EventEmitter Node standard. La librairie `@reiryoku/ctrader-layer` utilise en réalité un émetteur MAISON (`CTraderLayerEmitter`) sans `.off()` — `.on()` retourne un uuid, le retrait se fait via `removeEventListener(uuid)`. L'erreur `TypeError: ds.connection.off is not a function`, levée dans un callback `setTimeout` brut (hors de la chaîne de promesses que le try/catch de la route pouvait intercepter), **est remontée non interceptée et a fait planter tout le processus du bot en production — deux fois** (une fois par tentative). Render a redémarré automatiquement en quelques secondes à chaque fois, reconnexion cTrader propre confirmée dans les logs, aucune position réelle affectée (compte demo) — mais un vrai incident, documenté honnêtement à Esdras plutôt que minimisé.
+
+**Corrigé** (commit `60e24b0`, déployé et confirmé stable) : la vraie API (`on()` → uuid, `removeEventListener(uuid)`) ; CHAQUE chemin de callback (timeout, event handler, predicate) est maintenant protégé par try/catch — plus rien dans cette fonction ne peut atteindre le processus de façon non interceptée. Ajout de la détection explicite `ORDER_REJECTED`/`CANCELLED`/`EXPIRED` (échec rapide avec raison claire au lieu d'épuiser silencieusement les 15s) et de logs `console.error` à chaque étape.
+
+**État actuel — PAS ENCORE RÉSOLU, prochaine étape pour la session suivante** : 2e essai (après le correctif, celui-ci n'a PAS fait planter le process — le fix a tenu) a renvoyé :
+```json
+{"symbol":"BTCUSD","symbolId":101,"volume":1,"openOrderId":null,"error":"timed out after 15000ms waiting for a matching execution event"}
+```
+Deux points suspects à investiguer avant un 3e essai :
+1. `volume: 1` — le `minVolume` renvoyé par `ProtoOASymbolByIdReq` pour BTCUSD est **1** (soit 0.01 unité en convention "cents" cTrader) — anormalement petit, potentiellement en-dessous du minimum réel praticable du broker, ce qui pourrait expliquer un rejet silencieux.
+2. `openOrderId: null` — la réponse de `ProtoOANewOrderReq` n'a fourni ni `order.orderId` ni `orderId` — soit la forme de réponse réelle diffère de ce qui est deviné dans `_submitOrder`/ce nouvel endpoint (jamais vérifiée contre une vraie réponse, voir les commentaires "VERIFY response shape" déjà présents dans `cTraderDataSource.js` avant cette session), soit l'ordre a été refusé d'une façon qui ne remplit pas ce champ. Avec `openOrderId: null`, le predicate de `waitForExecution` ne pouvait de toute façon jamais matcher un vrai événement (aucun event réel n'aura `orderId === null`) — donc le timeout de 15s était garanti, indépendamment de ce qui s'est réellement passé côté broker.
+
+**Prochaine étape concrète** : avant tout nouvel ordre réel, ajouter les réponses BRUTES (`specRes`, `openRes`) au rapport JSON retourné (pas juste `console.error`, pour éviter d'avoir à fouiller les logs Render) — permettra de voir la vraie forme de `ProtoOANewOrderReq`'s response sans consommer un nouvel essai d'ordre en aveugle. Une fois la vraie forme connue, corriger l'extraction de `openOrderId` en conséquence.
+
+**Le token `ADMIN_EXPORT_TOKEN` a été régénéré** cette session (l'ancien n'était pas connu de cette session) — tout lien admin sauvegardé avant le 2026-09-12 ~21h UTC ne fonctionne plus. Nouvelle valeur connue de cette session seulement, pas notée ici (secret) — la régénérer à nouveau via l'API Render si besoin plutôt que de la chercher.
+
+**Fichiers** : `src/server.js` (2 nouveaux endpoints admin), `src/dataSources/cTraderDataSource.js` (`sendCommandWithTimeout` exporté). `npm test` 413/413 à chaque étape. Tout est déjà sur `claude/lire-handoff-hxisa5` (production) — PAS encore reporté sur `challenge/fundingpips-zero` (branche de recherche), à synchroniser.
