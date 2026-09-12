@@ -89,11 +89,23 @@ export class MultiTouchFvgEngine {
    * @param {number} [opts.maxAgeCandles]
    * @param {(candle: object, zone: object) => boolean} [opts.checkFilters] - from buildMultiTouchFilterPredicate(); defaults to "always pass" (baseline, no filters)
    */
-  constructor({ symbol, maxAgeCandles = DEFAULT_MAX_AGE_CANDLES, checkFilters = () => true } = {}) {
+  /**
+   * @param {number} [opts.minCandlesBeforeEligible] - 2026-09-12, at Esdras's
+   *   explicit request ("ce que je ne considère pas comme un FVG, c'est si
+   *   le prix... retourne dans moins de 15 minutes après - la première
+   *   bougie") - a touch on the very first candle after formation
+   *   (candlesSinceFormed === 1) isn't treated as a real retest at all when
+   *   this is 2: skipped entirely (not even a rejected touch attempt), the
+   *   zone just keeps waiting. Default 1 preserves the original behavior
+   *   (the immediate next candle IS eligible), matching production/
+   *   fvgEngine.js exactly when combined with an always-pass checkFilters.
+   */
+  constructor({ symbol, maxAgeCandles = DEFAULT_MAX_AGE_CANDLES, checkFilters = () => true, minCandlesBeforeEligible = 1 } = {}) {
     if (!symbol) throw new Error('MultiTouchFvgEngine requires a symbol');
     this.symbol = symbol;
     this.maxAgeCandles = maxAgeCandles;
     this.checkFilters = checkFilters;
+    this.minCandlesBeforeEligible = minCandlesBeforeEligible;
     this.history = [];
     this.active = [];
     this._idCounter = 0;
@@ -105,7 +117,8 @@ export class MultiTouchFvgEngine {
 
     for (const fvg of this.active) {
       fvg.candlesSinceFormed += 1;
-      const enteredZone = fvg.direction === 'bullish' ? candle.low <= fvg.top : candle.high >= fvg.bottom;
+      const eligible = fvg.candlesSinceFormed >= this.minCandlesBeforeEligible;
+      const enteredZone = eligible && (fvg.direction === 'bullish' ? candle.low <= fvg.top : candle.high >= fvg.bottom);
 
       if (enteredZone) {
         const zoneRef = { direction: fvg.direction, top: fvg.top, bottom: fvg.bottom };

@@ -99,3 +99,30 @@ test('buildMultiTouchFilterPredicate: session-only config rejects a touch outsid
   assert.equal(predicate(candle(insideWindow, 1, 1, 1, 1), { direction: 'bullish' }), true);
   assert.equal(predicate(candle(outsideWindow, 1, 1, 1, 1), { direction: 'bullish' }), false);
 });
+
+test('minCandlesBeforeEligible=2: a touch on the very first candle after formation is skipped entirely (not even a rejected attempt)', () => {
+  const engine = new MultiTouchFvgEngine({ symbol: 'US100', minCandlesBeforeEligible: 2 });
+  const M15 = 900000;
+  engine.processCandle(candle(0, 100, 101, 99, 100.5));
+  engine.processCandle(candle(M15, 100.5, 105, 100.4, 104.8));
+  engine.processCandle(candle(2 * M15, 104.8, 106, 103, 105.5)); // watching, zone [101,103]
+
+  const e1 = engine.processCandle(candle(3 * M15, 105, 105.5, 102, 102.5)); // low=102 dips in, but this is candlesSinceFormed=1 - must be ignored
+  assert.equal(e1.length, 0);
+  assert.equal(engine.getActiveFvgs()[0].touchAttempts, 0, 'a skipped-as-ineligible touch must not even count as an attempt');
+
+  const e2 = engine.processCandle(candle(4 * M15, 102.5, 103, 102, 102.8)); // candlesSinceFormed=2, now eligible, and still dips in
+  assert.equal(e2.length, 1);
+  assert.equal(e2[0].type, 'validated');
+});
+
+test('minCandlesBeforeEligible=1 (default) matches the original always-eligible behavior', () => {
+  const engine = new MultiTouchFvgEngine({ symbol: 'US100' });
+  const M15 = 900000;
+  engine.processCandle(candle(0, 100, 101, 99, 100.5));
+  engine.processCandle(candle(M15, 100.5, 105, 100.4, 104.8));
+  engine.processCandle(candle(2 * M15, 104.8, 106, 103, 105.5));
+  const events = engine.processCandle(candle(3 * M15, 105, 105.5, 102, 102.5));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'validated');
+});

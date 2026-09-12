@@ -1240,3 +1240,21 @@ Suite directe de la section "multi-contact" ci-dessus. Esdras a précisé sa pos
 **Pas encore décidé/fait** : combiner les deux idées (multi-contact + exclusion bougie immédiate) sur US100 spécifiquement, discuté avec Esdras mais pas encore testé ni codé.
 
 **Fichiers** : `scripts/runFvgFirstCandleAnalysis.js` (nouveau), `data/backtest-input/fvg-first-candle-analysis.md`. Aucun changement sur `src/` — `fvgEngine.js`/`liveStrategyEngine.js` intacts. `npm test` : inchangé (384/384 attendus, 3 flakes `keepAlive.test.js` pré-existants).
+
+## Multi-contact + exclusion bougie immédiate, combinés — n'aide pas, légèrement pire — 2026-09-12, suite
+
+Dernière étape de cette même session de recherche FVG. Esdras a explicitement demandé de combiner les deux idées testées séparément ci-dessus. `MultiTouchFvgEngine` a reçu une nouvelle option `minCandlesBeforeEligible` (2026-09-12, 2 tests) : un contact sur la toute première bougie après formation n'est même plus tenté (ni accepté ni rejeté) quand elle vaut 2, la zone attend simplement — combinée avec le comportement multi-contact déjà existant.
+
+**Résultat (R total, test 2024-2025)** :
+
+| Instrument | Contact unique | Multi-contact seul | Combiné |
+|---|---|---|---|
+| US100 | 55R | **130R** | 118R |
+| US500 | 34R | 44R | 36R |
+| XAUUSD | 25R | 23R | 20R |
+
+**Combiner n'aide sur aucun des 3 instruments — légèrement pire que le multi-contact seul partout.** Explication : l'effet "bougie immédiate = moins bonne" trouvé dans le monde à contact unique était en réalité un proxy indirect du problème que le multi-contact résout directement (une zone qui meurt trop tôt). Une fois le multi-contact appliqué, exclure la bougie immédiate ne fait plus que retirer aussi les bons contacts immédiats, sans rien gagner en échange.
+
+**Conclusion inchangée : multi-contact SEUL sur US100 reste la meilleure option testée.** Décision de déploiement toujours en attente d'Esdras.
+
+**Fichiers** : `src/backtest/fvgMultiTouch.js` (+ `minCandlesBeforeEligible`, 2 tests), `scripts/runFvgCombinedAnalysis.js` (nouveau), `data/backtest-input/fvg-combined-analysis.md`. `npm test` : 386/386 attendus (383/386 vus localement, 3 flakes `keepAlive.test.js` pré-existants inchangés).
