@@ -1475,3 +1475,20 @@ Esdras : "maintenant tu as accès aux données de 7 mois live, dis-moi 8h-12h vs
 **Mais échantillon minuscule** — 9 trades pour 10h-11h sur 7 mois : un seul résultat différent change tout le classement. Pas une preuve indépendante, une confirmation directionnelle cohérente avec l'analyse sur 7 ans, rien de plus.
 
 **Fichiers** : `scripts/runFvgMultiTouchForwardTestWindowAnalysis.js` (nouveau), `data/forward-test-2026/fvg-multi-touch-forward-test-window-analysis.md` (détail complet des trades, fenêtre par fenêtre). Aucun changement `src/`.
+
+## "9 trades ne peuvent pas passer le challenge" — vérification de la fréquence historique, puis 8h-12h + pyramide combinés — 2026-09-12
+
+Esdras a poussé sur le rythme de 10h-11h : "9 trades pour 7 mois, tu vois que c'est bcp toi ? Lol. Sérieux, c'est genre 1 trade par mois. Y a aucun moyen de passer un challenge avec." Vérifié : **9 n'est pas anormal pour cette fenêtre calendaire précise** (6 février → 9 septembre) — même calcul sur chaque année 2019-2025 donne 13/19/14/30/6/21/29 trades, moyenne ~19, minimum 6 (2023). 10h-11h est un signal naturellement rare avec beaucoup de variance, pas un bug de cette période 2026. Mais le point de fond d'Esdras reste vrai : "l'idée c'est de passer le challenge, donc 9 trades ne peuvent pas passer le challenge" — 10h-11h seul n'a jamais été conçu pour être utilisé seul (voir simulation FTMO : ~167 jours de moyenne test).
+
+**Empilé les deux leviers de vitesse déjà validés séparément** (`scripts/runFtmo1StepUS100Only8to12PyramidAccountImpact.js`) : fenêtre 8h-12h + pyramidage, ensemble, pour voir la config la plus rapide testée sur UN SEUL instrument.
+
+| | 10h-11h seul | 8h-12h seul | 8h-12h + pyramide |
+|---|---|---|---|
+| Jours moyens (test 2024-2025) | 167 | 90,5 | 91 (quasi identique à 8h-12h seul) |
+| Drawdown trailing max (7 ans) | 4,7% | 9,3% | **10,2% — busté en 2020** |
+
+**Empiler les deux leviers ne va pas plus vite** (91 jours vs 90,5, essentiellement la même chose), **mais fait sauter la marge de sécurité qui restait** : 2020 dépasse le plafond FTMO de 10% (10,2%). Nuance importante : ce bust arrive le 18 août 2020, alors que le compte avait déjà atteint +10% dès le jour 90 — dans un vrai challenge FTMO, l'évaluation s'arrête à la cible, donc ce bust précis n'aurait probablement pas empêché de passer le challenge lui-même. Mais il montre un vrai risque pour l'étape D'APRÈS (compte financé), si le même style continue sans ajustement.
+
+**Conclusion honnête : empiler 8h-12h et pyramide n'apporte pas de bénéfice net mesurable ici** — même vitesse que 8h-12h seul, plus de risque. Le vrai levier de vitesse reste soit 8h-12h seul (déjà ~46% plus rapide que 10h-11h, jamais busté), soit revenir au combo multi-instruments déjà validé plus tôt dans ce projet (FVG sur 3 instruments + Divergence, ~50 jours de moyenne test, un bust en 7 ans) — pas la fenêtre + le pyramidage combinés sur un seul instrument.
+
+**Fichiers** : `scripts/runFtmo1StepUS100Only8to12PyramidAccountImpact.js`, `scripts/runFvgMultiTouch10to11SeasonalRateAnalysis.js` (nouveaux — le second formalise la vérification saisonnière ci-dessus, faite en ad-hoc puis rejouée proprement), `data/backtest-input/ftmo-1step-us100-only-8to12-pyramid-account-impact.md`, `data/backtest-input/fvg-multi-touch-10to11-seasonal-rate-analysis.md`. Aucun changement `src/` — recherche seulement.
