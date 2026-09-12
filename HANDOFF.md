@@ -1435,3 +1435,27 @@ Esdras, après le schéma "FVG en M15" : "est-ce qu'on doit attendre 10-11h pour
 **Conclusion : garder 10h-11h, ne rien changer.** Aucun changement de config recommandé par cette analyse.
 
 **Fichiers** : `scripts/runFvgMultiTouchWindowAndWeekdayAnalysis.js` (nouveau), `data/backtest-input/fvg-multi-touch-window-weekday-analysis.md`. Aucun changement `src/` — recherche seulement.
+
+## "8h-12h n'est-il pas un meilleur compromis ?" — 2026-09-12
+
+Esdras, sur les résultats ci-dessus : "beaucoup de trades que j'ai pris étaient dans cet intervalle [8h-12h]." Deux vérifications :
+
+**1) Les heures en plus (8h-10h + 11h-12h) sont-elles un vrai edge ou juste de la dilution ?** (`scripts/runFvgMultiTouchResidualWindowAnalysis.js`) — isolé le résidu (trades dans 8h-12h mais PAS dans 10h-11h) : espérance **0.67R train / 1.09R test**, positive des deux côtés, verdict ✅ tient. Ce n'est PAS du bruit — élargir la fenêtre ajoute un vrai deuxième edge, plus faible que le cœur 10h-11h (1.10R/1.40R) mais réel.
+
+**2) Est-ce que ça passe le challenge plus vite en vrai ?** (`scripts/runFtmo1StepUS100Only8to12AccountImpact.js`, simulation de compte complète, identique à la version 10h-11h à part la fenêtre) :
+
+| Année | Jour de passage 10h-11h | Jour de passage 8h-12h | Drawdown trailing max 10h-11h | Drawdown trailing max 8h-12h |
+|---|---|---|---|---|
+| 2019 | **jamais** | jour 213 | 4.5% | 5.8% |
+| 2020 | jour 173 | jour 133 | 4.5% | **9.3%** |
+| 2021 | jour 171 | jour 156 | 2.2% | 5.4% |
+| 2022 | jour 142 | jour 117 | 4.7% | 6.5% |
+| 2023 | jour 301 | jour 198 | 3.9% | 4.0% |
+| 2024 (test) | jour 206 | jour 116 | 3.2% | 4.5% |
+| 2025 (test) | jour 128 | jour 65 | 3.3% | 6.3% |
+
+**8h-12h est plus rapide TOUTES les années sans exception** (passe même 2019, que 10h-11h ne réussit jamais), ~46% plus rapide en moyenne sur les 2 années test (90,5 jours contre 167). **Jamais busté non plus, sur les 7 années.** Mais le coussin de sécurité rétrécit nettement : 2020 atteint 9,3% de drawdown trailing, à seulement 0,7 point du plafond FTMO de 10% — contre un pire cas de 4,7% pour 10h-11h (plus de 2x plus de marge). Un vrai compromis vitesse/sécurité, pas une réponse à sens unique : 8h-12h n'a jamais cassé dans CE backtest précis, mais tourne beaucoup plus près du bord dans sa pire année.
+
+**Décision laissée entièrement à Esdras**, comme pour tous les autres compromis de ce projet.
+
+**Fichiers** : `scripts/runFvgMultiTouchResidualWindowAnalysis.js`, `scripts/runFtmo1StepUS100Only8to12AccountImpact.js` (nouveaux), `data/backtest-input/fvg-multi-touch-residual-window-analysis.md`, `data/backtest-input/ftmo-1step-us100-only-8to12-account-impact.md`. Aucun changement `src/` — recherche seulement, la fenêtre production reste 10h-11h.
