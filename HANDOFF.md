@@ -1593,3 +1593,31 @@ Esdras a demandé la même vérification pour XAUUSD. Différence importante à 
 **Trois instruments, trois résultats différents ce soir** : US100 (compromis vitesse/sécurité assumé, déployé), US500 (pas d'intérêt, laissé tel quel), XAUUSD (semble net positif, en attente de décision) — confirme qu'il fallait bien tester chaque instrument séparément plutôt que supposer.
 
 **Fichiers** : `scripts/runFvgXauusdWindowAnalysis.js`, `scripts/runFtmo1StepXauusdWindowAccountImpact.js` (nouveaux), `data/backtest-input/fvg-xauusd-window-analysis.md`, `data/backtest-input/ftmo-1step-xauusd-window-account-impact.md`. Aucun changement `src/` — recherche seulement, XAUUSD n'est pas touché tant qu'Esdras n'a pas tranché.
+
+## "Fais un test global de toutes les stratégies à la fois" — impact combiné sur un compte 10k — 2026-09-12
+
+Esdras : *"on a plusieurs stratégies ouvertes non? ... fais un test global de toutes qui fonctionnent à la fois et non pour chaque stratégie séparément pour voir l'impact de toutes ces stratégies ouvertes en même temps sur le compte. Compte 10k."* Jusqu'ici chaque script FTMO de cette session testait UNE combinaison à la fois. Nouveau script (`scripts/runFtmoAllLiveStrategiesAccountImpact.js`) qui reproduit EXACTEMENT le scope production actuel au complet dans une seule simulation, netting réel partagé (un seul `openPositions[symbol]`, comme en production), un seul budget de garde-fous — tout lu directement depuis `CONFIG` :
+- FVG : US100 (multi-contact, 8h-12h), US500 (contact unique, 10h-11h), XAUUSD (contact unique, 7h-10h)
+- Divergence (US100/US500), NWOG (US100), Judas Swing (EURUSD)
+
+Priorité identique à `ingestCandle()` quand deux sources visent le même symbole en même temps : FVG, puis Divergence, puis NWOG, puis Judas Swing.
+
+**Résultat, compte $10 000, règles FTMO 1-Step (+10% cible, -10% trailing)** :
+
+| Année | Trades (4 sources) | Busté? | Challenge complété |
+|---|---|---|---|
+| 2019 | 269 | non | jour 79 |
+| 2020 | 221 | **OUI** (2020-09-17) | jour 63 |
+| 2021 | 228 | **OUI** (2021-10-04) | jour 137 |
+| 2022 | 319 | non | jour 64 |
+| 2023 | 303 | non | jour 194 |
+| 2024 (test) | 146 | **OUI** (2024-07-11) | jour 24 |
+| 2025 (test) | 333 | non | jour 37 |
+
+**Vitesse** : challenge complété en 24 à 194 jours (moyenne ~85j) — nettement plus vite que n'importe quelle stratégie isolée testée cette session, logique puisque le compte cumule le rythme des 4 sources (146 à 333 trades/an contre ~9-133 pour US100 FVG seul selon la fenêtre).
+
+**Risque, le vrai point de la question** : 3 années sur 7 finissent BUSTÉES (-10% trailing), dont 2024 (année test) — qui buste au jour 24, alors même que le challenge y est déjà complété (la simulation continue de trader après le +10%, comme partout ailleurs cette session — donc ce n'est pas un "raté" du challenge, mais un vrai signal que le risque combiné reste élevé même après l'avoir passé). Aucun test isolé cette session (FVG seul, FVG+Divergence, une fenêtre horaire) ne bustait quasiment jamais à 0.5%/trade. La cause identifiée : `CONFIG.guardrails` (maxTradesPerDay=2, dailyLossLimitPct=2%) limite les NOUVELLES entrées par jour, mais ne plafonne PAS le nombre de positions ouvertes EN MÊME TEMPS sur des symboles différents — une position peut rester ouverte jusqu'à ~5 jours (480 bougies M15), donc jusqu'à 4 positions (US100+US500+XAUUSD+EURUSD) peuvent être ouvertes simultanément, chacune à 0.5% de risque — c'est l'empilement de risque simultané sur plusieurs symboles décorrélés qui fait le bust, pas une dégradation d'edge.
+
+**Implication pratique, non tranchée** : tel que configuré aujourd'hui, le système combiné passerait un challenge beaucoup plus vite qu'avec FVG seul, mais avec un risque de busted réel (43% des années testées). Deux leviers concrets, non testés ici : réduire le risque par trade (0.3-0.4% au lieu de 0.5%), ou plafonner le nombre de positions ouvertes simultanément tous symboles confondus. Aucun changement fait dans `src/` — résultat présenté à Esdras pour décision.
+
+**Fichiers** : `scripts/runFtmoAllLiveStrategiesAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-all-live-strategies-account-impact.md`. Aucun changement `src/` — recherche seulement.
