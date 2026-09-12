@@ -1806,3 +1806,23 @@ Question directe et légitime d'Esdras après la Phase 2 : les règles des 3 pro
 - **Découverte non codée** : FundingPips propose aussi des programmes "2 Step Pro" et "2 Step Flex" (cibles 6%/6%, limites plus serrées) — pas ajoutés, à faire si Esdras les veut.
 
 **Fichiers** : `src/propFirms/ftmo.js`, `fundingPips.js`, `goatFundedTrader.js` — commentaires de sourcing mis à jour avec la date/méthode de vérification, `profitSplit` de FTMO 2-Step rempli (0.8), règles week-end/consistance de FundingPips Zero ajoutées. Aucun changement de logique — mêmes chiffres qu'avant pour tout ce qui est déjà appliqué (garde-fous), juste des champs documentaires en plus/confirmés. `npm test` 410/410 inchangé.
+
+## "Si on code la partie FundingPips, comment ça se comporterait?" — analyse préliminaire — 2026-09-12
+
+Suite directe du verdict "non conforme tel quel" de la veille. Esdras a demandé une simulation réelle (pas juste une mesure) de l'effet de coder la fermeture forcée avant le week-end. Nouveau script `scripts/runFundingPipsZeroComplianceAnalysis.js` — contrairement à l'ancien `runFundingPipsZeroAccountImpact.js` (config datée : contact unique, fenêtres 10h-11h/7h-10h, sans NWOG/Judas Swing), celui-ci lit la config de PRODUCTION ACTUELLE (`src/config.js` directement : US100 multi-contact 8h-12h, US500 10h-11h, XAUUSD 8h-12h, Divergence, NWOG, Judas Swing) et **code réellement** la fermeture forcée avant le week-end (au lieu de juste la détecter) — un vrai changement de comportement simulé, testé à 3 niveaux de risque contre les vraies règles Zero.
+
+**Résultat, taux de bust par niveau de risque (5% trailing verrouillé au solde de départ)** :
+
+| Risque | Années bustées | Fermetures forcées week-end (7 ans) | Chevauchements NFP détectés (plancher) |
+|---|---|---|---|
+| 0.5%/trade | 2/7 (2020, 2023 — bust rapide, <20-70 trades, séries perdantes précoces) | 87 | 67 |
+| 0.3%/trade | 1/7 (2023 seulement) | 110 | 91 |
+| **0.25%/trade** | **0/7 — jamais busté** | 129 | 95 |
+
+**Découverte importante en plus du bust** : la limite de risque ouvert total de Zero (1%, tous symboles confondus) est massivement dépassée à 0.5% et 0.3% — jusqu'à **2.00% (dépassé 1245 fois en une seule année)** à 0.5%, car jusqu'à 4 positions (US100+US500+XAUUSD+EURUSD) peuvent être ouvertes en même temps. **À 0.25%/trade, le risque ouvert max reste pile à 1.00% (4 × 0.25%)** — cohérent avec le fait que ce soit aussi le seul niveau qui ne buste jamais : 0.25% résout les DEUX problèmes en même temps, pas une coïncidence.
+
+**Ce qui n'est PAS testé ici** : le filtre news. Seul un chevauchement avec le NFP (premier vendredi du mois, 8h-9h NY — le seul motif public fixe qui ne demande aucun calendrier externe) est compté, à titre de PLANCHER seulement (~95 sur 7 ans à 0.25%, soit ~13.6/an). CPI, FOMC, PPI et le reste ne sont pas comptés — l'exposition réelle à la règle news (rupture immédiate de compte sur Zero) est plus élevée que ce chiffre. Une vraie mise en conformité demanderait un calendrier économique réel (source externe à choisir), pas fabriqué de mémoire.
+
+**Conclusion préliminaire** : coder la fermeture forcée avant le week-end est faisable et mesurable — à 0.25%/trade, le combo actuel au complet survit aux 7 années testées sous les règles de drawdown ET de risque ouvert de Zero. Le vrai chantier restant avant de pouvoir utiliser Zero en toute sécurité reste le filtre news (calendrier économique réel), pas encore commencé. **Rien codé dans `src/`** — script de recherche seulement, aucune décision de déploiement prise.
+
+**Fichiers** : `scripts/runFundingPipsZeroComplianceAnalysis.js` (nouveau), `data/backtest-input/fundingpips-zero-compliance-analysis.md`. `npm test` : 410/410 (inchangé).
