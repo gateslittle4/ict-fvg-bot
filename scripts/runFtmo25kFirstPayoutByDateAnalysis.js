@@ -408,8 +408,12 @@ function main() {
   const median = days.length ? days[Math.floor(days.length / 2)] : null;
   const mean = days.length ? days.reduce((s, d) => s + d, 0) / days.length : null;
 
-  const DEADLINE_DAYS = Math.round((Date.parse('2026-12-01T00:00:00Z') - Date.parse('2026-09-12T00:00:00Z')) / DAY_MS);
+  const TODAY = Date.parse('2026-09-12T00:00:00Z');
+  const DEADLINE_DAYS = Math.round((Date.parse('2026-12-01T00:00:00Z') - TODAY) / DAY_MS);
   const within = (n) => done.filter((a) => a.totalDays <= n).length;
+  // Esdras (follow-up): "et si on compte début janvier alors?" - same
+  // distribution, compared against a later candidate deadline too.
+  const JAN_DEADLINE_DAYS = Math.round((Date.parse('2027-01-05T00:00:00Z') - TODAY) / DAY_MS);
 
   const md = [];
   md.push('# FTMO 1-Step $25k → premier retrait de $500 — combien de temps ça prend vraiment?');
@@ -438,24 +442,31 @@ function main() {
   md.push(`- Plus rapide : ${days.length ? Math.round(days[0]) + ' jours' : '—'}`);
   md.push(`- Plus lent (parmi ceux qui ont fini) : ${days.length ? Math.round(days[days.length - 1]) + ' jours' : '—'}`);
   md.push('');
-  md.push(`## La question directe : le 1er décembre, c'est dans ${DEADLINE_DAYS} jours à partir d'aujourd'hui (12 sept. 2026)`);
+  md.push(`## La question directe : le 1er décembre (${DEADLINE_DAYS}j) vs début janvier (${JAN_DEADLINE_DAYS}j), à partir d'aujourd'hui (12 sept. 2026)`);
   md.push('');
-  md.push('| Seuil (jours) | % des points de départ qui y arrivent |');
-  md.push('|---|---|');
-  for (const n of [30, 45, 60, DEADLINE_DAYS, 90, 120, 150]) {
+  md.push('| Seuil (jours) | Date approximative | % des points de départ qui y arrivent |');
+  md.push('|---|---|---|');
+  const namedThresholds = [
+    [30, null], [45, null], [60, null], [DEADLINE_DAYS, '1er décembre'], [90, null],
+    [JAN_DEADLINE_DAYS, 'début janvier (5 jan.)'], [120, null], [150, null],
+  ];
+  for (const [n, label] of namedThresholds) {
     const pctWithin = attempts.length ? ((within(n) / attempts.length) * 100).toFixed(0) : '—';
-    md.push(`| ${n}${n === DEADLINE_DAYS ? ' (= 1er décembre)' : ''} | ${pctWithin}% |`);
+    md.push(`| ${n} | ${label ?? '—'} | ${pctWithin}% |`);
   }
   md.push('');
   const pctDeadline = attempts.length ? ((within(DEADLINE_DAYS) / attempts.length) * 100).toFixed(0) : '0';
+  const pctJan = attempts.length ? ((within(JAN_DEADLINE_DAYS) / attempts.length) * 100).toFixed(0) : '0';
   md.push(
-    `**Verdict : environ ${pctDeadline}% des points de départ historiques testés atteignent $500 net en main en ` +
-      `${DEADLINE_DAYS} jours ou moins.** ${Number(pctDeadline) >= 50
-        ? "C'est un objectif réaliste (plus probable qu'improbable), pas garanti."
-        : "C'est un objectif TENDU (moins probable qu'improbable) avec cette config précise - possible dans un scénario favorable, mais PAS le cas moyen/attendu."} ` +
+    `**1er décembre : ~${pctDeadline}% des points de départ testés y arrivent** ${Number(pctDeadline) >= 50
+        ? "(réaliste, plus probable qu'improbable) - pas garanti."
+        : "(TENDU, moins probable qu'improbable avec cette config) - possible dans un scénario favorable, pas le cas moyen."} ` +
+      `**Début janvier (${JAN_DEADLINE_DAYS} jours au total) : ~${pctJan}%** ` +
+      `${Number(pctJan) >= 50 ? "- ça repasse au-dessus de 50%, donc devient l'issue la PLUS probable plutôt que l'exception." : "- toujours pas garanti, mais nettement mieux."} ` +
       "Le facteur qui domine le calendrier est presque toujours la VITESSE DE PASSAGE DU CHALLENGE (très variable " +
       "d'un point de départ à l'autre) plus que la phase live elle-même (14 jours minimum + accumulation du " +
-      "profit, plus stable une fois financé)."
+      "profit, plus stable une fois financé) - chaque semaine de marge en plus profite surtout à absorber une " +
+      "évaluation qui prend plus de temps que la moyenne, pas un ralentissement en phase live."
   );
   md.push('');
   md.push('## Ce qui améliore concrètement les chances de tenir la date');
@@ -482,7 +493,7 @@ function main() {
   const outMd = path.join(dir, 'ftmo-25k-first-payout-by-date-analysis.md');
   fs.writeFileSync(outMd, md.join('\n'));
   console.log(`Wrote ${outMd}`);
-  console.error(`Done: ${done.length}/${attempts.length}, censored: ${censored.length}, median: ${median ? Math.round(median) : '—'}j, within ${DEADLINE_DAYS}j: ${pctDeadline}%`);
+  console.error(`Done: ${done.length}/${attempts.length}, censored: ${censored.length}, median: ${median ? Math.round(median) : '—'}j, within ${DEADLINE_DAYS}j (déc.): ${pctDeadline}%, within ${JAN_DEADLINE_DAYS}j (jan.): ${pctJan}%`);
 }
 
 main();

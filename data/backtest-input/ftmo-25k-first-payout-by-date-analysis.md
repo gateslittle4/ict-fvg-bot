@@ -11,19 +11,20 @@ Esdras, après avoir écarté GoatFundedTrader (trop contraignant) : "je veux to
 - Plus rapide : 27 jours
 - Plus lent (parmi ceux qui ont fini) : 552 jours
 
-## La question directe : le 1er décembre, c'est dans 80 jours à partir d'aujourd'hui (12 sept. 2026)
+## La question directe : le 1er décembre (80j) vs début janvier (115j), à partir d'aujourd'hui (12 sept. 2026)
 
-| Seuil (jours) | % des points de départ qui y arrivent |
-|---|---|
-| 30 | 1% |
-| 45 | 10% |
-| 60 | 23% |
-| 80 (= 1er décembre) | 41% |
-| 90 | 48% |
-| 120 | 68% |
-| 150 | 73% |
+| Seuil (jours) | Date approximative | % des points de départ qui y arrivent |
+|---|---|---|
+| 30 | — | 1% |
+| 45 | — | 10% |
+| 60 | — | 23% |
+| 80 | 1er décembre | 41% |
+| 90 | — | 48% |
+| 115 | début janvier (5 jan.) | 67% |
+| 120 | — | 68% |
+| 150 | — | 73% |
 
-**Verdict : environ 41% des points de départ historiques testés atteignent $500 net en main en 80 jours ou moins.** C'est un objectif TENDU (moins probable qu'improbable) avec cette config précise - possible dans un scénario favorable, mais PAS le cas moyen/attendu. Le facteur qui domine le calendrier est presque toujours la VITESSE DE PASSAGE DU CHALLENGE (très variable d'un point de départ à l'autre) plus que la phase live elle-même (14 jours minimum + accumulation du profit, plus stable une fois financé).
+**1er décembre : ~41% des points de départ testés y arrivent** (TENDU, moins probable qu'improbable avec cette config) - possible dans un scénario favorable, pas le cas moyen. **Début janvier (115 jours au total) : ~67%** - ça repasse au-dessus de 50%, donc devient l'issue la PLUS probable plutôt que l'exception. Le facteur qui domine le calendrier est presque toujours la VITESSE DE PASSAGE DU CHALLENGE (très variable d'un point de départ à l'autre) plus que la phase live elle-même (14 jours minimum + accumulation du profit, plus stable une fois financé) - chaque semaine de marge en plus profite surtout à absorber une évaluation qui prend plus de temps que la moyenne, pas un ralentissement en phase live.
 
 ## Ce qui améliore concrètement les chances de tenir la date
 

@@ -1938,3 +1938,11 @@ Esdras, après avoir écarté GoatFundedTrader (trop contraignant) : *"donne-moi
 **Rien codé dans `src/`** — recherche/planification seulement.
 
 **Fichiers** : `scripts/runFtmo25kFirstPayoutByDateAnalysis.js` (nouveau), `data/backtest-input/ftmo-25k-first-payout-by-date-analysis.md`. `npm test` : 412/412 (inchangé).
+
+## "Et si on compte début janvier?" — comparaison ajoutée à la même analyse — 2026-09-12
+
+Esdras, suite directe : *"et si on compte début janvier alors?"* Même simulation (98 points de départ, aucun changement de méthode), ajout d'un deuxième seuil de comparaison (début janvier, 5 jan. 2027 = 115 jours à partir d'aujourd'hui, contre 80 jours pour le 1er décembre) dans `scripts/runFtmo25kFirstPayoutByDateAnalysis.js`.
+
+**Résultat : début janvier fait clairement mieux — ~67% des points de départ testés y arrivent, contre ~41% pour le 1er décembre.** Ça repasse au-dessus de 50% : début janvier devient l'issue la PLUS probable plutôt que l'exception, alors que le 1er décembre restait tendu. Les 35 jours de marge en plus (80→115) profitent surtout à absorber un challenge plus lent que la moyenne à passer — la phase live une fois financé reste comparativement stable et prévisible.
+
+**Fichiers** : `scripts/runFtmo25kFirstPayoutByDateAnalysis.js` (mis à jour, pas nouveau), `data/backtest-input/ftmo-25k-first-payout-by-date-analysis.md`. `npm test` : 412/412 (inchangé).
