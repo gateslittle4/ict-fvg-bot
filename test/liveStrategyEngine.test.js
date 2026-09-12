@@ -791,3 +791,60 @@ test('warmUp(): an empty candles array for a symbol is a no-op for that symbol',
   assert.equal(engine.getHistoryLength('US100'), 0);
   assert.equal(engine.getHistoryLength('US500'), 5);
 });
+
+test('clearBelievedPosition: removes the believed-open position when the id matches', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  engine.ingestCandle('TEST1', c(M15, 100, 102, 100, 101));
+  engine.ingestCandle('TEST1', c(2 * M15, 102, 105, 103, 104));
+  engine.ingestCandle('TEST1', c(3 * M15, 104, 104, 102, 103));
+
+  const open = engine.getOpenPosition('TEST1');
+  assert.ok(open, 'expected a position to have opened');
+
+  const cleared = engine.clearBelievedPosition('TEST1', open.id);
+  assert.equal(cleared, true);
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+});
+
+test('clearBelievedPosition: a stale/wrong id never clobbers the CURRENT believed position (e.g. a late confirmation for an already-superseded signal)', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  engine.ingestCandle('TEST1', c(M15, 100, 102, 100, 101));
+  engine.ingestCandle('TEST1', c(2 * M15, 102, 105, 103, 104));
+  engine.ingestCandle('TEST1', c(3 * M15, 104, 104, 102, 103));
+
+  const open = engine.getOpenPosition('TEST1');
+  assert.ok(open);
+
+  const cleared = engine.clearBelievedPosition('TEST1', 'some-other-signal-id');
+  assert.equal(cleared, false);
+  assert.deepEqual(engine.getOpenPosition('TEST1'), open); // untouched
+});
+
+test('clearBelievedPosition: a symbol with nothing believed open is a safe no-op', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+  assert.equal(engine.clearBelievedPosition('TEST1', 'anything'), false);
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+});

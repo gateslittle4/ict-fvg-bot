@@ -186,6 +186,26 @@ export class LiveStrategyEngine {
     return this.openPositions.get(symbol) || null;
   }
 
+  /**
+   * Remove a "believed open" position ONLY if it's still the exact same one
+   * (matched by id) - called from cTraderDataSource.js's _handleExecutionEvent
+   * once a REAL ProtoOAExecutionEvent confirms the order behind this belief
+   * was cancelled/expired/rejected, i.e. never became a real broker position
+   * (see the "believed netting" caveat at the top of this file). Matching by
+   * id, not just symbol, guards against clearing a position that has ALREADY
+   * been superseded by a newer signal on the same symbol before this late
+   * confirmation arrived - a stale "unfilled" event must never clobber
+   * current state. Returns whether anything was actually cleared.
+   */
+  clearBelievedPosition(symbol, id) {
+    const current = this.openPositions.get(symbol);
+    if (current && current.id === id) {
+      this.openPositions.delete(symbol);
+      return true;
+    }
+    return false;
+  }
+
   getHistoryLength(symbol) {
     return (this.history.get(symbol) || []).length;
   }

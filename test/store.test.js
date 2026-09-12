@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setAutoExecute, isAutoExecuteActive, setRiskPctPerTrade, store, pushSignalEvents } from '../src/store.js';
+import { setAutoExecute, isAutoExecuteActive, setRiskPctPerTrade, store, pushSignalEvents, recordOrderOutcome } from '../src/store.js';
 import { MIN_RISK_PCT, MAX_RISK_PCT } from '../src/config.js';
 
 const HOUR = 3600 * 1000;
@@ -122,4 +122,36 @@ test('pushSignalEvents: a non-"validated" event (e.g. "closed") is never tagged'
   const logged = store.signalLog[store.signalLog.length - 1];
   assert.equal(logged.id, 'vol-test-5');
   assert.equal(logged.volRegime, undefined);
+});
+
+// recordOrderOutcome (2026-09, at Esdras's explicit request - "il faut que
+// l'ordre passe vraiment" after a believed-open position turned out to have
+// no confirmed broker outcome behind it) - ground truth from a REAL
+// ProtoOAExecutionEvent, never from the engine's own belief.
+test('recordOrderOutcome: appends a filled outcome with all fields', () => {
+  const before = store.orderOutcomeLog.length;
+  recordOrderOutcome({ symbol: 'XAUUSD', source: 'fvg', signalId: 'order-test-1', outcome: 'filled', executionType: 'ORDER_FILLED' });
+  assert.equal(store.orderOutcomeLog.length, before + 1);
+  const logged = store.orderOutcomeLog[store.orderOutcomeLog.length - 1];
+  assert.equal(logged.symbol, 'XAUUSD');
+  assert.equal(logged.source, 'fvg');
+  assert.equal(logged.signalId, 'order-test-1');
+  assert.equal(logged.outcome, 'filled');
+  assert.equal(logged.executionType, 'ORDER_FILLED');
+  assert.equal(typeof logged.at, 'number');
+});
+
+test('recordOrderOutcome: appends an unfilled outcome (e.g. an expired limit)', () => {
+  recordOrderOutcome({ symbol: 'XAUUSD', source: 'fvg', signalId: 'order-test-2', outcome: 'unfilled', executionType: 'ORDER_EXPIRED' });
+  const logged = store.orderOutcomeLog[store.orderOutcomeLog.length - 1];
+  assert.equal(logged.outcome, 'unfilled');
+  assert.equal(logged.executionType, 'ORDER_EXPIRED');
+});
+
+test('recordOrderOutcome: the log is capped at MAX_LOG_LENGTH (200), same convention as signalLog', () => {
+  for (let i = 0; i < 210; i++) {
+    recordOrderOutcome({ symbol: 'US100', source: 'fvg', signalId: `cap-test-${i}`, outcome: 'filled', executionType: 'ORDER_FILLED' });
+  }
+  assert.equal(store.orderOutcomeLog.length, 200);
+  assert.equal(store.orderOutcomeLog[store.orderOutcomeLog.length - 1].signalId, 'cap-test-209');
 });

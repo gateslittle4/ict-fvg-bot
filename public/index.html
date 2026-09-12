@@ -280,6 +280,12 @@
     <div id="account-body">—</div>
   </div>
 
+  <div class="card" id="order-log-card">
+    <h2>Ordres envoyés (résultat réel)</h2>
+    <div class="meta" style="margin-bottom:8px;">Rempli/jamais rempli confirmé par le courtier (pas une supposition) — voir "Écart bot/courtier" ci-dessus pour l'explication d'un ordre jamais rempli.</div>
+    <div id="order-log-body">—</div>
+  </div>
+
   <div class="card" id="auto-execute-card">
     <h2>Mode indisponible (exécution automatique des entrées)</h2>
     <div id="auto-execute-body">—</div>
@@ -543,6 +549,27 @@ async function refreshAccount() {
     bodyEl.innerHTML = html;
   } catch (err) {
     bodyEl.innerHTML = `<div class="err">Erreur de chargement du compte: ${err.message}</div>`;
+  }
+}
+
+const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judasSwing: 'Judas' };
+async function refreshOrderLog() {
+  const bodyEl = document.getElementById('order-log-body');
+  try {
+    const res = await fetch('/api/order-log');
+    const data = await res.json();
+    const orders = data.orders || [];
+    if (orders.length === 0) {
+      bodyEl.innerHTML = '<div class="meta">Aucun ordre envoyé pour l\'instant.</div>';
+      return;
+    }
+    bodyEl.innerHTML = '<ul class="signal-list">' + orders.map((o) => `
+      <li class="signal-item">
+        <span class="${o.outcome === 'filled' ? 'dir-bullish' : 'dir-bearish'}">${o.outcome === 'filled' ? '✓ rempli' : '✗ jamais rempli'}</span>
+        ${o.symbol} <span class="meta">[${sourceLabelShort[o.source] || o.source}] · ${o.executionType} · ${fmtTime(o.at)}</span>
+      </li>`).join('') + '</ul>';
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="err">Erreur de chargement des ordres: ${err.message}</div>`;
   }
 }
 
@@ -1049,11 +1076,13 @@ refreshTradeHistory();
 refreshRecentPerformance();
 refreshTradeLog();
 refreshAccount();
+refreshOrderLog();
 startLiveStream();
 setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
 setInterval(refreshRecentPerformance, 120000); // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
 setInterval(refreshTradeLog, 60000); // grows one row per resolved trade, no meaningful reason to poll faster
 setInterval(refreshAccount, 30000); // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
+setInterval(refreshOrderLog, 30000); // in-memory log, grows only on a real order outcome - no need for a faster cadence than the account card next to it
 
 // PWA install support - registering a service worker (even one that caches
 // nothing, see sw.js) is what makes Chrome/Android offer "Add to Home

@@ -427,6 +427,18 @@ app.get('/api/trade-log', async (req, res) => {
   }
 });
 
+// Ground-truth log of what actually happened to every order this process
+// submitted (2026-09, at the user's explicit request - "il faut que
+// l'ordre passe vraiment" - after a believed-open position turned out to
+// have no confirmation either way behind it). In-memory only (last 200,
+// same MAX_LOG_LENGTH convention as /api/signals - this is a fast recency
+// check for the dashboard, not a durable audit trail; use /api/trade-log
+// for that once persistence is on), populated exclusively from real
+// ProtoOAExecutionEvent outcomes - see store.js's recordOrderOutcome().
+app.get('/api/order-log', (req, res) => {
+  res.json({ orders: [...store.orderOutcomeLog].reverse().slice(0, 30) });
+});
+
 // Temporary research export (2026-09, ad-hoc: "peux-tu tester le bot sur les
 // 8 derniers mois"). Reuses the LIVE cTrader connection already running on
 // Render (see cTraderDataSource.js's getHistoricalCandles) to pull a wider

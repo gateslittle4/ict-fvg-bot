@@ -52,6 +52,15 @@ export const store = {
   // (demo.ctraderapi.com vs live.ctraderapi.com), not guessed.
   broker: { name: null, isDemo: null },
   signalLog: [], // { ...event, loggedAt }
+  // Ground-truth outcome of every REAL order cTraderDataSource.js actually
+  // submitted to the broker (2026-09, at Esdras's explicit request after
+  // "un ordre était passé" turned out to mean only the engine's own belief,
+  // not a confirmed broker fill - see HANDOFF.md). Populated exclusively
+  // from real ProtoOAExecutionEvent outcomes (_handleExecutionEvent), never
+  // from the engine's own optimistic 'validated' belief - this is the one
+  // place "did the order actually go through" has a real answer instead of
+  // an inference. { symbol, source, signalId, outcome: 'filled'|'unfilled', executionType, at }
+  orderOutcomeLog: [],
   lastCandleBySymbol: new Map(),
   // Raw (bid, ask) tick samples per symbol - 2026-09, at the user's request
   // to verify whether the REAL live spread matches the "INDICATIVE, verify
@@ -185,6 +194,20 @@ export function pushSignalEvents(events) {
   }
   if (store.signalLog.length > MAX_LOG_LENGTH) {
     store.signalLog.splice(0, store.signalLog.length - MAX_LOG_LENGTH);
+  }
+}
+
+/**
+ * Record the REAL outcome of an order this process actually submitted to
+ * the broker, learned from a real ProtoOAExecutionEvent (see
+ * cTraderDataSource.js's _handleExecutionEvent) - never from the engine's
+ * own belief. `outcome` is 'filled' (a real position opened) or 'unfilled'
+ * (cancelled/expired/rejected - no real position ever existed).
+ */
+export function recordOrderOutcome({ symbol, source, signalId, outcome, executionType }) {
+  store.orderOutcomeLog.push({ symbol, source, signalId, outcome, executionType, at: Date.now() });
+  if (store.orderOutcomeLog.length > MAX_LOG_LENGTH) {
+    store.orderOutcomeLog.splice(0, store.orderOutcomeLog.length - MAX_LOG_LENGTH);
   }
 }
 

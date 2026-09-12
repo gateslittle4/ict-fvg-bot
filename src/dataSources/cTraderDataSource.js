@@ -31,7 +31,7 @@
 // account's symbol list.
 
 import { CTraderConnection } from '@reiryoku/ctrader-layer';
-import { store, pushSignalEvents, setBalance, setBrokerInfo, isAutoExecuteActive, tagVolatilityObservation } from '../store.js';
+import { store, pushSignalEvents, setBalance, setBrokerInfo, isAutoExecuteActive, tagVolatilityObservation, recordOrderOutcome } from '../store.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
@@ -136,6 +136,15 @@ export class CTraderDataSource {
     // position's close already does).
     this.pyramidOrderSymbolByOrderId = new Map();
     this.pyramidPositionIdBySymbol = new Map();
+    // Every auto-execute ENTRY order this process has submitted (FVG/
+    // Divergence/NWOG/Judas Swing alike - see _handleAutoExecuteEntry),
+    // keyed by the broker-assigned orderId, so _handleExecutionEvent can
+    // react to its REAL outcome (filled vs cancelled/expired/rejected)
+    // instead of leaving LiveStrategyEngine's own optimistic 'validated'
+    // belief as the only source of truth (2026-09, at Esdras's explicit
+    // request - "il faut que l'ordre passe vraiment"). Entries are removed
+    // once their outcome is known either way.
+    this.pendingEntryOrderByOrderId = new Map();
     // How many ms to ADD to a candle time held by LiveStrategyEngine to get
     // back a genuine UTC instant. This source deliberately shifts candles
     // into the backtest's fixed-EST-as-UTC convention before feeding the
@@ -798,7 +807,21 @@ export class CTraderDataSource {
         symbolSpec: spec,
       });
       const isFvg = signal.source === 'fvg';
-      const FVG_LIMIT_EXPIRY_CANDLES = 4; // ~1h of M15 - VERIFY this window is sensible once live
+      // Was a flat 4 candles (~1h) - far shorter than CONFIG.fvg.maxAgeCandles
+      // (50, ~12.5h), the window the BACKTEST itself gives an FVG zone to be
+      // retested before calling it stale. 'validated' only fires once price
+      // has ALREADY touched the zone once (see fvgEngine.js) - live, this
+      // LIMIT order is a bet the zone gets touched AGAIN before it goes
+      // stale, so it needs the SAME tolerance the backtest gave the zone
+      // overall, not an arbitrary shorter one (found 2026-09 after Esdras
+      // asked "il faut que l'ordre passe vraiment" - a real, unfilled XAUUSD
+      // limit expired long before this fix, per orderOutcomeLog). This is
+      // still not a perfect backtest match (a resting order genuinely
+      // sitting for the FULL zone lifetime would need order placement moved
+      // to 'watching'/formation time instead, a bigger change not made here
+      // - see HANDOFF.md), but it removes the dominant known cause of
+      // missed fills without touching entry price, stop, or target.
+      const FVG_LIMIT_EXPIRY_CANDLES = CONFIG.fvg.maxAgeCandles;
       const lastCandle = store.lastCandleBySymbol.get(symbolName);
       const expirationTimestamp =
         isFvg && lastCandle ? lastCandle.time + FVG_LIMIT_EXPIRY_CANDLES * 15 * 60 * 1000 : undefined;
@@ -821,6 +844,14 @@ export class CTraderDataSource {
         expirationTimestamp,
       });
       if (brokerOrderId != null) {
+        // Tracked so _handleExecutionEvent can confirm the REAL outcome
+        // (filled vs cancelled/expired/rejected) instead of leaving the
+        // engine's own 'validated'-time belief unverified indefinitely.
+        this.pendingEntryOrderByOrderId.set(brokerOrderId, {
+          symbolName,
+          source: signal.source,
+          signalId: signal.id,
+        });
         this._notifyText(
           `🤖 [${signal.source.toUpperCase()}] Entrée auto envoyée sur ${symbolName} (${signal.suggestedSide.toUpperCase()}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
         );
@@ -878,6 +909,42 @@ export class CTraderDataSource {
           this.pyramidPositionIdBySymbol.set(symbolName, positionId);
           this._notifyText(`🔺 Pyramide auto : 2e unité REMPLIE sur ${symbolName} à ${filled.entryPrice} (stop ${filled.stopPrice}, cible ${filled.targetPrice})`);
         }
+      }
+    }
+
+    // Real outcome of an auto-execute ENTRY order this process submitted
+    // (see _handleAutoExecuteEntry/pendingEntryOrderByOrderId above) -
+    // 2026-09, at Esdras's explicit request after "un ordre était passé"
+    // turned out to only mean the engine's own optimistic belief, not a
+    // confirmed broker fill. ORDER_FILLED here means a real position just
+    // opened (never has closePositionDetail, matching the pyramid check
+    // above); CANCELLED/EXPIRED/REJECTED mean the order never became a real
+    // position at all - which the engine's own 'validated'-time belief
+    // (openPositions, set optimistically before any of this is known) has
+    // no way to find out about on its own. executionType names per
+    // spotware/openapi-proto-messages' ProtoOAExecutionType - EXPIRED is
+    // the one a GOOD_TILL_DATE limit that never got touched again should
+    // produce, not yet confirmed against a real response (same "written
+    // against documentation" caveat as the rest of this file).
+    if (event.order?.orderId != null && this.pendingEntryOrderByOrderId.has(event.order.orderId)) {
+      const pending = this.pendingEntryOrderByOrderId.get(event.order.orderId);
+      const unfilledTypes = new Set(['ORDER_CANCELLED', 'ORDER_EXPIRED', 'ORDER_REJECTED']);
+      if (event.executionType === 'ORDER_FILLED' && !event.deal?.closePositionDetail) {
+        this.pendingEntryOrderByOrderId.delete(event.order.orderId);
+        recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'filled', executionType: event.executionType });
+        this._notifyText(`✅ [${pending.source.toUpperCase()}] Ordre confirmé REMPLI sur ${pending.symbolName} - position réellement ouverte chez le courtier.`);
+      } else if (unfilledTypes.has(event.executionType)) {
+        this.pendingEntryOrderByOrderId.delete(event.order.orderId);
+        recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'unfilled', executionType: event.executionType });
+        // The engine believed this was open the moment it validated the
+        // signal (see _processFvgEvent etc.) - now confirmed wrong. Clear
+        // it so the dashboard stops showing a ghost "believed open"
+        // position for up to 5 days (maxHoldingCandles) instead of the
+        // true "nothing happened" state, matched by id so a NEWER signal
+        // on the same symbol (opened after this one) is never clobbered by
+        // a late-arriving confirmation for the old one.
+        store.strategyEngine.clearBelievedPosition(pending.symbolName, pending.signalId);
+        this._notifyText(`⚠️ [${pending.source.toUpperCase()}] Ordre JAMAIS rempli sur ${pending.symbolName} (${event.executionType}) - aucune position réelle, signal abandonné.`);
       }
     }
   }
