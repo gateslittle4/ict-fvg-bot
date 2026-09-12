@@ -1459,3 +1459,19 @@ Esdras, sur les résultats ci-dessus : "beaucoup de trades que j'ai pris étaien
 **Décision laissée entièrement à Esdras**, comme pour tous les autres compromis de ce projet.
 
 **Fichiers** : `scripts/runFvgMultiTouchResidualWindowAnalysis.js`, `scripts/runFtmo1StepUS100Only8to12AccountImpact.js` (nouveaux), `data/backtest-input/fvg-multi-touch-residual-window-analysis.md`, `data/backtest-input/ftmo-1step-us100-only-8to12-account-impact.md`. Aucun changement `src/` — recherche seulement, la fenêtre production reste 10h-11h.
+
+## Même comparaison, mais sur les 7 mois RÉELS de forward-test (pas l'historique 2019-2025) — 2026-09-12
+
+Esdras : "maintenant tu as accès aux données de 7 mois live, dis-moi 8h-12h vs 10h-11h, lequel aurait été meilleur ?" — `data/forward-test-2026/US100.csv`, bougies réelles exportées du compte cTrader (2026-02-06 → 2026-09-09), jamais utilisées pour choisir un paramètre. `scripts/runFvgMultiTouchForwardTestWindowAnalysis.js`.
+
+| Fenêtre | Trades | Win rate | Espérance (R) | R total | Drawdown max (R) |
+|---|---|---|---|---|---|
+| 08h-12h | 26 | 34.6% | 0.99 | 25.74 | 6.39 |
+| **10h-11h (production)** | 9 | **44.4%** | **1.56** | 14.06 | **2.23** |
+| Toute la journée | 133 | 24.8% | 0.41 | 54.55 | 11.78 |
+
+**Confirme directionnellement le backtest 7 ans** : 10h-11h garde la meilleure espérance par trade et le plus petit drawdown, malgré le moins de trades. 8h-12h prend presque 3x plus de trades pour une espérance plus faible ; toute la journée prend le plus de trades mais avec l'espérance la plus faible et le drawdown le plus élevé.
+
+**Mais échantillon minuscule** — 9 trades pour 10h-11h sur 7 mois : un seul résultat différent change tout le classement. Pas une preuve indépendante, une confirmation directionnelle cohérente avec l'analyse sur 7 ans, rien de plus.
+
+**Fichiers** : `scripts/runFvgMultiTouchForwardTestWindowAnalysis.js` (nouveau), `data/forward-test-2026/fvg-multi-touch-forward-test-window-analysis.md` (détail complet des trades, fenêtre par fenêtre). Aucun changement `src/`.
