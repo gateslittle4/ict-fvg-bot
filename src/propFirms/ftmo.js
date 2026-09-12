@@ -1,8 +1,17 @@
 // ftmo.js
-// FTMO's two challenge programs, as sourced in
+// FTMO's two challenge programs. Originally sourced in
 // data/backtest-input/prop-firm-1step-comparison.md (checked against
-// ftmo.com/help.ftmo.com in early September 2026 - re-verify before buying
-// or relying on this for a real challenge, rules and prices change).
+// ftmo.com/help.ftmo.com in early September 2026), then RE-VERIFIED directly
+// (2026-09-12, at Esdras's explicit request "tu as les règles des prop firm
+// pour vrai? tu as accès à internet?") against FTMO's own
+// https://ftmo.com/en/trading-objectives/ page (fetched live, not a
+// secondary summary) - both phases/every number below CONFIRMED unchanged
+// from the original research. profitSplit was NOT on that primary page;
+// kept from cross-checking multiple independent third-party rule summaries
+// that all agreed (90% / 80%) - lower confidence than the primary-confirmed
+// fields above it, but not blocking/enforced by the bot either way. Re-
+// verify before buying or relying on this for a real challenge - rules and
+// prices change.
 //
 // Shape: see propFirms/index.js's PROP_FIRM_PROGRAM_SHAPE comment for what
 // every field means and how it's used (guardrails/target tracking).
@@ -44,7 +53,11 @@ export const FTMO_2STEP = {
     // starting balance) - see index.js's phase-tracking note.
     { name: 'Verification', targetPct: 5, dailyLossLimitPct: 5, maxDrawdownPct: 10, maxDrawdownType: 'static', minTradingDays: 4 },
   ],
-  profitSplit: null, // not found in the source
+  // 2026-09-12: not on FTMO's own trading-objectives page (primary source),
+  // but multiple independent third-party rule summaries agree on 80% -
+  // lower confidence than the primary-confirmed fields above, not enforced
+  // by the bot either way.
+  profitSplit: 0.8,
   timeLimitDays: null, // not precised either way in the source - treat as UNKNOWN, not "no limit"
   consistencyRule: null, // none found
 };

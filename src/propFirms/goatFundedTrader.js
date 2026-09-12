@@ -1,12 +1,19 @@
 // goatFundedTrader.js
-// GoatFundedTrader's 1-Step program, as sourced in
+// GoatFundedTrader's 1-Step program. Originally sourced in
 // data/backtest-input/prop-firm-1step-comparison.md (checked against
-// help.goatfundedtrader.com in early September 2026 - re-verify before
-// buying or relying on this for a real challenge, rules and prices change).
-// Newer/less established firm than FTMO or FundingPips (post-2023) - no
-// specific red flag found in that research, but less track record, so worth
-// its own extra scrutiny (recent reviews, withdrawal proof) before funding
-// a real account here.
+// help.goatfundedtrader.com in early September 2026), then RE-VERIFIED
+// directly (2026-09-12, at Esdras's explicit request "tu as les règles des
+// prop firm pour vrai?") by fetching GoatFundedTrader's OWN help article
+// (https://help.goatfundedtrader.com/en/articles/10630134-1-step-model) live
+// - every number below CONFIRMED unchanged, including the 6% static max
+// drawdown (a broader web search first turned up a conflicting "10%"
+// figure from third-party aggregator sites, most likely mixing this up
+// with a different firm/product - the firm's own article is authoritative
+// here and settles it at 6%). Newer/less established firm than FTMO or
+// FundingPips (post-2023) - no specific red flag found in that research,
+// but less track record, so worth its own extra scrutiny (recent reviews,
+// withdrawal proof) before funding a real account here. Re-verify before
+// buying - rules and prices change.
 //
 // Shape: see propFirms/index.js's PROP_FIRM_PROGRAM_SHAPE comment for what
 // every field means and how it's used (guardrails/target tracking).
