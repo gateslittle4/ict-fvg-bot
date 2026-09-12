@@ -676,30 +676,61 @@ function createAccountRouter(getStore) {
     const accountId = Number(ds.accountId);
     const report = { symbol: symbolName, symbolId: Number(symbolId) };
 
-    // One-shot wait for a ProtoOAExecutionEvent matching `predicate`, as a
-    // SECOND listener alongside the connection's permanent one (Node's
-    // EventEmitter supports multiple listeners on the same event without
-    // interfering with each other) - always removed in the caller via
-    // .off(), timeout or not, so nothing leaks past this one request.
+    // BUG FOUND LIVE (2026-09-12, first real run of this endpoint): this
+    // library's connection is NOT a standard Node EventEmitter -
+    // CTraderLayerEmitter.on() returns a uuid, and removal is
+    // removeEventListener(uuid), there is no .off(event, handler) at all.
+    // The first version of this function called ds.connection.off(...),
+    // which doesn't exist - a bare TypeError thrown inside a raw
+    // setTimeout callback (not inside this function's own promise chain,
+    // so the route's try/catch below never saw it) went fully uncaught and
+    // CRASHED THE WHOLE PROCESS, twice, taking the live bot down for a few
+    // seconds each time before Render's supervisor restarted it (confirmed
+    // clean reconnect both times, no lasting damage - but a real incident,
+    // not a hypothetical one). Fixed here using the library's real API,
+    // AND every callback path now wrapped in try/catch so nothing thrown
+    // in here can ever reach the process uncaught again, whatever else
+    // turns out to be wrong with it.
     function waitForExecution(predicate, timeoutMs = 15000) {
       return new Promise((resolve, reject) => {
+        let uuid;
+        const safeRemove = () => {
+          try {
+            if (uuid != null) ds.connection.removeEventListener(uuid);
+          } catch (removeErr) {
+            console.error('[admin/test-order-cycle] removeEventListener failed (non-fatal):', removeErr);
+          }
+        };
         const timer = setTimeout(() => {
-          ds.connection.off('ProtoOAExecutionEvent', onEvent);
+          safeRemove();
           reject(new Error(`timed out after ${timeoutMs}ms waiting for a matching execution event`));
         }, timeoutMs);
-        function onEvent(event) {
-          const d = event.descriptor;
-          if (predicate(d)) {
+        uuid = ds.connection.on('ProtoOAExecutionEvent', (event) => {
+          try {
+            const d = event.descriptor;
+            if (predicate(d)) {
+              clearTimeout(timer);
+              safeRemove();
+              resolve(d);
+            }
+          } catch (predicateErr) {
             clearTimeout(timer);
-            ds.connection.off('ProtoOAExecutionEvent', onEvent);
-            resolve(d);
+            safeRemove();
+            reject(predicateErr);
           }
-        }
-        ds.connection.on('ProtoOAExecutionEvent', onEvent);
+        });
       });
     }
 
+    // Terminal outcomes an order can reach WITHOUT ever filling - watched
+    // for explicitly so a rejected/cancelled order fails fast with a clear
+    // reason instead of silently burning the full 15s timeout every time
+    // (the first live run gave zero visibility into why nothing matched -
+    // this is what would have shown it immediately).
+    const NON_FILL_TERMINAL_TYPES = new Set(['ORDER_REJECTED', 'ORDER_CANCELLED', 'ORDER_EXPIRED']);
+
     try {
+      console.error(`[admin/test-order-cycle] start symbol=${symbolName} symbolId=${symbolId}`);
       const specRes = await sendCommandWithTimeout(ds.connection, 'ProtoOASymbolByIdReq', {
         ctidTraderAccountId: accountId,
         symbolId: [Number(symbolId)],
@@ -707,9 +738,11 @@ function createAccountRouter(getStore) {
       const spec = specRes?.symbol?.[0];
       const volume = spec?.minVolume ? Number(spec.minVolume) : null;
       if (!volume) {
+        console.error('[admin/test-order-cycle] no minVolume in spec response:', JSON.stringify(specRes));
         return res.status(502).json({ ...report, error: 'could not read this symbol\'s minVolume from the broker' });
       }
       report.volume = volume;
+      console.error(`[admin/test-order-cycle] volume=${volume}, submitting MARKET BUY...`);
 
       const openRes = await sendCommandWithTimeout(ds.connection, 'ProtoOANewOrderReq', {
         ctidTraderAccountId: accountId,
@@ -722,13 +755,19 @@ function createAccountRouter(getStore) {
       });
       const openOrderId = openRes?.order?.orderId ?? openRes?.orderId ?? null;
       report.openOrderId = openOrderId;
+      console.error(`[admin/test-order-cycle] openOrderId=${openOrderId}, waiting for fill...`);
 
-      const openFill = await waitForExecution(
-        (d) => d.order?.orderId === openOrderId && d.executionType === 'ORDER_FILLED' && !d.deal?.closePositionDetail
-      );
+      const openFill = await waitForExecution((d) => {
+        if (d.order?.orderId !== openOrderId) return false;
+        if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
+          throw new Error(`order ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
+        }
+        return d.executionType === 'ORDER_FILLED' && !d.deal?.closePositionDetail;
+      });
       const positionId = openFill.position?.positionId ?? openFill.deal?.positionId ?? null;
       report.opened = true;
       report.positionId = positionId;
+      console.error(`[admin/test-order-cycle] opened, positionId=${positionId}, closing...`);
       if (positionId == null) {
         return res.status(502).json({ ...report, error: 'order filled but no positionId came back - cannot close it' });
       }
@@ -738,11 +777,17 @@ function createAccountRouter(getStore) {
         positionId: Number(positionId),
         volume,
       });
-      const closeFill = await waitForExecution(
-        (d) => (d.deal?.positionId ?? d.position?.positionId) === positionId && d.executionType === 'ORDER_FILLED' && d.deal?.closePositionDetail
-      );
+      const closeFill = await waitForExecution((d) => {
+        const pid = d.deal?.positionId ?? d.position?.positionId;
+        if (pid !== positionId) return false;
+        if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
+          throw new Error(`close ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
+        }
+        return d.executionType === 'ORDER_FILLED' && Boolean(d.deal?.closePositionDetail);
+      });
       report.closed = true;
       report.closePnl = typeof closeFill.deal.closePositionDetail.grossProfit === 'number' ? closeFill.deal.closePositionDetail.grossProfit / 100 : null;
+      console.error(`[admin/test-order-cycle] closed, pnl=${report.closePnl}`);
 
       res.json(report);
     } catch (err) {
