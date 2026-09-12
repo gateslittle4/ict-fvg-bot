@@ -1668,3 +1668,20 @@ Esdras : *"on garde 0.5%, aucun plafond, ensuite est-il possible d'avoir un coda
 **Pas encore déployé en production** — sur `challenge/fundingpips-zero` seulement, en attendant la décision d'Esdras sur QUAND basculer `ACCOUNT_MODE=live` sur Render (au moment où le compte passe réellement en financé).
 
 **Fichiers** : `src/config.js`, `src/server.js` (champ `accountMode` ajouté à `/api/status`).
+
+## ACCOUNT_MODE=live déployé sur Render + cycles sur les 7 mois de forward-test réel — 2026-09-12
+
+Esdras : *"Bascule sur render et dis moi combien de cycle de 10% j'aurais eu pendant les 7 mois que tu as les données là."*
+
+**1) Déploiement production** : `challenge/fundingpips-zero` mergé dans `claude/lire-handoff-hxisa5` (branche réelle de production, confirmé via l'historique de commits) — 6 commits (tests US500/XAUUSD, simulation combinée, simulation cycle, vérification perte journalière, `ACCOUNT_MODE`), seuls `src/config.js` et `src/server.js` touchent du code, `npm test` 386/389 avant/après (mêmes flakes connus). Poussé, puis `ACCOUNT_MODE=live` réglé directement sur le service Render `ict-fvg-bot` (`srv-dafkaav40ujc73bm3cl0`) via l'API Render. Déploiement confirmé "live", et `/api/status` du service réel confirme `"accountMode":"live","riskPctPerTrade":0.3`. **Le bot tourne maintenant à 0.3% par trade**, pas 0.5%.
+
+**2) Cycles de +10% sur les 7 mois de forward-test réel** (`scripts/runForwardTestAllLiveStrategiesCycleAnalysis.js`, sur `data/forward-test-2026/`, export cTrader réel 2026-02-05 → 2026-09-09) : même méthode reset-au-+10%/bust que le test combiné historique, mais **sans Judas Swing** (pas d'export EURUSD dans ce dossier forward-test — documenté, pas une omission silencieuse). Deux risques comparés (0.5% = ce qui tournait réellement pendant ces 7 mois, 0.3% = le nouveau défaut live) :
+
+| Risque | Cycles | Passes | Busts | Jours moy. |
+|---|---|---|---|---|
+| 0.5% (réel sur ces 7 mois) | 2 | 2 | 0 | 65 |
+| 0.3% (nouveau défaut live) | 1 | 1 | 0 | 109 |
+
+**Résultat : 2 cycles complets à 0.5% sur les 7 mois, les deux gagnés, zéro bust.** Cohérent avec le test cycle historique complet (2018-2025, 9% de bust sur 46 cycles) — sur un échantillon de seulement 2 cycles ici, ne rien conclure de définitif sur le taux de bust, mais direction rassurante et cohérente.
+
+**Fichiers** : `scripts/runForwardTestAllLiveStrategiesCycleAnalysis.js` (nouveau), `data/forward-test-2026/forward-test-all-live-strategies-cycle-analysis.md`.
