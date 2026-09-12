@@ -156,6 +156,22 @@
   .topnav a:hover { color: var(--text); }
   .topnav a.active { color: var(--text); border-bottom-color: var(--blue); }
 
+  /* ---------- Multi-account switcher + overview (2026-09, Phase 3 of the
+     multi-account rollout - see HANDOFF.md "Multi-compte") - hidden
+     entirely while only one account exists (today's reality), so nothing
+     changes visually until a second real account is actually configured. ---------- */
+  #account-switcher-wrap { display: flex; align-items: center; gap: 7px; }
+  #account-switcher-wrap label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
+  #account-switcher { padding: 6px 9px; border-radius: 7px; border: 1px solid var(--panel-border); background: var(--bg-inset); color: var(--text); font-size: 12.5px; font-family: var(--sans); }
+  .account-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .account-overview-row {
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px;
+    padding: 10px 12px; cursor: pointer; transition: border-color 0.15s ease;
+  }
+  .account-overview-row:hover { border-color: var(--panel-border-strong); }
+  .account-overview-row.active { border-color: var(--blue); }
+  .account-overview-row .aor-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+
   /* ---------- Stats / pills ---------- */
   .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 13.5px; }
   .stat-row .label { color: var(--muted); font-size: 12.5px; }
@@ -248,6 +264,10 @@
         <div class="subtitle">US100 · US500 · XAUUSD · EURUSD — FVG filtré + Divergence + NWOG + Judas Swing</div>
       </div>
     </div>
+    <div id="account-switcher-wrap" hidden>
+      <label for="account-switcher">Compte</label>
+      <select id="account-switcher"></select>
+    </div>
     <div id="banner" class="banner demo">Chargement…</div>
   </header>
 
@@ -255,6 +275,15 @@
     <a href="/" class="active">Dashboard</a>
     <a href="/chart.html">Graphique</a>
   </nav>
+
+  <!-- Vue d'ensemble multi-comptes (2026-09, Phase 3 - voir HANDOFF.md
+       "Multi-compte") - masquée tant qu'un seul compte existe (voir
+       renderAccountOverview()), donc invisible aujourd'hui. Cliquer une
+       carte bascule le dashboard entier sur ce compte. -->
+  <div class="card" id="accounts-overview-card" hidden>
+    <h2>Vue d'ensemble — tous les comptes</h2>
+    <div id="accounts-overview-body" class="account-overview-grid"></div>
+  </div>
 
   <div class="ticker" id="prices-body"><div class="ticker-cell"><span class="ticker-sym">Chargement…</span></div></div>
 
@@ -401,6 +430,17 @@
   </div>
 
 <script>
+// Multi-account routing (2026-09, Phase 3 of the multi-account rollout -
+// see HANDOFF.md "Multi-compte"). Every fetch/EventSource in this file goes
+// through acctUrl() instead of a hardcoded '/api/...' path, so switching
+// accounts (see startDashboardForAccount()) re-points EVERY card at the
+// selected account with no per-card special-casing. Resolved once at boot
+// by initAccounts() - see the bottom of this script.
+let currentAccountId = null;
+function acctUrl(suffix) {
+  return `/api/accounts/${encodeURIComponent(currentAccountId)}${suffix}`;
+}
+
 const previousPrices = {}; // symbol -> last seen lastPrice, for the ticker's up/down flash effect
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 const fmtTime = (t) => t ? new Date(t).toLocaleTimeString('fr-FR') : '—';
@@ -435,7 +475,7 @@ const sourceLabel = (s) => {
 // its own fetch - one rendering code path either way, see the SSE section
 // near the bottom of this script for why.
 async function refreshStatus() {
-  const res = await fetch('/api/status');
+  const res = await fetch(acctUrl('/status'));
   renderStatus(await res.json());
 }
 
@@ -512,7 +552,7 @@ function reconciliationExplanation(r) {
 async function refreshAccount() {
   const bodyEl = document.getElementById('account-body');
   try {
-    const res = await fetch('/api/account');
+    const res = await fetch(acctUrl('/account'));
     const data = await res.json();
     if (data.reason) {
       bodyEl.innerHTML = `<div class="meta">${data.reason}</div>`;
@@ -556,7 +596,7 @@ const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judasSw
 async function refreshOrderLog() {
   const bodyEl = document.getElementById('order-log-body');
   try {
-    const res = await fetch('/api/order-log');
+    const res = await fetch(acctUrl('/order-log'));
     const data = await res.json();
     const orders = data.orders || [];
     if (orders.length === 0) {
@@ -574,7 +614,7 @@ async function refreshOrderLog() {
 }
 
 async function setAutoExecute(enabled, hours) {
-  await fetch('/api/auto-execute', {
+  await fetch(acctUrl('/auto-execute'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(hours ? { enabled, hours } : { enabled }),
@@ -606,7 +646,7 @@ function renderAutoExecute(ae) {
 }
 
 async function refreshSignals() {
-  const res = await fetch('/api/signals');
+  const res = await fetch(acctUrl('/signals'));
   renderSignals(await res.json());
 }
 
@@ -711,7 +751,7 @@ async function refreshRecentPerformance() {
   const summaryEl = document.getElementById('recent-perf-summary');
   const listEl = document.getElementById('recent-perf-list');
   try {
-    const res = await fetch('/api/recent-performance');
+    const res = await fetch(acctUrl('/recent-performance'));
     const data = await res.json();
     if (!data.summary) {
       summaryEl.innerHTML = `<div class="meta">${data.reason || 'Pas encore de données.'}</div>`;
@@ -820,7 +860,7 @@ function renderOverview(data) {
 async function refreshTradeLog() {
   const el = document.getElementById('trade-log-summary');
   try {
-    const res = await fetch('/api/trade-log');
+    const res = await fetch(acctUrl('/trade-log'));
     const data = await res.json();
     renderOverview(data);
     const symbols = Object.keys(data.bySymbol || {});
@@ -852,7 +892,7 @@ async function refreshTradeHistory() {
   const list = document.getElementById('journal-list');
   const days = document.getElementById('filter-days').value;
   try {
-    const res = await fetch(`/api/trade-history?days=${encodeURIComponent(days)}`);
+    const res = await fetch(acctUrl(`/trade-history?days=${encodeURIComponent(days)}`));
     const data = await res.json();
     allJournalTrades = data.trades || [];
     populateJournalFilterOptions(allJournalTrades);
@@ -966,20 +1006,21 @@ document.getElementById('filter-symbol').addEventListener('change', renderJourna
 document.getElementById('filter-source').addEventListener('change', renderJournalList);
 document.getElementById('export-csv-btn').addEventListener('click', exportJournalCsv);
 
-// Réglages - risque % (2026-09). Pre-fills the input ONCE from the first
-// /api/status response (not re-synced on every push/poll - see
-// renderStatus()'s own comment for why) so it starts at the real current
-// value instead of blank, without ever fighting the user mid-edit.
-(async () => {
+// Réglages - risque % (2026-09). Pre-fills the input ONCE per account switch
+// from the current /api/accounts/:id/status response (not re-synced on
+// every push/poll - see renderStatus()'s own comment for why) so it starts
+// at the real current value instead of blank, without ever fighting the
+// user mid-edit. Re-run by startDashboardForAccount() on every switch.
+async function prefillRiskInput() {
   try {
-    const res = await fetch('/api/status');
+    const res = await fetch(acctUrl('/status'));
     const data = await res.json();
     document.getElementById('settings-risk-input').value = data.riskPctPerTrade;
   } catch {
     // Non-fatal - the input just starts blank, current value is still shown
     // in #settings-risk-current via the normal renderStatus() flow.
   }
-})();
+}
 
 document.getElementById('settings-risk-save').addEventListener('click', async () => {
   const input = document.getElementById('settings-risk-input');
@@ -990,7 +1031,7 @@ document.getElementById('settings-risk-save').addEventListener('click', async ()
     return;
   }
   try {
-    const res = await fetch('/api/settings/risk', {
+    const res = await fetch(acctUrl('/settings/risk'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ riskPctPerTrade: value }),
@@ -1013,7 +1054,7 @@ document.getElementById('calc-form').addEventListener('submit', async (e) => {
   const resultEl = document.getElementById('calc-result');
 
   try {
-    const res = await fetch('/api/lot-calc', {
+    const res = await fetch(acctUrl('/lot-calc'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ symbol, riskPct, entryPrice, stopPrice }),
@@ -1044,6 +1085,10 @@ document.getElementById('calc-form').addEventListener('submit', async (e) => {
 // 3s polling automatically if the stream never opens or drops (a proxy that
 // buffers/kills long-lived connections, a network blip) - the dashboard
 // keeps working either way, just less snappy on the fallback path.
+// Returns a closeable handle (2026-09, Phase 3 - see HANDOFF.md
+// "Multi-compte") so startDashboardForAccount() can tear this down cleanly
+// when switching accounts, instead of leaking a stream/fallback poll for
+// whichever account was previously selected.
 function startLiveStream() {
   let fallbackTimers = null;
   const startFallbackPolling = () => {
@@ -1056,7 +1101,7 @@ function startLiveStream() {
     fallbackTimers = null;
   };
 
-  const es = new EventSource('/api/stream');
+  const es = new EventSource(acctUrl('/stream'));
   es.onmessage = (event) => {
     stopFallbackPolling(); // a message arrived - the stream is alive, no need for the safety net right now
     const payload = JSON.parse(event.data);
@@ -1068,21 +1113,116 @@ function startLiveStream() {
     // gap while it's down (or if this browser/proxy can't do SSE at all).
     startFallbackPolling();
   };
+
+  return { close() { es.close(); stopFallbackPolling(); } };
 }
 
-refreshStatus();
-refreshSignals();
-refreshTradeHistory();
-refreshRecentPerformance();
-refreshTradeLog();
-refreshAccount();
-refreshOrderLog();
-startLiveStream();
-setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
-setInterval(refreshRecentPerformance, 120000); // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
-setInterval(refreshTradeLog, 60000); // grows one row per resolved trade, no meaningful reason to poll faster
-setInterval(refreshAccount, 30000); // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
-setInterval(refreshOrderLog, 30000); // in-memory log, grows only on a real order outcome - no need for a faster cadence than the account card next to it
+// Multi-account orchestration (2026-09, Phase 3 - see HANDOFF.md
+// "Multi-compte"). Every card's refresh above already routes through
+// acctUrl(currentAccountId) - switching accounts just means tearing down the
+// live stream + polling intervals for the OLD account and re-running the
+// exact same boot sequence for the NEW one. accountsCache is kept around so
+// clicking an overview row doesn't need a second /api/accounts round-trip.
+let dashboardPollIntervals = [];
+let liveStreamHandle = null;
+let accountsCache = [];
+
+function stopDashboardPolling() {
+  if (liveStreamHandle) { liveStreamHandle.close(); liveStreamHandle = null; }
+  dashboardPollIntervals.forEach(clearInterval);
+  dashboardPollIntervals = [];
+}
+
+function startDashboardForAccount(accountId) {
+  stopDashboardPolling();
+  currentAccountId = accountId;
+  try { localStorage.setItem('apexFvgAccountId', accountId); } catch {}
+  // Reflect the switch in both the <select> and the overview highlight
+  // immediately, even before the new account's own data has loaded.
+  const switcherEl = document.getElementById('account-switcher');
+  if (switcherEl.value !== accountId) switcherEl.value = accountId;
+  renderAccountOverview(accountsCache);
+
+  prefillRiskInput();
+  refreshStatus();
+  refreshSignals();
+  refreshTradeHistory();
+  refreshRecentPerformance();
+  refreshTradeLog();
+  refreshAccount();
+  refreshOrderLog();
+  liveStreamHandle = startLiveStream();
+  dashboardPollIntervals = [
+    setInterval(refreshTradeHistory, 60000), // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
+    setInterval(refreshRecentPerformance, 120000), // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
+    setInterval(refreshTradeLog, 60000), // grows one row per resolved trade, no meaningful reason to poll faster
+    setInterval(refreshAccount, 30000), // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
+    setInterval(refreshOrderLog, 30000), // in-memory log, grows only on a real order outcome - no need for a faster cadence than the account card next to it
+  ];
+}
+
+// "Vue d'ensemble" card (see the <div id="accounts-overview-card"> above) -
+// hidden entirely while only one account exists, so today's single-account
+// reality looks EXACTLY like before this rollout. Clicking a row switches
+// the whole dashboard to that account, same as picking it in the <select>.
+function renderAccountOverview(accounts) {
+  const card = document.getElementById('accounts-overview-card');
+  if (!accounts || accounts.length <= 1) { card.hidden = true; return; }
+  card.hidden = false;
+  const body = document.getElementById('accounts-overview-body');
+  body.innerHTML = accounts.map((a) => {
+    const g = a.guardrail;
+    const modeLabel = a.accountMode === 'live' ? 'LIVE' : 'CHALLENGE';
+    const connLabel = a.mode === 'live' ? '● connecté' : '○ démo/déconnecté';
+    return `
+      <div class="account-overview-row${a.id === currentAccountId ? ' active' : ''}" data-account-id="${a.id}">
+        <div class="aor-top"><strong>${a.label}</strong> ${g.blocked ? '<span class="pill blocked">BLOQUÉ</span>' : '<span class="pill ok">OK</span>'}</div>
+        <div class="meta">${modeLabel}${a.propFirmProgramId ? ' · ' + a.propFirmProgramId : ''}</div>
+        <div class="meta">${connLabel} · solde ${fmt(a.balance)}</div>
+      </div>
+    `;
+  }).join('');
+  body.querySelectorAll('.account-overview-row').forEach((row) => {
+    row.addEventListener('click', () => startDashboardForAccount(row.dataset.accountId));
+  });
+}
+
+// Entry point (2026-09, Phase 3): resolves which account to show BEFORE any
+// card fetches anything, since every fetch needs currentAccountId set first
+// (see acctUrl()). Falls back to the first account if a previously-saved
+// choice (per-browser only, see localStorage's own caveats) no longer
+// exists (e.g. an account was removed from ACCOUNTS_JSON).
+async function initAccounts() {
+  try {
+    const res = await fetch('/api/accounts');
+    const data = await res.json();
+    accountsCache = data.accounts || [];
+  } catch (err) {
+    document.getElementById('banner').textContent = `Erreur de chargement des comptes: ${err.message}`;
+    return;
+  }
+  if (accountsCache.length === 0) {
+    document.getElementById('banner').textContent = 'Aucun compte configuré.';
+    return;
+  }
+
+  const wrapEl = document.getElementById('account-switcher-wrap');
+  const switcherEl = document.getElementById('account-switcher');
+  if (accountsCache.length > 1) {
+    wrapEl.hidden = false;
+    switcherEl.innerHTML = accountsCache.map((a) => `<option value="${a.id}">${a.label}${a.accountMode === 'live' ? ' (live)' : ''}</option>`).join('');
+    switcherEl.addEventListener('change', (e) => startDashboardForAccount(e.target.value));
+  } else {
+    wrapEl.hidden = true;
+  }
+
+  let saved = null;
+  try { saved = localStorage.getItem('apexFvgAccountId'); } catch {}
+  const initialId = accountsCache.some((a) => a.id === saved) ? saved : accountsCache[0].id;
+  startDashboardForAccount(initialId);
+}
+
+initAccounts();
 
 // PWA install support - registering a service worker (even one that caches
 // nothing, see sw.js) is what makes Chrome/Android offer "Add to Home

@@ -1774,3 +1774,21 @@ Suite directe de la Phase 1 (`AccountRuntime`/`AccountRegistry`, comportement id
 **Pas encore fait (Phase 3, dashboard)** : sélecteur de compte + vue d'ensemble visuelle. Colonne `account_id` sur la table Supabase `bot_trade_events` (les comptes multiples logueraient leurs trades sans distinction dans la même table — pas un problème tant qu'un seul compte réel existe). Aucun changement de `public/index.html` dans cette phase.
 
 **Déployé où ?** Cette Phase 2, comme la Phase 1, est un changement de comportement NUL pour le compte réel actuel (toujours `'default'`, toujours sans `propFirmProgramId`) — voir la suite de la session pour la décision de déploiement.
+
+## Multi-compte : Phase 3 (dashboard — sélecteur de compte + vue d'ensemble) — 2026-09-12
+
+Dernière phase du plan (voir les entrées Phase 1/Phase 2 juste au-dessus). `public/index.html` gérait jusqu'ici un seul compte codé en dur dans chaque appel `fetch('/api/...')`.
+
+**Fait** :
+- Nouveau helper JS `acctUrl(suffix)` — chaque `fetch`/`EventSource` du dashboard passe maintenant par `/api/accounts/${currentAccountId}${suffix}` au lieu d'un chemin `/api/...` fixe. Une seule variable (`currentAccountId`) contrôle TOUTES les cartes à la fois.
+- **Sélecteur de compte** (`<select>` dans la barre du haut) + **carte "Vue d'ensemble — tous les comptes"** (solde, mode challenge/live, prop firm/programme, statut connecté, garde-fou OK/BLOQUÉ de chaque compte) — cliquer une carte de la vue d'ensemble bascule le dashboard entier sur ce compte, exactement comme le sélecteur.
+- **Les deux restent invisibles (`hidden`) tant qu'un seul compte existe** — `renderAccountOverview()`/`initAccounts()` vérifient `accounts.length <= 1` avant d'afficher quoi que ce soit. Le dashboard d'aujourd'hui (un seul compte réel) est donc visuellement IDENTIQUE à avant cette phase.
+- **`startDashboardForAccount(id)`** centralise le changement de compte : ferme proprement l'ancien flux SSE + les anciens `setInterval` (plus de fuite d'un compte qui continuerait à sonder en arrière-plan), relance tout (`refreshStatus`, `refreshSignals`, journal, performance, etc.) sur le nouveau compte. Le choix est mémorisé (`localStorage`, par navigateur) et restauré au rechargement de la page.
+
+**Vérifié en navigateur réel (Playwright, pas juste en lisant le code)** :
+- Mode 1 compte : sélecteur et vue d'ensemble bien masqués, bannière/garde-fou/risque s'affichent normalement, zéro erreur console — comportement identique à avant.
+- Mode 2 comptes (`ACCOUNTS_JSON` avec un `ftmo-1step` et un `fundingpips-zero`) : sélecteur et vue d'ensemble bien visibles avec les bons libellés ("Compte B (live)"), bascule par le sélecteur ET par clic sur une carte de la vue d'ensemble toutes les deux fonctionnelles et synchronisées entre elles (le risque affiché passe bien de 0.50% à 0.30% en changeant de compte, reflétant le vrai risque de chaque compte), le choix survit à un rechargement de page, zéro erreur console dans les deux cas.
+
+**Pas fait dans cette phase** (hors scope du plan initial, à voir si besoin plus tard) : colonne `account_id` sur la table Supabase `bot_trade_events` (les comptes multiples logueraient leurs trades sans distinction si plusieurs comptes réels se mettent à trader en même temps — pas un problème tant qu'un seul compte réel existe, ce qui est le cas aujourd'hui).
+
+**Ceci clôt le plan multi-compte initial (Phases 1 à 3).** Le robot peut maintenant gérer plusieurs comptes/prop firms/phases en parallèle dans un seul déploiement, avec des règles de risque/drawdown propres à chaque prop firm (`src/propFirms/`), sans jamais avoir eu à toucher au comportement du compte réel actuel à aucune étape.
