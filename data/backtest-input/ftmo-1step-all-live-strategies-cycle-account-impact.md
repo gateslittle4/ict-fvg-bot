@@ -72,4 +72,16 @@ Note sur les dates : contrairement aux scripts précédents (restreints à 2019-
 
 Avec le reset réaliste (bancable dès +10%), le scénario actuel (0.5% par trade, aucun plafond) produit 46 cycles sur 2019-2025 : 42 passes (challenge/live gagné) contre 4 busts, soit un taux de bust de 9% - toujours réel, mais notez que ce taux se lit maintenant PAR CYCLE (chaque compte a une vraie chance indépendante de réussir), pas par année civile comme avant.
 
+## Rythme annuel à anticiper (2026-09-12, suite à "combien de cycle je dois anticiper par années?")
+
+Les 46 cycles couvrent 2018-01-01 → 2025-11-30, soit ~7.91 ans. Rythme par scénario (cycles/passes/busts par an) :
+
+| Scénario | Cycles/an | Passes/an | Busts/an |
+|---|---|---|---|
+| 0.5% (challenge, ancien défaut) | 5.8 | 5.3 | 0.5 (~1 tous les 2 ans) |
+| 0.4% | 4.2 | 4.0 | 0.13 (~1 tous les 8 ans) |
+| **0.3% (défaut "live" actuel)** | **3.2** | **3.2** | **0 sur tout l'historique testé** |
+
+À noter : la vérification sur les 7 mois de forward-test réel (2026-02-05 → 2026-09-09, voir `data/forward-test-2026/forward-test-all-live-strategies-cycle-analysis.md`) donne un rythme très proche à 0.5% - 2 cycles gagnés en 130 jours, soit ~5.6 cycles/an extrapolé, cohérent avec le 5.8/an de l'historique complet.
+
 Le scénario qui réduit le plus le taux de bust est **"0.3% par trade, aucun plafond"** (0% de bust contre 9% pour l'actuel), au prix d'un passage un peu plus lent (114j contre 63j en moyenne). Comparer les 5 lignes du tableau ci-dessus donne l'arbitrage complet vitesse/risque de chaque levier - à Esdras de choisir le compromis. Aucun changement fait dans `src/` — recherche seulement.

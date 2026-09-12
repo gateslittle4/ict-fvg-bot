@@ -1685,3 +1685,17 @@ Esdras : *"Bascule sur render et dis moi combien de cycle de 10% j'aurais eu pen
 **Résultat : 2 cycles complets à 0.5% sur les 7 mois, les deux gagnés, zéro bust.** Cohérent avec le test cycle historique complet (2018-2025, 9% de bust sur 46 cycles) — sur un échantillon de seulement 2 cycles ici, ne rien conclure de définitif sur le taux de bust, mais direction rassurante et cohérente.
 
 **Fichiers** : `scripts/runForwardTestAllLiveStrategiesCycleAnalysis.js` (nouveau), `data/forward-test-2026/forward-test-all-live-strategies-cycle-analysis.md`.
+
+## "Combien de cycle je dois anticiper par années?" — 2026-09-12
+
+Calcul dérivé directement des 46 cycles de la simulation continue (2018-01-01 → 2025-11-30, ~7.91 ans) :
+
+| Scénario | Cycles/an | Passes/an | Busts/an |
+|---|---|---|---|
+| 0.5% (challenge) | 5.8 | 5.3 | ~1 tous les 2 ans |
+| 0.4% | 4.2 | 4.0 | ~1 tous les 8 ans |
+| **0.3% (défaut live actuel)** | **3.2** | **3.2** | **0 sur tout l'historique testé** |
+
+Recoupé avec le forward-test réel (7 mois, 2 cycles gagnés en 130 jours à 0.5%) : ~5.6 cycles/an extrapolé, cohérent avec le 5.8/an de l'historique complet — bon signe de robustesse, les deux mesures s'accordent.
+
+**Fichiers** : ajout au verdict de `data/backtest-input/ftmo-1step-all-live-strategies-cycle-account-impact.md`, pas de nouveau script (calcul dérivé des résultats déjà produits).
