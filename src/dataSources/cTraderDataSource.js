@@ -127,7 +127,23 @@ export function foldLiveBidIntoCandle(existing, price) {
 }
 
 export class CTraderDataSource {
-  constructor() {
+  /**
+   * @param {{account?: import('../accountRuntime.js').AccountRuntime, brokerConfig?: object, symbols?: string[]}} [opts]
+   * Multi-account rollout (2026-09, Phase 2 - see HANDOFF.md/accountRegistry.js):
+   * `account` is which AccountRuntime this connection feeds (defaults to the
+   * module-level `store` alias for any caller that hasn't been updated, e.g.
+   * existing unit tests that construct this with no args); `brokerConfig`
+   * is that SAME account's own credentials (defaults to the global
+   * CONFIG.broker, i.e. today's single-account behavior) - each account gets
+   * its own instance with its own credentials, never CONFIG.broker shared
+   * across accounts. `symbols` stays shared/global by default (CONFIG.symbols)
+   * per the rollout's scope decision: strategy config (which symbols, session
+   * windows, RR) is the same for every account, only broker/risk/guardrails vary.
+   */
+  constructor({ account = store, brokerConfig = CONFIG.broker, symbols = CONFIG.symbols } = {}) {
+    this.account = account;
+    this.brokerConfig = brokerConfig;
+    this.symbols = symbols;
     this.connection = null;
     this.symbolIdByName = new Map();
     this.symbolNameById = new Map();
@@ -178,10 +194,11 @@ export class CTraderDataSource {
   }
 
   async start() {
-    const { clientId, clientSecret, accessToken } = CONFIG.broker;
-    let accountId = CONFIG.broker.accountId;
+    const store = this.account;
+    const { clientId, clientSecret, accessToken } = this.brokerConfig;
+    let accountId = this.brokerConfig.accountId;
     if (!clientId || !clientSecret || !accessToken) {
-      throw new Error('CTraderDataSource.start() called without full broker credentials in CONFIG.broker');
+      throw new Error(`CTraderDataSource.start() called without full broker credentials for account "${store.id}"`);
     }
 
     this.connection = new CTraderConnection({ host: HOST, port: PORT });
@@ -229,7 +246,7 @@ export class CTraderDataSource {
     await this._loadBalance(accountId);
     console.log('[cTrader] loading last 24h of closed deals...');
     await this._loadClosedDeals(accountId);
-    console.log('[cTrader] subscribing to live candles for', CONFIG.symbols.join(', '));
+    console.log('[cTrader] subscribing to live candles for', this.symbols.join(', '));
     await this._subscribeLiveCandles(accountId);
 
     // ROOT CAUSE FIX (2026-09-10): connection.on(name, listener) delivers a
@@ -255,10 +272,11 @@ export class CTraderDataSource {
     this.connection.on('ProtoOAExecutionEvent', (event) => this._handleExecutionEvent(event.descriptor));
 
     store.mode = 'live';
-    console.log('[cTrader] connected and live for account', accountId);
+    console.log(`[cTrader:${store.id}] connected and live for account`, accountId);
   }
 
   async stop() {
+    const store = this.account;
     if (this._heartbeat) clearInterval(this._heartbeat);
     if (this.connection) await this.connection.close?.();
     store.mode = 'demo';
@@ -275,6 +293,7 @@ export class CTraderDataSource {
   }
 
   async _loadBalance(accountId) {
+    const store = this.account;
     const res = await sendCommandWithTimeout(this.connection, 'ProtoOATraderReq', {
       ctidTraderAccountId: Number(accountId),
     });
@@ -300,6 +319,7 @@ export class CTraderDataSource {
   }
 
   async _loadClosedDeals(accountId) {
+    const store = this.account;
     const to = Date.now();
     const from = to - 24 * 3600 * 1000; // last 24h is enough to seed today's guardrail state
     const res = await sendCommandWithTimeout(this.connection, 'ProtoOADealListReq', {
@@ -403,6 +423,7 @@ export class CTraderDataSource {
    * accountReconciliation.js - this method only gathers the live inputs.
    */
   async getAccountReconciliation() {
+    const store = this.account;
     const accountId = this.accountId;
     const res = await sendCommandWithTimeout(this.connection, 'ProtoOAReconcileReq', {
       ctidTraderAccountId: Number(accountId),
@@ -420,7 +441,7 @@ export class CTraderDataSource {
     // source where "believed-only" is a real submission problem worth
     // checking - see _handleAutoExecuteEntry()'s own order-type comment).
     const believedOpenBySymbol = {};
-    for (const symbol of CONFIG.symbols) {
+    for (const symbol of this.symbols) {
       believedOpenBySymbol[symbol] = store.strategyEngine.getOpenPosition(symbol)?.source ?? null;
     }
 
@@ -469,9 +490,10 @@ export class CTraderDataSource {
   }
 
   async _subscribeLiveCandles(accountId) {
+    const store = this.account;
     const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
 
-    for (const symbolName of CONFIG.symbols) {
+    for (const symbolName of this.symbols) {
       const symbolId = this.symbolIdByName.get(symbolName);
       if (!symbolId) {
         console.warn(`[cTrader] symbol "${symbolName}" not found on this account - skipping`);
@@ -692,15 +714,22 @@ export class CTraderDataSource {
    * worse than a missed pyramid leg.
    */
   async _handlePyramidOrderRequested(symbolName, symbolId, e) {
+    const store = this.account;
     try {
       const spec = getDefaultSpec(symbolName);
       if (!spec) {
         console.warn(`[pyramid] no symbol spec for ${symbolName} - skipping add-on order`);
         return;
       }
+      // Bug fix (2026-09, multi-account rollout): this used to read the
+      // BOOT-TIME global CONFIG.risk.riskPctPerTrade default, ignoring both
+      // a live dashboard change (POST /api/settings/risk) AND, now that
+      // per-account risk% is a real thing (see propFirms/index.js), any
+      // OTHER account's risk entirely - store.strategyEngine.riskPctPerTrade
+      // is the one number that's actually always current for THIS account.
       const sizing = calculateLotSize({
         balance: store.balance,
-        riskPct: CONFIG.risk.riskPctPerTrade,
+        riskPct: store.strategyEngine.riskPctPerTrade,
         entryPrice: e.entryPrice,
         stopPrice: e.stopPrice,
         symbolSpec: spec,
@@ -799,15 +828,19 @@ export class CTraderDataSource {
    *     in practice.
    */
   async _handleAutoExecuteEntry(symbolName, symbolId, signal) {
+    const store = this.account;
     try {
       const spec = getDefaultSpec(symbolName);
       if (!spec) {
         console.warn(`[auto-execute] no symbol spec for ${symbolName} - skipping entry`);
         return;
       }
+      // Bug fix (2026-09, multi-account rollout) - see the identical note in
+      // _handlePyramidOrderRequested() above: the live per-account risk%,
+      // not the boot-time global default.
       const sizing = calculateLotSize({
         balance: store.balance,
-        riskPct: CONFIG.risk.riskPctPerTrade,
+        riskPct: store.strategyEngine.riskPctPerTrade,
         entryPrice: signal.entryPrice,
         stopPrice: signal.stopPrice,
         symbolSpec: spec,
@@ -877,12 +910,21 @@ export class CTraderDataSource {
   }
 
   _handleExecutionEvent(event) {
+    const store = this.account;
     // A position closed on the broker side -> feed it into the guardrail engine
     // as ground truth (real trade, not a demo simulation).
     if (event.executionType === 'ORDER_FILLED' && event.deal?.closePositionDetail) {
       const pnl = event.deal.closePositionDetail.grossProfit / 100;
       store.setBalance(store.balance + pnl);
       store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance });
+      // Prop-firm challenge target alert (2026-09, multi-account rollout -
+      // see src/propFirms/index.js). Fires ONCE, the first real trade close
+      // that confirms the target is reached - trading keeps going either way
+      // (see GuardrailEngine's own header on why this never blocks). Esdras
+      // adds the next-phase account herself once the firm actually grants it.
+      if (store.guardrail.consumeTargetReachedEvent()) {
+        this._notifyText(`🎯 Cible atteinte sur ${store.label} (+${store.guardrail.targetPct}%) - solde ${store.balance.toFixed(2)}. La prop firm devrait bientôt fournir le compte de la phase suivante.`);
+      }
 
       // If the position that just closed was a pyramid add-on leg (tracked
       // purely by positionId here - see constructor comment), clean up the
@@ -993,6 +1035,7 @@ export class CTraderDataSource {
   }
 
   _notify(events) {
+    const store = this.account;
     if (!CONFIG.notifications.ntfyTopic) return;
     for (const e of events) {
       if (e.type !== 'validated') continue;

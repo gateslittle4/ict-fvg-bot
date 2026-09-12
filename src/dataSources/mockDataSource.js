@@ -6,28 +6,27 @@
 // This is CLEARLY a demo/offline data source: prices are a random walk with
 // occasional impulsive candles (to produce FVGs to look at), not real market
 // data. The dashboard must keep the "DEMO MODE" banner visible whenever this
-// source is active - see store.mode.
+// source is active - see AccountRuntime.mode.
+//
+// Multi-account rollout (2026-09, Phase 2 - see HANDOFF.md/accountRegistry.js):
+// this used to be module-level singleton functions (a single `started`
+// boolean/`intervalHandle`) that could only ever drive ONE account. Now
+// `startMockDataSource(account, opts)`/`stopMockDataSource(account)` take
+// the AccountRuntime to drive explicitly and track their interval PER
+// account id, so several mock accounts can run concurrently in the same
+// process (used by the multi-account integration test).
 
 import { getDefaultAccount } from '../accountRegistry.js';
 import { CONFIG } from '../config.js';
 
-// Phase 1 of the multi-account rollout (see HANDOFF.md/accountRegistry.js):
-// this data source, like the other two, still only ever drives the single
-// default account - kept as a local `store` alias so the rest of this file
-// (and its comments referring to "store.X") reads exactly as before.
-const store = getDefaultAccount();
-
-// Demo push is OFF by default (nobody wants their phone buzzing over fake
-// trades). Set DEMO_PUSH_NOTIFICATIONS=true to test the ntfy.sh wiring
-// before going live.
 const DEMO_PUSH_ENABLED = process.env.DEMO_PUSH_NOTIFICATIONS === 'true';
 
-function notifyDemo(event) {
+function notifyDemo(account, event) {
   if (!DEMO_PUSH_ENABLED || !CONFIG.notifications.ntfyTopic) return;
   // Divergence-sourced signals have no `zone` (that's an FVG-only concept) - describe generically.
   const range = event.zone ? ` (${event.zone.bottom.toFixed(2)}-${event.zone.top.toFixed(2)})` : '';
   const label = event.source === 'divergence' ? 'divergence' : 'FVG rempli';
-  const text = `[DEMO] ${event.suggestedSide.toUpperCase()} ${event.symbol} — ${label}${range}`;
+  const text = `[DEMO ${account.label}] ${event.suggestedSide.toUpperCase()} ${event.symbol} — ${label}${range}`;
   fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch(() => {});
 }
 
@@ -79,52 +78,55 @@ class SymbolSimulator {
   }
 }
 
-let started = false;
-let intervalHandle = null;
+// account.id -> intervalHandle - lets several mock accounts run concurrently
+// (each with its own independent random-walk simulators) instead of a single
+// module-level "started" guard that only ever supported one.
+const intervalByAccountId = new Map();
 
-export function startMockDataSource({ candleIntervalMs = 4000 } = {}) {
-  if (started) return;
-  started = true;
-  store.mode = 'demo';
+export function startMockDataSource(account = getDefaultAccount(), { candleIntervalMs = 4000, symbols = CONFIG.symbols } = {}) {
+  if (intervalByAccountId.has(account.id)) return; // already running for this account
+  account.mode = 'demo';
 
-  const sims = new Map(CONFIG.symbols.map((s) => [s, new SymbolSimulator(s)]));
-  store.strategyEngine.setBalance(store.balance);
+  const sims = new Map(symbols.map((s) => [s, new SymbolSimulator(s)]));
+  account.strategyEngine.setBalance(account.balance);
 
   // Warm up with some history immediately so the dashboard isn't empty on first load.
   // Not enough candles here to ever pass the HTF-EMA/structure/session/sweep filters for
   // real (those need hundreds of candles of warm-up) - this is only to populate
   // lastCandleBySymbol/"watching" gaps for a non-empty first paint, same as before.
   for (let i = 0; i < 30; i++) {
-    for (const symbol of CONFIG.symbols) {
+    for (const symbol of symbols) {
       const candle = sims.get(symbol).nextCandle();
-      const events = store.strategyEngine.ingestCandle(symbol, candle);
-      store.pushSignalEvents(events);
-      store.lastCandleBySymbol.set(symbol, candle);
+      const events = account.strategyEngine.ingestCandle(symbol, candle);
+      account.pushSignalEvents(events);
+      account.lastCandleBySymbol.set(symbol, candle);
       for (const e of events) {
-        if (e.type === 'validated' && !e.blockedReason) maybeSimulateTradeOutcome();
+        if (e.type === 'validated' && !e.blockedReason) maybeSimulateTradeOutcome(account);
       }
     }
   }
 
-  intervalHandle = setInterval(() => {
-    for (const symbol of CONFIG.symbols) {
+  const intervalHandle = setInterval(() => {
+    for (const symbol of symbols) {
       const candle = sims.get(symbol).nextCandle();
-      const events = store.strategyEngine.ingestCandle(symbol, candle);
-      store.pushSignalEvents(events);
-      store.lastCandleBySymbol.set(symbol, candle);
+      const events = account.strategyEngine.ingestCandle(symbol, candle);
+      account.pushSignalEvents(events);
+      account.lastCandleBySymbol.set(symbol, candle);
       for (const e of events) {
         if (e.type === 'validated' && !e.blockedReason) {
-          maybeSimulateTradeOutcome();
-          notifyDemo(e);
+          maybeSimulateTradeOutcome(account);
+          notifyDemo(account, e);
         }
       }
     }
   }, candleIntervalMs);
+  intervalByAccountId.set(account.id, intervalHandle);
 }
 
-export function stopMockDataSource() {
-  if (intervalHandle) clearInterval(intervalHandle);
-  started = false;
+export function stopMockDataSource(account = getDefaultAccount()) {
+  const handle = intervalByAccountId.get(account.id);
+  if (handle) clearInterval(handle);
+  intervalByAccountId.delete(account.id);
 }
 
 // Purely cosmetic for the demo: pretends the user took ~60% of validated
@@ -132,15 +134,15 @@ export function stopMockDataSource() {
 // (cooldown / daily loss / trade count) has something real to react to.
 // This NEVER happens once mode === 'live' - live trades come only from the
 // broker's own closed-position feed (see cTraderClient.js).
-function maybeSimulateTradeOutcome() {
-  if (store.mode !== 'demo') return;
+function maybeSimulateTradeOutcome(account) {
+  if (account.mode !== 'demo') return;
   if (Math.random() > 0.6) return;
 
   setTimeout(() => {
-    if (store.mode !== 'demo') return;
+    if (account.mode !== 'demo') return;
     const win = Math.random() < 0.45; // slightly losing-biased on purpose, to demo cooldown/loss-limit
     const pnl = win ? rand(40, 120) : -rand(40, 140);
-    store.setBalance(store.balance + pnl);
-    store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance });
+    account.setBalance(account.balance + pnl);
+    account.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: account.balance });
   }, rand(2000, 6000));
 }

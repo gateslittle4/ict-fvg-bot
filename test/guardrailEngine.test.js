@@ -88,3 +88,79 @@ test('multiple simultaneous block reasons are all reported', () => {
   assert.ok(status.blockReasons.includes('cooldown_active'));
   assert.ok(status.blockReasons.includes('daily_loss_limit_reached'));
 });
+
+// Overall (not per-day) challenge target/drawdown tracking (2026-09,
+// multi-account/prop-firm rollout - see src/propFirms/index.js).
+
+test('overall drawdown/target tracking is off by default - existing callers see no new blocking', () => {
+  const g = new GuardrailEngine();
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -9000, time: DAY1 + 1000, balanceAfter: 1000 }); // a catastrophic loss
+  const status = g.getStatus(DAY1 + 2000);
+  assert.equal(status.overallDrawdownBreached, false);
+  assert.equal(status.targetReached, false);
+  assert.equal(status.overallDrawdownFloor, null);
+});
+
+test('static drawdown: floor is fixed at the initial balance, never moves even after new highs', () => {
+  const g = new GuardrailEngine({ maxDrawdownPct: 10, maxDrawdownType: 'static' });
+  g.setBalance(10000, DAY1);
+  assert.equal(g.getStatus(DAY1).overallDrawdownFloor, 9000);
+  g.recordTrade({ pnl: 2000, time: DAY1 + 1000, balanceAfter: 12000 }); // new high
+  assert.equal(g.getStatus(DAY1 + 2000).overallDrawdownFloor, 9000); // floor unchanged - static means static
+  g.recordTrade({ pnl: -3100, time: DAY1 + 3000, balanceAfter: 8900 });
+  const status = g.getStatus(DAY1 + 4000);
+  assert.equal(status.overallDrawdownBreached, true);
+  assert.ok(status.blockReasons.includes('overall_drawdown_breached'));
+});
+
+test('trailing-eod drawdown: floor follows the highest END-OF-DAY balance, not real-time equity', () => {
+  const g = new GuardrailEngine({ maxDrawdownPct: 10, maxDrawdownType: 'trailing-eod' });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: 3000, time: DAY1 + 1000, balanceAfter: 13000 }); // intraday high, same day
+  // Still day 1 - peakEodBalance not updated yet (no day boundary crossed), floor still off the initial balance.
+  assert.equal(g.getStatus(DAY1 + 2000).overallDrawdownFloor, 9000);
+  const day2 = DAY1 + 24 * 3600 * 1000;
+  g.setBalance(13000, day2); // day boundary crossed with balance=13000 -> that becomes the new EOD peak
+  assert.equal(g.getStatus(day2).overallDrawdownFloor, 11700); // 13000 * 0.9
+});
+
+test("trailing-locks-at-start-balance: floor never rises above the initial balance", () => {
+  const g = new GuardrailEngine({ maxDrawdownPct: 5, maxDrawdownType: 'trailing-locks-at-start-balance' });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: 5000, time: DAY1 + 1000, balanceAfter: 15000 }); // peak now 15000
+  // 15000 * 0.95 = 14250, but the floor LOCKS at the starting balance (10000) instead of rising past it.
+  assert.equal(g.getStatus(DAY1 + 2000).overallDrawdownFloor, 10000);
+});
+
+test('an unrecognized maxDrawdownType fails OPEN (never blocks on a config typo)', () => {
+  const g = new GuardrailEngine({ maxDrawdownPct: 10, maxDrawdownType: 'made-up-typo' });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -9500, time: DAY1 + 1000, balanceAfter: 500 });
+  const status = g.getStatus(DAY1 + 2000);
+  assert.equal(status.overallDrawdownFloor, null);
+  assert.equal(status.overallDrawdownBreached, false);
+});
+
+test('target reached: flips true once, does NOT block trading, and stays true afterward even on a pullback', () => {
+  const g = new GuardrailEngine({ targetPct: 10, maxTradesPerDay: 100 });
+  g.setBalance(10000, DAY1);
+  assert.equal(g.getStatus(DAY1).targetReached, false);
+  g.recordTrade({ pnl: 1000, time: DAY1 + 1000, balanceAfter: 11000 });
+  let status = g.getStatus(DAY1 + 2000);
+  assert.equal(status.targetReached, true);
+  assert.equal(status.blocked, false); // reaching target never blocks - trading continues
+  g.recordTrade({ pnl: -500, time: DAY1 + 3000, balanceAfter: 10500 }); // pull back below target
+  status = g.getStatus(DAY1 + 4000);
+  assert.equal(status.targetReached, true); // sticky - stays true
+});
+
+test('consumeTargetReachedEvent fires exactly once, on the first call after the target is hit', () => {
+  const g = new GuardrailEngine({ targetPct: 10 });
+  g.setBalance(10000, DAY1);
+  assert.equal(g.consumeTargetReachedEvent(DAY1), false); // not reached yet
+  g.recordTrade({ pnl: 1200, time: DAY1 + 1000, balanceAfter: 11200 });
+  assert.equal(g.consumeTargetReachedEvent(DAY1 + 2000), true); // first call after reaching it - fires
+  assert.equal(g.consumeTargetReachedEvent(DAY1 + 3000), false); // already consumed - never fires again
+  assert.equal(g.getStatus(DAY1 + 4000).targetReached, true); // status itself stays true regardless
+});

@@ -301,33 +301,163 @@ export const CONFIG = {
   },
 };
 
-/** Which broker platform to boot with, if any. Explicit override via
- * BROKER_PLATFORM=matchtrader|ctrader; otherwise whichever has full
- * credentials wins, preferring Match-Trader when BOTH happen to be
- * configured at once. ⚠️ cTrader is the platform actually in production use
- * today (see the `broker` comment above) - this function's Match-Trader-
- * first tiebreak is NOT a statement of which platform is "active", only
- * what happens if both are ever fully configured simultaneously. Today only
- * cTrader's 3 env vars are set on Render, so this resolves to 'ctrader'. */
+/** Pure - given a broker-credentials-shaped object ({clientId, clientSecret,
+ * accessToken, matchTrader: {email, password, brokerId, platformUrl}}),
+ * decides which platform is ready to connect with, preferring Match-Trader
+ * when BOTH happen to be fully configured at once (not a statement of which
+ * is "active" for any specific account, only a tiebreak). Shared by
+ * getConfiguredPlatform() below (the legacy single-account path, operating
+ * on CONFIG.broker) and resolveAccounts()' per-account normalization, so the
+ * two never drift into different detection logic. */
+function detectPlatformFromBroker(broker) {
+  const mt = broker.matchTrader || {};
+  const matchTraderReady = Boolean(mt.email && mt.password && mt.brokerId && mt.platformUrl);
+  if (matchTraderReady) return 'matchtrader';
+  // accountId is deliberately NOT required for cTrader (unlike matchTrader
+  // above) - CTraderDataSource.start() can discover it via the access token
+  // when unset (see pickAccountOrThrow() in cTraderDataSource.js), so the
+  // app should still attempt a live connection with just these three.
+  const cTraderReady = Boolean(broker.clientId && broker.clientSecret && broker.accessToken);
+  if (cTraderReady) return 'ctrader';
+  return null;
+}
+
+/** Which broker platform to boot with, if any, for the legacy single-account
+ * path (CONFIG.broker). Explicit override via BROKER_PLATFORM=matchtrader|ctrader.
+ * ⚠️ cTrader is the platform actually in production use today (see the
+ * `broker` comment above) - today only cTrader's 3 env vars are set on
+ * Render, so this resolves to 'ctrader'. */
 export function getConfiguredPlatform() {
   const override = (process.env.BROKER_PLATFORM || '').toLowerCase();
   if (override === 'matchtrader' || override === 'ctrader') return override;
-
-  const mt = CONFIG.broker.matchTrader;
-  const matchTraderReady = Boolean(mt.email && mt.password && mt.brokerId && mt.platformUrl);
-  if (matchTraderReady) return 'matchtrader';
-
-  const ct = CONFIG.broker;
-  // accountId is deliberately NOT required here (unlike matchTrader above) -
-  // CTraderDataSource.start() can discover it via the access token when
-  // unset (see pickAccountOrThrow() in cTraderDataSource.js), so the app
-  // should still attempt a live connection with just these three.
-  const cTraderReady = Boolean(ct.clientId && ct.clientSecret && ct.accessToken);
-  if (cTraderReady) return 'ctrader';
-
-  return null;
+  return detectPlatformFromBroker(CONFIG.broker);
 }
 
 export function isLiveConfigured() {
   return getConfiguredPlatform() !== null;
 }
+
+// CONFIG.accounts (2026-09, multi-account rollout - see HANDOFF.md
+// "Multi-compte" and src/propFirms/index.js): one entry per broker
+// account/challenge/prop-firm phase this process manages. Set via
+// ACCOUNTS_JSON (a JSON array, one object per account - see
+// normalizeAccountEntry() below for every field it accepts). When unset
+// (today's actual production state), exactly ONE account is built from the
+// existing flat env vars (CTRADER_*, MATCHTRADER_*, ACCOUNT_MODE,
+// RISK_PCT_PER_TRADE, BROKER_PLATFORM) - identical behavior to before
+// multi-account support existed, so nothing on the currently running
+// deployment has to change until ACCOUNTS_JSON is explicitly set.
+function defaultGuardrails() {
+  return { maxTradesPerDay: 2, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 2, dayBoundaryHourUTC: 0 };
+}
+
+function resolveAccountRiskPct(accountMode, explicit) {
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) {
+    return Math.min(Math.max(explicit, MIN_RISK_PCT), MAX_RISK_PCT);
+  }
+  return DEFAULT_RISK_PCT_BY_MODE[accountMode] ?? DEFAULT_RISK_PCT_BY_MODE.challenge;
+}
+
+/**
+ * Normalizes one ACCOUNTS_JSON entry (or the synthesized legacy entry below)
+ * into the shape accountRegistry.js expects. Every field is optional except
+ * broker credentials (needed only if platform isn't 'mock'):
+ *   id, label            - id defaults to "account-N", label defaults to id.
+ *   accountMode          - 'challenge' | 'live', defaults to 'challenge' -
+ *                          picks the default riskPctPerTrade below (see
+ *                          DEFAULT_RISK_PCT_BY_MODE above), same meaning as
+ *                          the legacy ACCOUNT_MODE env var.
+ *   riskPctPerTrade      - explicit override; else derived from accountMode.
+ *   platform             - 'ctrader' | 'matchtrader' | 'mock'; else
+ *                          auto-detected from `broker`/`matchTrader`, else 'mock'.
+ *   propFirmProgramId    - a key from src/propFirms/index.js's
+ *                          PROP_FIRM_PROGRAMS (e.g. 'ftmo-1step'), or null -
+ *                          resolved by accountRegistry.js into this
+ *                          account's real target/drawdown/daily-loss numbers.
+ *   phaseIndex           - which phase of that program this account is
+ *                          CURRENTLY on (0-based, default 0). Esdras adds a
+ *                          NEW account entry (with the next phaseIndex, and
+ *                          the new credentials the prop firm gave her) once
+ *                          a phase's target is reached - see propFirms/index.js.
+ *   guardrails           - maxTradesPerDay/cooldownMinutesAfterLoss/
+ *                          dayBoundaryHourUTC (dailyLossLimitPct here is
+ *                          IGNORED once propFirmProgramId is set - the
+ *                          program's own number wins, see accountRegistry.js).
+ *   broker               - { clientId, clientSecret, accessToken, accountId } (cTrader).
+ *   matchTrader          - { email, password, brokerId, platformUrl, systemUuid, accountId }.
+ */
+function normalizeAccountEntry(raw, index) {
+  const id = raw.id || `account-${index + 1}`;
+  const accountMode = ACCOUNT_MODES.includes(raw.accountMode) ? raw.accountMode : 'challenge';
+  const broker = {
+    clientId: raw.broker?.clientId || null,
+    clientSecret: raw.broker?.clientSecret || null,
+    accessToken: raw.broker?.accessToken || null,
+    accountId: raw.broker?.accountId || null,
+    matchTrader: {
+      email: raw.matchTrader?.email || null,
+      password: raw.matchTrader?.password || null,
+      brokerId: raw.matchTrader?.brokerId || null,
+      platformUrl: raw.matchTrader?.platformUrl || null,
+      systemUuid: raw.matchTrader?.systemUuid || null,
+      accountId: raw.matchTrader?.accountId || null,
+    },
+  };
+  const explicitPlatform = ['ctrader', 'matchtrader', 'mock'].includes(raw.platform) ? raw.platform : null;
+  const platform = explicitPlatform || detectPlatformFromBroker(broker) || 'mock';
+  return {
+    id,
+    label: raw.label || id,
+    platform,
+    accountMode,
+    riskPctPerTrade: resolveAccountRiskPct(accountMode, raw.riskPctPerTrade),
+    propFirmProgramId: raw.propFirmProgramId || null,
+    phaseIndex: Number.isInteger(raw.phaseIndex) ? raw.phaseIndex : 0,
+    guardrails: { ...defaultGuardrails(), ...(raw.guardrails || {}) },
+    broker,
+  };
+}
+
+function resolveAccounts() {
+  const raw = process.env.ACCOUNTS_JSON;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((entry, i) => normalizeAccountEntry(entry, i));
+      }
+      console.error('[config] ACCOUNTS_JSON must be a non-empty JSON array - falling back to the single default account.');
+    } catch (err) {
+      console.error('[config] ACCOUNTS_JSON is set but is not valid JSON - falling back to the single default account:', err.message);
+    }
+  }
+
+  const legacyPlatformOverride = (process.env.BROKER_PLATFORM || '').toLowerCase();
+  return [
+    normalizeAccountEntry(
+      {
+        id: 'default',
+        accountMode: ACCOUNT_MODE,
+        riskPctPerTrade: Number(process.env.RISK_PCT_PER_TRADE) || undefined,
+        platform: ['ctrader', 'matchtrader'].includes(legacyPlatformOverride) ? legacyPlatformOverride : undefined,
+        broker: {
+          clientId: process.env.CTRADER_CLIENT_ID || null,
+          clientSecret: process.env.CTRADER_CLIENT_SECRET || null,
+          accessToken: process.env.CTRADER_ACCESS_TOKEN || null,
+          accountId: process.env.CTRADER_ACCOUNT_ID || null,
+        },
+        matchTrader: {
+          email: process.env.MATCHTRADER_EMAIL || null,
+          password: process.env.MATCHTRADER_PASSWORD || null,
+          brokerId: process.env.MATCHTRADER_BROKER_ID || null,
+          platformUrl: process.env.MATCHTRADER_PLATFORM_URL || null,
+          systemUuid: process.env.MATCHTRADER_SYSTEM_UUID || null,
+          accountId: process.env.MATCHTRADER_ACCOUNT_ID || null,
+        },
+      },
+      0
+    ),
+  ];
+}
+
+CONFIG.accounts = resolveAccounts();

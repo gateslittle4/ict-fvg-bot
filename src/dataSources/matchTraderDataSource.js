@@ -176,7 +176,19 @@ function parseCookie(setCookieHeader, name) {
 }
 
 export class MatchTraderDataSource {
-  constructor() {
+  /**
+   * @param {{account?: import('../accountRuntime.js').AccountRuntime, brokerConfig?: object, symbols?: string[]}} [opts]
+   * Same multi-account injection pattern as CTraderDataSource - see that
+   * class's constructor doc for the full rationale. `brokerConfig` here is
+   * shaped like CONFIG.broker.matchTrader (email/password/brokerId/
+   * platformUrl/systemUuid/accountId), defaulting to that same global object
+   * for any caller that hasn't been updated (e.g. existing unit tests that
+   * construct this with no args).
+   */
+  constructor({ account = store, brokerConfig = CONFIG.broker.matchTrader, symbols = CONFIG.symbols } = {}) {
+    this.account = account;
+    this.brokerConfig = brokerConfig;
+    this.symbols = symbols;
     this.baseUrl = null; // platformUrl, no trailing slash
     this.systemUuid = null;
     this.coAuthToken = null; // cookie: co-auth
@@ -219,9 +231,10 @@ export class MatchTraderDataSource {
   }
 
   async start() {
-    const cfg = CONFIG.broker.matchTrader;
+    const store = this.account;
+    const cfg = this.brokerConfig;
     if (!cfg || !cfg.email || !cfg.password || !cfg.brokerId || !cfg.platformUrl) {
-      throw new Error('MatchTraderDataSource.start() called without full credentials in CONFIG.broker.matchTrader');
+      throw new Error(`MatchTraderDataSource.start() called without full credentials for account "${store.id}"`);
     }
     this.baseUrl = cfg.platformUrl.replace(/\/$/, '');
     this.systemUuid = cfg.systemUuid || cfg.brokerId; // VERIFY: assumed same value unless support says otherwise - see file header
@@ -235,7 +248,7 @@ export class MatchTraderDataSource {
     await this._fetchBalance();
     await this._seedGuardrailFromLedger();
 
-    for (const symbol of CONFIG.symbols) this.candleBuilders.set(symbol, new M15CandleBuilder());
+    for (const symbol of this.symbols) this.candleBuilders.set(symbol, new M15CandleBuilder());
 
     this._quotePoll = setInterval(() => this._pollQuotes().catch((err) => {
       console.error('[matchtrader] quote poll failed:', err.message);
@@ -245,10 +258,11 @@ export class MatchTraderDataSource {
     }), POLL_POSITIONS_MS);
 
     store.mode = 'live';
-    console.log('[matchtrader] connected and live, account', this.tradingAccountId);
+    console.log(`[matchtrader:${store.id}] connected and live, account`, this.tradingAccountId);
   }
 
   async stop() {
+    const store = this.account;
     if (this._refreshTimer) clearInterval(this._refreshTimer);
     if (this._quotePoll) clearInterval(this._quotePoll);
     if (this._positionPoll) clearInterval(this._positionPoll);
@@ -270,12 +284,12 @@ export class MatchTraderDataSource {
     const body = await res.json();
     this.coAuthToken = this.coAuthToken || body.token; // VERIFY: fall back to body field if the cookie isn't set as documented
     const accounts = body.accounts || [];
-    const account = CONFIG.broker.matchTrader.accountId
-      ? accounts.find((a) => String(a.tradingAccountId) === String(CONFIG.broker.matchTrader.accountId))
+    const matchedAccount = this.brokerConfig.accountId
+      ? accounts.find((a) => String(a.tradingAccountId) === String(this.brokerConfig.accountId))
       : accounts[0];
-    if (!account) throw new Error('Match-Trader login succeeded but no matching trading account in response.accounts');
-    this.tradingApiToken = account.tradingApiToken;
-    this.tradingAccountId = account.tradingAccountId;
+    if (!matchedAccount) throw new Error('Match-Trader login succeeded but no matching trading account in response.accounts');
+    this.tradingApiToken = matchedAccount.tradingApiToken;
+    this.tradingAccountId = matchedAccount.tradingAccountId;
   }
 
   async _refreshAuth() {
@@ -308,12 +322,13 @@ export class MatchTraderDataSource {
   // ---- market data (polling, see file header point 1) ----
 
   async _pollQuotes() {
-    const symbols = CONFIG.symbols.map((s) => SYMBOL_MAP[s] || s);
+    const store = this.account;
+    const symbols = this.symbols.map((s) => SYMBOL_MAP[s] || s);
     const data = await this._apiFetch(`/quotations?symbols=${symbols.join(',')}`);
     const quotes = Array.isArray(data) ? data : data.quotations || [];
     const now = Date.now();
 
-    for (const symbol of CONFIG.symbols) {
+    for (const symbol of this.symbols) {
       const mtSymbol = SYMBOL_MAP[symbol] || symbol;
       const quote = quotes.find((q) => q.symbol === mtSymbol);
       if (!quote) continue;
@@ -367,8 +382,16 @@ export class MatchTraderDataSource {
   // ---- account state ----
 
   async _fetchBalance() {
+    const store = this.account;
     const data = await this._apiFetch('/balance');
-    if (typeof data.balance === 'number') store.setBalance(data.balance);
+    if (typeof data.balance !== 'number') return;
+    store.setBalance(data.balance);
+    // Prop-firm challenge target alert (2026-09, multi-account rollout - see
+    // src/propFirms/index.js and the identical hook in
+    // cTraderDataSource.js's _handleExecutionEvent). Fires ONCE.
+    if (store.guardrail.consumeTargetReachedEvent()) {
+      this._notifyText(`🎯 Cible atteinte sur ${store.label} (+${store.guardrail.targetPct}%) - solde ${store.balance.toFixed(2)}. La prop firm devrait bientôt fournir le compte de la phase suivante.`);
+    }
   }
 
   /**
@@ -393,7 +416,7 @@ export class MatchTraderDataSource {
       for (const entry of entries) {
         if (typeof entry.profit !== 'number' || !entry.time) continue;
         if (entry.time < from || entry.time > to) continue;
-        store.guardrail.recordTrade({ pnl: entry.profit, time: entry.time });
+        this.account.guardrail.recordTrade({ pnl: entry.profit, time: entry.time });
       }
     } catch (err) {
       console.warn('[matchtrader] guardrail history seed skipped (last-finance shape unconfirmed):', err.message);
@@ -416,6 +439,7 @@ export class MatchTraderDataSource {
   }
 
   async _detectClosedPositions(currentPositions) {
+    const store = this.account;
     const currentByKey = new Map(currentPositions.map((p) => [this._positionKey(p), p]));
     for (const [key, prevSnapshot] of this.knownOpenPositions) {
       if (currentByKey.has(key)) continue; // still open
@@ -440,6 +464,7 @@ export class MatchTraderDataSource {
   }
 
   async _detectFilledOrders(currentOrders, currentPositions) {
+    const store = this.account;
     const currentOrderIds = new Set(currentOrders.map((o) => o.id));
     for (const [orderId, tracked] of this.knownActiveOrders) {
       if (currentOrderIds.has(orderId)) continue; // still pending
@@ -564,15 +589,19 @@ export class MatchTraderDataSource {
   // ---- pyramid add-on (mirrors cTraderDataSource.js's design 1:1 - see there for the full rationale) ----
 
   async _handlePyramidOrderRequested(symbol, e) {
+    const store = this.account;
     try {
       const spec = getDefaultSpec(symbol);
       if (!spec) {
         console.warn(`[pyramid] no symbol spec for ${symbol} - skipping add-on order`);
         return;
       }
+      // Bug fix (2026-09, multi-account rollout) - see the identical note in
+      // cTraderDataSource.js's _handlePyramidOrderRequested(): the live
+      // per-account risk%, not the boot-time global default.
       const sizing = calculateLotSize({
         balance: store.balance,
-        riskPct: CONFIG.risk.riskPctPerTrade,
+        riskPct: store.strategyEngine.riskPctPerTrade,
         entryPrice: e.entryPrice,
         stopPrice: e.stopPrice,
         symbolSpec: spec,
@@ -613,15 +642,18 @@ export class MatchTraderDataSource {
   // ---- "mode indisponible" auto-execute (mirrors cTraderDataSource.js - see there for the full rationale) ----
 
   async _handleAutoExecuteEntry(symbol, signal) {
+    const store = this.account;
     try {
       const spec = getDefaultSpec(symbol);
       if (!spec) {
         console.warn(`[auto-execute] no symbol spec for ${symbol} - skipping entry`);
         return;
       }
+      // Bug fix (2026-09, multi-account rollout) - see the identical note in
+      // _handlePyramidOrderRequested() above.
       const sizing = calculateLotSize({
         balance: store.balance,
-        riskPct: CONFIG.risk.riskPctPerTrade,
+        riskPct: store.strategyEngine.riskPctPerTrade,
         entryPrice: signal.entryPrice,
         stopPrice: signal.stopPrice,
         symbolSpec: spec,
@@ -654,6 +686,7 @@ export class MatchTraderDataSource {
   // ---- notifications (same ntfy.sh channel as cTraderDataSource.js) ----
 
   _notify(events) {
+    const store = this.account;
     if (!CONFIG.notifications.ntfyTopic) return;
     for (const e of events) {
       if (e.type !== 'validated') continue;

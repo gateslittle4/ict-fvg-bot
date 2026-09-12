@@ -37,16 +37,36 @@ const VOL_REGIME_SOURCES = new Set(['fvg', 'divergence']);
 
 export class AccountRuntime {
   /**
-   * @param {{id: string, label?: string, config: object, spreads?: object}} opts
+   * @param {{id: string, label?: string, config: object, spreads?: object, accountMode?: string, platform?: string, propFirmProgramId?: string|null, phaseIndex?: number|null}} opts
    * `config` is a CONFIG-shaped object (symbols, fvg, divergence, nwog,
    * judasSwing, guardrails, risk, pyramid) - today always the global CONFIG
-   * (single account), later one entry of CONFIG.accounts per account.
+   * (single account), later one per-account effective config built by
+   * accountRegistry.js (which is also where propFirmProgramId/phaseIndex get
+   * resolved into config.guardrails' targetPct/maxDrawdownPct/maxDrawdownType
+   * - see src/propFirms/index.js). `accountMode`/`platform`/
+   * `propFirmProgramId`/`phaseIndex` are metadata only (surfaced on
+   * GET /api/accounts) - AccountRuntime itself doesn't act on them, it just
+   * carries them alongside the state that DOES act on their consequences
+   * (this.guardrail already has the resolved numbers baked in).
    */
-  constructor({ id, label = id, config, spreads = DEFAULT_SPREADS } = {}) {
+  constructor({
+    id,
+    label = id,
+    config,
+    spreads = DEFAULT_SPREADS,
+    accountMode = 'challenge',
+    platform = 'mock',
+    propFirmProgramId = null,
+    phaseIndex = null,
+  } = {}) {
     if (!id) throw new Error('AccountRuntime requires an id');
     if (!config) throw new Error('AccountRuntime requires a config to build its strategy engine from');
     this.id = id;
     this.label = label;
+    this.accountMode = accountMode;
+    this.platform = platform;
+    this.propFirmProgramId = propFirmProgramId;
+    this.phaseIndex = phaseIndex;
     this.mode = 'demo'; // 'demo' | 'live' - flipped once the data source connects successfully
     this.guardrail = new GuardrailEngine(config.guardrails);
     this.strategyEngine = new LiveStrategyEngine({
