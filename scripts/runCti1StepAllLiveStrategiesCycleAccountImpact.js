@@ -87,6 +87,16 @@ const SCENARIOS = [
   { key: '0.4% par trade, aucun plafond', riskPct: 0.4, maxConcurrentPositions: Infinity },
   { key: '0.3% par trade, aucun plafond', riskPct: 0.3, maxConcurrentPositions: Infinity },
   { key: '0.2% par trade, aucun plafond', riskPct: 0.2, maxConcurrentPositions: Infinity },
+  // 2026-09-12: Esdras "CTI, ça c'est pour le challenge mais on peut
+  // modifier au live?" - vérifié : le compte financé CTI garde EXACTEMENT
+  // le même plancher 5% trailing que le challenge (seule la limite
+  // journalière - déjà absente en challenge - et la cible disparaissent).
+  // Donc contrairement à FTMO (où 0.3% suffit à 0% de bust une fois
+  // financé), le risque "live" doit rester très bas chez CTI puisque le
+  // plancher ne se relâche jamais. Ces deux scénarios cherchent le niveau
+  // qui approche le 0% de bust de FTMO en mode live.
+  { key: '0.15% par trade, aucun plafond (candidat live CTI)', riskPct: 0.15, maxConcurrentPositions: Infinity },
+  { key: '0.1% par trade, aucun plafond (candidat live CTI)', riskPct: 0.1, maxConcurrentPositions: Infinity },
   { key: '0.5% par trade, max 2 positions simultanées', riskPct: 0.5, maxConcurrentPositions: 2 },
   { key: '0.5% par trade, max 1 position simultanée (sérialisé)', riskPct: 0.5, maxConcurrentPositions: 1 },
 ];
@@ -421,13 +431,18 @@ function main() {
       "deux seuils changent). Aucune limite de perte journalière chez CTI (contre 3% chez FTMO) - non modélisée " +
       "séparément ici, la propre protection journalière du bot (GuardrailEngine, une sécurité du bot, pas une " +
       "règle de la prop firm) reste active comme pour le test FTMO.\n\n" +
-      "**6 scénarios** : les 5 mêmes que le rapport FTMO (comparaison directe ligne à ligne) plus un 6e à 0.2%, " +
+      "**8 scénarios** : les 6 déjà comparés au rapport FTMO/Ment Funding, plus 2 ajoutés le 2026-09-12 (0.15%, " +
+      "0.1%) pour répondre à \"CTI, ça c'est pour le challenge mais on peut modifier au live?\" - le compte financé " +
+      "CTI garde EXACTEMENT le même plancher 5% trailing que le challenge (vérifié en direct sur " +
+      "citytradersimperium.com : seule la limite journalière, déjà absente en challenge, et la cible disparaissent " +
+      "une fois financé), donc chercher le risque \"live\" qui ramène le taux de bust CTI à 0% (comme FTMO à " +
+      "0.3%) demandait de tester plus bas que 0.2%. " +
       "vu que le plancher CTI est deux fois plus serré.\n\n" +
       "Note sur les dates : simulation continue sur TOUT l'historique CSV disponible par symbole (XAUUSD/EURUSD " +
       "dès début 2018, US100/US500 dès début 2019), identique au rapport FTMO."
   );
   md.push('');
-  md.push('## Comparaison des 6 scénarios (historique complet en continu)');
+  md.push('## Comparaison des 8 scénarios (historique complet en continu)');
   md.push('');
   md.push('| Scénario | Cycles totaux | Passes | Busts | Taux de bust | Jours moy. pour passer | Trades moy. / cycle |');
   md.push('|---|---|---|---|---|---|---|');
@@ -469,7 +484,7 @@ function main() {
       `Le scénario qui réduit le plus le taux de bust est **"${best.scenario.key}"** ` +
       `(${(100 - best.s.passRate).toFixed(0)}% de bust contre ${(100 - baselineS.passRate).toFixed(0)}% pour l'actuel), ` +
       `${best.s.avgDaysToPass && baselineS.avgDaysToPass ? (best.s.avgDaysToPass > baselineS.avgDaysToPass ? `au prix d'un passage un peu plus lent (${best.s.avgDaysToPass}j contre ${baselineS.avgDaysToPass}j en moyenne).` : `sans ralentir le passage (${best.s.avgDaysToPass}j contre ${baselineS.avgDaysToPass}j).`) : ''} ` +
-      `Comparer les 6 lignes du tableau ci-dessus donne l'arbitrage complet vitesse/risque de chaque levier - à ` +
+      `Comparer les 8 lignes du tableau ci-dessus donne l'arbitrage complet vitesse/risque de chaque levier - à ` +
       `Esdras de choisir le compromis. Aucun changement fait dans \`src/\` — recherche seulement.`
   );
 

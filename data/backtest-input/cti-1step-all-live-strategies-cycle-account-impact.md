@@ -4,11 +4,11 @@ Fork direct de ftmo-1step-all-live-strategies-cycle-account-impact.md (même arc
 
 **Règles CTI utilisées ici** (sourcées en direct sur citytradersimperium.com/1-step-challenge-trailing-drawdown/, 2026-09-12) : target **+8%** (au lieu de +10%), drawdown max **5% trailing** basé sur le solde (pas l'équité intra-journalière) - mécanisme déjà correctement modélisé par ce script (le plancher suit le plus haut solde atteint APRÈS chaque trade fermé, identique à la logique FTMO déjà en place, seuls les deux seuils changent). Aucune limite de perte journalière chez CTI (contre 3% chez FTMO) - non modélisée séparément ici, la propre protection journalière du bot (GuardrailEngine, une sécurité du bot, pas une règle de la prop firm) reste active comme pour le test FTMO.
 
-**6 scénarios** : les 5 mêmes que le rapport FTMO (comparaison directe ligne à ligne) plus un 6e à 0.2%, vu que le plancher CTI est deux fois plus serré.
+**8 scénarios** : les 6 déjà comparés au rapport FTMO/Ment Funding, plus 2 ajoutés le 2026-09-12 (0.15%, 0.1%) pour répondre à "CTI, ça c'est pour le challenge mais on peut modifier au live?" - le compte financé CTI garde EXACTEMENT le même plancher 5% trailing que le challenge (vérifié en direct sur citytradersimperium.com : seule la limite journalière, déjà absente en challenge, et la cible disparaissent une fois financé), donc chercher le risque "live" qui ramène le taux de bust CTI à 0% (comme FTMO à 0.3%) demandait de tester plus bas que 0.2%. vu que le plancher CTI est deux fois plus serré.
 
 Note sur les dates : simulation continue sur TOUT l'historique CSV disponible par symbole (XAUUSD/EURUSD dès début 2018, US100/US500 dès début 2019), identique au rapport FTMO.
 
-## Comparaison des 6 scénarios (historique complet en continu)
+## Comparaison des 8 scénarios (historique complet en continu)
 
 | Scénario | Cycles totaux | Passes | Busts | Taux de bust | Jours moy. pour passer | Trades moy. / cycle |
 |---|---|---|---|---|---|---|
@@ -16,6 +16,8 @@ Note sur les dates : simulation continue sur TOUT l'historique CSV disponible pa
 | 0.4% par trade, aucun plafond | 58 | 43 | 15 | 26% | 50 | 40 |
 | 0.3% par trade, aucun plafond | 38 | 31 | 7 | 18% | 73 | 62 |
 | 0.2% par trade, aucun plafond | 23 | 21 | 2 | 9% | 126 | 102 |
+| 0.15% par trade, aucun plafond (candidat live CTI) | 15 | 15 | 0 | 0% | 190 | 155 |
+| 0.1% par trade, aucun plafond (candidat live CTI) | 10 | 10 | 0 | 0% | 281 | 229 |
 | 0.5% par trade, max 2 positions simultanées | 85 | 57 | 28 | 33% | 32 | 27 |
 | 0.5% par trade, max 1 position simultanée (sérialisé) | 66 | 46 | 20 | 30% | 49 | 28 |
 
@@ -111,4 +113,4 @@ Note sur les dates : simulation continue sur TOUT l'historique CSV disponible pa
 
 Contre le plancher CTI (5% trailing, deux fois plus serré que FTMO), le scénario actuel (0.5% par trade, aucun plafond) produit 83 cycles sur l'historique complet : 55 passes (challenge/live gagné) contre 28 busts, soit un taux de bust de 34% - à comparer directement au taux de bust FTMO à 0.5% (9% sur 46 cycles, plancher 10%) pour mesurer l'effet réel du drawdown plus serré.
 
-Le scénario qui réduit le plus le taux de bust est **"0.2% par trade, aucun plafond"** (9% de bust contre 34% pour l'actuel), au prix d'un passage un peu plus lent (126j contre 32j en moyenne). Comparer les 6 lignes du tableau ci-dessus donne l'arbitrage complet vitesse/risque de chaque levier - à Esdras de choisir le compromis. Aucun changement fait dans `src/` — recherche seulement.
+Le scénario qui réduit le plus le taux de bust est **"0.15% par trade, aucun plafond (candidat live CTI)"** (0% de bust contre 34% pour l'actuel), au prix d'un passage un peu plus lent (190j contre 32j en moyenne). Comparer les 8 lignes du tableau ci-dessus donne l'arbitrage complet vitesse/risque de chaque levier - à Esdras de choisir le compromis. Aucun changement fait dans `src/` — recherche seulement.

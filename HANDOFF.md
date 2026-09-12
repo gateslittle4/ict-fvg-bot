@@ -2155,3 +2155,22 @@ Les deux passent sans avoir besoin d'une 6e firme. Simulations lancées avec la 
 **Note d'incertitude** : le prix $25k de GoatFundedTrader n'a pas pu être confirmé avec certitude (calculateur de prix interactif non scrapable) — à vérifier directement sur leur site avant toute décision le concernant.
 
 **Fichiers** : `scripts/runFundingPips1StepFlexAllLiveStrategiesCycleAccountImpact.js`, `scripts/runGoatFundedTrader1StepAllLiveStrategiesCycleAccountImpact.js` (nouveaux), rapports `.md` correspondants dans `data/backtest-input/`. Aucun changement dans `src/` — recherche seulement.
+
+## "CTI, ça c'est pour le challenge mais on peut modifier au live?" — vérification + risque live dédié — 2026-09-12
+
+Esdras a demandé si le réglage 0.5%/0.3% (challenge/live) testé pour CTI s'applique une fois le compte financé, ou si ça doit être ajusté.
+
+**Vérifié en direct sur citytradersimperium.com** : le compte financé CTI garde **EXACTEMENT le même plancher 5% trailing** que le challenge — seule la limite de perte journalière (déjà absente en challenge, donc rien ne change) et la cible de profit disparaissent une fois financé. Contrairement à ce qu'on pourrait espérer, **rien ne se relâche** côté risque de bust.
+
+**Conséquence** : le raisonnement qui a fait choisir 0.3% comme risque "live" pour FTMO (0% de bust une fois financé, plus besoin de vitesse) ne donne PAS le même résultat chez CTI, puisque son plancher reste deux fois plus serré. Deux scénarios ajoutés à la simulation CTI (`scripts/runCti1StepAllLiveStrategiesCycleAccountImpact.js`, maintenant 8 scénarios) pour trouver le niveau qui approche le 0% de bust de FTMO :
+
+| Risque/trade | Taux de bust CTI |
+|---|---|
+| 0.3% (générique "live" du bot) | 18% |
+| 0.2% | 9% |
+| **0.15% (candidat live CTI)** | **0%** (0/15 cycles) |
+| 0.1% | 0% (0/10 cycles, échantillon plus mince) |
+
+**Conclusion** : si un compte CTI est un jour financé, il faudrait un réglage de risque **spécifique à CTI (~0.15%)**, distinct du 0.3% générique utilisé pour FTMO — le système `ACCOUNTS_JSON` le permet déjà (`riskPctPerTrade` est un champ PAR COMPTE, pas seulement dérivé de `ACCOUNT_MODE`), donc architecturalement rien à construire, juste à configurer différemment le jour où un vrai compte CTI existe. Confirme une fois de plus que le mécanisme du plancher (statique vs trailing, et son ampleur) compte plus que l'étiquette "challenge" ou "live".
+
+**Fichiers** : `scripts/runCti1StepAllLiveStrategiesCycleAccountImpact.js` (2 scénarios ajoutés), rapport `.md` mis à jour. Aucun changement dans `src/` — le mécanisme de risque par compte existait déjà, recherche seulement.
