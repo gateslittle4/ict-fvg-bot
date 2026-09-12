@@ -1197,3 +1197,24 @@ Suite directe du correctif d'affichage 5h précédent. Esdras a relevé, à rais
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/liveStrategyEngine.js`, `src/store.js`, `src/server.js`, `public/index.html`, `test/liveStrategyEngine.test.js` (+3), `test/store.test.js` (+3). `npm test` : 378/378 attendus (375/378 vus localement — 3 échecs `keepAlive.test.js` pré-existants, flake de sandbox déjà documenté, identiques avant ce commit).
 
 **Pas encore fait / à surveiller à la prochaine reprise** : confirmer en vrai (prochain signal FVG live) que `ORDER_EXPIRED`/`ORDER_CANCELLED` arrivent bien avec ces noms exacts et un `event.order.orderId` peuplé — sinon `clearBelievedPosition` ne se déclenchera jamais et il faudra ajuster les noms/champs lus. La piste "poser l'ordre dès la formation" reste ouverte si la fenêtre étendue ne suffit pas à faire remonter le taux de remplissage réel.
+
+## FVG "multi-contact" testé — mitigé selon l'instrument, pas déployé — 2026-09-12
+
+Suite directe du correctif précédent. En creusant "pourquoi cette zone n'a jamais été prise" avec Esdras sur un vrai cas US100 (zone 29199.20-29219.20 : formée 02h00 NY, son seul contact à 08h30 NY — 90 min avant la fenêtre 10h-11h — alors qu'elle n'avait que 23 bougies sur les 50 autorisées), elle a fait une proposition directe et précise : **"c'est comme ça que je tradais"** — garder une zone encore fraîche active et la prendre au prochain retour dans la bonne heure, au lieu de la règle actuelle (`fvgEngine.js` : un contact — accepté ou rejeté — supprime la zone pour toujours, peu importe son âge).
+
+**Testé avant tout changement en live**, même discipline que partout ailleurs dans ce projet (écran TRAIN 2019-2023 / vérification TEST 2024-2025, config de production exacte, zéro paramètre retouché) :
+
+- Nouveau moteur `src/backtest/fvgMultiTouch.js` (`MultiTouchFvgEngine` + `buildMultiTouchFilterPredicate`) — même détection 3 bougies, même limite de 50 bougies, mêmes critères de filtre (biais H4/H1 EMA, structure, fenêtre de session, sweep de liquidité — réutilise les mêmes fonctions `makeBiasLookup`/`makeStructureBiasLookup`/`isInNySessionWindow`/`makeSweepLookup` que la production), mais un contact qui échoue les filtres ne supprime plus la zone — elle reste active pour le prochain contact, jusqu'à acceptation ou expiration réelle. 6 tests unitaires.
+- `scripts/runFvgMultiTouchAnalysis.js` — compare ce moteur au moteur à contact unique DÉJÀ VALIDÉ (`runOneConfig`/`buildFilteredEngine`, config production exacte), sur les 3 instruments réellement tradés (US100, US500, XAUUSD).
+
+**Résultat (R total sur la période TEST 2024-2025, ce qui compte pour trancher)** :
+
+| Instrument | Contact unique (prod.) | Multi-contact | Verdict |
+|---|---|---|---|
+| US100 | 38 trades × 1.44R = 55R | 93 trades × 1.40R = **130R** | ✅ nettement mieux, cohérent train ET test (train : 94R→198R) |
+| US500 | 30 trades × 1.13R = 34R | 73 trades × 0.60R = 44R | ⚠️ mieux en R total, mais qualité par trade divisée par ~2 (1.13R→0.60R) |
+| XAUUSD | 41 trades × 0.61R = 25R | 104 trades × 0.22R = **23R** | ❌ pire malgré 2.5x plus de trades — espérance par trade effondrée (0.88R→0.19R en train, cohérent des deux côtés) |
+
+**Pas une réponse simple, donc rien déployé.** US100 confirme nettement l'intuition d'Esdras (presque 2,5× plus de trades, qualité par trade quasi identique, R total qui explose, cohérent train/test). US500 est un vrai compromis. XAUUSD va dans le sens opposé : laisser une zone active après un premier rejet y ramasse surtout du bruit (probablement lié à son `stopMode: 'swing'`, différent de `fvg-edge` sur US100/US500 — pas creusé plus loin). **Décision en attente d'Esdras** : déployer seulement sur US100 (le seul cas net et cohérent des deux côtés), ou creuser davantage avant tout changement.
+
+**Fichiers** : `src/backtest/fvgMultiTouch.js` (nouveau, 6 tests), `test/fvgMultiTouch.test.js`, `scripts/runFvgMultiTouchAnalysis.js`, `data/backtest-input/fvg-multi-touch-analysis.md`. **Non activé en production** — `src/engines/fvgEngine.js`/`liveStrategyEngine.js` totalement intacts. `npm test` : 384/384 attendus (381/384 vus localement, 3 flakes `keepAlive.test.js` pré-existants inchangés).
