@@ -22,6 +22,9 @@ const LONDON_NY_OVERLAP_WINDOW = { startHour: 7, endHour: 10 };
 // US100-specific window — see that symbol's own config below for why it's
 // no longer SILVER_BULLET_WINDOW.
 const US100_WINDOW = { startHour: 8, endHour: 12 };
+// XAUUSD-specific window — see that symbol's own config below for why it's
+// no longer LONDON_NY_OVERLAP_WINDOW.
+const XAUUSD_WINDOW = { startHour: 8, endHour: 12 };
 
 // ACCOUNT_MODE (2026-09, Esdras: "on ne peut pas avoir les mêmes codages
 // pour le challenge et le live" - see HANDOFF.md): the ONE thing that
@@ -166,7 +169,17 @@ export const CONFIG = {
         rrMultiple: 4,
         structureEnabled: true,
         sessionEnabled: true,
-        sessionWindow: LONDON_NY_OVERLAP_WINDOW,
+        // 2026-09: élargi de 7h-10h (London-NY overlap) à 8h-12h — Esdras a
+        // demandé d'envoyer en production tout ce qui a été validé cette
+        // session. Contrairement à US500 (testé et rejeté sur ce même
+        // changement), XAUUSD ressort net positif : passe le challenge dans
+        // TOUTES les années où 7h-10h y arrive aussi (et plus vite à chaque
+        // fois), PLUS une année test (2024) que 7h-10h ne complète jamais.
+        // Coût : drawdown max un peu plus élevé (6.1% contre 3.1% sur 7 ans),
+        // toujours confortablement sous le plafond FTMO de 10%. Voir
+        // HANDOFF.md "Teste XAUUSD aussi sur 8h-12h" et
+        // data/backtest-input/ftmo-1step-xauusd-window-account-impact.md.
+        sessionWindow: XAUUSD_WINDOW,
         liquiditySweepEnabled: true,
       },
     },
