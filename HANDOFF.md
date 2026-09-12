@@ -1826,3 +1826,49 @@ Suite directe du verdict "non conforme tel quel" de la veille. Esdras a demandé
 **Conclusion préliminaire** : coder la fermeture forcée avant le week-end est faisable et mesurable — à 0.25%/trade, le combo actuel au complet survit aux 7 années testées sous les règles de drawdown ET de risque ouvert de Zero. Le vrai chantier restant avant de pouvoir utiliser Zero en toute sécurité reste le filtre news (calendrier économique réel), pas encore commencé. **Rien codé dans `src/`** — script de recherche seulement, aucune décision de déploiement prise.
 
 **Fichiers** : `scripts/runFundingPipsZeroComplianceAnalysis.js` (nouveau), `data/backtest-input/fundingpips-zero-compliance-analysis.md`. `npm test` : 410/410 (inchangé).
+
+## Recherche d'une source de calendrier économique fiable — 2026-09-12
+
+Esdras a demandé une vraie source pour le filtre news (nécessaire pour FundingPips Zero — voir section précédente). Recherche web réelle (pas de mémoire) :
+
+- **Financial Modeling Prep (FMP)** — recommandation principale. API testée en direct (`financialmodelingprep.com/api/v3/economic_calendar`), confirmée fonctionnelle (répond une erreur de clé invalide, pas une erreur de endpoint mort). Gratuit : 250 requêtes/jour. Point clé : contrairement à Finnhub (dont l'historique est réservé aux clients payants "Enterprise"), FMP donne accès à l'historique jusqu'à 30 ans — utilisable à la fois pour refaire l'analyse de conformité avec les VRAIES dates passées (au lieu de l'approximation NFP seul) et pour le filtre en direct. **Nécessite qu'Esdras crée elle-même un compte gratuit** et fournisse la clé API — pas fait, en attente.
+- **Sources officielles gratuites, sans API, en complément** : federalreserve.gov publie ses 8 dates de décision FOMC par an plus d'un an à l'avance (2026 confirmé : 27-28 jan, 17-18 mar, 28-29 avr, 16-17 juin, 28-29 juil, 15-16 sept, 27-28 oct, 8-9 déc, décision 14h ET) ; bls.gov publie son calendrier NFP/CPI à l'avance (NFP = 1er vendredi du mois, CPI = date variable annoncée par eux).
+- **Écartés** : Finnhub (historique payant seulement), ForexFactory/Investing.com (aucune API officielle, scraping seulement), Trading Economics (tarification opaque, probablement payant).
+
+**Deux options laissées à Esdras** : (1) rapide/gratuit sans inscription — coder juste FOMC (8 dates fixes) + NFP (déjà fait) + CPI (dates notées manuellement 1x/an depuis bls.gov) ; (2) plus complet — elle crée un compte FMP gratuit, donne la clé, couverture complète (PPI, retail sales, etc.). **Pas encore choisi, rien codé.**
+
+## GoatFundedTrader "Instant Premium Model" — vérifié, MAIS nouvelle règle non modélisée découverte — 2026-09-12
+
+Esdras : "je veux vraiment pas aller dans un challenge" — a demandé de vérifier spécifiquement le modèle "Instant Premium" de GoatFundedTrader (financé direct, sans évaluation), en particulier la règle de consistance. Vérifié directement sur `help.goatfundedtrader.com/en/articles/16013484-instant-premium-model` (fetch direct, primaire) :
+
+- **Financement instant confirmé, aucune évaluation** — correspond à sa demande.
+- **Aucune règle de consistance, confirmé explicitement** ("Profits need not be evenly distributed across trading days").
+- Perte quotidienne 3%, perte totale 6% trailing (sur l'équité, ne redescend jamais), split 80%, retrait tous les 10 jours, 5 jours de trading min pour retrait (non consécutifs, ≥0.5% chacun).
+
+**⚠️ NOUVEAU, jamais rencontré ni modélisé avant : une "Floating Loss Rule" — perte NON RÉALISÉE de -1.5% du solde à N'IMPORTE QUEL MOMENT ferme le compte définitivement** (descend à -1% pour les comptes achetés après le 2026-09-02). C'est fondamentalement différent de toutes les règles modélisées jusqu'ici (FTMO/FundingPips ne regardent que le solde RÉALISÉ à la clôture d'un trade) — celle-ci regarde le P&L flottant en temps réel sur les positions ENCORE OUVERTES, avant même qu'un stop soit touché. **Aucun script de ce projet ne mesure ça** (tous mesurent le résultat final d'un trade clôturé, jamais son creux intermédiaire pendant qu'il est ouvert) — avec jusqu'à 4 positions ouvertes en même temps, le flottant cumulé pourrait dépasser -1.5% avant qu'un seul stop ne soit réellement touché. **Verdict "jouable" NON DONNÉ** — nécessite une nouvelle analyse (suivi intra-bougie du P&L flottant agrégé, pas encore construite) avant de pouvoir répondre. Attention aussi : GoatFundedTrader a un 2e modèle instant différent ("Instant Funding GOAT Model", `articles/10644691`) qui LUI a une règle de consistance à 15% — ne pas confondre les deux.
+
+**Rien codé, rien décidé** — recherche/vérification seulement.
+
+## Reprise de session — état complet au 2026-09-12 (fin de session)
+
+Esdras change de session Claude. Résumé pour une reprise à froid, dans l'ordre des priorités :
+
+**1. Ce qui est fait et déployé en production (`claude/lire-handoff-hxisa5`, à jour, `npm test` 410/410)** :
+- Refactor multi-compte complet (Phases 1-3) : `AccountRuntime`/`AccountRegistry` remplacent l'ancien singleton `store.js`, `CONFIG.accounts`/`ACCOUNTS_JSON` pour ajouter un compte sans toucher au code, routes `/api/accounts/:id/...`, dashboard avec sélecteur de compte + vue d'ensemble (invisibles tant qu'un seul compte existe — donc AUCUN changement visuel aujourd'hui). Le compte réel actuel (`'default'`, cTrader, `ACCOUNT_MODE=live`, 0.3% de risque) tourne exactement comme avant tout ce chantier.
+- 4 profils de prop firm codés et VÉRIFIÉS contre des sources primaires (`src/propFirms/` : `ftmo.js`, `fundingPips.js`, `goatFundedTrader.js`, `index.js`) : FTMO 1-Step/2-Step, FundingPips 2-Step Standard/1-Step Flex/Zero, GoatFundedTrader 1-Step. **Un 5e profil (GoatFundedTrader Instant Premium) reste à ajouter formellement** — règles déjà vérifiées ci-dessus, juste pas encore mises en fichier `src/propFirms/`.
+- Bug réel trouvé et corrigé : le risque % réel (modifiable en direct) n'atteignait jamais la taille des vrais ordres, qui utilisaient l'ancienne valeur figée au démarrage.
+- `GuardrailEngine` sait maintenant bloquer sur un drawdown OVERALL (pas juste quotidien) et alerter sur une cible de profit atteinte (jamais de bascule automatique de règles — Esdras ajoute le compte suivant elle-même).
+
+**2. Décision business en cours (pas encore tranchée)** : quelle prop firm/challenge utiliser pour viser $1,000+/mois avec un budget d'achat de $199-200. Comparatif complet fait :
+- **FTMO 1-Step $25k ($199, dans son budget)** → ~$592/mois net en moyenne (90% split confirmé). Le $50k ($319) dépasse son budget.
+- **FundingPips Zero** (financement instant, pas de challenge) → NON conforme tel quel (2 règles à rupture immédiate : week-end tenu = fermeture définitive, trading près d'une news = fermeture définitive ; aucune des deux n'est codée dans le bot). Analyse préliminaire faite : coder la fermeture forcée avant le week-end + réduire le risque à 0.25%/trade élimine le bust sur les 7 années testées ET respecte la limite de risque ouvert (1%) — mais le filtre news reste à construire (voir point 3).
+- **GoatFundedTrader Instant Premium** (financement instant, PAS de règle de consistance — ce qu'Esdras cherchait) → vérifié conforme sur ce point précis, MAIS une nouvelle règle jamais modélisée (perte flottante -1.5%/-1% à tout instant = fermeture) empêche de donner un verdict "jouable" pour l'instant — analyse à construire.
+- **Elle a explicitement dit "je veux vraiment pas aller dans un challenge"** — signal fort vers Zero ou GoatFundedTrader Instant Premium plutôt que FTMO/FundingPips classiques, MALGRÉ le travail de compliance restant sur les deux.
+
+**3. Travaux techniques identifiés, non commencés** :
+- Filtre news réel : Esdras doit créer un compte gratuit Financial Modeling Prep (recommandé, vérifié fonctionnel, historique 30 ans) et donner la clé API — ou accepter la version gratuite plus limitée (FOMC+NFP+CPI codés à la main depuis des sources officielles). Aucun choix fait.
+- Fermeture forcée avant le week-end : simulée avec succès (voir `scripts/runFundingPipsZeroComplianceAnalysis.js`), jamais codée dans `src/` (production).
+- Analyse du P&L flottant intra-bougie (nécessaire pour vérifier GoatFundedTrader Instant Premium) : pas commencée, demande un nouveau type de suivi (aucun script existant ne mesure le creux intermédiaire d'un trade encore ouvert, seulement son résultat final).
+- Profil `src/propFirms/goatFundedTraderInstantPremium.js` (ou équivalent) : pas créé.
+
+**Prochaine étape naturelle recommandée** : construire l'analyse du P&L flottant pour GoatFundedTrader Instant Premium (probablement la voie la plus rapide vers "pas de challenge, jouable"), en parallèle de la décision sur la source de calendrier news.
