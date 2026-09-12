@@ -65,12 +65,22 @@ test('startKeepAlive: returns null and pings nothing when disabled', () => {
   assert.equal(called, 0);
 });
 
+// Tue 10:30 NY (EDT) - a plain weekday well inside market hours, already
+// validated by the isMarketOpen tests below. The three tests right after
+// this one drive startKeepAlive()'s interval callback directly, which (with
+// no KEEP_ALIVE_WINDOWS set) gates every ping behind isMarketOpen(now()) -
+// without pinning `now`, they defaulted to the REAL current time and went
+// silently flaky on any weekend/off-hours test run (0 pings, not a real
+// failure) - found the hard way on a Saturday.
+const A_WEEKDAY_MARKET_HOUR = Date.parse('2026-09-08T14:30:00Z');
+
 test('startKeepAlive: pings the health URL on each interval tick', async () => {
   const urls = [];
   const timer = startKeepAlive({
     env: { KEEP_ALIVE: 'true', RENDER_EXTERNAL_URL: 'https://x.onrender.com', KEEP_ALIVE_MINUTES: '1' },
     fetchImpl: async (url) => { urls.push(url); return { ok: true, status: 200 }; },
     log: silentLog,
+    now: () => A_WEEKDAY_MARKET_HOUR,
   });
   assert.ok(timer, 'expected a timer handle');
 
@@ -88,6 +98,7 @@ test('startKeepAlive: a failing ping is swallowed (a network blip must never tak
     env: { KEEP_ALIVE: 'true', RENDER_EXTERNAL_URL: 'https://x.onrender.com' },
     fetchImpl: async () => { throw new Error('ECONNRESET'); },
     log: { log() {}, warn: (...args) => warnings.push(args.join(' ')) },
+    now: () => A_WEEKDAY_MARKET_HOUR,
   });
 
   await timer._onTimeout(); // must not reject
@@ -103,6 +114,7 @@ test('startKeepAlive: a non-OK HTTP response is logged but not thrown', async ()
     env: { KEEP_ALIVE: 'true', RENDER_EXTERNAL_URL: 'https://x.onrender.com' },
     fetchImpl: async () => ({ ok: false, status: 503 }),
     log: { log() {}, warn: (...args) => warnings.push(args.join(' ')) },
+    now: () => A_WEEKDAY_MARKET_HOUR,
   });
 
   await timer._onTimeout();
