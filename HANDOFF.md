@@ -1505,3 +1505,23 @@ Esdras a mis en doute le rejet répété du FVG sur EURUSD/GBPUSD ("je me rappel
 **Confirme donc le rejet, cette fois avec la recherche la plus complète possible, pas juste la config US100 copiée.** Explication probable du souvenir d'Esdras : plusieurs des meilleures configs TRAIN ont l'air franchement bonnes à première vue (ex. EURUSD #1 : win rate 46.7%, R 0.38, PF 1.72) — c'est exactement ce genre de chiffre "train seul" qui peut donner l'impression que ça fonctionne, avant de vérifier le test et de voir l'effondrement. Piste alternative, réelle celle-là : **Judas Swing sur EURUSD tient bien** (positif 6 années sur 8, voir plus haut dans ce fichier) — un mécanisme différent du FVG, peut-être la source du souvenir.
 
 **Fichiers** : `scripts/runFullSessionGridSearchEurGbp.js` (nouveau), `data/backtest-input/full-session-grid-search-eurusd-gbpusd.md`. Aucun changement `src/` — recherche seulement.
+
+## "Et pour usdjpy ?" — même recherche exhaustive, résultat encore plus net — 2026-09-12
+
+Suite directe. `scripts/runFullSessionGridSearchUsdjpy.js`, même recherche à 1008 configs, sur USDJPY (données réelles 2016-2025, spread déjà configuré). Contrairement à EURUSD/GBPUSD, les meilleures configs TRAIN ici sont spectaculaires — win rate 52-56,5%, R net 0,94-1,07, profit factor 2,66-3,04 — bien plus impressionnantes que tout ce qui a été vu sur EURUSD/GBPUSD.
+
+**Mais l'effondrement au test est encore plus net** :
+
+| Fenêtre | R train | R test | Verdict |
+|---|---|---|---|
+| 08h-09h30, H4_EMA200 | 1,07 | 0,15 (n=9 — échantillon minuscule) | ⚠️ affaibli |
+| 08h-09h30, H4_EMA50 | 0,97 | **-0,09** | ❌ ne tient pas |
+| 08h-09h30, H4_EMA20 | 0,96 | **-0,31** | ❌ ne tient pas |
+| 08h-09h30, H1_EMA20 | 0,95 | **-0,29** | ❌ ne tient pas |
+| 08h-09h30, H1_EMA200 | 0,94 | **-0,15** | ❌ ne tient pas |
+
+4 des 5 meilleures configs passent carrément NÉGATIVES en test. La seule qui reste positive (0,15R) repose sur seulement 9 trades test — trop peu pour y accorder du crédit. **Confirme et renforce la conclusion déjà posée** (multi-contact USDJPY : "tient" mécaniquement mais démasqué fragile par le contrôle trimestriel) : aucune config FVG propre à USDJPY, même optimisée à fond spécifiquement pour cette paire, ne survit au passage train → test. Le signal "impressionnant" en train ici est le plus extrême exemple de ce piège vu ce soir — exactement le genre de nombre qui peut sembler convaincant si on ne voit que la moitié entraînement.
+
+**Bilan complet de la question d'Esdras ("EURUSD, GBPUSD, et USDJPY aussi")** : les 3 paires, testées avec la recherche la plus rigoureuse possible (pas juste la config US100 copiée), ne produisent AUCUNE config FVG qui tienne. L'edge FVG de ce projet reste spécifique à US100/US500/XAUUSD.
+
+**Fichiers** : `scripts/runFullSessionGridSearchUsdjpy.js` (nouveau), `data/backtest-input/full-session-grid-search-usdjpy.md`. Aucun changement `src/` — recherche seulement.
