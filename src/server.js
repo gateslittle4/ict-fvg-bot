@@ -6,7 +6,7 @@ import { getDefaultAccount, getAccount, listAccounts } from './accountRegistry.j
 import { MAX_AUTO_EXECUTE_HOURS } from './accountRuntime.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
-import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
+import { CTraderDataSource, sendCommandWithTimeout } from './dataSources/cTraderDataSource.js';
 import { summarizeTrades } from './dataSources/dealPairing.js';
 import { MatchTraderDataSource } from './dataSources/matchTraderDataSource.js';
 import { buildRecentPerformanceReport } from './backtest/recentPerformanceReport.js';
@@ -630,6 +630,124 @@ function createAccountRouter(getStore) {
       .filter(([name]) => !filter || name.toUpperCase().includes(filter))
       .map(([name, id]) => ({ name, id }));
     res.json({ count: symbols.length, symbols });
+  });
+
+  // Real open->close connectivity test (2026-09-12, at the user's explicit
+  // request - "je veux tester ma plateforme pour la connexion", "vérifie
+  // qu'une position peut s'ouvrir et fermer"). Deliberately bypasses the
+  // strategy engine entirely (no FVG/signal involved) and talks to the
+  // broker DIRECTLY, the same low-level way _submitOrder does, so this
+  // proves the raw order-placement/close pipeline works independent of
+  // whether a real signal ever fires. Defaults to BTCUSD specifically
+  // because forex/indices/metals close on weekends - a crypto CFD (if the
+  // broker offers one, see .../admin/list-symbols) is one of the only ways
+  // to get a real fill outside market hours for the 4 strategy symbols.
+  //
+  // Uses the symbol's OWN minVolume (fetched live via ProtoOASymbolByIdReq,
+  // never guessed/hardcoded) for the open, then ProtoOAClosePositionReq
+  // (NOT an offsetting opposite-side order) to close it - an offsetting
+  // order only nets exposure to zero on a NETTING account; on a HEDGING
+  // account it would leave two open positions instead of actually closing
+  // the first one, which would silently fail to prove what this endpoint
+  // exists to prove. Same ADMIN_EXPORT_TOKEN gate as the other admin
+  // routes. This places a REAL order (demo money only - store.mode is
+  // always 'demo' against this broker's demo host, see _loadBalance's
+  // isDemo derivation) - opt-in and deliberate, not something any other
+  // route on this bot does.
+  router.post('/admin/test-order-cycle', async (req, res) => {
+    const store = getStore(req);
+    const configuredToken = process.env.ADMIN_EXPORT_TOKEN;
+    if (!configuredToken) {
+      return res.status(404).json({ error: 'not enabled' });
+    }
+    if (req.query.token !== configuredToken) {
+      return res.status(403).json({ error: 'invalid or missing token' });
+    }
+    const ds = store.liveDataSource;
+    if (!ds?.connection || typeof ds.symbolIdByName?.get !== 'function') {
+      return res.status(503).json({ error: 'not connected to a live broker' });
+    }
+    const symbolName = String(req.query.symbol || req.body?.symbol || 'BTCUSD').toUpperCase();
+    const symbolId = ds.symbolIdByName.get(symbolName);
+    if (symbolId == null) {
+      return res.status(400).json({ error: `Unknown symbol "${symbolName}" for this broker - see .../admin/list-symbols` });
+    }
+
+    const accountId = Number(ds.accountId);
+    const report = { symbol: symbolName, symbolId: Number(symbolId) };
+
+    // One-shot wait for a ProtoOAExecutionEvent matching `predicate`, as a
+    // SECOND listener alongside the connection's permanent one (Node's
+    // EventEmitter supports multiple listeners on the same event without
+    // interfering with each other) - always removed in the caller via
+    // .off(), timeout or not, so nothing leaks past this one request.
+    function waitForExecution(predicate, timeoutMs = 15000) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          ds.connection.off('ProtoOAExecutionEvent', onEvent);
+          reject(new Error(`timed out after ${timeoutMs}ms waiting for a matching execution event`));
+        }, timeoutMs);
+        function onEvent(event) {
+          const d = event.descriptor;
+          if (predicate(d)) {
+            clearTimeout(timer);
+            ds.connection.off('ProtoOAExecutionEvent', onEvent);
+            resolve(d);
+          }
+        }
+        ds.connection.on('ProtoOAExecutionEvent', onEvent);
+      });
+    }
+
+    try {
+      const specRes = await sendCommandWithTimeout(ds.connection, 'ProtoOASymbolByIdReq', {
+        ctidTraderAccountId: accountId,
+        symbolId: [Number(symbolId)],
+      });
+      const spec = specRes?.symbol?.[0];
+      const volume = spec?.minVolume ? Number(spec.minVolume) : null;
+      if (!volume) {
+        return res.status(502).json({ ...report, error: 'could not read this symbol\'s minVolume from the broker' });
+      }
+      report.volume = volume;
+
+      const openRes = await sendCommandWithTimeout(ds.connection, 'ProtoOANewOrderReq', {
+        ctidTraderAccountId: accountId,
+        symbolId: Number(symbolId),
+        orderType: 'MARKET',
+        tradeSide: 'BUY',
+        volume,
+        label: `connectivity-test-${Date.now()}`,
+        comment: 'connectivity test - opened then immediately closed by /admin/test-order-cycle',
+      });
+      const openOrderId = openRes?.order?.orderId ?? openRes?.orderId ?? null;
+      report.openOrderId = openOrderId;
+
+      const openFill = await waitForExecution(
+        (d) => d.order?.orderId === openOrderId && d.executionType === 'ORDER_FILLED' && !d.deal?.closePositionDetail
+      );
+      const positionId = openFill.position?.positionId ?? openFill.deal?.positionId ?? null;
+      report.opened = true;
+      report.positionId = positionId;
+      if (positionId == null) {
+        return res.status(502).json({ ...report, error: 'order filled but no positionId came back - cannot close it' });
+      }
+
+      await sendCommandWithTimeout(ds.connection, 'ProtoOAClosePositionReq', {
+        ctidTraderAccountId: accountId,
+        positionId: Number(positionId),
+        volume,
+      });
+      const closeFill = await waitForExecution(
+        (d) => (d.deal?.positionId ?? d.position?.positionId) === positionId && d.executionType === 'ORDER_FILLED' && d.deal?.closePositionDetail
+      );
+      report.closed = true;
+      report.closePnl = typeof closeFill.deal.closePositionDetail.grossProfit === 'number' ? closeFill.deal.closePositionDetail.grossProfit / 100 : null;
+
+      res.json(report);
+    } catch (err) {
+      res.status(502).json({ ...report, error: err.message });
+    }
   });
 
   router.post('/lot-calc', (req, res) => {

@@ -61,7 +61,11 @@ const MAX_SPREAD_SAMPLES = 500; // ring buffer size for store.recentTicksBySymbo
 // fails loud instead of hanging the whole connection indefinitely.
 const CTRADER_REQUEST_TIMEOUT_MS = 20000;
 
-async function sendCommandWithTimeout(connection, payloadName, data, timeoutMs = CTRADER_REQUEST_TIMEOUT_MS) {
+// Exported (2026-09-12) so server.js's admin test-order-cycle endpoint can
+// reuse the exact same fail-loud-not-silent wrapper for its own direct
+// ProtoOA* calls, instead of duplicating this logic or risking a hung HTTP
+// request against the live broker.
+export async function sendCommandWithTimeout(connection, payloadName, data, timeoutMs = CTRADER_REQUEST_TIMEOUT_MS) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(
