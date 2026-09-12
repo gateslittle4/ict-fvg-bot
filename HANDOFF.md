@@ -1415,3 +1415,23 @@ Esdras : "code le multi-contact avec pyramidage sur la branche de recherche." Bo
 **Tests ajoutés** (`test/liveStrategyEngine.test.js`) : un contact hors fenêtre de session ne consomme plus la zone (le contact suivant, dans la fenêtre, valide quand même) ; le même scénario SANS `multiTouch` ne valide jamais (le premier contact consomme la zone comme en production) — preuve directe de la différence de comportement au niveau de l'intégration, pas seulement du moteur isolé (déjà testé dans `test/fvgMultiTouch.test.js`). L'équivalence bulk warm-up vs replay séquentiel (`newEngineForWarmupComparison`, déjà existante) couvre maintenant aussi le multi-contact gratuitement, puisqu'elle utilise `CONFIG.fvg.perSymbol` réel.
 
 **Toujours pas déployé en production** — ceci reste sur `challenge/fundingpips-zero` uniquement, comme demandé. `npm test` : 386/389 (3 flakes `keepAlive.test.js` déjà connus, sans rapport). Pour activer réellement en live (une fois mergé) : le multi-contact US100 s'active tout seul via ce commit ; le pyramidage a besoin en plus de `PYRAMID_ENABLED=true` — et cette variable-là ne doit pas être touchée avant d'avoir vérifié le sizing des lots sur un compte démo réel, avertissement déjà dans le code, pas nouveau.
+
+## Fenêtre horaire (8h-12h / 10h-11h / journée entière) et jour de la semaine — 2026-09-12
+
+Esdras, après le schéma "FVG en M15" : "est-ce qu'on doit attendre 10-11h pour que le prix frappe le FVG ? Fais le test pour 8h-12h et 10-11h vs toute la journée... ensuite fais le test pour les jours de la semaine le plus profitable aussi." `scripts/runFvgMultiTouchWindowAndWeekdayAnalysis.js` — US100 multi-contact, config production verbatim à part la fenêtre testée, 3 fenêtres discrètes seulement (pas une recherche sur toutes les fenêtres possibles).
+
+**1) Fenêtre horaire** (train 2019-2023 / test 2024-2025, net de coûts) :
+
+| Fenêtre | Espérance train | Espérance test | R total test | Drawdown max test |
+|---|---|---|---|---|
+| 08h-12h | 0.86R (n=448) | 1.10R (n=201) | 220.5R | 8.89R |
+| **10h-11h (production)** | **1.10R** (n=180) | **1.40R** (n=93) | 130.7R | **6.82R** |
+| Toute la journée | 0.39R (n=1125) | 0.49R (n=511) | 252.4R | **23.36R** |
+
+**10h-11h reste la meilleure fenêtre en espérance ET en drawdown**, malgré moins de trades — la fenêtre actuelle n'est pas un choix arbitraire. Toute la journée génère plus de trades et un R total brut plus haut, mais avec un drawdown 3-4x supérieur pour une espérance par trade 3x plus faible — un mauvais compromis, pas une meilleure fenêtre. 8h-12h est un compromis intermédiaire raisonnable mais reste dominé par 10h-11h sur les deux mesures.
+
+**2) Jour de la semaine** (sur la fenêtre 10h-11h, purement exploratoire — échantillons par jour trop petits pour un vrai verdict) : aucun jour n'est négatif à la fois sur train ET test. Mercredi est le plus faible des deux côtés (0.92R train, 1.07R test) mais reste positif — pas un pattern assez solide pour justifier un filtre.
+
+**Conclusion : garder 10h-11h, ne rien changer.** Aucun changement de config recommandé par cette analyse.
+
+**Fichiers** : `scripts/runFvgMultiTouchWindowAndWeekdayAnalysis.js` (nouveau), `data/backtest-input/fvg-multi-touch-window-weekday-analysis.md`. Aucun changement `src/` — recherche seulement.
