@@ -1999,3 +1999,11 @@ Esdras : *"j'ai une idée. Peux-tu atteindre le 5% du free trial de FTMO dans 14
 **Conclusion** : le Free Trial est utile pour observer le système tourner sans risque, mais ni un raccourci financier ni une garantie de réussite rapide. Rien codé dans `src/` — recherche seulement.
 
 **Fichiers** : `scripts/runFtmoFreeTrial5PctIn14DaysAnalysis.js` (nouveau), `data/backtest-input/ftmo-free-trial-5pct-in-14days-analysis.md`. `npm test` : 412/412 (inchangé).
+
+## Correction : le prix "$199" pour FTMO 1-Step $25k était faux — 2026-09-12
+
+Esdras : *"quel est le prix en dollars pour ce compte FTMO alors?"* En vérifiant, découverte d'une erreur dans une entrée précédente de ce fichier (section "Décision business en cours", plus haut) : **"$199" ne vient PAS du vrai prix FTMO** — c'est le prix d'un service tiers sans rapport ("Challengepassed", un abonnement annuel qui aide à passer des challenges), confondu par erreur avec le prix réel de FTMO lors d'une recherche antérieure.
+
+**Le vrai prix, selon plusieurs sources indépendantes qui NE s'accordent PAS entre elles** (probablement promotions actives/taux de change EUR-USD qui varient) : entre **~$205 (€189)** et **~$265 (€250)** pour le challenge 1-Step $25k. Le tableau de prix officiel de FTMO (`ftmo.com`) est rendu en JavaScript côté client — impossible à extraire de façon fiable avec les outils de récupération web de cette session (WebFetch ne voit que le HTML statique, pas le JS exécuté). **Frais remboursés une fois financé** (confirmé par plusieurs sources) — donc coût réel net après le premier financement ≈ $0, pas un vrai coût perdu.
+
+**Recommandation donnée à Esdras** : vérifier le prix exact directement sur `ftmo.com` au moment de l'achat (le prix affiché en direct, avec promo éventuelle active, est plus fiable que n'importe quel chiffre cité ici). Toutes les analyses de cette session (probabilités de calendrier, comparaisons FTMO/FundingPips) restent valides — le prix du challenge n'entre dans AUCUN calcul numérique de ces scripts, seulement dans la discussion de budget en texte.
