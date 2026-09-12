@@ -1218,3 +1218,25 @@ Suite directe du correctif précédent. En creusant "pourquoi cette zone n'a jam
 **Pas une réponse simple, donc rien déployé.** US100 confirme nettement l'intuition d'Esdras (presque 2,5× plus de trades, qualité par trade quasi identique, R total qui explose, cohérent train/test). US500 est un vrai compromis. XAUUSD va dans le sens opposé : laisser une zone active après un premier rejet y ramasse surtout du bruit (probablement lié à son `stopMode: 'swing'`, différent de `fvg-edge` sur US100/US500 — pas creusé plus loin). **Décision en attente d'Esdras** : déployer seulement sur US100 (le seul cas net et cohérent des deux côtés), ou creuser davantage avant tout changement.
 
 **Fichiers** : `src/backtest/fvgMultiTouch.js` (nouveau, 6 tests), `test/fvgMultiTouch.test.js`, `scripts/runFvgMultiTouchAnalysis.js`, `data/backtest-input/fvg-multi-touch-analysis.md`. **Non activé en production** — `src/engines/fvgEngine.js`/`liveStrategyEngine.js` totalement intacts. `npm test` : 384/384 attendus (381/384 vus localement, 3 flakes `keepAlive.test.js` pré-existants inchangés).
+
+## FVG : la bougie immédiate (<15 min après formation) compte-t-elle vraiment ? — 2026-09-12, suite
+
+Suite directe de la section "multi-contact" ci-dessus. Esdras a précisé sa position : "ce que je ne considère PAS comme un FVG, c'est si le prix fait un FVG maintenant et retourne dans moins de 15 minutes après — c'est-à-dire dans la première bougie après le FVG." Un retour immédiat serait le même mouvement de continuation qui mèche en arrière, pas un vrai "parti puis revenu".
+
+**Vérifié avant tout changement** : `scripts/runFvgFirstCandleAnalysis.js` tague chaque trade DÉJÀ validé par la production (rien de nouveau codé — même moteur, même config, même netting) selon que son entrée est survenue sur la toute première bougie après formation ou plus tard, puis compare les deux cohortes séparément (train/test, même discipline).
+
+**D'abord une mesure choc, avant même de comparer la qualité** : 44-53% de TOUS les trades validés en production (selon l'instrument, en train) viennent exactement de cette première bougie — près de la moitié du volume du bot.
+
+**Résultat par instrument (espérance R, train/test)** :
+
+| Instrument | Bougie immédiate | Bougie(s) suivante(s) | Verdict |
+|---|---|---|---|
+| US100 | 0.91R / 0.80R | **1.82R / 1.78R** | ✅ quasi 2× meilleure, cohérent train ET test |
+| US500 | 1.03R / 0.85R | 1.02R / 1.35R | ⚠️ faible, léger avantage en test seulement |
+| XAUUSD | 0.49R / **1.06R** | **1.34R** / 0.22R | ❌ s'inverse entre train et test — pas de signal fiable |
+
+**Sur US100, la claim d'Esdras est confirmée nettement et de façon cohérente** — mêmes deux instruments (US100 en tête) que pour le multi-contact testé juste avant. US500 faible. XAUUSD contradictoire d'une période à l'autre, à ne pas utiliser tel quel.
+
+**Pas encore décidé/fait** : combiner les deux idées (multi-contact + exclusion bougie immédiate) sur US100 spécifiquement, discuté avec Esdras mais pas encore testé ni codé.
+
+**Fichiers** : `scripts/runFvgFirstCandleAnalysis.js` (nouveau), `data/backtest-input/fvg-first-candle-analysis.md`. Aucun changement sur `src/` — `fvgEngine.js`/`liveStrategyEngine.js` intacts. `npm test` : inchangé (384/384 attendus, 3 flakes `keepAlive.test.js` pré-existants).
