@@ -604,6 +604,34 @@ function createAccountRouter(getStore) {
     res.json(result);
   });
 
+  // Read-only symbol lookup (2026-09-12, at the user's explicit request -
+  // "on veut tester une paire ouverte le weekend" before trying a real
+  // order-open/close cycle). CTraderDataSource._loadSymbols() already pulls
+  // EVERY symbol the connected broker account offers (not just the 4
+  // strategy symbols in CONFIG.symbols) into symbolIdByName on connect -
+  // this just exposes that map so a crypto CFD (often tradeable on
+  // weekends, unlike forex/indices/metals) can be found before attempting
+  // an order. Same ADMIN_EXPORT_TOKEN gate as the other admin routes -
+  // opt-in, no order can be placed from this endpoint, purely informational.
+  router.get('/admin/list-symbols', (req, res) => {
+    const store = getStore(req);
+    const configuredToken = process.env.ADMIN_EXPORT_TOKEN;
+    if (!configuredToken) {
+      return res.status(404).json({ error: 'not enabled' });
+    }
+    if (req.query.token !== configuredToken) {
+      return res.status(403).json({ error: 'invalid or missing token' });
+    }
+    if (!store.liveDataSource?.symbolIdByName || store.liveDataSource.symbolIdByName.size === 0) {
+      return res.status(503).json({ error: 'not connected to a live broker, or symbol list not loaded yet' });
+    }
+    const filter = (req.query.filter || '').toUpperCase();
+    const symbols = [...store.liveDataSource.symbolIdByName.entries()]
+      .filter(([name]) => !filter || name.toUpperCase().includes(filter))
+      .map(([name, id]) => ({ name, id }));
+    res.json({ count: symbols.length, symbols });
+  });
+
   router.post('/lot-calc', (req, res) => {
     const store = getStore(req);
     try {
