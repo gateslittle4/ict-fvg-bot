@@ -1570,3 +1570,26 @@ Sur la SEULE année test où les deux passent la comparaison directement (2024),
 **Conclusion : US500 reste sur 10h-11h, aucun changement recommandé.** Ce qui a marché pour US100 (élargir la fenêtre) ne se généralise pas automatiquement à un autre instrument — exactement le genre de piège que la discipline train/test de ce projet est censée attraper. `CONFIG.fvg.perSymbol.US500` reste inchangé.
 
 **Fichiers** : `scripts/runFvgUS500WindowAnalysis.js`, `scripts/runFtmo1StepUS500WindowAccountImpact.js` (nouveaux), `data/backtest-input/fvg-us500-window-analysis.md`, `data/backtest-input/ftmo-1step-us500-window-account-impact.md`. Aucun changement `src/` — recherche seulement, US500 n'est pas touché.
+
+## "Teste XAUUSD aussi sur 8h-12h" — troisième résultat différent, cette fois plutôt favorable — 2026-09-12
+
+Esdras a demandé la même vérification pour XAUUSD. Différence importante à noter d'entrée : **XAUUSD ne tourne pas sur 10h-11h en production, mais sur 7h-10h** (London-NY overlap) — c'est la vraie fenêtre de référence utilisée ici, pas 10h-11h comme pour US100/US500. Même méthode (moteur single-touch réel, stop `swing`, RR=4, config verbatim sauf la fenêtre) :
+
+**1) R purs** (`scripts/runFvgXauusdWindowAnalysis.js`) : 7h-10h garde la meilleure espérance test (0.61R contre 0.46R pour 8h-12h) — même schéma que US100/US500, la fenêtre étroite reste plus "propre" par trade.
+
+**2) Simulation de compte FTMO complète** (`scripts/runFtmo1StepXauusdWindowAccountImpact.js`) — **et là, contrairement à US500, 8h-12h a l'air clairement meilleur pour XAUUSD** :
+
+| Année | 7h-10h | 8h-12h |
+|---|---|---|
+| 2020 | jour 134 | jour 96 (plus rapide) |
+| 2023 | jour 359 | jour 333 (plus rapide) |
+| 2024 (test) | **jamais** | **jour 315** |
+| 2025 (test) | jamais (DD 3.1%) | jamais (DD 5.5%) |
+
+8h-12h passe le challenge dans TOUTES les années où 7h-10h y arrive aussi (et plus vite à chaque fois), PLUS une année test (2024) que 7h-10h ne complète jamais. Seul coût : drawdown trailing max un peu plus élevé (6.1% contre 3.1% sur les 7 ans), mais qui reste confortablement sous le plafond FTMO de 10% — jamais busté dans aucun des deux cas. (Note : 2022 est absent des deux tableaux — vrai trou de données dans le CSV XAUUSD source, pas un artefact du script, vérifié directement : zéro bougie sur toute l'année 2022.)
+
+**Conclusion : contrairement à US500, 8h-12h a l'air d'être un vrai gain pour XAUUSD, pas juste un compromis.** Aucun changement fait dans le code — décision laissée à Esdras, comme pour US100 avant sa décision explicite.
+
+**Trois instruments, trois résultats différents ce soir** : US100 (compromis vitesse/sécurité assumé, déployé), US500 (pas d'intérêt, laissé tel quel), XAUUSD (semble net positif, en attente de décision) — confirme qu'il fallait bien tester chaque instrument séparément plutôt que supposer.
+
+**Fichiers** : `scripts/runFvgXauusdWindowAnalysis.js`, `scripts/runFtmo1StepXauusdWindowAccountImpact.js` (nouveaux), `data/backtest-input/fvg-xauusd-window-analysis.md`, `data/backtest-input/ftmo-1step-xauusd-window-account-impact.md`. Aucun changement `src/` — recherche seulement, XAUUSD n'est pas touché tant qu'Esdras n'a pas tranché.
