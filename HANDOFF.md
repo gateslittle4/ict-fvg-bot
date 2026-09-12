@@ -1968,3 +1968,22 @@ La cible plus haute (+12% vs +10%) et le split plus faible (85% vs 90%) pèsent 
 **Rien codé dans `src/`** au-delà du profil `FUNDINGPIPS_1STEP_FLEX` mis à jour (documentaire).
 
 **Fichiers** : `scripts/runFundingPips1StepFlexFirstPayoutByDateAnalysis.js` (nouveau), `data/backtest-input/fundingpips-1step-flex-first-payout-by-date-analysis.md`, `src/propFirms/fundingPips.js` (mis à jour : split confirmé, règles de paiement, règle floating ambiguë documentée). `npm test` : 412/412 (inchangé).
+
+## "Je ne dois rien toucher jusqu'à $500?" — test empirique des retraits réguliers — 2026-09-12
+
+Esdras : *"donc après avoir passé le challenge 1 step FTMO, je ne dois rien toucher dans le profit jusqu'à ce qu'il arrive à 500$?"* Clarifié : non, ce n'était qu'une hypothèse de modélisation pour comparer proprement les firmes — mon conseil réel était de retirer dès l'éligibilité. Puis : *"oui, fais-le [le test]."*
+
+**Nouveau script** `scripts/runFtmo25kCumulativeWithdrawalByDateAnalysis.js` — variante directe du script FTMO $500-en-un-coup : au lieu d'attendre un seul retrait de $500, retire TOUT le profit disponible à chaque cycle de 14 jours (dès le premier trade live), suit le total CUMULÉ des retraits, regarde quand ce total franchit $500. Nouvelle hypothèse documentée (la vraie inconnue) : un retrait est modélisé comme "verrouillant" le plancher trailing au nouveau solde — mécanisme FTMO exact non confirmé, à vérifier avant un vrai retrait.
+
+**Résultat, comparé côte à côte** :
+
+| Stratégie | % d'ici 1er déc. | % d'ici début jan. | Médiane |
+|---|---|---|---|
+| Un seul retrait de $500 | 41% | 67% | 92j |
+| **Retraits réguliers, cumulés** | **31%** | **59%** | **108j** |
+
+**Résultat contre-intuitif mais logique** : retirer tôt et souvent est légèrement PLUS LENT pour accumuler $500 au total (~16 jours de plus en médiane). Pas un problème du plan — effet attendu du capital retiré qui ne compose plus (le risque par trade est toujours % du solde COURANT, donc chaque cycle après un retrait repart à "vitesse de croisière" au lieu de profiter d'un solde plus gros). Retirer tôt reste plus SÛR (argent hors de portée d'une mauvaise série) — juste marginalement plus lent pour un total cumulé donné. Vrai compromis sécurité/vitesse, pas gratuit dans un sens ni l'autre — présenté à Esdras sans trancher à sa place.
+
+**Rien codé dans `src/`** — recherche seulement.
+
+**Fichiers** : `scripts/runFtmo25kCumulativeWithdrawalByDateAnalysis.js` (nouveau), `data/backtest-input/ftmo-25k-cumulative-withdrawal-by-date-analysis.md`. `npm test` : 412/412 (inchangé).
