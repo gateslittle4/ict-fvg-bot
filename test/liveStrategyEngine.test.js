@@ -169,6 +169,71 @@ test('LiveStrategyEngine: netting blocks a second FVG signal on the same symbol 
   assert.equal(engine.getOpenPosition('TEST1').id, firstOpen.id);
 });
 
+// Fixed-EST-as-UTC convention (nySession.js, also used by
+// test/fvgMultiTouch.test.js): a Wednesday at 15:00 UTC is 10:00 NY (EST).
+const SESSION_MULTI_TOUCH_CFG = {
+  variant: 'baseline',
+  stopMode: 'fvg-edge',
+  rrMultiple: 3,
+  structureEnabled: false,
+  sessionEnabled: true,
+  sessionWindow: { startHour: 10, endHour: 11 },
+  liquiditySweepEnabled: false,
+  multiTouch: true,
+};
+const INSIDE_SESSION = Date.parse('2026-01-07T10:00:00Z'); // +5h = 15:00Z = 10:00 EST
+const OUTSIDE_SESSION = Date.parse('2026-01-07T08:00:00Z'); // +5h = 13:00Z = 08:00 EST
+
+test('LiveStrategyEngine (FVG multi-contact): a touch that fails the session filter does NOT consume the zone - a LATER touch inside the window still validates', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: SESSION_MULTI_TOUCH_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  engine.ingestCandle('TEST1', c(M15, 100, 102, 100, 101));
+  engine.ingestCandle('TEST1', c(2 * M15, 102, 105, 103, 104)); // watching, bullish gap [101,103]
+
+  // Touch #1, outside the session window - must be rejected, but the zone
+  // must SURVIVE (this is the whole point of multi-contact: unlike the
+  // production single-touch engine, a rejected touch is not fatal).
+  const rejectedEvs = engine.ingestCandle('TEST1', c(OUTSIDE_SESSION, 104, 104, 102, 103));
+  assert.equal(rejectedEvs.length, 0, 'a rejected touch emits nothing, matching fvgMultiTouch.test.js');
+  assert.equal(engine.getOpenPosition('TEST1'), null, 'no position should have opened on the rejected touch');
+
+  // Touch #2, inside the session window - the SAME zone (never destroyed) validates now.
+  const validatedEvs = engine.ingestCandle('TEST1', c(INSIDE_SESSION + M15, 103, 104, 102, 103));
+  const v = validatedEvs.find((e) => e.type === 'validated');
+  assert.ok(v, 'expected the surviving zone to validate on the later, in-window touch');
+  assert.equal(v.blockedReason, null);
+  assert.equal(v.entryPrice, 103);
+  const open = engine.getOpenPosition('TEST1');
+  assert.ok(open, 'expected a position to have opened on the later touch');
+});
+
+test('LiveStrategyEngine (FVG, multiTouch NOT set): the SAME rejected-then-in-window sequence never validates - the production single-touch engine consumes the zone on the first (rejected) touch', () => {
+  const guardrail = permissiveGuardrail();
+  const singleTouchCfg = { ...SESSION_MULTI_TOUCH_CFG, multiTouch: false };
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: singleTouchCfg },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  engine.ingestCandle('TEST1', c(M15, 100, 102, 100, 101));
+  engine.ingestCandle('TEST1', c(2 * M15, 102, 105, 103, 104)); // watching, bullish gap [101,103]
+
+  engine.ingestCandle('TEST1', c(OUTSIDE_SESSION, 104, 104, 102, 103)); // touch outside window - consumes the zone in single-touch mode
+  const laterEvs = engine.ingestCandle('TEST1', c(INSIDE_SESSION + M15, 103, 104, 102, 103)); // same later touch as above
+  assert.equal(laterEvs.find((e) => e.type === 'validated'), undefined, 'the zone is gone - single-touch never gets a second chance');
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+});
+
 test('LiveStrategyEngine (Divergence): a large z-score deviation triggers a "validated" long-the-laggard signal on the laggard symbol at the aligned H1 boundary candle', () => {
   const guardrail = permissiveGuardrail();
   const divCfg = { pair: ['A', 'B'], lookback: 5, zThreshold: 2, atrPeriod: 3, stopAtrMultiple: 1.5, rrMultiple: 3, maxHoldingM15Candles: 480 };

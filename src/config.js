@@ -78,6 +78,22 @@ export const CONFIG = {
         sessionEnabled: true,
         sessionWindow: SILVER_BULLET_WINDOW,
         liquiditySweepEnabled: true,
+        // 2026-09: "multi-contact" - voir HANDOFF.md "FVG 'multi-contact'
+        // testé..." et les vérifications qui ont suivi. Un contact qui rate
+        // les filtres (biais/structure/session/sweep) ne détruit plus la
+        // zone (contrairement au FvgEngine standard) - elle reste active
+        // pour un contact ULTÉRIEUR, jusqu'à maxAgeCandles. Validé sur
+        // US100 SEULEMENT (3 vérifications de robustesse indépendantes :
+        // pas un seul trimestre chanceux, le sens contre-tendance tient
+        // aussi, ~10x une référence d'entrée arbitraire - ni EURUSD ni
+        // GBPUSD ne tiennent sur ce concept, USDJPY tient mécaniquement
+        // mais s'est révélé fragile à l'examen). Combiné avec le
+        // pyramidage (`CONFIG.pyramid`, toujours derrière PYRAMID_ENABLED)
+        // et vérifié ensemble dans une simulation de compte FTMO complète
+        // (jamais busté sur 7 ans, voir data/backtest-input/
+        // ftmo-1step-us100-only-pyramid-account-impact.md) avant d'activer
+        // ce champ. `LiveStrategyEngine._buildFvgEngine()` lit ce champ.
+        multiTouch: true,
       },
       US500: {
         variant: 'H1_EMA50',

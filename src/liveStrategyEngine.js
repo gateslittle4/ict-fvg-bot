@@ -92,6 +92,24 @@
 //                             that the add-on trigger stops mattering once
 //                             the original trade is done.
 //
+// Multi-touch FVG ("contact multi", `cfg.multiTouch: true` - see HANDOFF.md
+// "FVG 'multi-contact' testé..." and the robustness checks that followed).
+// Per production FvgEngine (engines/fvgEngine.js), a touch that fails the
+// filters (bias/structure/session/sweep) consumes the zone forever, even if
+// it is nowhere near its own maxAgeCandles staleness limit. MultiTouchFvgEngine
+// (backtest/fvgMultiTouch.js) is the SAME 3-candle detection and SAME filter
+// criteria, but a rejected touch leaves the zone active for a LATER touch to
+// try again, up to maxAgeCandles. Validated for US100 ONLY (3 independent
+// robustness checks: no single lucky quarter, counter-trend side holds up,
+// ~10x an arbitrary-entry drift-baseline control - EURUSD/GBPUSD don't hold
+// up at all on this concept, USDJPY holds up mechanically but turned out
+// fragile on closer inspection - see HANDOFF.md "Multi-contact testé sur
+// EURUSD/GBPUSD/USDJPY..."). `_buildFvgEngine()` below is the ONE place that
+// decides which engine a symbol gets, shared by the per-tick and bulk
+// warm-up paths exactly like `_processFvgEvent()` is the one place their
+// enriched signal shape is built - both paths must stay bit-for-bit
+// identical for the same (symbol, candle).
+//
 // "Believed" netting caveat: like the backtest, this engine's notion of
 // "position open on symbol X" is driven by ITS OWN signal detection, not by
 // real broker-reported positions. Since this bot is semi-automatic (it
@@ -106,6 +124,7 @@
 // ---------------------------------------------------------------------------
 
 import { buildFilteredEngine, MIN_DISTANCE_SPREAD_MULTIPLE } from './backtest/gridRunner.js';
+import { MultiTouchFvgEngine, buildMultiTouchFilterPredicate } from './backtest/fvgMultiTouch.js';
 import { computeStop } from './backtest/backtestEngine.js';
 import { resampleCandles, TIMEFRAME_MS } from './backtest/htfBias.js';
 import { computeZScoreSeries, alignByTime } from './backtest/correlation.js';
@@ -374,11 +393,29 @@ export class LiveStrategyEngine {
     return null;
   }
 
+  /**
+   * The ONE place that decides which FVG engine a symbol gets: the
+   * production single-touch engine (via buildFilteredEngine, same filter
+   * criteria either way), or MultiTouchFvgEngine when `cfg.multiTouch` is
+   * set (see the module header note above). Shared by the per-tick path
+   * (_detectFvgSignal, rebuilding from `hist` on every live candle) and the
+   * bulk warm-up path (_warmUpOneSymbol, building once from the full
+   * historical window) so both can never silently diverge on which engine a
+   * symbol actually runs.
+   */
+  _buildFvgEngine(candles, symbol, cfg) {
+    if (cfg.multiTouch) {
+      const checkFilters = buildMultiTouchFilterPredicate(candles, symbol, cfg);
+      return new MultiTouchFvgEngine({ symbol, checkFilters });
+    }
+    return buildFilteredEngine(candles, symbol, cfg).engine;
+  }
+
   _detectFvgSignal(symbol, candle) {
     const cfg = this.fvgConfig[symbol];
     const hist = this.history.get(symbol);
     const formationIndex = this.formationIndexBySymbol.get(symbol);
-    const { engine } = buildFilteredEngine(hist, symbol, cfg);
+    const engine = this._buildFvgEngine(hist, symbol, cfg);
 
     let lastEvents = [];
     for (let i = 0; i < hist.length; i++) {
@@ -816,7 +853,7 @@ export class LiveStrategyEngine {
     const hist = this.history.get(symbol);
     const cfg = this.fvgConfig[symbol];
     const formationIndex = this.formationIndexBySymbol.get(symbol);
-    const fvgEngine = cfg ? buildFilteredEngine(candles, symbol, cfg).engine : null;
+    const fvgEngine = cfg ? this._buildFvgEngine(candles, symbol, cfg) : null;
 
     // Divergence candidates for this symbol's leg of the pair, computed ONCE
     // using whatever history its partner already holds AT THE START of this

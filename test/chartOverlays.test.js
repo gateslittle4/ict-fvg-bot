@@ -130,7 +130,15 @@ test('buildChartOverlays: a zone we never saw end is closed off at the engine ma
   // consumes the zone inside FvgEngine without any event reaching us, so
   // "no end observed" must NOT be read as "still live" - otherwise old zones
   // stretch to the right edge forever and bury the chart.
-  const { zones } = buildChartOverlays(history(), { symbol: 'US100', maxZones: 5000 });
+  //
+  // US500, not US100: since 2026-09 US100 runs MultiTouchFvgEngine
+  // (CONFIG.fvg.perSymbol.US100.multiTouch - see HANDOFF.md "multi-contact"),
+  // which always reports a REAL 'expired' event once a zone ages out
+  // (rejected touches no longer silently consume it) - so US100 now
+  // produces ZERO 'stale' zones, by design, and would make this assertion
+  // vacuous. US500 stays on the single-touch engine, so it still exhibits
+  // the silent-consumption case this test exists to cover.
+  const { zones } = buildChartOverlays(history(), { symbol: 'US500', maxZones: 5000 });
   const stale = zones.filter((z) => z.status === 'stale');
   assert.ok(stale.length > 0, 'expected stale zones on a window this long');
 
@@ -154,8 +162,22 @@ test('buildChartOverlays: a zone young enough to still be live is left open-ende
 });
 
 test('buildChartOverlays: "stale" is kept distinct from a confirmed "expired"', () => {
-  const { zones } = buildChartOverlays(history(), { symbol: 'US100', maxZones: 5000 });
+  // US500, not US100 - same reason as the test above (US100's multi-touch
+  // engine never produces a 'stale' zone).
+  const { zones } = buildChartOverlays(history(), { symbol: 'US500', maxZones: 5000 });
   const statuses = new Set(zones.map((z) => z.status));
   assert.ok(statuses.has('expired'), 'engine-confirmed expiries must still be reported as expired');
   assert.ok(statuses.has('stale'), 'inferred ends must be reported separately, not relabelled as expired');
+});
+
+test('buildChartOverlays: US100 multi-contact never produces a "stale" zone - every ending is a real engine event', () => {
+  // Direct positive assertion of the design difference explained above: with
+  // MultiTouchFvgEngine, a rejected touch leaves the zone active rather than
+  // silently consuming it, and age-out always fires a real 'expired' event
+  // - so the 'stale' heuristic (needed for the single-touch engines) should
+  // never trigger for US100.
+  const { zones } = buildChartOverlays(history(), { symbol: 'US100', maxZones: 5000 });
+  const stale = zones.filter((z) => z.status === 'stale');
+  assert.equal(stale.length, 0);
+  assert.ok(zones.some((z) => z.status === 'expired'), 'sanity: this window must still contain real expiries');
 });
