@@ -1987,3 +1987,15 @@ Esdras : *"donc après avoir passé le challenge 1 step FTMO, je ne dois rien to
 **Rien codé dans `src/`** — recherche seulement.
 
 **Fichiers** : `scripts/runFtmo25kCumulativeWithdrawalByDateAnalysis.js` (nouveau), `data/backtest-input/ftmo-25k-cumulative-withdrawal-by-date-analysis.md`. `npm test` : 412/412 (inchangé).
+
+## "Peux-tu atteindre le 5% du free trial FTMO en 14 jours?" — vérifié en direct puis testé — 2026-09-12
+
+Esdras : *"j'ai une idée. Peux-tu atteindre le 5% du free trial de FTMO dans 14 jours?"* Vérifié en direct (help.ftmo.com/FAQ) avant de simuler quoi que ce soit : le Free Trial FTMO est un vrai compte démo GRATUIT, durée fixe 14 jours (relançable à volonté, aucune limite), cible réduite de moitié (10%→5%) par rapport au vrai challenge, mêmes règles de perte sinon. **Important, confirmé par FTMO lui-même : le passer ne donne PAS de compte financé ni d'avantage garanti** ("do not guarantee automatic eligibility", "not as a qualification step") — donc ce n'est pas un raccourci financier, juste une vraie question testable.
+
+**Nouveau script** `scripts/runFtmoFreeTrial5PctIn14DaysAnalysis.js` — architecture allégée (fenêtre unique fixe de 14 jours, pas de chaîne challenge→live comme les autres scripts), 416 fenêtres testées (tous les 7 jours, 2018-2025), risque 0.5%.
+
+**Résultat** : **~26% des fenêtres de 14 jours atteignent +5%** ; **0% bustent** (jamais touché -10% trailing en seulement 14 jours) ; 74% expirent sans passer ni buster (pas assez de temps, pas un échec réel). Parmi celles qui passent, le temps médian est de 8.7 jours. Comparaison : le même système au même risque met ~63 jours en moyenne pour +10% (cible double) — la fenêtre courte de 14 jours ne laisse pas à la moyenne le temps de jouer, d'où un taux de réussite plus bas que ce qu'on attendrait naïvement en divisant juste le temps par deux.
+
+**Conclusion** : le Free Trial est utile pour observer le système tourner sans risque, mais ni un raccourci financier ni une garantie de réussite rapide. Rien codé dans `src/` — recherche seulement.
+
+**Fichiers** : `scripts/runFtmoFreeTrial5PctIn14DaysAnalysis.js` (nouveau), `data/backtest-input/ftmo-free-trial-5pct-in-14days-analysis.md`. `npm test` : 412/412 (inchangé).
