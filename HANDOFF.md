@@ -1295,3 +1295,21 @@ Question directe d'Esdras après validation du multi-contact US100. Répondue av
 **Réserves données à Esdras** : règles FTMO 1-Step confirmées cette session, FundingPips 1-Step non re-vérifié à la source (contrairement à FundingPips Zero) — probablement proche mais pas garanti identique. Scope = combo validé (FVG×3 + Divergence) uniquement, hors NWOG/Judas Swing.
 
 **Fichiers** : `scripts/runFtmo1StepMultiTouchAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-multitouch-account-impact.md`. Aucun changement `src/` — recherche seulement, multi-contact toujours pas déployé.
+
+## "Et si je prenais seulement le FVG multi-contact, sans XAUUSD ni Divergence?" — 2026-09-12, suite
+
+Suite directe de la simulation précédente. Même méthode (`scripts/runFtmo1StepUS100OnlyAccountImpact.js`, dérivé du script combo), mais `FVG_SYMBOLS = ['US100']` uniquement, Divergence retirée entièrement — le combo le plus simple possible, isolant exactement ce qui a été validé ce soir.
+
+**Résultat, comparé au combo complet** :
+
+| | Combo complet | US100 multi-contact seul |
+|---|---|---|
+| Jour de passage (2024) | 56 | 206 |
+| Jour de passage (2025) | 49 | 128 |
+| Moyenne test | ~50 jours | ~167 jours |
+| Drawdown trailing max (7 ans) | 4.6%-10.4% | 2.2%-4.7% |
+| Busté sur 7 ans ? | Oui, une fois (2020) | Jamais |
+
+**Vrai compromis vitesse/sécurité, pas une réponse à sens unique** : seul, US100 multi-contact prend ~3× plus longtemps (moins de trades/an : 37-54 contre 150-175), mais le drawdown ne dépasse jamais 4.7% sur les 7 années testées et il n'y a aucun bust — contre un bust en 2020 (après avoir déjà réussi ce challenge-là) avec le combo complet.
+
+**Fichiers** : `scripts/runFtmo1StepUS100OnlyAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-us100-only-account-impact.md`. Aucun changement `src/` — recherche seulement.
