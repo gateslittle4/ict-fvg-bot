@@ -2122,3 +2122,36 @@ Esdras, après la disqualification de FundedNext/Alpha Capital Group et le prix 
 **Conclusion présentée à Esdras (pas tranchée)** : FTMO et Ment Funding sont quasi équivalents en sécurité/vitesse — FTMO gagne sur la réputation (bien plus d'historique/avis) et le split fixe à 90% sans palier à débloquer, Ment Funding est légèrement moins cher et tout aussi sûr. CTI reste le moins cher à l'achat mais structurellement plus risqué (déjà établi). Décision finale toujours ouverte.
 
 **Fichiers** : `scripts/runMentFundingAllLiveStrategiesCycleAccountImpact.js` (nouveau), `data/backtest-input/ment-funding-1step-all-live-strategies-cycle-account-impact.md`. Aucun changement dans `src/` — recherche seulement.
+
+## 5e prop firm testée : FundingPips + GoatFundedTrader passaient déjà le filtre EA — comparatif final des 5 candidats — 2026-09-12
+
+Esdras : *"Verifie une autre platforme, on doit avoir au moins 5 pour trancher."* Plutôt que de chercher une 6e firme, revérification de la politique EA de **FundingPips** et **GoatFundedTrader** (toutes deux étudiées plus tôt dans la session, avant que le filtre "bot autonome permis" soit découvert) :
+
+- **FundingPips** : EA tiers limités à l'assistance, MAIS **"full automation is permitted on your own EA"** avec preuve de propriété (code source, historique git) — ce bot qualifie (c'est notre propre code, pas un EA acheté). Passe.
+- **GoatFundedTrader** (programme ÉVALUATION 1-Step, pas les programmes Instant déjà testés) : EA pleinement automatisés permis "tant que c'est ta propre stratégie" — pas de restriction assist-only comme Alpha Capital Group. Passe.
+
+Les deux passent sans avoir besoin d'une 6e firme. Simulations lancées avec la même architecture (reset continu, plancher statique pour ces deux comme Ment Funding) :
+
+| Risque/trade | FundingPips (target 12%, DD 12% statique) | GoatFundedTrader (target 10%, DD 6% statique) |
+|---|---|---|
+| 0.5% | **0%** bust, 88j moy. | 7% bust, 65j moy. |
+| 0.3% | **0%** bust, 142j moy. | 4% bust, 113j moy. |
+
+**Comparatif final des 5 candidats viables (bot autonome autorisé + prix raisonnable)** :
+
+| | FTMO | CTI | Ment Funding | FundingPips Flex | GoatFundedTrader |
+|---|---|---|---|---|---|
+| Prix $25k | ~$205-265 | $159 | $250 | ~$185-211 | non confirmé (~$60-100 estimé) |
+| Target | 10% | 8% | 10% | 12% | 10% |
+| Drawdown | 10% trailing EOD | 5% trailing | 6% statique | 12% statique | 6% statique |
+| Bust @ 0.5% | 9% | 34% | 7% | **0%** | 7% |
+| Bust @ 0.3% | 0% | 18% | 4% | **0%** | 4% |
+| Jours moy. @ 0.5% | ~63j | 32j | 65j | 88j | 65j |
+| Split | 90% fixe | 80%→90-100% | 75%→90% | 85% fixe | 80%→100% (add-on) |
+| Réputation | 8000+ avis, 4.6★ | Moins établi | 227 avis, 4.9★ | Établie, split confirmé récemment | Post-2023, moins de recul |
+
+**Constat marquant** : **FundingPips Flex a le taux de bust le plus bas des 5 (0% à tous les risques testés jusqu'à 0.5%)**, grâce à son plancher statique de 12% (le plus large ET non-trailing des 5) — mais c'est aussi le plus lent à passer (88j contre 32-65j pour les autres) à cause de sa cible plus haute (12% contre 8-10%). Confirme encore une fois : le mécanisme (statique vs trailing) et la largeur du plancher comptent plus que la réputation ou le prix seuls.
+
+**Note d'incertitude** : le prix $25k de GoatFundedTrader n'a pas pu être confirmé avec certitude (calculateur de prix interactif non scrapable) — à vérifier directement sur leur site avant toute décision le concernant.
+
+**Fichiers** : `scripts/runFundingPips1StepFlexAllLiveStrategiesCycleAccountImpact.js`, `scripts/runGoatFundedTrader1StepAllLiveStrategiesCycleAccountImpact.js` (nouveaux), rapports `.md` correspondants dans `data/backtest-input/`. Aucun changement dans `src/` — recherche seulement.
