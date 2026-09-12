@@ -158,7 +158,7 @@ export class LiveStrategyEngine {
     // whether to also fold NWOG into those historical reports is a
     // SEPARATE decision from making it live (this constructor's default
     // just avoids changing their output silently as a side effect of this
-    // change) - not revisited here. Only store.js's ONE real live-tracking
+    // change) - not revisited here. Only accountRuntime.js's ONE real live-tracking
     // engine passes this explicitly.
     nwogConfig = null,
     // Same opt-in-only pattern as nwogConfig above (2026-09, at the user's
@@ -193,7 +193,7 @@ export class LiveStrategyEngine {
     this.balance = balance;
   }
 
-  // 2026-09, "page réglages" - see store.js's setRiskPctPerTrade() and
+  // 2026-09, "page réglages" - see accountRuntime.js's setRiskPctPerTrade() and
   // config.js's RISK_PCT_PER_TRADE comment for the full picture (bounds
   // enforced by the caller, not here - this is a plain property mutation
   // like setBalance() above).

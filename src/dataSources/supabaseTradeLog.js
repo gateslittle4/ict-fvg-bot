@@ -1,6 +1,6 @@
 // supabaseTradeLog.js
 // Durable trade-outcome log, at the user's explicit request after realizing
-// store.signalLog (see store.js's MAX_LOG_LENGTH) only keeps the 200 most
+// store.signalLog (see accountRuntime.js's MAX_LOG_LENGTH) only keeps the 200 most
 // recent entries IN MEMORY - every Render restart (a deploy, or the free
 // tier's own sleep/wake cycle) wipes it, so "how has US500 actually been
 // doing" had no real answer beyond whatever fit in a 90-day in-memory replay

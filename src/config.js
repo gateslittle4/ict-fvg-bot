@@ -66,7 +66,7 @@ const ACCOUNT_MODE = resolveAccountMode();
 // auto-execute toggle's own "pause vs durable default" distinction.
 // Clamped to a sane range - a fat-fingered/misconfigured value here sizes
 // EVERY live position, so this is not a place to trust blindly.
-// Exported so the live setter (store.js's setRiskPctPerTrade(), used by
+// Exported so the live setter (AccountRuntime's setRiskPctPerTrade(), used by
 // POST /api/settings/risk) enforces the SAME bounds rather than a second
 // hardcoded pair of numbers that could drift from this one.
 export const MIN_RISK_PCT = 0.05;

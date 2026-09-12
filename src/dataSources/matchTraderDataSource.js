@@ -73,12 +73,18 @@
 // trades today" instead of true history, same graceful degradation as an
 // empty response would already produce.
 
-import { store, pushSignalEvents, setBalance, isAutoExecuteActive, tagVolatilityObservation } from '../store.js';
+import { getDefaultAccount } from '../accountRegistry.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 
 const M15_MS = 15 * 60 * 1000;
+
+// Phase 1 of the multi-account rollout (see HANDOFF.md/accountRegistry.js):
+// this data source, like the other two, still only ever drives the single
+// default account - kept as a local `store` alias so the rest of this file
+// (and its comments referring to "store.X") reads exactly as before.
+const store = getDefaultAccount();
 
 // No live push documented (see file header, point 1) - poll quotations on a
 // short interval instead. 15s is a guess balancing "M15 candle forms with
@@ -344,11 +350,11 @@ export class MatchTraderDataSource {
       // backtest's fixed-EST-as-UTC convention so the NY session filter reads
       // the correct wall-clock hour (see _toEngineCandle / candleTimeOffsetMs).
       const events = store.strategyEngine.ingestCandle(symbol, this._toEngineCandle(closedCandle));
-      pushSignalEvents(events);
+      store.pushSignalEvents(events);
 
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
       if (actionable.length > 0) this._notify(actionable);
-      if (actionable.length > 0 && isAutoExecuteActive()) {
+      if (actionable.length > 0 && store.isAutoExecuteActive()) {
         for (const sig of actionable) await this._handleAutoExecuteEntry(symbol, sig);
       }
       for (const e of events) {
@@ -362,7 +368,7 @@ export class MatchTraderDataSource {
 
   async _fetchBalance() {
     const data = await this._apiFetch('/balance');
-    if (typeof data.balance === 'number') setBalance(data.balance);
+    if (typeof data.balance === 'number') store.setBalance(data.balance);
   }
 
   /**
@@ -658,8 +664,8 @@ export class MatchTraderDataSource {
         e.source === 'judaswing' ? 'Judas Swing (killzone Londres)' :
         'FVG rempli';
       // Forward-test démo OBSERVATION ONLY (2026-09) - see cTraderDataSource.js's
-      // own _notify() and store.js's tagVolatilityObservation()/HANDOFF.md.
-      const tagged = tagVolatilityObservation(e);
+      // own _notify() and accountRuntime.js's tagVolatilityObservation()/HANDOFF.md.
+      const tagged = store.tagVolatilityObservation(e);
       const volNote = tagged.volRegime
         ? ` [obs. vol: ${tagged.volRegime}, taille sugg. ${tagged.suggestedRiskPct.toFixed(2)}% — non appliqué]`
         : '';

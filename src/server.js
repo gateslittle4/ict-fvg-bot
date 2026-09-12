@@ -2,7 +2,8 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG, isLiveConfigured, getConfiguredPlatform, MIN_RISK_PCT, MAX_RISK_PCT } from './config.js';
-import { store, getActionableSignals, setAutoExecute, isAutoExecuteActive, MAX_AUTO_EXECUTE_HOURS, setRiskPctPerTrade } from './store.js';
+import { getDefaultAccount } from './accountRegistry.js';
+import { MAX_AUTO_EXECUTE_HOURS } from './accountRuntime.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
 import { CTraderDataSource } from './dataSources/cTraderDataSource.js';
@@ -18,6 +19,14 @@ import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Phase 1 of the multi-account rollout (see HANDOFF.md/accountRegistry.js):
+// every route below still only ever serves the single default account -
+// kept as a local `store` alias so the rest of this file (and its comments
+// referring to "store.X") reads exactly as before. Phase 2 will thread a
+// per-request accountId through instead of this one module-level constant.
+const store = getDefaultAccount();
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -102,7 +111,7 @@ function buildStatusPayload() {
     balance: store.balance,
     guardrail: guardrailStatus,
     // Live value (2026-09, page réglages), not the boot-time CONFIG default -
-    // store.strategyEngine.riskPctPerTrade is what setRiskPctPerTrade()
+    // store.strategyEngine.riskPctPerTrade is what store.setRiskPctPerTrade()
     // actually mutates, and the two can differ once someone's changed it
     // from the dashboard without restarting. CONFIG.risk.riskPctPerTrade
     // stays the BOOT default (and the RISK_PCT_PER_TRADE env override target)
@@ -110,7 +119,7 @@ function buildStatusPayload() {
     riskPctPerTrade: store.strategyEngine.riskPctPerTrade,
     symbols,
     liveConfigured: isLiveConfigured(),
-    autoExecute: { ...store.autoExecute, active: isAutoExecuteActive() },
+    autoExecute: { ...store.autoExecute, active: store.isAutoExecuteActive() },
     broker: store.broker,
   };
 }
@@ -124,7 +133,7 @@ function buildSignalsPayload() {
     .reverse()
     .map(withRealTimeSignal);
   return {
-    actionable: getActionableSignals().map(withRealTimeSignal),
+    actionable: store.getActionableSignals().map(withRealTimeSignal),
     watching,
   };
 }
@@ -143,8 +152,8 @@ app.post('/api/auto-execute', (req, res) => {
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({ error: '`enabled` (boolean) is required' });
     }
-    const result = setAutoExecute(enabled, hours);
-    res.json({ ...result, active: isAutoExecuteActive() });
+    const result = store.setAutoExecute(enabled, hours);
+    res.json({ ...result, active: store.isAutoExecuteActive() });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -161,7 +170,7 @@ app.post('/api/auto-execute', (req, res) => {
 app.post('/api/settings/risk', (req, res) => {
   try {
     const { riskPctPerTrade } = req.body || {};
-    setRiskPctPerTrade(riskPctPerTrade);
+    store.setRiskPctPerTrade(riskPctPerTrade);
     res.json({ riskPctPerTrade: store.strategyEngine.riskPctPerTrade, min: MIN_RISK_PCT, max: MAX_RISK_PCT });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -438,7 +447,7 @@ app.get('/api/trade-log', async (req, res) => {
 // same MAX_LOG_LENGTH convention as /api/signals - this is a fast recency
 // check for the dashboard, not a durable audit trail; use /api/trade-log
 // for that once persistence is on), populated exclusively from real
-// ProtoOAExecutionEvent outcomes - see store.js's recordOrderOutcome().
+// ProtoOAExecutionEvent outcomes - see accountRuntime.js's recordOrderOutcome().
 app.get('/api/order-log', (req, res) => {
   res.json({ orders: [...store.orderOutcomeLog].reverse().slice(0, 30) });
 });
@@ -556,7 +565,7 @@ const PORT = process.env.PORT || 3000;
 // succeeds. Explicit user request ("passive income", won't be there to
 // click Buy/Sell OR to re-click a time-boxed toggle): without this, the
 // dashboard's manual toggle is capped at 7 days AND lives only in
-// in-memory store.js state, so it silently reverts to semi-automatic the
+// in-memory AccountRuntime state, so it silently reverts to semi-automatic the
 // next time this process restarts - which on Render's free tier happens
 // often (idle sleep/wake, deploys), likely well inside any 7-day window.
 // Re-arming at every boot sidesteps that: the window never actually gets
@@ -567,7 +576,7 @@ const PORT = process.env.PORT || 3000;
 // default, not a one-time nudge).
 export function armAutoExecuteIfConfigured() {
   if (process.env.AUTO_EXECUTE_ALWAYS_ON !== 'true') return;
-  const result = setAutoExecute(true, MAX_AUTO_EXECUTE_HOURS);
+  const result = store.setAutoExecute(true, MAX_AUTO_EXECUTE_HOURS);
   console.log(`[boot] AUTO_EXECUTE_ALWAYS_ON=true - mode indisponible armed until ${new Date(result.expiresAt).toISOString()}`);
 }
 

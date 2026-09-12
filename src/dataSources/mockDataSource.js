@@ -8,8 +8,14 @@
 // data. The dashboard must keep the "DEMO MODE" banner visible whenever this
 // source is active - see store.mode.
 
-import { store, pushSignalEvents, setBalance } from '../store.js';
+import { getDefaultAccount } from '../accountRegistry.js';
 import { CONFIG } from '../config.js';
+
+// Phase 1 of the multi-account rollout (see HANDOFF.md/accountRegistry.js):
+// this data source, like the other two, still only ever drives the single
+// default account - kept as a local `store` alias so the rest of this file
+// (and its comments referring to "store.X") reads exactly as before.
+const store = getDefaultAccount();
 
 // Demo push is OFF by default (nobody wants their phone buzzing over fake
 // trades). Set DEMO_PUSH_NOTIFICATIONS=true to test the ntfy.sh wiring
@@ -92,7 +98,7 @@ export function startMockDataSource({ candleIntervalMs = 4000 } = {}) {
     for (const symbol of CONFIG.symbols) {
       const candle = sims.get(symbol).nextCandle();
       const events = store.strategyEngine.ingestCandle(symbol, candle);
-      pushSignalEvents(events);
+      store.pushSignalEvents(events);
       store.lastCandleBySymbol.set(symbol, candle);
       for (const e of events) {
         if (e.type === 'validated' && !e.blockedReason) maybeSimulateTradeOutcome();
@@ -104,7 +110,7 @@ export function startMockDataSource({ candleIntervalMs = 4000 } = {}) {
     for (const symbol of CONFIG.symbols) {
       const candle = sims.get(symbol).nextCandle();
       const events = store.strategyEngine.ingestCandle(symbol, candle);
-      pushSignalEvents(events);
+      store.pushSignalEvents(events);
       store.lastCandleBySymbol.set(symbol, candle);
       for (const e of events) {
         if (e.type === 'validated' && !e.blockedReason) {
@@ -134,7 +140,7 @@ function maybeSimulateTradeOutcome() {
     if (store.mode !== 'demo') return;
     const win = Math.random() < 0.45; // slightly losing-biased on purpose, to demo cooldown/loss-limit
     const pnl = win ? rand(40, 120) : -rand(40, 140);
-    setBalance(store.balance + pnl);
+    store.setBalance(store.balance + pnl);
     store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance });
   }, rand(2000, 6000));
 }

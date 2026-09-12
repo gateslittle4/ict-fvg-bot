@@ -2,7 +2,7 @@
 // "What would the bot have done over the last N days?" - at the user's
 // request, after realizing the warm-up replay already computes every signal
 // over the retained history but throws the result away once it's not the
-// newest 20 entries (see store.js's MAX_LOG_LENGTH / getActionableSignals()).
+// newest 20 entries (see accountRuntime.js's MAX_LOG_LENGTH / getActionableSignals()).
 //
 // Deliberately reuses LiveStrategyEngine itself - the SAME class already
 // running live (and already fixed for the NY-session-timezone bug) - fed a

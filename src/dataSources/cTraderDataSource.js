@@ -31,7 +31,7 @@
 // account's symbol list.
 
 import { CTraderConnection } from '@reiryoku/ctrader-layer';
-import { store, pushSignalEvents, setBalance, setBrokerInfo, isAutoExecuteActive, tagVolatilityObservation, recordOrderOutcome } from '../store.js';
+import { getDefaultAccount } from '../accountRegistry.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
@@ -41,6 +41,12 @@ import { createTradeLogClient, logClosedTrade } from './supabaseTradeLog.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
+
+// Phase 1 of the multi-account rollout (see HANDOFF.md/accountRegistry.js):
+// this data source, like the other two, still only ever drives the single
+// default account - kept as a local `store` alias so the rest of this file
+// (and its comments referring to "store.X") reads exactly as before.
+const store = getDefaultAccount();
 
 // cTrader trendbar period enum name for our configured timeframe.
 const PERIOD_BY_TIMEFRAME = { M1: 'M1', M5: 'M5', M15: 'M15', M30: 'M30', H1: 'H1' };
@@ -280,7 +286,7 @@ export class CTraderDataSource {
     const rawBalance = res.trader?.balance;
     if (typeof rawBalance === 'number') {
       const moneyDigits = res.trader?.moneyDigits ?? 2;
-      setBalance(rawBalance / 10 ** moneyDigits);
+      store.setBalance(rawBalance / 10 ** moneyDigits);
     }
     // Bug fix (2026-09): the dashboard banner used to hard-code "FundingPips"
     // no matter which broker/environment the connected account actually
@@ -290,7 +296,7 @@ export class CTraderDataSource {
     // rather than showing a name we don't actually know. isDemo is derived
     // from which cTrader host this process connected to (HOST above), not
     // guessed from account data.
-    setBrokerInfo({ name: res.trader?.brokerName || null, isDemo: HOST.includes('demo') });
+    store.setBrokerInfo({ name: res.trader?.brokerName || null, isDemo: HOST.includes('demo') });
   }
 
   async _loadClosedDeals(accountId) {
@@ -588,11 +594,11 @@ export class CTraderDataSource {
           for (const bar of event.trendbar) {
             const candle = this._trendbarToCandle(bar);
             const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle));
-            pushSignalEvents(events);
+            store.pushSignalEvents(events);
             store.lastCandleBySymbol.set(symbolName, candle);
             const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
             if (actionable.length > 0) this._notify(actionable);
-            if (actionable.length > 0 && isAutoExecuteActive()) {
+            if (actionable.length > 0 && store.isAutoExecuteActive()) {
               for (const sig of actionable) this._handleAutoExecuteEntry(symbolName, symbolId, sig);
             }
 
@@ -618,7 +624,7 @@ export class CTraderDataSource {
         if (folded && folded !== existing) store.lastCandleBySymbol.set(symbolName, folded);
 
         // Real-spread sampling (2026-09, at the user's request: "est-ce que
-        // le spread est celui qu'on avait planifié?" - see store.js's
+        // le spread est celui qu'on avait planifié?" - see accountRuntime.js's
         // recentTicksBySymbol comment). Same /100000 scaling assumption as
         // bid above (VERIFY against a real response, same caveat). Only
         // recorded when the SAME tick carries both sides - a tick with just
@@ -875,7 +881,7 @@ export class CTraderDataSource {
     // as ground truth (real trade, not a demo simulation).
     if (event.executionType === 'ORDER_FILLED' && event.deal?.closePositionDetail) {
       const pnl = event.deal.closePositionDetail.grossProfit / 100;
-      setBalance(store.balance + pnl);
+      store.setBalance(store.balance + pnl);
       store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance });
 
       // If the position that just closed was a pyramid add-on leg (tracked
@@ -931,11 +937,11 @@ export class CTraderDataSource {
       const unfilledTypes = new Set(['ORDER_CANCELLED', 'ORDER_EXPIRED', 'ORDER_REJECTED']);
       if (event.executionType === 'ORDER_FILLED' && !event.deal?.closePositionDetail) {
         this.pendingEntryOrderByOrderId.delete(event.order.orderId);
-        recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'filled', executionType: event.executionType });
+        store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'filled', executionType: event.executionType });
         this._notifyText(`✅ [${pending.source.toUpperCase()}] Ordre confirmé REMPLI sur ${pending.symbolName} - position réellement ouverte chez le courtier.`);
       } else if (unfilledTypes.has(event.executionType)) {
         this.pendingEntryOrderByOrderId.delete(event.order.orderId);
-        recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'unfilled', executionType: event.executionType });
+        store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'unfilled', executionType: event.executionType });
         // The engine believed this was open the moment it validated the
         // signal (see _processFvgEvent etc.) - now confirmed wrong. Clear
         // it so the dashboard stops showing a ghost "believed open"
@@ -1000,8 +1006,8 @@ export class CTraderDataSource {
       // Forward-test démo OBSERVATION ONLY (2026-09) - re-tags here rather than
       // reusing pushSignalEvents' already-tagged copy, so this stays a pure
       // addition with zero effect on `events`/`actionable` (used above for
-      // auto-execute) - see store.js's tagVolatilityObservation() and HANDOFF.md.
-      const tagged = tagVolatilityObservation(e);
+      // auto-execute) - see accountRuntime.js's tagVolatilityObservation() and HANDOFF.md.
+      const tagged = store.tagVolatilityObservation(e);
       const volNote = tagged.volRegime
         ? ` [obs. vol: ${tagged.volRegime}, taille sugg. ${tagged.suggestedRiskPct.toFixed(2)}% — non appliqué]`
         : '';

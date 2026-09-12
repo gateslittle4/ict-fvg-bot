@@ -7,7 +7,7 @@
 // duplicated in those exploratory scripts) so it can also be used LIVE, for
 // the forward-test observation phase requested explicitly by Esdras before
 // any real risk-per-trade change ("forward-test démo d'abord") - see
-// store.js's pushSignalEvents() and HANDOFF.md.
+// accountRuntime.js's pushSignalEvents() and HANDOFF.md.
 //
 // Classification (daily bars, thresholds fixed BEFORE any result was seen -
 // see checkVolatilityRegimeImpactFullCombo.js's own comment):
