@@ -2038,3 +2038,33 @@ Esdras : *"comment veux-tu gérer ça avec le compte live? Est-ce que 2 comptes 
 **Pratique** : quand Esdras aura son compte financé, il suffira d'ajouter une entrée `ACCOUNTS_JSON` avec `propFirmProgramId: 'ftmo-1step-funded'` (au lieu de `'ftmo-1step'`) — il apparaîtra automatiquement dans le même onglet FTMO que le compte challenge, avec les bonnes règles (pas de cible, mêmes limites de perte).
 
 **Fichiers** : `src/propFirms/ftmo.js`, `src/propFirms/index.js`, `test/propFirms.test.js`. `npm test` : 413/413.
+
+## City Traders Imperium (CTI) 1-Step — recherche + simulation du drawdown 5% — 2026-09-12
+
+Esdras, après avoir demandé les règles du free trial FundingPips ("c'est mt5") puis d'un free trial sur Match-Trader (déjà codé dans le bot, jamais activé) : recherche a mené à **City Traders Imperium (CTI)**, qui offre un free trial 14 jours sur Match-Trader ET un vrai challenge payant sur la même plateforme. Puis, après avoir vu le prix : *"Il est probable qu'on le prenne plutôt que FTMO à cause de l'argent."*
+
+**Règles CTI 1-Step** (sourcées en direct sur citytradersimperium.com, 2026-09-12) :
+- Target **+8%** (FTMO : +10%)
+- Drawdown max **5% trailing sur le plus haut solde atteint** (FTMO : 10% trailing fin-de-journée) — **deux fois plus serré**
+- **Aucune** limite de perte journalière (FTMO : 3%)
+- Jours de trading min : ambigu entre les sources (une page dit "aucun", une autre + un agrégateur tiers disent "3 jours profitables ≥0.5% chacun") — non réconcilié
+- Split : **80%** au départ, monte à 90%/100% via paliers VIP non détaillés (FTMO : 90% fixe)
+- Prix compte $25k : **$159** confirmé (vs ~$205-265 estimé chez FTMO)
+- Plateforme : **Match-Trader** ou MT5 — Match-Trader est déjà câblé dans le bot (contrairement à MT5, zéro code existant)
+
+**Simulation lancée** (`scripts/runCti1StepAllLiveStrategiesCycleAccountImpact.js`, fork du script FTMO à reset continu, même architecture — historique complet 2018-2025) pour vérifier si le plancher 5% change le calibrage de risque déjà établi :
+
+| Risque/trade | Cycles | Busts | Taux de bust | Jours moy. pour passer |
+|---|---|---|---|---|
+| 0.5% (réglage challenge actuel) | 83 | 28 | **34%** | 32j |
+| 0.4% | 58 | 15 | 26% | 50j |
+| 0.3% (réglage live actuel) | 38 | 7 | **18%** | 73j |
+| 0.2% | 23 | 2 | **9%** | 126j |
+
+**Comparaison directe avec FTMO (même méthode, plancher 10%)** : à 0.5%, FTMO busте 9% des cycles — CTI en busте **34%**, presque 4x plus. Le réglage `live` actuel (0.3%) qui donnait 0% de bust chez FTMO busте encore 18% chez CTI. Il faut descendre à **0.2%** chez CTI pour retrouver un taux de bust comparable à celui de FTMO à 0.5% (9% vs 9%) — mais le passage devient alors 4x plus lent (126j vs 32j).
+
+**Conséquence sur le revenu mensuel projeté** : à un niveau de risque comparable en sécurité, CTI génère ~2.9 cycles/an de +8% (≈23%/an brut) contre ~3.16 cycles/an de +10% chez FTMO à 0.3% (≈31.6%/an brut) — **CTI reste plus lent en croissance composée**, même avec un split final potentiellement meilleur (100% via VIP, non confirmé).
+
+**Verdict présenté à Esdras (pas encore tranché)** : CTI coûte $46-106 de moins à l'achat ($159 vs ~$205-265), mais son plancher 5% oblige à réduire le risque bien en dessous du réglage FTMO pour rester aussi sûr, ce qui ralentit significativement l'atteinte des objectifs de revenu mensuel déjà calculés ($500-1500/mois). L'économie à l'achat est ponctuelle ; le ralentissement de croissance est récurrent chaque mois. Avantage réel de CTI : Match-Trader est déjà câblé dans le bot (FTMO tourne sur cTrader, aussi déjà câblé et actif — donc pas un avantage décisif côté intégration).
+
+**Fichiers** : `scripts/runCti1StepAllLiveStrategiesCycleAccountImpact.js` (nouveau), `data/backtest-input/cti-1step-all-live-strategies-cycle-account-impact.md`. Aucun changement dans `src/` — recherche seulement.
