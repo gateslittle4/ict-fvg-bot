@@ -1946,3 +1946,25 @@ Esdras, suite directe : *"et si on compte début janvier alors?"* Même simulati
 **Résultat : début janvier fait clairement mieux — ~67% des points de départ testés y arrivent, contre ~41% pour le 1er décembre.** Ça repasse au-dessus de 50% : début janvier devient l'issue la PLUS probable plutôt que l'exception, alors que le 1er décembre restait tendu. Les 35 jours de marge en plus (80→115) profitent surtout à absorber un challenge plus lent que la moyenne à passer — la phase live une fois financé reste comparativement stable et prévisible.
 
 **Fichiers** : `scripts/runFtmo25kFirstPayoutByDateAnalysis.js` (mis à jour, pas nouveau), `data/backtest-input/ftmo-25k-first-payout-by-date-analysis.md`. `npm test` : 412/412 (inchangé).
+
+## "Pourquoi t'aimes autant le FTMO?" → test empirique FundingPips 1-Step Flex — 2026-09-12
+
+Esdras a demandé une justification honnête de pourquoi FTMO ressortait toujours en tête, puis : *"teste FundingPips 1-Step Flex."* Explication donnée (la mécanique du drawdown compte plus que le % nominal — trailing fin-de-journée de FTMO vs. équité temps réel de GoatFundedTrader, qui a été la vraie cause de ses busts) puis vérification empirique directe avec la même rigueur que FTMO.
+
+**Recherche de règles** (`src/propFirms/fundingPips.js` mis à jour) : accès direct à `fundingpips.com`/`help.fundingpips.com` bloqué (429 puis 403, deux fois) — infos reconstruites via recherche web. Confirmé : split **85%** (était `null`/non vérifié avant), premier retrait dès **1% de profit** + cycle **bi-hebdomadaire** + ~3 jours de traitement. **Règle ambiguë découverte et documentée explicitement** : une perte flottante par "idée de trade" (même instrument+sens, ou ré-entrée <10min après une perte) — une source dit **3%(<$50k)/2%(≥$50k) = rupture immédiate**, une autre dit **1% = avertissement, 4 cumulés (jamais remis à zéro) = rupture, le 2e coupe le split en deux ("Striking System")**. Non réconcilié (accès bloqué) — modélisé avec la lecture STRICTE (3%) comme vrai bust, la lecture souple (1%) trackée en info seulement.
+
+**Nouveau script** `scripts/runFundingPips1StepFlexFirstPayoutByDateAnalysis.js` — méthode IDENTIQUE au script FTMO (98 points de départ historiques, même pipeline challenge→live→retrait, même cible $500), mais avec les vraies règles FundingPips (cible +12%, perte totale 12% **statique** — jamais de trailing, contrairement à FTMO), pour une comparaison directe côte à côte.
+
+**Résultat : FTMO garde l'avantage, malgré le plancher statique plus généreux en théorie** :
+
+| | FTMO 1-Step $25k | FundingPips 1-Step Flex $25k |
+|---|---|---|
+| % atteint $500 net d'ici le 1er décembre | 41% | 32% |
+| % atteint $500 net d'ici début janvier | 67% | 57% |
+| Médiane (jours) | 92 | 102 |
+
+La cible plus haute (+12% vs +10%) et le split plus faible (85% vs 90%) pèsent plus lourd que l'avantage du plancher statique. **Bonus rassurant** : avec la config actuelle (risque 0.5%/0.3%, stops ~1R), la règle de perte flottante par idée de trade ne s'est JAMAIS déclenchée sur les 98 tentatives testées — ni sous la lecture stricte (3%) ni sous la lecture souple (1%, zéro avertissement cumulé) — cohérent avec le raisonnement que le stop d'une position individuelle plafonne déjà sa perte flottante bien en dessous de ces seuils.
+
+**Rien codé dans `src/`** au-delà du profil `FUNDINGPIPS_1STEP_FLEX` mis à jour (documentaire).
+
+**Fichiers** : `scripts/runFundingPips1StepFlexFirstPayoutByDateAnalysis.js` (nouveau), `data/backtest-input/fundingpips-1step-flex-first-payout-by-date-analysis.md`, `src/propFirms/fundingPips.js` (mis à jour : split confirmé, règles de paiement, règle floating ambiguë documentée). `npm test` : 412/412 (inchangé).

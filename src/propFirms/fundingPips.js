@@ -41,6 +41,13 @@ export const FUNDINGPIPS_2STEP_STANDARD = {
   consistencyRule: null,
 };
 
+// RE-CHECKED 2026-09-12 (Esdras: "teste FundingPips 1-Step Flex", after
+// asking why FTMO kept coming out ahead). Direct fetches of both
+// fundingpips.com/payouts and the help.fundingpips.com article were
+// blocked again (429 then 403) - same access problem noted the first time
+// this file was researched. Everything below comes from search-engine
+// snippets of FundingPips' own pages and cross-referencing third-party
+// summaries, NOT a primary page render - re-verify before buying.
 export const FUNDINGPIPS_1STEP_FLEX = {
   id: 'fundingpips-1step-flex',
   firm: 'FundingPips',
@@ -48,9 +55,45 @@ export const FUNDINGPIPS_1STEP_FLEX = {
   phases: [
     { name: 'Flex', targetPct: 12, dailyLossLimitPct: 3, maxDrawdownPct: 12, maxDrawdownType: 'static', minTradingDays: null },
   ],
-  profitSplit: null, // not verified in the source
+  // NOW confirmed (was null/unverified before): "one flat 85% bi-weekly
+  // split with no payout menu" - multiple independent sources agree.
+  profitSplit: 0.85,
   timeLimitDays: null, // confirmed no limit
-  consistencyRule: null,
+  consistencyRule: null, // none found for THIS program specifically (Zero/2-Step have one, Flex doesn't)
+  // First payout: profit must reach >= 1% of account size, requestable
+  // every 2 weeks (bi-weekly "Tuesday Payday" cycle) - a % floor, not a
+  // fixed dollar amount like FTMO's implicit $-in-profit requirement.
+  payoutCycleDays: 14,
+  firstPayoutMinProfitPct: 1,
+  payoutProcessingDays: 3, // "processed every Tuesday, typically completes within 1-3 business days"
+  // ⚠️ GENUINE AMBIGUITY, not resolved - flagged rather than silently
+  // picking one number. Two different descriptions of what looks like the
+  // same underlying mechanism (a floating-loss cap on a single "trade
+  // idea" - one instrument+direction, or any re-entry within 10min of
+  // closing a loser counts as the same idea) turned up DIFFERENT numbers:
+  //   (a) A "Striking System" specific to 1-Step Flex: a WARNING at 1% of
+  //       account size: 4 cumulative warnings (never reset) breach the
+  //       account, the 2nd warning HALVES the profit split.
+  //   (b) A separate "Risk Per Trade Idea" article: 3% (<$50k accounts) or
+  //       2% (>=$50k) combined realized+unrealized loss on one trade idea
+  //       is an IMMEDIATE hard breach - no warnings.
+  // Could be the same rule described at different dates (FundingPips may
+  // have changed it), or two different concurrent mechanisms. NOT enforced
+  // by the bot either way. Modeled in
+  // scripts/runFundingPips1StepFlexFirstPayoutByDateAnalysis.js using the
+  // STRICTER reading (b) as the conservative default, with (a) noted for
+  // comparison - re-verify directly before trusting either number with
+  // real capital.
+  tradeIdeaFloatingLossRule: {
+    strictThresholdPct: 3, // (b) - <$50k accounts, immediate hard breach - used as the conservative default
+    strictThresholdPctLarge: 2, // (b) - >=$50k accounts
+    lenientThresholdPct: 1, // (a) - "Striking System": warning, not immediate breach
+    lenientStrikesToClose: 4,
+    lenientSplitHalvedAtStrike: 2,
+    basis: 'same-instrument-same-direction-or-reentry-within-10min-of-a-loss',
+    consequenceStrict: 'immediate-account-closure',
+    consequenceLenient: 'warning-then-closure-at-4th-cumulative-warning',
+  },
 };
 
 // FundingPips "Zero" - instant-funded, no challenge phase at all. Sourced
