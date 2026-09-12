@@ -1313,3 +1313,30 @@ Suite directe de la simulation précédente. Même méthode (`scripts/runFtmo1St
 **Vrai compromis vitesse/sécurité, pas une réponse à sens unique** : seul, US100 multi-contact prend ~3× plus longtemps (moins de trades/an : 37-54 contre 150-175), mais le drawdown ne dépasse jamais 4.7% sur les 7 années testées et il n'y a aucun bust — contre un bust en 2020 (après avoir déjà réussi ce challenge-là) avec le combo complet.
 
 **Fichiers** : `scripts/runFtmo1StepUS100OnlyAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-us100-only-account-impact.md`. Aucun changement `src/` — recherche seulement.
+
+## Multi-contact testé sur EURUSD/GBPUSD/USDJPY — aucune ne tient, USDJPY démasqué comme fragile — 2026-09-12
+
+Esdras a demandé explicitement d'étendre le multi-contact aux autres paires disponibles : "EURUSD, GBPUSD, et USDJPY aussi". Ni GBPUSD ni EURUSD n'ont de config FVG validée en production (déjà testées et rejetées plus tôt dans ce projet). Pas de config "déjà validée" à étendre comme pour l'extension USDJPY à 11 mécanismes — la config US100 (H4_EMA200, structure+sweep, fenêtre Silver Bullet 10h-11h NY, stop fvg-edge, RR=5) est reprise TELLE QUELLE sur les 3 paires, zéro paramètre ajusté (`scripts/runFvgMultiTouchOtherPairsAnalysis.js`).
+
+**Résultat (test 2024-2025)** :
+
+| Paire | Contact unique | Multi-contact | Verdict |
+|---|---|---|---|
+| EURUSD | -0.25R (n=15) | -0.25R (n=35) | ❌ rejeté des deux côtés |
+| GBPUSD | +0.19R (n=10) | +0.03R (n=24) | ⚠️ bruit (train négatif des deux côtés) |
+| USDJPY | +0.73R (n=16) | **+1.06R** (n=32) | ✅ tient mécaniquement... |
+
+**...mais démasqué comme fragile en vérifiant par trimestre, même discipline que pour US100** :
+
+| Trimestre | Trades | R |
+|---|---|---|
+| 2024 T1-T2 | 10 | **-5.6R** |
+| 2024 T3-T4 | 6 | +17.0R |
+| 2025 T1-T2 | 9 | +12.8R |
+| 2025 T3+ | 4 | +7.1R |
+
+~95% du profit vient de 2 trimestres sur 4 (échantillons de 6 et 9 trades), et un trimestre est carrément négatif — à l'opposé du profil US100 (positif dans les 4 trimestres sans exception). Même signature de fragilité que l'ancien cas Asian Range Breakout/USDJPY documenté plus haut dans ce fichier.
+
+**Conclusion : aucune des 3 paires ne mérite d'être ajoutée.** L'edge de ce projet (avec ou sans multi-contact) reste spécifique à US100 (et modérément US500) — pas une recette généralisable à n'importe quelle paire disponible.
+
+**Fichiers** : `scripts/runFvgMultiTouchOtherPairsAnalysis.js` (nouveau), `data/backtest-input/fvg-multi-touch-other-pairs-analysis.md`. Aucun changement `src/` — recherche seulement.
