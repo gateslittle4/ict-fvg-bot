@@ -1376,3 +1376,27 @@ Coût : drawdown max en R légèrement plus haut (6.82R→7.82R en test) — le 
 **Décision de déploiement toujours entièrement entre les mains d'Esdras** — ceci est de la documentation de risque, pas une recommandation de déployer ou non.
 
 **Fichiers** : `scripts/runFvgPreDeployRiskAnalysis.js` (nouveau), `data/backtest-input/fvg-us100-pre-deploy-risk-analysis.md`. Aucun changement `src/` — recherche seulement, multi-contact toujours pas déployé.
+
+## Recommandation donnée à Esdras, puis vérification complète du pyramidage en simulation de compte — 2026-09-12
+
+Sur la question "avec ces données, lequel recommandes-tu qu'on code ?", recommandation donnée : **multi-contact US100 + RR=5 + pyramidage (stops indépendants) + risque fixe à 0.5%** (PAS de risque dynamique — le drawdown de US100 multi-contact seul est déjà bas de base, 2.2%-4.7% trailing sur 7 ans, donc réduire le risque après des pertes ralentit le passage du challenge sans corriger un vrai danger de bust). Réserve explicitement posée : le pyramidage n'avait été testé qu'en R purs (`runBacktestPyramidIndependentStops`), jamais branché dans une vraie simulation de compte jour par jour avec la règle FTMO trailing et le guardrail de production.
+
+Esdras a demandé cette vérification : "oui, fais tourner la simulation complète avec le pyramidage." `scripts/runFtmo1StepUS100OnlyPyramidAccountImpact.js` reprend exactement `runFtmo1StepUS100OnlyAccountImpact.js` (US100 multi-contact seul, déjà "jamais busté" sur 7 ans) et y porte le mécanisme de pyramidage candle par candle : chaque leg (originale + ajoutée, si déclenchée) se résout indépendamment et bouge le VRAI solde/drawdown/état guardrail à son propre moment de sortie — pas juste un R combiné calculé après coup. La 2e unité est sizée sur le solde COURANT et passe par le même filtre guardrail qu'un nouveau signal (2 trades/jour max, perte quotidienne max 2%).
+
+**Résultat, comparé à la version sans pyramide** :
+
+| Année | Sans pyramide | Avec pyramide |
+|---|---|---|
+| 2019 | jamais, $10824, DD 4.5% | jamais, **$10574**, DD **5.7%** (seule année où c'est pire) |
+| 2020 | jour 173, $11509 | jour **133**, $12194 |
+| 2021 | jour 171, $14300 | jour **115**, $15460 |
+| 2022 | jour 142, $11920 | jour 141, $12852 |
+| 2023 | jour 301, $11540 | jour **260**, $11902 |
+| 2024 (test) | jour 206, $12124 | jour **142**, $12746 |
+| 2025 (test) | jour 128, $14990 | jour **92**, $17351 |
+
+**Verdict : jamais busté sur les 7 années, même conclusion qu'avant le pyramidage** — drawdown trailing max jamais au-delà de 5.7% (contre un plafond FTMO de 10%). Le pyramidage accélère nettement le passage dans 6 années sur 7 (ex. 2025 : jour 92 au lieu de 128, presque 30% plus rapide sur les 2 années test) et augmente le solde final dans les mêmes 6 années. Seule 2019 fait exception (les deux versions échouent à passer le challenge cette année-là de toute façon — "jamais" dans les deux cas — donc ce n'est pas un échec de plus, juste une année où les 2e unités ont coûté plus qu'elles n'ont rapporté). Le guardrail n'a bloqué aucun ajout de 2e unité sur les 7 ans (le filtre reste actif au besoin, mais n'a jamais eu à intervenir dans ces données).
+
+**Recommandation confirmée par cette vérification** — le pyramidage tient une fois branché dans une vraie simulation de compte, pas seulement en R purs.
+
+**Fichiers** : `scripts/runFtmo1StepUS100OnlyPyramidAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-us100-only-pyramid-account-impact.md`. Aucun changement `src/` — recherche seulement, rien de tout ça n'est encore déployé.
