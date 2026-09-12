@@ -23,15 +23,43 @@ const LONDON_NY_OVERLAP_WINDOW = { startHour: 7, endHour: 10 };
 // no longer SILVER_BULLET_WINDOW.
 const US100_WINDOW = { startHour: 8, endHour: 12 };
 
+// ACCOUNT_MODE (2026-09, Esdras: "on ne peut pas avoir les mêmes codages
+// pour le challenge et le live" - see HANDOFF.md): the ONE thing that
+// actually needs to differ between a challenge attempt and a funded live
+// account is the risk per trade. A challenge only costs a re-purchase fee
+// on bust and has an explicit +10% target to reach fast, so the validated
+// 0.5%/trade (fast: ~63 days average to pass, per
+// runFtmoAllLiveStrategiesCycleAccountImpact.js) makes sense there. A LIVE
+// account has no target to rush toward and a bust there means losing the
+// real funded account, so the same simulation's 0.3%/trade result (0%
+// busts across every cycle tested, at the cost of a slower pace - moot
+// once live, since there's no challenge clock to beat) is the live default
+// instead. Everything else (RR, windows, guardrails, which sources are
+// live) stays IDENTICAL between the two modes - not asked for, not changed
+// here.
+// Set via Render env var (ACCOUNT_MODE=challenge|live) - same durable,
+// restart-survives pattern as RISK_PCT_PER_TRADE below, not a dashboard
+// toggle (this changes position sizing, not something to flip casually
+// mid-session). Defaults to 'challenge' (today's actual state).
+export const ACCOUNT_MODES = ['challenge', 'live'];
+const DEFAULT_RISK_PCT_BY_MODE = { challenge: 0.5, live: 0.3 };
+function resolveAccountMode() {
+  const raw = (process.env.ACCOUNT_MODE || '').toLowerCase();
+  return ACCOUNT_MODES.includes(raw) ? raw : 'challenge';
+}
+const ACCOUNT_MODE = resolveAccountMode();
+
 // RISK_PCT_PER_TRADE (2026-09, opt-in, "page réglages" - see HANDOFF.md):
-// the validated backtest value is 0.5, hardcoded below. This env var lets
-// that DEFAULT be overridden durably (survives a restart, same pattern as
-// AUTO_EXECUTE_ALWAYS_ON) without editing this file - set it via Render
-// when the user explicitly asks to change her permanent risk %. The
+// the validated backtest value is 0.5 (or 0.3 in 'live' mode, see
+// ACCOUNT_MODE above) - that per-mode value is the DEFAULT below. This env
+// var, when explicitly set, OVERRIDES that default durably (survives a
+// restart, same pattern as AUTO_EXECUTE_ALWAYS_ON) regardless of
+// ACCOUNT_MODE - set it via Render when the user explicitly asks for a
+// specific permanent risk % rather than the mode's own default. The
 // dashboard's own settings card can ALSO change it live for the running
 // process (POST /api/settings/risk, see server.js) - that takes effect
 // immediately but reverts to whichever value boots next (this env var, or
-// the 0.5 default if unset) on the next restart, exactly like the
+// the mode default if unset) on the next restart, exactly like the
 // auto-execute toggle's own "pause vs durable default" distinction.
 // Clamped to a sane range - a fat-fingered/misconfigured value here sizes
 // EVERY live position, so this is not a place to trust blindly.
@@ -42,13 +70,14 @@ export const MIN_RISK_PCT = 0.05;
 export const MAX_RISK_PCT = 2;
 function resolveRiskPctPerTrade() {
   const raw = Number(process.env.RISK_PCT_PER_TRADE);
-  if (!Number.isFinite(raw) || raw <= 0) return 0.5;
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_RISK_PCT_BY_MODE[ACCOUNT_MODE];
   return Math.min(Math.max(raw, MIN_RISK_PCT), MAX_RISK_PCT);
 }
 
 export const CONFIG = {
   symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD'],
   timeframe: 'M15',
+  accountMode: ACCOUNT_MODE, // 'challenge' | 'live' - see ACCOUNT_MODE comment above
   risk: {
     riskPctPerTrade: resolveRiskPctPerTrade(),
   },

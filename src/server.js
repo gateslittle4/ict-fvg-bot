@@ -94,6 +94,10 @@ function buildStatusPayload() {
 
   return {
     mode: store.mode,
+    // 'challenge' | 'live' account-type (Esdras, 2026-09: separate risk
+    // sizing per mode - see config.js's ACCOUNT_MODE comment). NOT the same
+    // thing as `mode` above (that's the demo/live DATA connection status).
+    accountMode: CONFIG.accountMode,
     timeframe: CONFIG.timeframe,
     balance: store.balance,
     guardrail: guardrailStatus,

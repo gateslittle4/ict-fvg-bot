@@ -1652,3 +1652,19 @@ Avant de trancher la question challenge-vs-live, Esdras : *"la plupart des chall
 **Limite explicitement documentée** : ce chiffre ne couvre que le réalisé (trades clôturés), pas le flottant intra-jour sur une position encore ouverte — la plupart des prop firms (FTMO incluse) mesurent la perte journalière sur l'équité (solde + flottant), pas seulement le réalisé. C'est donc un plancher rassurant, pas une garantie contractuelle — mais la marge (1.73% vs 5%) est large.
 
 **Fichiers** : `scripts/runDailyLossLimitAnalysis.js` (nouveau), `data/backtest-input/daily-loss-limit-analysis.md`. Aucun changement `src/`.
+
+## Config séparée challenge vs live — 2026-09-12
+
+Esdras : *"on garde 0.5%, aucun plafond, ensuite est-il possible d'avoir un codage pour le challenge et un codage pour le live? Car on ne peut pas avoir les mêmes codages pour les deux."* Clarifié via questions : seul le risque par trade doit différer (RR, fenêtres, garde-fous, sources actives restent identiques), et le switch se fait par variable d'environnement Render (même mécanisme que `RISK_PCT_PER_TRADE` existant), pas un bouton dashboard.
+
+**Implémenté dans `src/config.js`** : nouvelle variable d'environnement `ACCOUNT_MODE` (`challenge` par défaut, ou `live`). Chaque mode a son propre risque par trade par défaut :
+- `challenge` → **0.5%** (rapide : ~63 jours en moyenne pour passer, voir le test cycle du 2026-09-12) — un bust ne coûte qu'un rachat de challenge.
+- `live` → **0.3%** (celui qui a donné **0% de bust** sur les 25 cycles testés dans la même simulation) — plus de cible à atteindre vite une fois financé, la priorité devient de protéger le compte réel.
+
+`RISK_PCT_PER_TRADE`, quand explicitement réglé, continue de tout écraser (prend le dessus sur le défaut du mode) — comportement inchangé pour qui l'utilise déjà. `CONFIG.accountMode` exposé dans `/api/status` (nouveau champ, distinct de `store.mode` qui est le statut de connexion demo/live). Le dashboard n'a rien à changer : `settings-risk-current`/`settings-risk-input` lisent déjà `riskPctPerTrade` dynamiquement depuis `/api/status`, donc ils reflètent automatiquement le bon défaut selon le mode actif.
+
+**Vérifié** : `ACCOUNT_MODE` absent/invalide → `challenge`/0.5% (comportement actuel inchangé, pas de régression) ; `ACCOUNT_MODE=live` → 0.3% ; `ACCOUNT_MODE=live` + `RISK_PCT_PER_TRADE` explicite → l'override gagne. `npm test` 386/389 (mêmes 3 flakes `keepAlive.test.js` connus) avant/après.
+
+**Pas encore déployé en production** — sur `challenge/fundingpips-zero` seulement, en attendant la décision d'Esdras sur QUAND basculer `ACCOUNT_MODE=live` sur Render (au moment où le compte passe réellement en financé).
+
+**Fichiers** : `src/config.js`, `src/server.js` (champ `accountMode` ajouté à `/api/status`).
