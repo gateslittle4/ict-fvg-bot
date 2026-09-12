@@ -108,3 +108,69 @@ export const GOATFUNDEDTRADER_INSTANT_PREMIUM = {
     note: 'Checked at ANY moment, not just at trade close or day boundary - the account can be closed while a position is still open and before its stop is ever touched.',
   },
 };
+
+// GoatFundedTrader "Instant HERO Model" - a DIFFERENT instant-funded program
+// from Instant Premium above, NOT the same thing under another name (Esdras,
+// 2026-09-12, after Instant Premium's price came back too high: "test le
+// instant hero model, il a beaucoup de règle, surtout le 15% consistency").
+// Verified directly against the firm's own help article
+// (https://help.goatfundedtrader.com/en/articles/16097387-instant-hero-model,
+// live fetch, 2026-09-12).
+//
+// Same floating-loss mechanism as Instant Premium (see that program's own
+// comment above) but at a flat 1% (no purchase-date split found for this
+// program), a tighter 5% total drawdown (vs Instant Premium's 6%), and a
+// REAL consistency rule (Instant Premium has none) - the one Esdras
+// specifically asked to have tested. Source explicitly confirms it does
+// NOT close the account or breach it - it only BLOCKS a payout request
+// until the highest single day's profit share drops back under 15% of the
+// period's total profit. Modeled by
+// scripts/runGoatFundedTraderInstantHeroAnalysis.js as a rolling 14-
+// calendar-day window (matching the payout cycle below) - the source
+// doesn't specify the exact window used to evaluate the rule, so this is a
+// documented assumption, not a confirmed mechanic.
+export const GOATFUNDEDTRADER_INSTANT_HERO = {
+  id: 'goatfundedtrader-instant-hero',
+  firm: 'GoatFundedTrader',
+  label: 'GoatFundedTrader Instant HERO',
+  phases: [
+    {
+      name: 'Instant HERO (financé direct)',
+      targetPct: null, // instant-funded, no evaluation target
+      dailyLossLimitPct: 3, // "trailing of daily starting balance" - same daily-reset mechanic as every other program's dailyLossLimitPct
+      maxDrawdownPct: 5,
+      // Source: "trailing drawdown... adjusts upward with equity gains but
+      // doesn't decrease with losses" - same real-time-equity mechanic as
+      // Instant Premium's 6% (see that program's maxDrawdownType comment) -
+      // NOT one of GuardrailEngine's 3 existing types, same fail-open
+      // caveat applies (not enforced live today).
+      // ADDITIONAL DETAIL Instant Premium's source didn't mention: this
+      // floor "resets after each payout" - a real payout would periodically
+      // lower the effective risk over a long-running account. NOT modeled
+      // in the analysis script (exact payout timing is a trader decision,
+      // not something the strategy alone determines) - the script's result
+      // is therefore a conservative (worst-case, never-resets) estimate,
+      // documented as such rather than guessed at.
+      maxDrawdownType: 'trailing-realtime-equity-never-resets',
+      minTradingDays: 6,
+      minTradingDayRule: 'winning-day-min-net-pct',
+      minTradingDayMinNetPct: 0.5,
+    },
+  ],
+  profitSplit: 0.9, // or 1.0 via a paid add-on, per the source - better than Instant Premium's 80%
+  timeLimitDays: null,
+  // THE rule Esdras asked to have tested. Confirmed NOT a breach/bust
+  // condition (unlike floatingLossRule below) - purely a payout gate.
+  consistencyRule: { type: 'max-share-of-payout-profit', maxSharePct: 15, enforced: false, blocksPayoutOnly: true },
+  withdrawalCycleDays: 14,
+  floatingLossRule: {
+    thresholdPct: 1, // flat - no purchase-date split found for this program (unlike Instant Premium)
+    basis: 'unrealized-pnl-on-open-positions-vs-balance',
+    consequence: 'permanent-account-closure',
+    note: 'Checked at ANY moment, not just at trade close or day boundary - the account can be closed while a position is still open and before its stop is ever touched.',
+  },
+  // Two more rules found, neither modeled anywhere in this codebase (out of
+  // scope for the current analysis - documented for the record):
+  minHoldingTimeRule: 'profit-from-trades-held-under-2min-voided-at-payout',
+  inactivityRule: 'account-breached-after-30-consecutive-days-with-no-trade',
+};

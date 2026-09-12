@@ -1899,3 +1899,26 @@ Esdras : *"Construis l'analyse de perte flottante pour GoatFundedTrader."* Nouve
 **Non testé** : semaine/news de l'Instant Premium (conséquence "profit annulé/plafonné", pas un bust — hors scope). Rien codé en production au-delà du profil `propFirms/` (documentaire).
 
 **Fichiers** : `scripts/runGoatFundedTraderFloatingLossAnalysis.js` (nouveau), `data/backtest-input/goatfundedtrader-instant-premium-floating-loss-analysis.md`, `src/propFirms/goatFundedTrader.js`, `src/propFirms/index.js`, `test/propFirms.test.js`. `npm test` : 411/411.
+
+## GoatFundedTrader Instant HERO — un programme différent, la règle de consistance mord souvent — 2026-09-12
+
+Esdras, Instant Premium jugé trop cher : *"teste le Instant HERO model, il a beaucoup de règles, surtout le 15% consistency."* Vérifié en direct via `help.goatfundedtrader.com/en/articles/16097387-instant-hero-model` (fetch primaire + recherche croisée) : **Instant HERO est un programme DIFFÉRENT d'Instant Premium**, pas le même renommé — perte totale plus serrée (5% au lieu de 6%), même règle de perte flottante (-1%, fermeture instantanée), mais AVEC une vraie règle de consistance 15% qu'Instant Premium n'a pas, et un meilleur split (90% contre 80%). Formalisé : `GOATFUNDEDTRADER_INSTANT_HERO` dans `src/propFirms/goatFundedTrader.js` + `index.js`, 1 nouveau test.
+
+**Nouveau script** `scripts/runGoatFundedTraderInstantHeroAnalysis.js` — même moteur de suivi flottant qu'Instant Premium, PLUS un nouveau mécanisme : vérification de la règle de consistance 15% sur une fenêtre glissante de 14 jours calendaires (hypothèse de modélisation documentée, la source ne précise pas la fenêtre exacte).
+
+**Résultat, tous risques (7 ans)** :
+
+| Risque | Années bustées | Pire perte flottante | Violations consistance 15% |
+|---|---|---|---|
+| 0.5% | 7/7 | 0.92% | 188/280 fenêtres |
+| 0.3% (risque live actuel) | 4/7 | 0.57% | 774/1103 |
+| **0.15%** | **0/7** | 0.28% | 1068/1535 (70%) |
+| 0.05% | 0/7 | 0.09% | 1070/1535 (70%) |
+
+**Même conclusion qu'Instant Premium sur le bust** : la règle de perte flottante ne se déclenche JAMAIS (jamais >0.92%, sous le seuil de 1%) — c'est encore la règle d'équité (5% ici, encore plus serrée que le 6% d'Instant Premium) qui casse le compte. **0.15%/trade reste le risque maximal sans aucun bust.**
+
+**Sur la règle de consistance, spécifiquement demandée** : **~70% des fenêtres de 14 jours seraient en violation**, peu importe le risque testé — un retrait serait bloqué la plupart du temps tant que le jour le plus profitable dépasse 15% du profit net de la fenêtre. Ne casse jamais le compte (juste retarde un retrait), donc moins grave que le bust, mais un vrai frein pratique aux retraits réguliers avec ce système (rythme de trades concentré, gros gagnants rares qui dominent le profit net d'une fenêtre). Note technique : le ratio peut dépasser 100% quand les autres jours de la fenêtre sont globalement perdants (le profit net s'érode, le meilleur jour en représente alors largement plus de 100%) — un artefact réel et connu de ce type de règle, documenté dans le rapport, pas un bug.
+
+**Rappel** : le taux de bust de la règle d'équité reste une estimation conservatrice (la source dit qu'elle "reset après chaque paiement", non modélisé). Rien codé en production au-delà des profils `propFirms/` documentaires.
+
+**Fichiers** : `scripts/runGoatFundedTraderInstantHeroAnalysis.js` (nouveau), `data/backtest-input/goatfundedtrader-instant-hero-analysis.md`, `src/propFirms/goatFundedTrader.js`, `src/propFirms/index.js`, `test/propFirms.test.js`. `npm test` : 412/412.

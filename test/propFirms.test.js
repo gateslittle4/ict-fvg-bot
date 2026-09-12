@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { PROP_FIRM_PROGRAMS, getPropFirmProgram, listPropFirmPrograms } from '../src/propFirms/index.js';
 import { FTMO_1STEP, FTMO_2STEP } from '../src/propFirms/ftmo.js';
 import { FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, FUNDINGPIPS_ZERO } from '../src/propFirms/fundingPips.js';
-import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM } from '../src/propFirms/goatFundedTrader.js';
+import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM, GOATFUNDEDTRADER_INSTANT_HERO } from '../src/propFirms/goatFundedTrader.js';
 
 // The 4th type here ('trailing-realtime-equity-never-resets', GoatFundedTrader
 // Instant Premium only) is NOT one GuardrailEngine's _overallDrawdownFloor()
@@ -84,7 +84,20 @@ test('GoatFundedTrader Instant Premium: instant-funded (no target), no consisten
   assert.equal(GOATFUNDEDTRADER_INSTANT_PREMIUM.floatingLossRule.thresholdPct, 1);
   assert.equal(GOATFUNDEDTRADER_INSTANT_PREMIUM.floatingLossRule.thresholdPctLegacy, 1.5);
   assert.equal(GOATFUNDEDTRADER_INSTANT_PREMIUM.floatingLossRule.consequence, 'permanent-account-closure');
-  // No other program in this registry has a floatingLossRule field at all.
-  const others = Object.values(PROP_FIRM_PROGRAMS).filter((p) => p.id !== GOATFUNDEDTRADER_INSTANT_PREMIUM.id);
+  // No program outside GoatFundedTrader's two instant-funded programs has a
+  // floatingLossRule field at all.
+  const others = Object.values(PROP_FIRM_PROGRAMS).filter(
+    (p) => p.id !== GOATFUNDEDTRADER_INSTANT_PREMIUM.id && p.id !== GOATFUNDEDTRADER_INSTANT_HERO.id
+  );
   assert.ok(others.every((p) => p.floatingLossRule === undefined));
+});
+
+test('GoatFundedTrader Instant HERO: a DIFFERENT instant program from Instant Premium, with a real (payout-only) 15% consistency rule', () => {
+  assert.notEqual(GOATFUNDEDTRADER_INSTANT_HERO.id, GOATFUNDEDTRADER_INSTANT_PREMIUM.id);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.phases[0].targetPct, null);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.phases[0].maxDrawdownPct, 5); // tighter than Instant Premium's 6%
+  assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.floatingLossRule.thresholdPct, 1);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.consistencyRule.maxSharePct, 15);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.consistencyRule.blocksPayoutOnly, true);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.profitSplit, 0.9); // better split than Instant Premium's 0.8
 });
