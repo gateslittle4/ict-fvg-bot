@@ -1270,3 +1270,28 @@ Esdras a posé la question directe qui aurait dû être posée avant de recomman
 **Conclusion : le multi-contact sur US100 passe les trois contrôles de robustesse de ce projet, pas seulement le screen train/test de base.** Reste la seule réserve structurelle déjà connue : ce n'est pas une reproduction exacte du modèle du backtest (qui compte le PREMIER passage comme rempli), c'est une extension testée séparément et validée sur ses propres mérites. Décision de déploiement toujours entre les mains d'Esdras — l'analyse ne dit que "c'est solide", pas "déploie".
 
 `npm test` : inchangé, aucun fichier `src/` touché par ces contrôles (scripts jetables en `/tmp`, non committés — résultat documenté ici à la place).
+
+## "Combien de temps pour passer un challenge FTMO/FundingPips 1-Step avec ce système" — 2026-09-12
+
+Question directe d'Esdras après validation du multi-contact US100. Répondue avec une vraie simulation (`scripts/runFtmo1StepMultiTouchAccountImpact.js`), pas une estimation. Adaptée de `runFtmo1StepAccountImpact.js`, avec deux corrections importantes découvertes en construisant ce script :
+
+1. **Bug de péremption trouvé dans les DEUX scripts d'impact-compte existants** (`runFtmo1StepAccountImpact.js` ET `runFundingPipsZeroAccountImpact.js`) : leur `FVG_CONFIG` a `rrMultiple: 3` codé en dur pour US100/US500/XAUUSD, alors que la production réelle est passée à 5/5/4 depuis la section "Cible étendue" (voir plus haut dans ce fichier). Ces deux scripts étaient donc **périmés** depuis ce changement — pas corrigés ici (hors scope), mais à savoir pour toute réutilisation future. Le nouveau script lit `CONFIG.fvg.perSymbol` directement plutôt que de retyper une copie locale, pour ne plus jamais dériver silencieusement.
+2. US100 utilise `MultiTouchFvgEngine` (vérifié ce soir, PAS déployé) ; US500/XAUUSD/Divergence restent le moteur à contact unique déjà en production — aucun changement là.
+
+**Résultat, 7 années simulées (règles FTMO 1-Step : cible unique +10%, perte trailing max 10% sur le plus haut solde)** :
+
+| Année | Jour de passage | Busté ? |
+|---|---|---|
+| 2019 | 92 | non |
+| 2020 | 55 | oui, mais après avoir déjà réussi |
+| 2021 | 214 | non |
+| 2022 | 89 | non |
+| 2023 | 171 | non |
+| 2024 (test) | **56** | non |
+| 2025 (test) | **49** | non |
+
+**Challenge réussi les 7 années, sans exception.** Moyenne globale ~104 jours (~15 semaines). Sur les 2 années hors échantillon (les plus représentatives pour l'avenir) : ~50 jours en moyenne (~7 semaines).
+
+**Réserves données à Esdras** : règles FTMO 1-Step confirmées cette session, FundingPips 1-Step non re-vérifié à la source (contrairement à FundingPips Zero) — probablement proche mais pas garanti identique. Scope = combo validé (FVG×3 + Divergence) uniquement, hors NWOG/Judas Swing.
+
+**Fichiers** : `scripts/runFtmo1StepMultiTouchAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-multitouch-account-impact.md`. Aucun changement `src/` — recherche seulement, multi-contact toujours pas déployé.
