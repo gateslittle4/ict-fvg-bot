@@ -17,6 +17,7 @@ import { startKeepAlive } from './keepAlive.js';
 import { fetchPerformanceBySymbol } from './dataSources/supabaseTradeLog.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
+import { getPropFirmProgram } from './propFirms/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -74,18 +75,28 @@ app.get('/healthz', (req, res) => {
 // GET /api/accounts/:accountId/status (and friends, see below).
 app.get('/api/accounts', (req, res) => {
   res.json({
-    accounts: listAccounts().map((a) => ({
-      id: a.id,
-      label: a.label,
-      mode: a.mode,
-      accountMode: a.accountMode,
-      platform: a.platform,
-      propFirmProgramId: a.propFirmProgramId,
-      phaseIndex: a.phaseIndex,
-      balance: a.balance,
-      broker: a.broker,
-      guardrail: a.guardrail.getStatus(),
-    })),
+    accounts: listAccounts().map((a) => {
+      // firm/programLabel (2026-09, Esdras: "je croyais qu'il y allait avoir
+      // un onglet pour FTMO" - dashboard groups accounts by prop firm) -
+      // resolved server-side from propFirmProgramId so the client never
+      // needs its own copy of PROP_FIRM_PROGRAMS. null firm (no program set,
+      // e.g. today's default/demo account) groups under "Autres" client-side.
+      const program = a.propFirmProgramId ? getPropFirmProgram(a.propFirmProgramId) : null;
+      return {
+        id: a.id,
+        label: a.label,
+        mode: a.mode,
+        accountMode: a.accountMode,
+        platform: a.platform,
+        propFirmProgramId: a.propFirmProgramId,
+        phaseIndex: a.phaseIndex,
+        firm: program?.firm ?? null,
+        programLabel: program?.label ?? null,
+        balance: a.balance,
+        broker: a.broker,
+        guardrail: a.guardrail.getStatus(),
+      };
+    }),
   });
 });
 

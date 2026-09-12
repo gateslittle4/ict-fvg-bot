@@ -2007,3 +2007,20 @@ Esdras : *"quel est le prix en dollars pour ce compte FTMO alors?"* En vérifian
 **Le vrai prix, selon plusieurs sources indépendantes qui NE s'accordent PAS entre elles** (probablement promotions actives/taux de change EUR-USD qui varient) : entre **~$205 (€189)** et **~$265 (€250)** pour le challenge 1-Step $25k. Le tableau de prix officiel de FTMO (`ftmo.com`) est rendu en JavaScript côté client — impossible à extraire de façon fiable avec les outils de récupération web de cette session (WebFetch ne voit que le HTML statique, pas le JS exécuté). **Frais remboursés une fois financé** (confirmé par plusieurs sources) — donc coût réel net après le premier financement ≈ $0, pas un vrai coût perdu.
 
 **Recommandation donnée à Esdras** : vérifier le prix exact directement sur `ftmo.com` au moment de l'achat (le prix affiché en direct, avec promo éventuelle active, est plus fiable que n'importe quel chiffre cité ici). Toutes les analyses de cette session (probabilités de calendrier, comparaisons FTMO/FundingPips) restent valides — le prix du challenge n'entre dans AUCUN calcul numérique de ces scripts, seulement dans la discussion de budget en texte.
+
+## Dashboard : onglets par prop firm (au lieu d'une liste plate) — 2026-09-12
+
+Esdras : *"je croyais qu'il y allait avoir un onglet pour FTMO qui contiendrait les comptes ouverts et toutes les infos du compte. Mais ce n'est pas comme ça que tu l'as dessiné."* Le multi-compte (Phase 3, session précédente) avait construit un sélecteur + une vue d'ensemble à plat (tous les comptes mélangés, peu importe la firme) — pas ce qu'elle attendait. Clarifié via question : elle veut un **onglet distinct par prop firm** (nouveau travail, pas juste brancher le sélecteur existant).
+
+**Fait** :
+- `src/server.js` (`GET /api/accounts`) résout maintenant `firm`/`programLabel` côté serveur depuis `propFirmProgramId` (via `getPropFirmProgram()`) — le client n'a plus besoin de sa propre copie des règles.
+- `public/index.html` : la carte "Vue d'ensemble" a maintenant une **rangée d'onglets par firme** (`#firm-tabs-row`) au-dessus de la grille de comptes — un onglet par firme distincte présente (ex. "FTMO (2)", "GoatFundedTrader (1)"), plus un onglet "Autres" pour les comptes sans `propFirmProgramId` (ex. le compte démo par défaut). Cliquer un onglet filtre la grille sur cette firme seulement ; cliquer une carte de compte bascule le dashboard entier dessus, comme avant. Le sélecteur `<select>` existant reste en place (accès rapide, toutes firmes confondues) et reste synchronisé avec l'onglet actif.
+- **Toujours masqué tant qu'un seul compte existe** — même invariant que la Phase 3, aucun changement visuel pour la config actuelle (un seul compte, sans prop firm).
+
+**Vérifié en navigateur réel (Playwright)** : avec 4 comptes simulés (1 sans firme, 2 FTMO, 1 GoatFundedTrader) — 3 onglets corrects ("Autres (1)", "FTMO (2)", "GoatFundedTrader (1)"), filtrage correct par onglet, clic sur une carte FTMO bascule bien le sélecteur sur ce compte, zéro erreur console. Avec 1 seul compte (config actuelle) — carte ET sélecteur toujours masqués, zéro erreur console, comportement identique à avant.
+
+**Toujours en attente** : le vrai compte FTMO 1-Step $25k d'Esdras — elle doit d'abord l'acheter sur ftmo.com (action réelle, hors de portée du bot) et obtenir ses identifiants cTrader ; une fois reçus, une entrée `ACCOUNTS_JSON` avec `propFirmProgramId: 'ftmo-1step'` sera ajoutée pour le rendre réellement live.
+
+**Rien déployé en production** au moment d'écrire cette entrée — sur `challenge/fundingpips-zero` seulement, en attendant la décision de déploiement.
+
+**Fichiers** : `src/server.js`, `public/index.html`. `npm test` : 412/412 (inchangé, aucun test dédié au dashboard n'existe dans ce projet — vérifié manuellement via Playwright comme convention établie).

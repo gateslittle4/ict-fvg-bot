@@ -171,6 +171,20 @@
   .account-overview-row:hover { border-color: var(--panel-border-strong); }
   .account-overview-row.active { border-color: var(--blue); }
   .account-overview-row .aor-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  /* Firm tabs (2026-09, Esdras: "je croyais qu'il y allait avoir un onglet
+     pour FTMO") - groups the overview grid by prop firm (FTMO,
+     GoatFundedTrader, ... or "Autres" for accounts with no propFirmProgramId)
+     instead of one flat list. Same visibility rule as the overview card
+     itself: nothing to see until a second real account exists. */
+  .firm-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .firm-tab {
+    padding: 6px 14px; border-radius: 999px; border: 1px solid var(--panel-border); background: var(--bg-inset);
+    color: var(--muted); font-size: 12.5px; font-family: var(--sans); font-weight: 600; cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .firm-tab:hover { border-color: var(--panel-border-strong); }
+  .firm-tab.active { border-color: var(--blue); color: var(--text); }
+  .firm-tab .count { color: var(--muted); font-weight: 400; }
 
   /* ---------- Stats / pills ---------- */
   .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 13.5px; }
@@ -282,6 +296,7 @@
        carte bascule le dashboard entier sur ce compte. -->
   <div class="card" id="accounts-overview-card" hidden>
     <h2>Vue d'ensemble — tous les comptes</h2>
+    <div id="firm-tabs-row" class="firm-tabs"></div>
     <div id="accounts-overview-body" class="account-overview-grid"></div>
   </div>
 
@@ -1126,6 +1141,8 @@ function startLiveStream() {
 let dashboardPollIntervals = [];
 let liveStreamHandle = null;
 let accountsCache = [];
+let currentFirmTab = null; // a `firm` string (e.g. "FTMO"), or the literal 'Autres' bucket - see renderAccountOverview()
+const NO_FIRM_TAB = 'Autres'; // accounts with no propFirmProgramId (e.g. today's default/demo account)
 
 function stopDashboardPolling() {
   if (liveStreamHandle) { liveStreamHandle.close(); liveStreamHandle = null; }
@@ -1141,6 +1158,11 @@ function startDashboardForAccount(accountId) {
   // immediately, even before the new account's own data has loaded.
   const switcherEl = document.getElementById('account-switcher');
   if (switcherEl.value !== accountId) switcherEl.value = accountId;
+  // Jump the tab row to whichever firm the newly-selected account belongs to
+  // (e.g. picking an FTMO account from the flat <select> also switches the
+  // overview to the "FTMO" tab), so the two navigation styles never disagree.
+  const justSelected = accountsCache.find((a) => a.id === accountId);
+  if (justSelected) currentFirmTab = justSelected.firm || NO_FIRM_TAB;
   renderAccountOverview(accountsCache);
 
   prefillRiskInput();
@@ -1163,21 +1185,45 @@ function startDashboardForAccount(accountId) {
 
 // "Vue d'ensemble" card (see the <div id="accounts-overview-card"> above) -
 // hidden entirely while only one account exists, so today's single-account
-// reality looks EXACTLY like before this rollout. Clicking a row switches
-// the whole dashboard to that account, same as picking it in the <select>.
+// reality looks EXACTLY like before this rollout. Grouped into one TAB per
+// prop firm (2026-09, Esdras: "je croyais qu'il y allait avoir un onglet
+// pour FTMO qui contiendrait les comptes ouverts et toutes les infos du
+// compte") - accounts with no propFirmProgramId (e.g. today's default/demo
+// account) group under the NO_FIRM_TAB bucket. Clicking a card switches the
+// whole dashboard to that account, same as picking it in the <select>.
 function renderAccountOverview(accounts) {
   const card = document.getElementById('accounts-overview-card');
   if (!accounts || accounts.length <= 1) { card.hidden = true; return; }
   card.hidden = false;
+
+  // One tab per distinct firm present, in first-seen order, plus a trailing
+  // "Autres" tab only if at least one account actually has no firm.
+  const firmOrder = [];
+  for (const a of accounts) {
+    const firm = a.firm || NO_FIRM_TAB;
+    if (!firmOrder.includes(firm)) firmOrder.push(firm);
+  }
+  if (!firmOrder.includes(currentFirmTab)) currentFirmTab = firmOrder[0];
+
+  const tabsRow = document.getElementById('firm-tabs-row');
+  tabsRow.innerHTML = firmOrder.map((firm) => {
+    const count = accounts.filter((a) => (a.firm || NO_FIRM_TAB) === firm).length;
+    return `<button type="button" class="firm-tab${firm === currentFirmTab ? ' active' : ''}" data-firm="${firm}">${firm} <span class="count">(${count})</span></button>`;
+  }).join('');
+  tabsRow.querySelectorAll('.firm-tab').forEach((btn) => {
+    btn.addEventListener('click', () => { currentFirmTab = btn.dataset.firm; renderAccountOverview(accountsCache); });
+  });
+
   const body = document.getElementById('accounts-overview-body');
-  body.innerHTML = accounts.map((a) => {
+  const visible = accounts.filter((a) => (a.firm || NO_FIRM_TAB) === currentFirmTab);
+  body.innerHTML = visible.map((a) => {
     const g = a.guardrail;
     const modeLabel = a.accountMode === 'live' ? 'LIVE' : 'CHALLENGE';
     const connLabel = a.mode === 'live' ? '● connecté' : '○ démo/déconnecté';
     return `
       <div class="account-overview-row${a.id === currentAccountId ? ' active' : ''}" data-account-id="${a.id}">
         <div class="aor-top"><strong>${a.label}</strong> ${g.blocked ? '<span class="pill blocked">BLOQUÉ</span>' : '<span class="pill ok">OK</span>'}</div>
-        <div class="meta">${modeLabel}${a.propFirmProgramId ? ' · ' + a.propFirmProgramId : ''}</div>
+        <div class="meta">${modeLabel}${a.programLabel ? ' · ' + a.programLabel : (a.propFirmProgramId ? ' · ' + a.propFirmProgramId : '')}</div>
         <div class="meta">${connLabel} · solde ${fmt(a.balance)}</div>
       </div>
     `;
