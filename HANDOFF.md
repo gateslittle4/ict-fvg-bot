@@ -1642,3 +1642,13 @@ Suite directe du test combiné ci-dessus. Esdras : *"Oui, teste cela [risque ré
 **Rien tranché, rien changé dans `src/`** — comparaison présentée à Esdras pour qu'elle choisisse le compromis vitesse/risque.
 
 **Fichiers** : `scripts/runFtmoAllLiveStrategiesCycleAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-all-live-strategies-cycle-account-impact.md`.
+
+## "-5% max risque par jour, est-on dans ça?" — vérification avant challenge-vs-live — 2026-09-12
+
+Avant de trancher la question challenge-vs-live, Esdras : *"la plupart des challenges demandent -5% max risque par jour. Est-on dans cela?"* Mesure directe (`scripts/runDailyLossLimitAnalysis.js`), même simulation combinée déjà confirmée (0.5%/trade, aucun plafond, reset au +10%/bust), perte RÉALISÉE par jour calendaire UTC en % du solde de début de journée.
+
+**Résultat : pire jour = -1.73% (2025-10-29), sur 1642 jours de trading avec au moins un trade clôturé. Zéro jour ≥ -2%, sur tout l'historique.** Largement sous le -5% typique des challenges, avec une bonne marge — logique, puisque le garde-fou interne `dailyLossLimitPct=2%` bloque déjà les nouvelles entrées dès que la perte réalisée du jour atteint 2%.
+
+**Limite explicitement documentée** : ce chiffre ne couvre que le réalisé (trades clôturés), pas le flottant intra-jour sur une position encore ouverte — la plupart des prop firms (FTMO incluse) mesurent la perte journalière sur l'équité (solde + flottant), pas seulement le réalisé. C'est donc un plancher rassurant, pas une garantie contractuelle — mais la marge (1.73% vs 5%) est large.
+
+**Fichiers** : `scripts/runDailyLossLimitAnalysis.js` (nouveau), `data/backtest-input/daily-loss-limit-analysis.md`. Aucun changement `src/`.
