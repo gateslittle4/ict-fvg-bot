@@ -2082,3 +2082,43 @@ Esdras : "On prend les 3" (après la simulation CTI). Recherche des règles avan
 **Conclusion** : le choix reste entre **FTMO et CTI**, les deux seuls candidats qui passent à la fois le filtre "bot autonome autorisé" et "prix raisonnable" parmi les 5 firmes étudiées cette session (FTMO, FundingPips, GoatFundedTrader, CTI, + ces 3). Décision finale toujours à trancher par Esdras.
 
 **Fichiers** : aucun changement de code, recherche pure — pas de nouveau script (la disqualification réglementaire/prix a rendu la simulation inutile pour 2 des 3).
+
+## 4e prop firm testée : Ment Funding — plancher statique 6% aussi sûr que FTMO — 2026-09-12
+
+Esdras, après la disqualification de FundedNext/Alpha Capital Group et le prix trop élevé de The5ers : *"Autre platforme sérieuse?"*
+
+**Ment Funding** passe les deux filtres qui ont éliminé les 3 candidats précédents :
+- EA/cBots **explicitement permis sans restriction** ("EAs, hedging, scalping, any strategy - all permitted", sourcé en direct sur mentfunding.com) — pas de clause "assist-only" comme Alpha Capital Group
+- **cTrader supporté** (via leur broker ThinkMarkets) — déjà câblé dans le bot
+- Prix $25k confirmé : **$250** (dans la fourchette FTMO ~$205-265, pas celle de CTI $159 ni celle de The5ers $765-850)
+- Réputation : 4.9/5 Trustpilot mais seulement ~227 avis (vs 8000+ à 4.6 chez FTMO) — solide mais échantillon mince, à garder en tête
+
+**Règles** : target +10% (comme FTMO), drawdown max **6% STATIQUE** (fixé sous le solde de DÉPART, ne bouge jamais avec les gains — contrairement au trailing de FTMO/CTI), perte journalière 5% du solde de la veille (plus souple que FTMO 3%), aucun minimum de jours de trading, split 75% (défaut) / 90% (add-on payant).
+
+**Simulation lancée** (`scripts/runMentFundingAllLiveStrategiesCycleAccountImpact.js`, même architecture de reset continu, adaptée pour un plancher STATIQUE au lieu de trailing) :
+
+| Risque/trade | Cycles | Busts | Taux de bust | Jours moy. pour passer |
+|---|---|---|---|---|
+| 0.5% (réglage challenge actuel) | 45 | 3 | **7%** | 65j |
+| 0.4% | 39 | 4 | 10% | 76j |
+| 0.3% (réglage live actuel) | 25 | 1 | **4%** | 113j |
+| 0.2% | 16 | 0 | **0%** | 178j |
+
+**Résultat marquant** : malgré un plancher nominalement plus serré (6%) que FTMO (10%), Ment Funding fait AUSSI BIEN voire légèrement MIEUX (7% de bust à 0.5% contre 9% chez FTMO) grâce au mécanisme statique — le plancher ne poursuit jamais le solde vers le haut, donc une fois le cycle bien avancé, le risque de bust redevient quasi nul. C'est l'effet inverse de CTI (5% trailing, 34% de bust) : ce n'est pas le pourcentage brut qui compte, c'est le mécanisme (statique vs trailing).
+
+**Comparatif final des 3 candidats viables (bot autonome autorisé + prix raisonnable)** :
+
+| | FTMO | CTI | Ment Funding |
+|---|---|---|---|
+| Prix $25k | ~$205-265 | $159 | $250 |
+| Target | 10% | 8% | 10% |
+| Drawdown | 10% trailing EOD | 5% trailing | 6% statique |
+| Bust @ 0.5% | 9% | 34% | 7% |
+| Bust @ 0.3% | 0% | 18% | 4% |
+| Jours moy. @ 0.5% | ~63j | 32j | 65j |
+| Split | 90% fixe | 80%→90-100% | 75%→90% |
+| Réputation | 8000+ avis, 4.6★ | Moins établi (post-2023) | 227 avis, 4.9★ |
+
+**Conclusion présentée à Esdras (pas tranchée)** : FTMO et Ment Funding sont quasi équivalents en sécurité/vitesse — FTMO gagne sur la réputation (bien plus d'historique/avis) et le split fixe à 90% sans palier à débloquer, Ment Funding est légèrement moins cher et tout aussi sûr. CTI reste le moins cher à l'achat mais structurellement plus risqué (déjà établi). Décision finale toujours ouverte.
+
+**Fichiers** : `scripts/runMentFundingAllLiveStrategiesCycleAccountImpact.js` (nouveau), `data/backtest-input/ment-funding-1step-all-live-strategies-cycle-account-impact.md`. Aucun changement dans `src/` — recherche seulement.
