@@ -1343,29 +1343,33 @@ Esdras a demandé explicitement d'étendre le multi-contact aux autres paires di
 
 ## "Avant de déployer" — stop/target, streaks, pyramide, risque fixe vs dynamique — 2026-09-12
 
-Question explicite d'Esdras avant tout déploiement du multi-contact US100 : "où va tu mettre le stop loss, le tp, combien de rrr, est-ce que c'est fixe ou flexible ? Compare fixe et dynamique, compare le nombre de trades gagnants suivis vs perdants suivis, compare aussi pyramidal vs non pyramidal et compare aussi risque fixe vs dynamique selon qu'on perde ou gagne." Un seul script, `scripts/runFvgPreDeployRiskAnalysis.js`, fait tourner les 4 comparaisons sur EXACTEMENT la même séquence de trades (multi-contact US100, config production verbatim, net de coûts) pour rester comparables entre elles.
+Question explicite d'Esdras avant tout déploiement du multi-contact US100 : "où va tu mettre le stop loss, le tp, combien de rrr, est-ce que c'est fixe ou flexible ? Compare fixe et dynamique, compare le nombre de trades gagnants suivis vs perdants suivis, compare aussi pyramidal vs non pyramidal et compare aussi risque fixe vs dynamique selon qu'on perde ou gagne." Suivi d'une demande explicite de documenter davantage, surtout l'idée du pyramidage. Un seul script, `scripts/runFvgPreDeployRiskAnalysis.js`, fait tourner les 4 comparaisons sur EXACTEMENT la même séquence de trades (multi-contact US100, config production verbatim, net de coûts) pour rester comparables entre elles, et génère `data/backtest-input/fvg-us100-pre-deploy-risk-analysis.md` avec, pour chaque section, au moins un exemple RÉEL tiré des données (voir ce fichier pour le détail complet — résumé ci-dessous).
 
-**1) Mécanique stop/target** — rien à calculer, c'est déjà fixé par `computeStop()`/`runBacktest()` : entrée = bord de la zone FVG (ordre LIMIT), stop = mode `fvg-edge` (bord opposé + 10% de marge), target = entrée + RR × distance avec RR = 5 (valeur production actuelle). **Tout est FIXE à l'entrée**, jamais retouché ensuite (pas de trailing, pas de breakeven) — comme partout ailleurs dans ce projet.
+**1) Mécanique stop/target** — rien à calculer, c'est déjà fixé par `computeStop()`/`runBacktest()` : entrée = bord de la zone FVG (ordre LIMIT posé au bord du gap, prix de ré-entrée ICT, jamais le prix de marché), stop = mode `fvg-edge` (bord OPPOSÉ de la zone + 10% de marge de sa hauteur, pour ne pas être sorti par une simple mèche), target = entrée + RR × distance avec RR = 5 (valeur production actuelle, montée depuis 1:3 via la "cible étendue" documentée plus haut). **Tout est FIXE au moment où le signal est validé**, jamais retouché ensuite (pas de trailing, pas de breakeven, pas de sortie anticipée) — le trade ne peut finir que de 3 façons : stop touché (perte), target touché (gain), ou timeout après 480 bougies (ni gagnant ni perdant). Exemple réel : signal du 2019-03-29 09:45, achat à 7342.36, stop à 7336.86 (distance 5.50), target à 7369.86 (5× la distance) → target touché, +4.82R.
 
-**2) Streaks** (2019-2025 complet, n=273) : max 7 gagnants d'affilée, max **10 perdants d'affilée** (moyenne des séries perdantes : 2.7). À 0.5%/trade, la pire série déjà vue coûte ~5% du compte d'affilée.
+**2) Streaks** (2019-2025 complet, n=273, sans pyramide — la pyramide change les R mais pas le compte de séries) : max 7 gagnants d'affilée, max **10 perdants d'affilée** (moyenne des séries perdantes : 2.7 ; distribution `{1:20, 2:17, 3:7, 4:6, 5:6, 6:2, 7:1, 9:1, 10:1}`). La pire série concrète : 10 pertes d'affilée entre le 2022-06-17 et le 2022-07-28, -10.86R au total — soit ~5.4% du compte perdu d'affilée à 0.5%/trade fixe.
 
-**3) Pyramidal (unités indépendantes, `runBacktestPyramidIndependentStops`) vs non pyramidal** :
+**3) Pyramidal — l'idée d'Esdras, documentée en détail** (unités indépendantes, `runBacktestPyramidIndependentStops`) vs non pyramidal :
+
+Le principe : dès que le prix a bougé d'1×D (D = distance entrée-stop) EN FAVEUR de l'unité originale, une **2e unité de même taille** est ajoutée à ce nouveau prix, avec SON PROPRE stop posé 1×D plus loin dans le sens défavorable — ce qui, par pure géométrie, atterrit exactement sur le prix d'entrée original. Elle vise le même target que l'originale. **Différence clé avec le pyramidage "stop partagé" déjà testé et rejeté plus tôt dans ce projet (`runBacktestManaged` mode `'pyramid'`)** : ici, le stop de l'unité ORIGINALE n'est JAMAIS déplacé ni touché par l'ajout — les deux unités vivent indépendamment jusqu'à leur propre résolution, et le trade combiné n'est comptabilisé qu'une fois les deux closes.
+
+Un trade pyramidé peut finir de 3 façons observées sur 2019-2025 (jamais une 4e) : gain-gain (27 fois, ~9R combiné), gain de l'originale malgré la perte de l'unité ajoutée (11 fois — le prix redescend jusqu'au point d'ajout puis repart), perte-perte (23 fois — le prix redescend jusqu'au stop de l'originale, donc passe forcément par le stop de l'unité ajoutée avant). **"Perte de l'originale + gain de l'ajout" n'arrive JAMAIS** : conséquence géométrique, pas un hasard d'échantillon — le stop de l'unité ajoutée est exactement au prix d'entrée original, donc toujours traversé AVANT que l'unité originale puisse atteindre son propre stop, plus loin. Voir le rapport complet pour 3 exemples réels chiffrés (un par catégorie).
 
 | Période | Sans pyramide | Avec pyramide | Gain |
 |---|---|---|---|
-| Train | n=180, 1.10R, R total 198.4 | n=180, 1.33R, R total 239.4 (44 pyramidés) | +21% de R total |
-| Test | n=93, 1.40R, R total 130.6 | n=93, 1.76R, R total 163.6 (17 pyramidés) | +25% de R total |
+| Train | n=180, 1.10R, R total 198.4 | n=180, 1.33R, R total 239.4 (44 pyramidés, 24% des trades) | +21% de R total |
+| Test | n=93, 1.40R, R total 130.6 | n=93, 1.76R, R total 163.6 (17 pyramidés, 18% des trades) | +25% de R total |
 
-Coût : drawdown max légèrement plus haut (6.82R→7.82R en test). Le stop de l'unité ORIGINALE n'est jamais déplacé (design différent du pyramidage "stop partagé" déjà rejeté plus tôt dans ce projet).
+Coût : drawdown max en R légèrement plus haut (6.82R→7.82R en test) — le sizing total déployé grimpe temporairement pendant un trade pyramidé, même si l'unité originale ne risque jamais plus que prévu.
 
-**4) Risque fixe (0.5% constant) vs dynamique** (réduit à 0.25% après 2 pertes consécutives, restauré après un gain), appliqué à la même séquence de trades — seul le sizing change :
+**4) Risque fixe (0.5% constant) vs dynamique** (réduit à 0.25% après 2 pertes consécutives, restauré après un gain), appliqué à la même séquence de trades — seul le sizing change, jamais la sélection ni le résultat des trades :
 
 | Période | Fixe | Dynamique |
 |---|---|---|
 | Train | +164.1% compte, drawdown 5.3% | +119.0% compte, drawdown 3.2% |
 | Test | +89.8% compte, drawdown 3.4% | +70.5% compte, drawdown 2.4% |
 
-**Pas un gain gratuit** : le drawdown baisse d'environ 40%, mais ça coûte une bonne partie de la croissance totale (le sizing réduit s'applique aussi aux trades qui, après coup, auraient été gagnants juste après la série de pertes).
+**Pas un gain gratuit** : le drawdown baisse d'environ 40%, mais ça coûte une bonne partie de la croissance totale (le sizing réduit s'applique aussi aux trades qui, après coup, se révèlent gagnants juste après une série de pertes — le sizing dynamique ne peut pas savoir à l'avance qu'une série va s'arrêter). Sur la pire série de pertes isolée (section 2 ci-dessus), le compte tombe à -5.3% en fixe contre -3.2% en dynamique — exactement le genre de série que la réduction est censée amortir.
 
 **Bug trouvé et corrigé en construisant ce script** : `buildMultiTouchFilterPredicate()` (biais H4/structure) utilise un curseur monotone interne qui suppose un seul passage ascendant sur les bougies — réutiliser la MÊME instance de prédicat pour deux passages complets séparés (ex. baseline puis pyramide) corrompt silencieusement le second passage (donnait 0 trades en train, 459 en test avec un drawdown aberrant de 112R avant correction). Chaque script précédent (`runFvgMultiTouchAnalysis.js`, `runFvgMultiTouchOtherPairsAnalysis.js`) construit déjà un prédicat frais par engine/passage donc n'était PAS affecté — seul ce nouveau script avait la réutilisation fautive, corrigée avant publication du résultat.
 
