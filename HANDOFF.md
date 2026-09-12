@@ -1699,3 +1699,20 @@ Calcul dérivé directement des 46 cycles de la simulation continue (2018-01-01 
 Recoupé avec le forward-test réel (7 mois, 2 cycles gagnés en 130 jours à 0.5%) : ~5.6 cycles/an extrapolé, cohérent avec le 5.8/an de l'historique complet — bon signe de robustesse, les deux mesures s'accordent.
 
 **Fichiers** : ajout au verdict de `data/backtest-input/ftmo-1step-all-live-strategies-cycle-account-impact.md`, pas de nouveau script (calcul dérivé des résultats déjà produits).
+
+## "Combien de comptes acheter pour $1,000-1,500$/mois?" — sizing du capital financé — 2026-09-12
+
+Esdras : objectif final $1,000-1,500$/mois de revenu net. Calcul dérivé du rythme déjà établi (0.3% risque live, ~3.16 cycles de +10%/an, voir la section "rythme annuel" ci-dessus) : chaque tranche de $10 000 financée génère ~$263/mois de profit BRUT en moyenne (proportionnel à la taille, le risque étant toujours en % du solde). Avec le split confirmé (80%, standard) :
+
+| Capital financé total | Net/mois (80% split) |
+|---|---|
+| $10 000 | $211 |
+| $25 000 | $527 |
+| $50 000 | $1 053 |
+| **$60 000** | **$1 264** |
+| $75 000 | $1 580 |
+| $100 000 | $2 106 |
+
+**Recommandation : viser ~$60 000 de capital financé total** (ex. un compte $50k + un compte $10k, ou toute combinaison équivalente avec les paliers standards $10k/$25k/$50k/$100k confirmés disponibles chez son prop firm, plusieurs comptes simultanés autorisés) — ça atterrit à $1 264/mois net, confortablement au milieu de la cible $1,000-1,500$.
+
+Aucun changement code — pur calcul business dérivé des simulations déjà validées cette session (`ftmo-1step-all-live-strategies-cycle-account-impact.md`).
