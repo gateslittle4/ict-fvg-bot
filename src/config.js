@@ -249,20 +249,30 @@ export const CONFIG = {
     ntfyTopic: process.env.NTFY_TOPIC || null,
   },
   broker: {
-    // cTrader Open API - ABANDONED 2026-09-07 in favor of Match-Trader (see
-    // HANDOFF.md "Prochaines étapes" #1: waiting on a third-party Spotware
-    // app approval was the blocker). Left wired for completeness/rollback,
-    // not the active path. See docs/CTRADER_SETUP.md.
+    // cTrader Open API - PRIMARY / ACTIVE platform since 2026-09-07 evening.
+    // CORRECTION (2026-09-12): an earlier version of this comment said
+    // cTrader was "abandoned in favor of Match-Trader" - that was true only
+    // for a few hours on the morning of 2026-09-07 (blocked on a Spotware
+    // app approval). Spotware approved the app that same day, cTrader was
+    // reinstated as primary, and has been confirmed connected and trading
+    // live in production ever since (see HANDOFF.md "Câblage live vérifié",
+    // 2026-09-09: `[cTrader] connected and live for account 48587457`, and
+    // the live /api/status broker.name field, which is populated ONLY by
+    // cTraderDataSource.js's setBrokerInfo() call - Match-Trader has no
+    // such call). See docs/CTRADER_SETUP.md.
     clientId: process.env.CTRADER_CLIENT_ID || null,
     clientSecret: process.env.CTRADER_CLIENT_SECRET || null,
     accessToken: process.env.CTRADER_ACCESS_TOKEN || null,
     accountId: process.env.CTRADER_ACCOUNT_ID || null,
 
-    // Match-Trader Platform API (FundingPips) - the active path since
-    // 2026-09-07. brokerId/platformUrl are FundingPips-specific values that
-    // must come from their support (see docs/MATCHTRADER_SETUP.md) - no
-    // public documentation lists them, unlike email/password which are the
-    // user's own everyday Match-Trader login. `systemUuid` is a SEPARATE
+    // Match-Trader Platform API (FundingPips) - written and unit-tested
+    // (src/dataSources/matchTraderDataSource.js) but NEVER used live - kept
+    // as a fallback (force with BROKER_PLATFORM=matchtrader), blocked on
+    // brokerId/platformUrl that only FundingPips support can provide (see
+    // docs/MATCHTRADER_SETUP.md). brokerId/platformUrl are FundingPips-
+    // specific values that must come from their support - no public
+    // documentation lists them, unlike email/password which are the user's
+    // own everyday Match-Trader login. `systemUuid` is a SEPARATE
     // unconfirmed value the mtr-api path segment needs (see
     // matchTraderDataSource.js file header) - left optional, falls back to
     // brokerId if unset; correct this once support/the first real API call
@@ -280,8 +290,12 @@ export const CONFIG = {
 
 /** Which broker platform to boot with, if any. Explicit override via
  * BROKER_PLATFORM=matchtrader|ctrader; otherwise whichever has full
- * credentials wins, preferring Match-Trader (the active path - see above)
- * when BOTH happen to be configured at once. */
+ * credentials wins, preferring Match-Trader when BOTH happen to be
+ * configured at once. ⚠️ cTrader is the platform actually in production use
+ * today (see the `broker` comment above) - this function's Match-Trader-
+ * first tiebreak is NOT a statement of which platform is "active", only
+ * what happens if both are ever fully configured simultaneously. Today only
+ * cTrader's 3 env vars are set on Render, so this resolves to 'ctrader'. */
 export function getConfiguredPlatform() {
   const override = (process.env.BROKER_PLATFORM || '').toLowerCase();
   if (override === 'matchtrader' || override === 'ctrader') return override;
