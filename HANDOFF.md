@@ -1621,3 +1621,24 @@ Priorité identique à `ingestCandle()` quand deux sources visent le même symbo
 **Implication pratique, non tranchée** : tel que configuré aujourd'hui, le système combiné passerait un challenge beaucoup plus vite qu'avec FVG seul, mais avec un risque de busted réel (43% des années testées). Deux leviers concrets, non testés ici : réduire le risque par trade (0.3-0.4% au lieu de 0.5%), ou plafonner le nombre de positions ouvertes simultanément tous symboles confondus. Aucun changement fait dans `src/` — résultat présenté à Esdras pour décision.
 
 **Fichiers** : `scripts/runFtmoAllLiveStrategiesAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-all-live-strategies-account-impact.md`. Aucun changement `src/` — recherche seulement.
+
+## "Repart de zéro" au +10% ou au bust — simulation continue + 2 leviers de risque testés — 2026-09-12
+
+Suite directe du test combiné ci-dessus. Esdras : *"Oui, teste cela [risque réduit / plafond de positions]. Ensuite, dès qu'on atteint le 10%, on nous donne soit le live, soit un autre challenge, donc on repart de zéro."* Deux changements dans le nouveau script (`scripts/runFtmoAllLiveStrategiesCycleAccountImpact.js`) :
+
+1. **Reset réaliste** : au lieu de 7 simulations annuelles indépendantes (où un compte pouvait "buster" après avoir déjà passé le +10%, un artefact du test précédent), une seule simulation CONTINUE sur tout l'historique dispo (2018-2025 selon le symbole). Dès qu'un cycle (une instance de compte) atteint +10% (banqué, nouveau compte $10k immédiatement) OU -10% trailing (busté, on rachète un challenge, même chose), le solde repart à $10 000 et un nouveau cycle démarre. Toute position encore ouverte sur un autre symbole à ce moment est abandonnée (compte neuf = repart flat) — simplification assumée et documentée dans le rapport.
+2. **5 scénarios** testant les deux leviers proposés dans le rapport précédent :
+
+| Scénario | Cycles | Passes | Busts | Taux de bust | Jours moy. pour passer |
+|---|---|---|---|---|---|
+| Actuel (0.5%, aucun plafond) | 46 | 42 | 4 | **9%** | 63 |
+| 0.4%, aucun plafond | 33 | 32 | 1 | 3% | 84 |
+| 0.3%, aucun plafond | 25 | 25 | 0 | **0%** | 114 |
+| 0.5%, max 2 positions simultanées | 42 | 39 | 3 | 7% | 68 |
+| 0.5%, max 1 position (sérialisé) | 40 | 38 | 2 | 5% | 71 |
+
+**Lecture** : avec le reset réaliste, le taux de bust actuel tombe à 9% (par cycle indépendant, pas par année civile comme avant — chaque compte a une vraie chance propre de réussir). Le levier le plus efficace est de loin la réduction du risque par trade : 0.3% élimine complètement le bust sur les 46→25 cycles testés (0%), au prix d'un passage ~1.8x plus lent (114j contre 63j). Le plafond de positions simultanées aide aussi (9%→5% avec cap=1) mais nettement moins que baisser le risque, et ralentit un peu moins (71j contre 63j). Les deux leviers peuvent en théorie se combiner (non testé ici).
+
+**Rien tranché, rien changé dans `src/`** — comparaison présentée à Esdras pour qu'elle choisisse le compromis vitesse/risque.
+
+**Fichiers** : `scripts/runFtmoAllLiveStrategiesCycleAccountImpact.js` (nouveau), `data/backtest-input/ftmo-1step-all-live-strategies-cycle-account-impact.md`.
