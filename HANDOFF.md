@@ -2024,3 +2024,17 @@ Esdras : *"je croyais qu'il y allait avoir un onglet pour FTMO qui contiendrait 
 **Rien déployé en production** au moment d'écrire cette entrée — sur `challenge/fundingpips-zero` seulement, en attendant la décision de déploiement.
 
 **Fichiers** : `src/server.js`, `public/index.html`. `npm test` : 412/412 (inchangé, aucun test dédié au dashboard n'existe dans ce projet — vérifié manuellement via Playwright comme convention établie).
+
+## "2 comptes FTMO différents (challenge + live) dans le même onglet?" — vérifié et codé — 2026-09-12
+
+Esdras : *"comment veux-tu gérer ça avec le compte live? Est-ce que 2 comptes différents de FTMO peuvent être utilisés dans l'onglet FTMO, car il y a un compte challenge avec ses règles et le live avec ses propres règles?"*
+
+**Réponse architecture, déjà vraie avant même ce changement** : oui — le regroupement par onglet se fait par `firm` (résolu depuis `propFirmProgramId`), pas par programme précis. Deux comptes distincts (un challenge, un financé) avec deux `propFirmProgramId` différents mais le même `firm: 'FTMO'` apparaissent automatiquement dans le même onglet "FTMO", chacun avec ses propres règles appliquées indépendamment.
+
+**Ce qui manquait** : un vrai profil pour le compte FINANCÉ (post-challenge) — seul `FTMO_1STEP` (règles du challenge) existait. Vérifié en direct sur `ftmo.com/en/trading-objectives/` (fetch primaire, en comparant explicitement Challenge vs. compte financé) : pour le 1-Step, **les règles de perte du compte financé sont IDENTIQUES au challenge** (3% quotidien, 10% trailing fin de journée) — la SEULE différence est la disparition de la cible de profit ("There is no Profit Target on the subsequent FTMO Account (1-Step)"). Nouveau profil `FTMO_1STEP_FUNDED` ajouté à `src/propFirms/ftmo.js` (+ enregistré dans `index.js`, 1 nouveau test) — mêmes chiffres que `FTMO_1STEP`, `targetPct: null`.
+
+**Bonus découvert sur la même page** : le plancher de 10% "reset[s] when rewards withdrawn and new account provided" — corrobore (sans la confirmer à 100%) l'hypothèse déjà utilisée dans `runFtmo25kCumulativeWithdrawalByDateAnalysis.js` (un retrait verrouille le plancher au nouveau solde plutôt que de continuer à poursuivre l'ancien sommet).
+
+**Pratique** : quand Esdras aura son compte financé, il suffira d'ajouter une entrée `ACCOUNTS_JSON` avec `propFirmProgramId: 'ftmo-1step-funded'` (au lieu de `'ftmo-1step'`) — il apparaîtra automatiquement dans le même onglet FTMO que le compte challenge, avec les bonnes règles (pas de cible, mêmes limites de perte).
+
+**Fichiers** : `src/propFirms/ftmo.js`, `src/propFirms/index.js`, `test/propFirms.test.js`. `npm test` : 413/413.

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PROP_FIRM_PROGRAMS, getPropFirmProgram, listPropFirmPrograms } from '../src/propFirms/index.js';
-import { FTMO_1STEP, FTMO_2STEP } from '../src/propFirms/ftmo.js';
+import { FTMO_1STEP, FTMO_1STEP_FUNDED, FTMO_2STEP } from '../src/propFirms/ftmo.js';
 import { FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, FUNDINGPIPS_ZERO } from '../src/propFirms/fundingPips.js';
 import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM, GOATFUNDEDTRADER_INSTANT_HERO } from '../src/propFirms/goatFundedTrader.js';
 
@@ -40,6 +40,15 @@ test('FTMO 1-Step: single phase, +10% target, 10% trailing end-of-day drawdown',
   assert.equal(FTMO_1STEP.phases[0].maxDrawdownType, 'trailing-eod');
   assert.equal(FTMO_1STEP.phases[0].maxDrawdownPct, 10);
   assert.equal(FTMO_1STEP.timeLimitDays, null);
+});
+
+test('FTMO 1-Step Funded: same loss rules as the Challenge, but no profit target', () => {
+  assert.notEqual(FTMO_1STEP_FUNDED.id, FTMO_1STEP.id);
+  assert.equal(FTMO_1STEP_FUNDED.firm, FTMO_1STEP.firm); // groups under the same dashboard tab
+  assert.equal(FTMO_1STEP_FUNDED.phases[0].targetPct, null);
+  assert.equal(FTMO_1STEP_FUNDED.phases[0].dailyLossLimitPct, FTMO_1STEP.phases[0].dailyLossLimitPct);
+  assert.equal(FTMO_1STEP_FUNDED.phases[0].maxDrawdownPct, FTMO_1STEP.phases[0].maxDrawdownPct);
+  assert.equal(FTMO_1STEP_FUNDED.phases[0].maxDrawdownType, FTMO_1STEP.phases[0].maxDrawdownType);
 });
 
 test('FTMO 2-Step: two phases, +10% then +5%, static 10% drawdown both phases', () => {

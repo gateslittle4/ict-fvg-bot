@@ -57,7 +57,7 @@
 // tracked or enforced anywhere yet - a future addition, not silently assumed
 // safe.
 
-import { FTMO_1STEP, FTMO_2STEP } from './ftmo.js';
+import { FTMO_1STEP, FTMO_1STEP_FUNDED, FTMO_2STEP } from './ftmo.js';
 import { FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, FUNDINGPIPS_ZERO } from './fundingPips.js';
 import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM, GOATFUNDEDTRADER_INSTANT_HERO } from './goatFundedTrader.js';
 
@@ -67,6 +67,7 @@ import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM, GOATFUNDEDTRA
 // would be worse than simply not having one.
 export const PROP_FIRM_PROGRAMS = {
   [FTMO_1STEP.id]: FTMO_1STEP,
+  [FTMO_1STEP_FUNDED.id]: FTMO_1STEP_FUNDED,
   [FTMO_2STEP.id]: FTMO_2STEP,
   [FUNDINGPIPS_2STEP_STANDARD.id]: FUNDINGPIPS_2STEP_STANDARD,
   [FUNDINGPIPS_1STEP_FLEX.id]: FUNDINGPIPS_1STEP_FLEX,

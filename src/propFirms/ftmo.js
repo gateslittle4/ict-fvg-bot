@@ -42,6 +42,47 @@ export const FTMO_1STEP = {
   consistencyRule: { type: 'best-day-max-share-of-profit', maxSharePct: 50, enforced: false },
 };
 
+// The FUNDED "FTMO Account" that follows passing FTMO_1STEP above - a
+// SEPARATE, real account with its own login FTMO issues once the
+// evaluation is passed (Esdras, 2026-09-12: "2 comptes différents de FTMO
+// peut être utilisé dans l'onglet FTMO, car il y a un compte challenge
+// avec ses règles et le live avec ses propres règles?"). Verified directly
+// against ftmo.com/en/trading-objectives/ (live fetch, 2026-09-12,
+// specifically asked to compare Challenge vs. the post-Challenge FTMO
+// Account): for the 1-Step program, the funded account's loss rules are
+// IDENTICAL to the Challenge's (3% daily, 10% end-of-day trailing) - the
+// ONLY change is the profit target disappearing ("There is no Profit
+// Target on the subsequent FTMO Account (1-Step)"). Modeled as its own
+// program (targetPct: null) rather than reusing FTMO_1STEP's phase
+// directly, so the dashboard/alert logic never expects a target that no
+// longer exists once an account has actually been funded.
+//
+// One more detail from that same page, worth keeping: the 10% floor
+// "resets when rewards withdrawn and new account provided" - i.e. a
+// withdrawal does NOT leave the floor chasing the pre-withdrawal high
+// forever. This corroborates (doesn't fully confirm the exact mechanic,
+// but supports) the assumption already used in
+// scripts/runFtmo25kCumulativeWithdrawalByDateAnalysis.js (a withdrawal
+// locks in the trailing floor at the new, lower balance).
+export const FTMO_1STEP_FUNDED = {
+  id: 'ftmo-1step-funded',
+  firm: 'FTMO',
+  label: 'FTMO 1-Step — Compte financé',
+  phases: [
+    {
+      name: 'Financé',
+      targetPct: null, // no profit target once funded - confirmed on the primary page
+      dailyLossLimitPct: 3,
+      maxDrawdownPct: 10,
+      maxDrawdownType: 'trailing-eod', // same mechanism as the Challenge - "identical loss parameters"
+      minTradingDays: null,
+    },
+  ],
+  profitSplit: 0.9,
+  timeLimitDays: null,
+  consistencyRule: { type: 'best-day-max-share-of-profit', maxSharePct: 50, enforced: false },
+};
+
 export const FTMO_2STEP = {
   id: 'ftmo-2step',
   firm: 'FTMO',
