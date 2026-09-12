@@ -1525,3 +1525,21 @@ Suite directe. `scripts/runFullSessionGridSearchUsdjpy.js`, même recherche à 1
 **Bilan complet de la question d'Esdras ("EURUSD, GBPUSD, et USDJPY aussi")** : les 3 paires, testées avec la recherche la plus rigoureuse possible (pas juste la config US100 copiée), ne produisent AUCUNE config FVG qui tienne. L'edge FVG de ce projet reste spécifique à US100/US500/XAUUSD.
 
 **Fichiers** : `scripts/runFullSessionGridSearchUsdjpy.js` (nouveau), `data/backtest-input/full-session-grid-search-usdjpy.md`. Aucun changement `src/` — recherche seulement.
+
+## Décision : US100 passe de 10h-11h à 8h-12h — configuré dans le code — 2026-09-12
+
+Esdras a tranché explicitement : "on part sur 8h-12h, c'est notre décision pour finir le challenge plus rapidement, donc tout doit être configuré avec cela." Contrairement au multi-contact et au pyramidage (pesés et laissés à sa décision), ceci est une VRAIE décision prise — codée directement, pas juste documentée.
+
+**Changement** : `CONFIG.fvg.perSymbol.US100.sessionWindow` passe de `SILVER_BULLET_WINDOW` (10h-11h) à un nouveau `US100_WINDOW` (8h-12h) dédié — **US500 reste sur `SILVER_BULLET_WINDOW` (10h-11h), inchangé** : la fenêtre élargie n'a été testée et validée QUE pour US100 ce soir, jamais pour US500. Utiliser une constante séparée plutôt que modifier `SILVER_BULLET_WINDOW` directement évite exactement le bug qui aurait silencieusement changé US500 aussi.
+
+**Compromis accepté, pour mémoire** (détail complet dans les sections "8h-12h n'est-il pas un meilleur compromis ?" et "9 trades ne peuvent pas passer le challenge" plus haut) :
+- ~46% plus rapide pour passer un challenge FTMO (test 2024-2025 : ~90 jours au lieu de ~167).
+- Jamais busté sur les 7 années de backtest.
+- Drawdown trailing max plus élevé : 9,3% dans la pire année testée (2020) contre 4,7% pour 10h-11h — reste sous le plafond FTMO de 10%, mais avec beaucoup moins de marge.
+- Confirmé directionnellement sur les 7 mois de forward-test réel (10h-11h gardait la meilleure espérance par trade, mais 8h-12h prenait ~3x plus de trades).
+
+**Toujours sur la branche de recherche** (`challenge/fundingpips-zero`), comme tout le reste de ce soir — pas encore déployé en production. Le pyramidage reste séparément derrière `PYRAMID_ENABLED` (inchangé par ce commit).
+
+**Vérifié** : `npm test` toujours 386/389 (3 flakes `keepAlive.test.js` déjà connus, sans rapport) — aucun test ne dépendait de la valeur exacte de la fenêtre US100 partagée.
+
+**Fichiers** : `src/config.js` (le changement lui-même). Artefact "Anatomie d'un FVG" mis à jour en conséquence (voir lien donné à Esdras plus tôt ce soir).

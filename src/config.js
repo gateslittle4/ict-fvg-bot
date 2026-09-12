@@ -15,10 +15,13 @@
 // Every value below is copied VERBATIM from the already-validated backtest
 // script, not re-tuned here.
 
-// Silver Bullet (US100, US500) and London-NY overlap (XAUUSD) session
-// windows, in NY local hours — see scripts/runFtmo1StepAccountImpact.js.
+// Silver Bullet (US500) and London-NY overlap (XAUUSD) session windows, in
+// NY local hours — see scripts/runFtmo1StepAccountImpact.js.
 const SILVER_BULLET_WINDOW = { startHour: 10, endHour: 11 };
 const LONDON_NY_OVERLAP_WINDOW = { startHour: 7, endHour: 10 };
+// US100-specific window — see that symbol's own config below for why it's
+// no longer SILVER_BULLET_WINDOW.
+const US100_WINDOW = { startHour: 8, endHour: 12 };
 
 // RISK_PCT_PER_TRADE (2026-09, opt-in, "page réglages" - see HANDOFF.md):
 // the validated backtest value is 0.5, hardcoded below. This env var lets
@@ -76,7 +79,21 @@ export const CONFIG = {
         rrMultiple: 5,
         structureEnabled: true,
         sessionEnabled: true,
-        sessionWindow: SILVER_BULLET_WINDOW,
+        // 2026-09: élargi de 10h-11h (Silver Bullet) à 8h-12h — décision
+        // explicite d'Esdras ("on part sur 8h-12h, c'est notre décision
+        // pour finir le challenge plus rapidement"), après comparaison
+        // complète des deux fenêtres : voir HANDOFF.md "8h-12h n'est-il pas
+        // un meilleur compromis ?" et les fichiers data/backtest-input/
+        // ftmo-1step-us100-only-8to12-account-impact.md /
+        // fvg-multi-touch-window-weekday-analysis.md. Résumé du compromis
+        // accepté : ~46% plus rapide pour passer un challenge FTMO (test
+        // 2024-2025 : ~90 jours au lieu de ~167), jamais busté sur 7 ans de
+        // backtest, mais drawdown trailing max plus élevé (9.3% au pire cas
+        // contre 4.7% pour 10h-11h — toujours sous le plafond FTMO de 10%,
+        // avec moins de marge). US500 reste sur SILVER_BULLET_WINDOW
+        // (10h-11h) — cette fenêtre élargie n'a été testée et validée QUE
+        // pour US100.
+        sessionWindow: US100_WINDOW,
         liquiditySweepEnabled: true,
         // 2026-09: "multi-contact" - voir HANDOFF.md "FVG 'multi-contact'
         // testé..." et les vérifications qui ont suivi. Un contact qui rate
