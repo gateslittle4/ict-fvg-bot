@@ -1922,3 +1922,19 @@ Esdras, Instant Premium jugé trop cher : *"teste le Instant HERO model, il a be
 **Rappel** : le taux de bust de la règle d'équité reste une estimation conservatrice (la source dit qu'elle "reset après chaque paiement", non modélisé). Rien codé en production au-delà des profils `propFirms/` documentaires.
 
 **Fichiers** : `scripts/runGoatFundedTraderInstantHeroAnalysis.js` (nouveau), `data/backtest-input/goatfundedtrader-instant-hero-analysis.md`, `src/propFirms/goatFundedTrader.js`, `src/propFirms/index.js`, `test/propFirms.test.js`. `npm test` : 412/412.
+
+## "Je veux toucher mon premier 500$ le 1er décembre" — probabilité empirique du pipeline complet — 2026-09-12
+
+Esdras, après avoir écarté GoatFundedTrader (trop contraignant) : *"donne-moi une idée de quel plan choisir avec quel type de compte choisir"* pour toucher $500 de forex/futures d'ici le 1er décembre 2026 (80 jours à partir d'aujourd'hui). Plutôt qu'une estimation à la main, nouveau script (`scripts/runFtmo25kFirstPayoutByDateAnalysis.js`) qui simule le pipeline COMPLET — achat challenge FTMO 1-Step $25k → passage (rachat immédiat à chaque bust, FTMO n'a ni limite de temps ni pénalité) → compte financé $25k live → profit réel accumulé → premier retrait éligible 14 jours calendaires après le premier trade live (**règle FTMO sourcée en direct aujourd'hui**, via `tradersunion.com`/`bestpropfirmguide.com` — pas dans les sources déjà codées ce mois-ci) + ~4 jours de traitement — depuis **98 points de départ historiques différents** (tous les 30 jours, 2018-2025), pour une vraie distribution empirique plutôt qu'une seule estimation.
+
+**Architecture technique notable** : une seule passe sur tout l'historique (moteurs FVG construits une fois, comme toujours), mais 98 "tentatives" (comptes simulés indépendants) tournent en PARALLÈLE sur le même flux de signaux partagé — chacune avec son propre solde/GuardrailEngine/positions, économique en calcul (5 secondes pour les 98 scénarios).
+
+**Résultat** : médiane **92 jours**, moyenne 129 jours (fortement tirée par quelques points de départ lents), le plus rapide 27 jours. **Seulement ~41% des points de départ testés atteignent $500 net en main en 80 jours ou moins.** Le 1er décembre est un objectif **tendu, pas garanti** — possible dans un scénario favorable, mais pas le cas moyen. Le facteur dominant est presque toujours la vitesse de passage du CHALLENGE (très variable), pas la phase live une fois financé (plus stable, 14 jours + accumulation).
+
+**Recommandation donnée** : FTMO 1-Step $25k (déjà dans son budget, meilleure économie déjà établie), acheter AUJOURD'HUI, racheter immédiatement en cas de bust (config `ACCOUNT_MODE=challenge` déjà en place), demander le premier retrait dès l'éligibilité même si <$500 (plusieurs petits retraits comptent autant qu'un gros), et accepter honnêtement que la date n'est pas garantie — un objectif de repli (mi-décembre) réduit la pression sans changer la stratégie.
+
+**Hypothèses de modélisation documentées** : risque 0.5%/0.3% (défauts déjà codés) ; la limite de perte totale FTMO (10% trailing-eod) supposée identique une fois financé (non confirmée séparément) ; un bust en live repart sur un nouveau challenge sans réinitialiser le compteur de jours ; split 90% appliqué au profit courant au-dessus du solde financé de départ.
+
+**Rien codé dans `src/`** — recherche/planification seulement.
+
+**Fichiers** : `scripts/runFtmo25kFirstPayoutByDateAnalysis.js` (nouveau), `data/backtest-input/ftmo-25k-first-payout-by-date-analysis.md`. `npm test` : 412/412 (inchangé).
