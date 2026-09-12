@@ -1872,3 +1872,30 @@ Esdras change de session Claude. Résumé pour une reprise à froid, dans l'ordr
 - Profil `src/propFirms/goatFundedTraderInstantPremium.js` (ou équivalent) : pas créé.
 
 **Prochaine étape naturelle recommandée** : construire l'analyse du P&L flottant pour GoatFundedTrader Instant Premium (probablement la voie la plus rapide vers "pas de challenge, jouable"), en parallèle de la décision sur la source de calendrier news.
+
+## Analyse de perte flottante GoatFundedTrader — construite, résultat inattendu — 2026-09-12
+
+Esdras : *"Construis l'analyse de perte flottante pour GoatFundedTrader."* Nouveau script (`scripts/runGoatFundedTraderFloatingLossAnalysis.js`) — la première capacité de ce projet à suivre le **P&L flottant intra-trade** (pas seulement le résultat final d'un trade clôturé) : à chaque bougie, calcule la pire excursion (même convention que les vérifications stop/target existantes) pour chaque position ouverte, sommée sur les 4 symboles simultanément (US100/US500/XAUUSD/EURUSD), et vérifie deux règles GoatFundedTrader Instant Premium en continu :
+1. **Perte flottante** : -1% (comptes achetés depuis le 2026-09-02, donc celle qui s'applique à un achat aujourd'hui) ferme le compte définitivement, à tout moment.
+2. **Perte totale 6%**, trailing sur l'ÉQUITÉ en temps réel (pas juste le solde réalisé) — donc a aussi besoin du même suivi flottant.
+
+**Profil formalisé** : `GOATFUNDEDTRADER_INSTANT_PREMIUM` ajouté à `src/propFirms/goatFundedTrader.js` + enregistré dans `index.js` (nouveau type `maxDrawdownType: 'trailing-realtime-equity-never-resets'`, pas encore reconnu par `GuardrailEngine` — fail-open documenté, pas encore branché en live). 2 nouveaux tests dans `test/propFirms.test.js`.
+
+**Résultat, tous risques confondus (7 ans, 2019-2025)** :
+
+| Risque | Années bustées | Dont perte flottante | Dont équité 6% |
+|---|---|---|---|
+| 0.5% | 7/7 | 0 | 7 |
+| 0.3% (risque live actuel) | 3/7 | 0 | 3 |
+| 0.25% | 2/7 | 0 | 2 |
+| **0.15%** | **0/7** | 0 | 0 |
+| 0.1% | 0/7 | 0 | 0 |
+| 0.05% | 0/7 | 0 | 0 |
+
+**Résultat inattendu** : sur 12 busts trouvés au total, **0 viennent de la règle de perte flottante** (jamais dépassée : maximum 0.92% atteint à 0.5%/trade, sous le seuil de 1%) — **les 12 viennent de la règle de perte totale 6% équité**, bien plus stricte en pratique que son chiffre nominal ne le suggère, parce qu'elle suit l'équité en temps réel (chaque pic flottant intra-trade compte comme un nouveau sommet, contrairement au FTMO 10% qui ne suit que le solde réalisé à la clôture). **0.15%/trade est le risque le plus élevé qui évite tout bust sur les 7 ans testés.**
+
+**Hypothèse de modélisation documentée** : perte flottante = P&L flottant NET du compte (un gain sur un symbole peut compenser une perte sur un autre), pas la pire position seule — si GoatFundedTrader mesure position par position, leur vraie règle serait encore plus stricte.
+
+**Non testé** : semaine/news de l'Instant Premium (conséquence "profit annulé/plafonné", pas un bust — hors scope). Rien codé en production au-delà du profil `propFirms/` (documentaire).
+
+**Fichiers** : `scripts/runGoatFundedTraderFloatingLossAnalysis.js` (nouveau), `data/backtest-input/goatfundedtrader-instant-premium-floating-loss-analysis.md`, `src/propFirms/goatFundedTrader.js`, `src/propFirms/index.js`, `test/propFirms.test.js`. `npm test` : 411/411.

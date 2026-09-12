@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 import { PROP_FIRM_PROGRAMS, getPropFirmProgram, listPropFirmPrograms } from '../src/propFirms/index.js';
 import { FTMO_1STEP, FTMO_2STEP } from '../src/propFirms/ftmo.js';
 import { FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, FUNDINGPIPS_ZERO } from '../src/propFirms/fundingPips.js';
-import { GOATFUNDEDTRADER_1STEP } from '../src/propFirms/goatFundedTrader.js';
+import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM } from '../src/propFirms/goatFundedTrader.js';
+
+// The 4th type here ('trailing-realtime-equity-never-resets', GoatFundedTrader
+// Instant Premium only) is NOT one GuardrailEngine's _overallDrawdownFloor()
+// recognizes - an unrecognized type fails OPEN there (never blocks live
+// trading on a guess), so this program's overall drawdown is measured only by
+// scripts/runGoatFundedTraderFloatingLossAnalysis.js today, not enforced live.
+// Listed here so a real typo in any OTHER program's type still fails this test.
+const KNOWN_DRAWDOWN_TYPES = ['static', 'trailing-eod', 'trailing-locks-at-start-balance', 'trailing-realtime-equity-never-resets'];
 
 test('every registered program is keyed by its own id and has at least one phase', () => {
   for (const [key, program] of Object.entries(PROP_FIRM_PROGRAMS)) {
@@ -12,7 +20,7 @@ test('every registered program is keyed by its own id and has at least one phase
     for (const phase of program.phases) {
       assert.equal(typeof phase.dailyLossLimitPct, 'number');
       assert.equal(typeof phase.maxDrawdownPct, 'number');
-      assert.ok(['static', 'trailing-eod', 'trailing-locks-at-start-balance'].includes(phase.maxDrawdownType));
+      assert.ok(KNOWN_DRAWDOWN_TYPES.includes(phase.maxDrawdownType));
     }
   }
 });
@@ -68,4 +76,15 @@ test('GoatFundedTrader 1-Step: tightest drawdown (6% static) among the 5 program
   const comparedPrograms = [FTMO_1STEP, FTMO_2STEP, FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, GOATFUNDEDTRADER_1STEP];
   const maxDrawdowns = comparedPrograms.flatMap((p) => p.phases.map((ph) => ph.maxDrawdownPct));
   assert.equal(Math.min(...maxDrawdowns), 6);
+});
+
+test('GoatFundedTrader Instant Premium: instant-funded (no target), no consistency rule, and the floating-loss rule no other program has', () => {
+  assert.equal(GOATFUNDEDTRADER_INSTANT_PREMIUM.phases[0].targetPct, null);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_PREMIUM.consistencyRule, null);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_PREMIUM.floatingLossRule.thresholdPct, 1);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_PREMIUM.floatingLossRule.thresholdPctLegacy, 1.5);
+  assert.equal(GOATFUNDEDTRADER_INSTANT_PREMIUM.floatingLossRule.consequence, 'permanent-account-closure');
+  // No other program in this registry has a floatingLossRule field at all.
+  const others = Object.values(PROP_FIRM_PROGRAMS).filter((p) => p.id !== GOATFUNDEDTRADER_INSTANT_PREMIUM.id);
+  assert.ok(others.every((p) => p.floatingLossRule === undefined));
 });

@@ -59,7 +59,7 @@
 
 import { FTMO_1STEP, FTMO_2STEP } from './ftmo.js';
 import { FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, FUNDINGPIPS_ZERO } from './fundingPips.js';
-import { GOATFUNDEDTRADER_1STEP } from './goatFundedTrader.js';
+import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM } from './goatFundedTrader.js';
 
 // A 4th prop firm is coming (Esdras: "je te dirai le nom moi-même") - add its
 // file the same way as the three above, then list its program(s) here. No
@@ -72,6 +72,7 @@ export const PROP_FIRM_PROGRAMS = {
   [FUNDINGPIPS_1STEP_FLEX.id]: FUNDINGPIPS_1STEP_FLEX,
   [FUNDINGPIPS_ZERO.id]: FUNDINGPIPS_ZERO,
   [GOATFUNDEDTRADER_1STEP.id]: GOATFUNDEDTRADER_1STEP,
+  [GOATFUNDEDTRADER_INSTANT_PREMIUM.id]: GOATFUNDEDTRADER_INSTANT_PREMIUM,
 };
 
 export function getPropFirmProgram(id) {
