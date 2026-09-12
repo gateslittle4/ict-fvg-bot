@@ -1258,3 +1258,15 @@ Dernière étape de cette même session de recherche FVG. Esdras a explicitement
 **Conclusion inchangée : multi-contact SEUL sur US100 reste la meilleure option testée.** Décision de déploiement toujours en attente d'Esdras.
 
 **Fichiers** : `src/backtest/fvgMultiTouch.js` (+ `minCandlesBeforeEligible`, 2 tests), `scripts/runFvgCombinedAnalysis.js` (nouveau), `data/backtest-input/fvg-combined-analysis.md`. `npm test` : 386/386 attendus (383/386 vus localement, 3 flakes `keepAlive.test.js` pré-existants inchangés).
+
+## Multi-contact US100 : robustesse vérifiée à fond avant toute décision de déploiement — 2026-09-12, suite
+
+Esdras a posé la question directe qui aurait dû être posée avant de recommander quoi que ce soit : "t'es sûre que c'est validé par les chiffres et pas du data smoothing ?" Trois contrôles faits, dans l'ordre, avant de répondre :
+
+1. **Concentration dans une fenêtre** (même contrôle qui avait démasqué la fragilité USDJPY) : test 2024-2025 découpé en 4 trimestres. Le multi-contact bat le contact unique dans CHAQUE trimestre, sans exception (T1-T2 2024 : +3.4R→+13.4R ; T3-T4 2024 : +8.8R→+9.7R ; T1-T2 2025 : +30.9R→+52.7R ; T3+ 2025 : +9.2R→+31.5R). Pas une seule fenêtre chanceuse qui porte tout le résultat.
+2. **Répartition directionnelle** : 76% haussier / 24% baissier en test (le marché US100 a monté de +50% sur la période) — mais les trades baissiers (contre-tendance) gagnent LÉGÈREMENT MIEUX (1.62R, WR 45.5%) que les haussiers (1.34R, WR 40.8%). Si c'était de la dérive pure, le côté contre-tendance devrait être le plus faible, pas l'inverse.
+3. **Contrôle de référence arbitraire** (même discipline que Divergence Momentum/RSI Momentum) : entrées à intervalle arbitraire dans la MÊME fenêtre de session (10h-11h NY), direction alternée, stop 1.5×ATR(14)/cible RR identique, aucun signal FVG réel. Résultat : espérance ~10× PLUS FAIBLE que le multi-contact (train 0.095R vs 1.10R ; test 0.142R vs 1.40R), taux de gain à peine au-dessus du seuil d'équilibre mécanique (≈19% vs seuil 16.7% pour RR=5), contre 38-41% pour le vrai signal. Contrairement à Divergence/RSI Momentum (où signal et référence arbitraire étaient du même ordre de grandeur), ici l'écart est net et large — la sélectivité du signal est réelle, pas de la dérive déguisée en edge.
+
+**Conclusion : le multi-contact sur US100 passe les trois contrôles de robustesse de ce projet, pas seulement le screen train/test de base.** Reste la seule réserve structurelle déjà connue : ce n'est pas une reproduction exacte du modèle du backtest (qui compte le PREMIER passage comme rempli), c'est une extension testée séparément et validée sur ses propres mérites. Décision de déploiement toujours entre les mains d'Esdras — l'analyse ne dit que "c'est solide", pas "déploie".
+
+`npm test` : inchangé, aucun fichier `src/` touché par ces contrôles (scripts jetables en `/tmp`, non committés — résultat documenté ici à la place).
