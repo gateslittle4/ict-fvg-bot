@@ -1340,3 +1340,35 @@ Esdras a demandé explicitement d'étendre le multi-contact aux autres paires di
 **Conclusion : aucune des 3 paires ne mérite d'être ajoutée.** L'edge de ce projet (avec ou sans multi-contact) reste spécifique à US100 (et modérément US500) — pas une recette généralisable à n'importe quelle paire disponible.
 
 **Fichiers** : `scripts/runFvgMultiTouchOtherPairsAnalysis.js` (nouveau), `data/backtest-input/fvg-multi-touch-other-pairs-analysis.md`. Aucun changement `src/` — recherche seulement.
+
+## "Avant de déployer" — stop/target, streaks, pyramide, risque fixe vs dynamique — 2026-09-12
+
+Question explicite d'Esdras avant tout déploiement du multi-contact US100 : "où va tu mettre le stop loss, le tp, combien de rrr, est-ce que c'est fixe ou flexible ? Compare fixe et dynamique, compare le nombre de trades gagnants suivis vs perdants suivis, compare aussi pyramidal vs non pyramidal et compare aussi risque fixe vs dynamique selon qu'on perde ou gagne." Un seul script, `scripts/runFvgPreDeployRiskAnalysis.js`, fait tourner les 4 comparaisons sur EXACTEMENT la même séquence de trades (multi-contact US100, config production verbatim, net de coûts) pour rester comparables entre elles.
+
+**1) Mécanique stop/target** — rien à calculer, c'est déjà fixé par `computeStop()`/`runBacktest()` : entrée = bord de la zone FVG (ordre LIMIT), stop = mode `fvg-edge` (bord opposé + 10% de marge), target = entrée + RR × distance avec RR = 5 (valeur production actuelle). **Tout est FIXE à l'entrée**, jamais retouché ensuite (pas de trailing, pas de breakeven) — comme partout ailleurs dans ce projet.
+
+**2) Streaks** (2019-2025 complet, n=273) : max 7 gagnants d'affilée, max **10 perdants d'affilée** (moyenne des séries perdantes : 2.7). À 0.5%/trade, la pire série déjà vue coûte ~5% du compte d'affilée.
+
+**3) Pyramidal (unités indépendantes, `runBacktestPyramidIndependentStops`) vs non pyramidal** :
+
+| Période | Sans pyramide | Avec pyramide | Gain |
+|---|---|---|---|
+| Train | n=180, 1.10R, R total 198.4 | n=180, 1.33R, R total 239.4 (44 pyramidés) | +21% de R total |
+| Test | n=93, 1.40R, R total 130.6 | n=93, 1.76R, R total 163.6 (17 pyramidés) | +25% de R total |
+
+Coût : drawdown max légèrement plus haut (6.82R→7.82R en test). Le stop de l'unité ORIGINALE n'est jamais déplacé (design différent du pyramidage "stop partagé" déjà rejeté plus tôt dans ce projet).
+
+**4) Risque fixe (0.5% constant) vs dynamique** (réduit à 0.25% après 2 pertes consécutives, restauré après un gain), appliqué à la même séquence de trades — seul le sizing change :
+
+| Période | Fixe | Dynamique |
+|---|---|---|
+| Train | +164.1% compte, drawdown 5.3% | +119.0% compte, drawdown 3.2% |
+| Test | +89.8% compte, drawdown 3.4% | +70.5% compte, drawdown 2.4% |
+
+**Pas un gain gratuit** : le drawdown baisse d'environ 40%, mais ça coûte une bonne partie de la croissance totale (le sizing réduit s'applique aussi aux trades qui, après coup, auraient été gagnants juste après la série de pertes).
+
+**Bug trouvé et corrigé en construisant ce script** : `buildMultiTouchFilterPredicate()` (biais H4/structure) utilise un curseur monotone interne qui suppose un seul passage ascendant sur les bougies — réutiliser la MÊME instance de prédicat pour deux passages complets séparés (ex. baseline puis pyramide) corrompt silencieusement le second passage (donnait 0 trades en train, 459 en test avec un drawdown aberrant de 112R avant correction). Chaque script précédent (`runFvgMultiTouchAnalysis.js`, `runFvgMultiTouchOtherPairsAnalysis.js`) construit déjà un prédicat frais par engine/passage donc n'était PAS affecté — seul ce nouveau script avait la réutilisation fautive, corrigée avant publication du résultat.
+
+**Décision de déploiement toujours entièrement entre les mains d'Esdras** — ceci est de la documentation de risque, pas une recommandation de déployer ou non.
+
+**Fichiers** : `scripts/runFvgPreDeployRiskAnalysis.js` (nouveau), `data/backtest-input/fvg-us100-pre-deploy-risk-analysis.md`. Aucun changement `src/` — recherche seulement, multi-contact toujours pas déployé.
