@@ -735,6 +735,12 @@ function createAccountRouter(getStore) {
         ctidTraderAccountId: accountId,
         symbolId: [Number(symbolId)],
       });
+      // Raw response kept on the report (not just console.error'd) so the
+      // real shape is visible in the JSON reply itself - avoids burning
+      // another live order just to go dig through Render logs when a field
+      // extraction below turns out to be guessing wrong, as openOrderId
+      // extraction already once did (see the 2026-09-12 timeout incident).
+      report.rawSpecRes = specRes;
       const spec = specRes?.symbol?.[0];
       const volume = spec?.minVolume ? Number(spec.minVolume) : null;
       if (!volume) {
@@ -753,6 +759,7 @@ function createAccountRouter(getStore) {
         label: `connectivity-test-${Date.now()}`,
         comment: 'connectivity test - opened then immediately closed by /admin/test-order-cycle',
       });
+      report.rawOpenRes = openRes;
       const openOrderId = openRes?.order?.orderId ?? openRes?.orderId ?? null;
       report.openOrderId = openOrderId;
       console.error(`[admin/test-order-cycle] openOrderId=${openOrderId}, waiting for fill...`);
