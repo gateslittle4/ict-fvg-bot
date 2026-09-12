@@ -1542,4 +1542,31 @@ Esdras a tranché explicitement : "on part sur 8h-12h, c'est notre décision pou
 
 **Vérifié** : `npm test` toujours 386/389 (3 flakes `keepAlive.test.js` déjà connus, sans rapport) — aucun test ne dépendait de la valeur exacte de la fenêtre US100 partagée.
 
-**Fichiers** : `src/config.js` (le changement lui-même). Artefact "Anatomie d'un FVG" mis à jour en conséquence (voir lien donné à Esdras plus tôt ce soir).
+**Fichiers** : `src/config.js` (le changement lui-même). Artefact "Anatomie d'un FVG" mis à jour en conséquence (voir lien donné à Esdras plus tôt ce soir). **Déployé en production** (`claude/lire-handoff-hxisa5`, fast-forward propre depuis `challenge/fundingpips-zero`, `npm test` 386/389 avant et après) à la demande explicite d'Esdras ("mais avant passe en production").
+
+## "US500 n'a jamais été testé sur 8h-12h ? Teste-le" — et la réponse est différente de US100 — 2026-09-12
+
+Juste après le déploiement, Esdras a demandé la même vérification pour US500. Confirmé : aucun test de fenêtre ce soir n'a jamais touché US500. Deux scripts, même méthode que pour US100 :
+
+**1) Comparaison en R purs** (`scripts/runFvgUS500WindowAnalysis.js`, moteur single-touch RÉELLEMENT en production pour US500 — pas de multi-contact validé sur ce symbole) :
+
+| Fenêtre | Espérance test | R total test | Drawdown max test |
+|---|---|---|---|
+| 08h-12h | 0.62R (n=91) | 56.25R | 14.21R |
+| **10h-11h (actuel)** | **1.13R** (n=30) | 33.97R | 10.42R |
+
+Même schéma que US100 : 10h-11h a la meilleure espérance par trade, 8h-12h prend 3x plus de trades pour une espérance plus faible et un drawdown plus élevé.
+
+**2) Simulation de compte FTMO complète** (`scripts/runFtmo1StepUS500WindowAccountImpact.js`) — **et là, contrairement à US100, le résultat est net : 8h-12h n'est PAS un gain pour US500** :
+
+| Année | 10h-11h | 8h-12h |
+|---|---|---|
+| 2022 | jour 284 | **jamais** |
+| 2024 (test) | **jour 192** | jour 227 (plus lent) |
+| 2025 (test) | jamais (DD 4.5%) | jamais (DD **9.4%** — proche du plafond 10%) |
+
+Sur la SEULE année test où les deux passent la comparaison directement (2024), 10h-11h est plus rapide (192 jours contre 227). 2025 ne passe dans AUCUN des deux cas, mais 8h-12h y prend un drawdown de 9.4% contre 4.5% pour 10h-11h — un vrai risque de bust en plus, sans bénéfice de vitesse en échange. 2022 (train) est encore plus parlant : 10h-11h réussit le challenge (jour 284), 8h-12h ne le complète jamais cette année-là.
+
+**Conclusion : US500 reste sur 10h-11h, aucun changement recommandé.** Ce qui a marché pour US100 (élargir la fenêtre) ne se généralise pas automatiquement à un autre instrument — exactement le genre de piège que la discipline train/test de ce projet est censée attraper. `CONFIG.fvg.perSymbol.US500` reste inchangé.
+
+**Fichiers** : `scripts/runFvgUS500WindowAnalysis.js`, `scripts/runFtmo1StepUS500WindowAccountImpact.js` (nouveaux), `data/backtest-input/fvg-us500-window-analysis.md`, `data/backtest-input/ftmo-1step-us500-window-account-impact.md`. Aucun changement `src/` — recherche seulement, US500 n'est pas touché.
