@@ -478,7 +478,9 @@ async function loadChart({ keepView = false } = {}) {
       ? `${currentSymbol} · ${currentTimeframe} · ${new Date(last.time).toLocaleString('fr-FR')} · ${lastCandles.length} bougies`
       : 'Pas encore de données (le bot est peut-être encore en démarrage)';
     document.getElementById('position-note').textContent = openPosition
-      ? `Position ouverte (crue par le bot) : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
+      ? openPosition.confirmed
+        ? `Position réellement ouverte chez le courtier (confirmée) : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
+        : `Signal validé par le bot, PAS ENCORE CONFIRMÉ chez le courtier : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
       : '';
   } catch (err) {
     errEl.textContent = `Erreur de chargement: ${err.message}`;

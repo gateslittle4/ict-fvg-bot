@@ -2266,3 +2266,26 @@ Repris exactement là où la session précédente s'est arrêtée (voir son entr
 Fusionné avec le travail "Comptes via dashboard" de cette même session (branches synchronisées, conflit sur HANDOFF.md seulement, résolu en gardant les deux sections).
 
 **Prochaine étape** : déployer, revérifier en direct via `curl .../api/accounts` que `maxTradesPerDay:3` s'affiche vraiment, puis surveiller BTCUSD normalement. Ne pas oublier le nettoyage complet promis (retirer BTCUSD de partout) une fois le test terminé — la liste exacte des 5 endroits à toucher est déjà dans l'entrée précédente.
+
+## Observabilité de l'exécution réelle + honnêteté de l'affichage "position ouverte" — 2026-09-13
+
+Suite à l'échange où Esdras a corrigé *"Tu dis que le bot a un trade. Mais ce n'est pas vrai car le trade n'est pas ouvert, donc dis plutôt un ordre en attente"*, puis *"Vérifie les 2"* (l'hypothèse d'un vrai ordre jamais confirmé vs. un artefact de redémarrage) et *"Corrige ça"*, suivi de *"Fais en sorte que le trade s'exécute réellement"* (réponse à la clarification : **les deux** — prouver que ça marche maintenant ET corriger le pipeline pour les vrais signaux futurs).
+
+**Investigation (les 2 hypothèses)** : `warmUp()` (rejeu historique au boot) et le chemin live (`ProtoOASpotEvent` → `ingestCandle` → `_handleAutoExecuteEntry`) sont structurellement séparés dans `cTraderDataSource.js` — `warmUp()` ne peut JAMAIS soumettre un ordre réel. Donc les positions "crues ouvertes" sur US100/XAUUSD ne sont PAS des artefacts de redémarrage (reconstruction déterministe du warm-up). Mais impossible de confirmer depuis les logs si un vrai ordre a un jour été soumis en direct : **aucun `console.log` n'existe** dans `_handleAutoExecuteEntry` (soumission) ni `_handleExecutionEvent` (confirmation réelle) — seul `_notifyText` (push ntfy uniquement, jamais loggé côté console) existe, et Render ne garde pas l'historique des push ntfy. Un vrai trou d'observabilité, pas une supposition.
+
+**Fix 1 (observabilité, `cTraderDataSource.js`)** : ajout de `console.log` à 3 endroits du chemin d'exécution réel, en plus des notifications ntfy existantes (jamais à leur place) :
+1. À la réception de chaque signal auto-exécutable (`_handleAutoExecuteEntry`, symbole/source/direction/id).
+2. Juste après la résolution de `_submitOrder` (le `brokerOrderId`, y compris quand il est `null` — un échec silencieux sans exception levée serait autrement invisible).
+3. Dans `_handleExecutionEvent` : une ligne pour CHAQUE événement d'exécution reçu (type/orderId/positionId, avant tout filtrage), puis une ligne dédiée pour la confirmation REMPLI et une pour NON REMPLI.
+
+Résultat : `render logs` seul permet désormais de répondre "un ordre a-t-il seulement été tenté, et qu'a répondu le courtier" — sans dépendre de ntfy.
+
+**Fix 2 (honnêteté de l'affichage, `server.js` + `index.html` + `chart.html`)** : `buildStatusPayload`'s `openPosition` par symbole ne représentait QUE la croyance optimiste du moteur (posée au moment de la validation du signal, pour FVG/Divergence/NWOG/Judas Swing indifféremment), jamais recoupée contre un vrai fill. `withRealTimePosition()` calcule maintenant un champ `confirmed` (booléen) en comparant contre `orderOutcomeLog` (rempli UNIQUEMENT par de vrais `ProtoOAExecutionEvent`, jamais par la croyance du moteur) — `true` seulement si un `outcome:'filled'` existe pour ce symbole+id de signal exact, `false` sinon (couvre à la fois "encore en attente de confirmation" ET "aucun ordre n'a jamais été envoyé" — l'auto-exécution était peut-être désactivée au moment de la validation ; ces deux cas restent indiscernables depuis ce seul log, volontairement pas présenté comme plus précis que ça).
+
+Dashboard (`index.html`) : badge ticker désormais `●POSITION` (bleu) seulement si confirmé, sinon `●signal (non confirmé)` (ambre) — remplace le badge "●POSITION" unique qui ne distinguait jamais les deux cas. Chart (`chart.html`) : note sous le graphe dit maintenant explicitement "Position réellement ouverte chez le courtier (confirmée)" vs "Signal validé par le bot, PAS ENCORE CONFIRMÉ chez le courtier".
+
+`npm test` : 417/417 à chaque étape (aucun test existant ne couvrait `server.js` directement — pas de régression introduite, vérifié aussi via `node --check` sur les deux fichiers modifiés et un test manuel du calcul `confirmed` en isolation).
+
+**Reste à faire (prochaine étape immédiate)** : la partie "prouver que ça marche maintenant" de la demande d'Esdras — relancer `/api/admin/test-order-cycle` (son dernier état connu était un timeout suspect avec `volume:1`/`openOrderId: null`, potentiellement déjà corrigé par le commit `e55e827` d'une session parallèle, pas encore revérifié personnellement) — puis déployer ces changements et confirmer en direct que les nouveaux logs apparaissent bien dans `render logs` au prochain signal réel.
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/server.js`, `public/index.html`, `public/chart.html`.

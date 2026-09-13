@@ -111,6 +111,10 @@
   .ticker-price.flash-down { color: var(--red); }
   .ticker-meta { font-size: 11px; color: var(--faint); font-family: var(--mono); }
   .ticker-pos { color: var(--blue); font-size: 11px; font-weight: 700; }
+  /* Deliberately distinct from .ticker-pos (2026-09-13, honesty fix - see
+     server.js's withRealTimePosition): this is the engine's own unconfirmed
+     belief, not yet matched to a real broker fill in orderOutcomeLog. */
+  .ticker-signal { color: var(--amber); font-size: 11px; font-weight: 700; }
 
   /* ---------- Layout ---------- */
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
@@ -528,7 +532,13 @@ function renderStatus(data) {
     return `
     <div class="ticker-cell">
       <div>
-        <div class="ticker-sym"><span class="dot"></span>${s.symbol}${s.openPosition ? ' <span class="ticker-pos">●POSITION</span>' : ''}</div>
+        <div class="ticker-sym"><span class="dot"></span>${s.symbol}${
+          s.openPosition
+            ? s.openPosition.confirmed
+              ? ' <span class="ticker-pos">●POSITION</span>'
+              : ' <span class="ticker-signal">●signal (non confirmé)</span>'
+            : ''
+        }</div>
         <div class="ticker-meta">${fmtTime(s.lastCandleTime)}</div>
       </div>
       <div class="ticker-price ${flashClass}">${fmt(s.lastPrice, priceDecimals(s.symbol))}</div>

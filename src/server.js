@@ -47,8 +47,27 @@ const BOOTED_AT = Date.now();
 function toRealTime(ms) {
   return typeof ms === 'number' ? ms + FIXED_EST_TO_UTC_OFFSET_MS : ms;
 }
-function withRealTimePosition(position) {
-  return position ? { ...position, entryTime: toRealTime(position.entryTime) } : null;
+// 2026-09-13, at Esdras's explicit correction ("le trade n'est pas ouvert,
+// dis plutôt un ordre en attente"): `position` here is ONLY
+// LiveStrategyEngine's own optimistic belief, set the instant a signal
+// validates (see _processFvgEvent etc. in liveStrategyEngine.js) - true for
+// EVERY source (FVG/Divergence/NWOG/Judas Swing) whether or not an order
+// was ever actually sent to the broker. It must never reach the dashboard
+// unlabeled as if it were a confirmed fact. `confirmed` cross-checks it
+// against orderOutcomeLog - the ONLY place a real ProtoOAExecutionEvent
+// outcome is recorded (see accountRuntime.js/_handleExecutionEvent) -
+// matched by the same signal id so a stale outcome from an older signal on
+// this symbol can never be mistaken for this one's. true only once the
+// broker itself has confirmed a real fill; false covers BOTH "still
+// awaiting confirmation" and "no order was ever submitted" (auto-execute
+// was off when this signal validated) - genuinely indistinguishable from
+// this log alone, so deliberately not oversold as more specific than that.
+function withRealTimePosition(symbol, position, orderOutcomeLog) {
+  if (!position) return null;
+  const confirmed = (orderOutcomeLog || []).some(
+    (o) => o.symbol === symbol && o.signalId === position.id && o.outcome === 'filled'
+  );
+  return { ...position, entryTime: toRealTime(position.entryTime), confirmed };
 }
 function withRealTimeSignal(signal) {
   return { ...signal, validatedAt: toRealTime(signal.validatedAt) };
@@ -186,7 +205,7 @@ function buildStatusPayload(store) {
       lastOpen: last ? last.open : null,
       lastHigh: last ? last.high : null,
       lastLow: last ? last.low : null,
-      openPosition: withRealTimePosition(store.strategyEngine.getOpenPosition(symbol)),
+      openPosition: withRealTimePosition(symbol, store.strategyEngine.getOpenPosition(symbol), store.orderOutcomeLog),
     };
   });
 

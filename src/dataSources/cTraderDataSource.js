@@ -872,6 +872,16 @@ export class CTraderDataSource {
    */
   async _handleAutoExecuteEntry(symbolName, symbolId, signal) {
     const store = this.account;
+    // 2026-09-13: this was the ONLY path that can submit a real order, yet
+    // had zero console output - _notifyText is ntfy-only (fetch to
+    // ntfy.sh, never logged) and only warns on push failure, so Render's
+    // durable server logs could never confirm whether a real order attempt
+    // ever happened, only ntfy's own (inaccessible) push history could.
+    // Esdras asked explicitly ("fais en sorte que le trade s'exécute
+    // réellement") for the pipeline itself to be verifiable, not just
+    // fixed - this line plus the ones below at submit/confirm time close
+    // that gap.
+    console.log(`[auto-execute] entry signal received: ${symbolName} source=${signal.source} side=${signal.suggestedSide} id=${signal.id}`);
     try {
       const spec = getDefaultSpec(symbolName);
       if (!spec) {
@@ -934,6 +944,10 @@ export class CTraderDataSource {
         label: `auto-${signal.source}-${symbolName}`,
         expirationTimestamp,
       });
+      // Logged unconditionally (null included) - a null brokerOrderId with
+      // no thrown error would otherwise be silently indistinguishable from
+      // a real success in every log Render actually keeps.
+      console.log(`[auto-execute] _submitOrder resolved for ${symbolName}: brokerOrderId=${brokerOrderId}`);
       if (brokerOrderId != null) {
         // Tracked so _handleExecutionEvent can confirm the REAL outcome
         // (filled vs cancelled/expired/rejected) instead of leaving the
@@ -963,6 +977,13 @@ export class CTraderDataSource {
 
   _handleExecutionEvent(event) {
     const store = this.account;
+    // Same observability gap as _handleAutoExecuteEntry above - every real
+    // execution event (fill, reject, cancel, expiry) used to be invisible
+    // in Render's server logs, visible only via ntfy (and only for the
+    // subset _notifyText actually announces). One line per event, cheap
+    // and unconditional, so "did the broker ever answer at all" is
+    // answerable from `render logs` alone.
+    console.log(`[execution-event] type=${event.executionType} orderId=${event.order?.orderId ?? 'n/a'} positionId=${event.position?.positionId ?? event.deal?.positionId ?? 'n/a'}`);
     // A position closed on the broker side -> feed it into the guardrail engine
     // as ground truth (real trade, not a demo simulation).
     if (event.executionType === 'ORDER_FILLED' && event.deal?.closePositionDetail) {
@@ -1032,10 +1053,12 @@ export class CTraderDataSource {
       if (event.executionType === 'ORDER_FILLED' && !event.deal?.closePositionDetail) {
         this.pendingEntryOrderByOrderId.delete(event.order.orderId);
         store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'filled', executionType: event.executionType });
+        console.log(`[auto-execute] CONFIRMED FILLED: ${pending.symbolName} source=${pending.source} orderId=${event.order.orderId} - real position opened at the broker.`);
         this._notifyText(`✅ [${pending.source.toUpperCase()}] Ordre confirmé REMPLI sur ${pending.symbolName} - position réellement ouverte chez le courtier.`);
       } else if (unfilledTypes.has(event.executionType)) {
         this.pendingEntryOrderByOrderId.delete(event.order.orderId);
         store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'unfilled', executionType: event.executionType });
+        console.log(`[auto-execute] CONFIRMED UNFILLED: ${pending.symbolName} source=${pending.source} orderId=${event.order.orderId} executionType=${event.executionType} - no real position, clearing believed-open.`);
         // The engine believed this was open the moment it validated the
         // signal (see _processFvgEvent etc.) - now confirmed wrong. Clear
         // it so the dashboard stops showing a ghost "believed open"
