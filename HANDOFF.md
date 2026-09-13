@@ -2201,3 +2201,33 @@ Deux points suspects à investiguer avant un 3e essai :
 **Le token `ADMIN_EXPORT_TOKEN` a été régénéré** cette session (l'ancien n'était pas connu de cette session) — tout lien admin sauvegardé avant le 2026-09-12 ~21h UTC ne fonctionne plus. Nouvelle valeur connue de cette session seulement, pas notée ici (secret) — la régénérer à nouveau via l'API Render si besoin plutôt que de la chercher.
 
 **Fichiers** : `src/server.js` (2 nouveaux endpoints admin), `src/dataSources/cTraderDataSource.js` (`sendCommandWithTimeout` exporté). `npm test` 413/413 à chaque étape. Tout est déjà sur `claude/lire-handoff-hxisa5` (production) — PAS encore reporté sur `challenge/fundingpips-zero` (branche de recherche), à synchroniser.
+
+## Reprise de session — nuit du 2026-09-13, Esdras change de session en urgence
+
+Contexte : diagnostic du timeout `test-order-cycle` corrigé (rawSpecRes/rawOpenRes ajoutés au rapport, commit `e55e827`, déployé), puis Esdras a demandé de coder une vraie stratégie crypto **ce soir** pour voir le bot exécuter un ordre réel pendant le week-end (forex/indices/métaux fermés). Chemin suivi, dans l'ordre :
+
+1. **Refusé** : exécuter moi-même un ordre via curl (garde-fou "Real-World Transactions"), une page artefact avec le token intégré (garde-fou "Credential Leakage"), et assouplir CORS pour lire la réponse à distance (garde-fou "Security Weaken"). Discussion complète avec Esdras sur POURQUOI le bot peut trader seul mais pas moi en direct — voir les échanges de cette session si besoin de les rejouer.
+2. **Fait, déployé, testé** (commit `a4f42da`) : `/api/admin/export-candles` accepte maintenant n'importe quel symbole connu du courtier, pas seulement les 4 symboles de production — nécessaire pour tirer un vrai historique BTCUSD avant de coder quoi que ce soit.
+3. **Vraie donnée récupérée** : 14 000 bougies M15 BTCUSD réelles (20 fév. → 11 sept. 2026, ~7 mois) via cet endpoint.
+4. **Backtest honnête AVANT tout déploiement** (script jetable, pas commité) : FVG baseline, aucun filtre (aucun concept HTF/session n'a de sens sur un marché 24/7), décidé avant de regarder les résultats. RR 1:2/1:3/1:5 testés : edge net positif mais **fin** (profit factor ~1.07-1.08 partout, PAS la robustesse des 4 autres symboles), sur une seule fenêtre non découpée train/test, spread ($25) estimé et NON vérifié chez le courtier.
+5. **Problème réel trouvé avant de déployer** : `GuardrailEngine.maxTradesPerDay` est un compteur PARTAGÉ pour tout le compte (pas par symbole) — BTCUSD (~110 signaux/mois estimés) risquait de consommer les 2 seuls slots du jour et de bloquer un vrai signal EURUSD/XAUUSD/US100/US500. Présenté à Esdras, elle a choisi : monter le plafond à 3 plutôt que d'isoler BTCUSD sur un compte séparé ("on va supprimer BTC juste après").
+6. **Déployé** (commit `ae6b8ea`, sur `claude/lire-handoff-hxisa5`) :
+   - `config.js` : `BTCUSD` ajouté à `symbols`, entrée `fvg.perSymbol.BTCUSD` (baseline, `stopMode:'fvg-edge'`, `rrMultiple:3`, aucun filtre), `guardrails.maxTradesPerDay` 2→3 — **tout commenté "TEMPORARY", à retirer avec BTCUSD**.
+   - `transactionCosts.js` : `DEFAULT_SPREADS.BTCUSD = 25` (indicatif, non vérifié).
+   - `lotCalculator.js` : nouvelle entrée `BTCUSD` avec `min=step=max=1` + `rawVolume: true` — **le risque %/solde NE dimensionne PAS BTCUSD ce soir**, il trade toujours le minimum absolu du courtier (1, la même valeur brute confirmée en direct plus tôt via `/admin/test-order-cycle`), délibérément, pour éviter d'empiler une deuxième couche de constantes inventées sur la conversion `lots*lotSize*100` déjà non vérifiée de `_submitOrder`.
+   - `cTraderDataSource.js` : `_submitOrder` respecte maintenant `symbolSpec.rawVolume` (envoie le volume brut directement au lieu de la formule `lots*lotSize*100`) — no-op pour les 4 autres symboles.
+   - `npm test` : 413/413 à chaque étape.
+
+**🚨 BUG RÉEL DÉCOUVERT JUSTE AVANT LA COUPURE, NON CORRIGÉ** : après déploiement de `ae6b8ea`, `/api/accounts` affiche toujours `"maxTradesPerDay":2`, PAS 3. Cause trouvée : `config.js` a DEUX définitions de garde-fous par défaut indépendantes —
+- `CONFIG.guardrails` (ligne ~87, celle que j'ai modifiée à 3) — apparemment PAS ce qui alimente le compte `'default'` réel.
+- `function defaultGuardrails()` (ligne ~388, `{ maxTradesPerDay: 2, ... }`, hardcodé séparément) — utilisée par `resolveAccounts()` (ligne ~454 : `guardrails: { ...defaultGuardrails(), ...(raw.guardrails || {}) }`) pour construire le compte `'default'` quand `ACCOUNTS_JSON` est absent (le cas réel en prod aujourd'hui).
+
+Autrement dit : **le compte réel utilise `defaultGuardrails()`, pas `CONFIG.guardrails`** — ma modification du plafond à 3 est actuellement du code mort pour le compte en production. Le plafond réel est TOUJOURS 2, partagé entre BTCUSD et les 4 symboles habituels — exactement le risque que je pensais avoir neutralisé avec Esdras n'est PAS neutralisé.
+
+**Prochaine étape immédiate pour la session suivante** :
+1. Corriger `defaultGuardrails()` (ligne 388-389) pour qu'il retourne `maxTradesPerDay: 3` aussi (ou mieux : faire que `CONFIG.guardrails` et `defaultGuardrails()` soient la MÊME source, pas deux constantes dupliquées qui peuvent diverger — c'est la vraie cause racine, pas juste ce symptôme).
+2. Redéployer, puis **revérifier en direct** via `curl https://ict-fvg-bot.onrender.com/api/accounts` que `guardrail.maxTradesPerDay` affiche bien `3` avant de considérer BTCUSD comme sûr à laisser tourner.
+3. Une fois vérifié : le reste de l'implémentation (perSymbol config, spread, lot spec `rawVolume`) a été relu et raisonné avec soin, mais N'A PAS ENCORE produit de signal/ordre réel — rien à analyser côté résultat pour l'instant, juste à surveiller (notification ntfy si un ordre part, comme pour les autres symboles).
+4. Ne pas oublier le nettoyage complet promis à Esdras une fois le test terminé : retirer `BTCUSD` de `symbols`, l'entrée `fvg.perSymbol.BTCUSD`, remettre `maxTradesPerDay` à 2 (dans les DEUX endroits maintenant qu'on sait qu'il y en a deux), retirer `DEFAULT_SPREADS.BTCUSD`, retirer l'entrée `BTCUSD` de `lotCalculator.js`, et le branchement `rawVolume` dans `_submitOrder` peut rester (il est inerte pour tous les autres symboles) ou être retiré aussi par propreté.
+
+**Fichiers** : `src/config.js`, `src/backtest/transactionCosts.js`, `src/engines/lotCalculator.js`, `src/dataSources/cTraderDataSource.js`, `src/server.js` (export-candles loosening). Commits `a4f42da`, `ae6b8ea`, tous deux poussés et déployés sur `claude/lire-handoff-hxisa5`. `npm test` 413/413 à chaque étape — mais le comportement RÉEL en production (le plafond de 3) n'est PAS encore celui voulu, voir bug ci-dessus.
