@@ -2326,3 +2326,18 @@ Suite immédiate de l'entrée précédente. Deux bugs supplémentaires trouvés 
 **Toujours vrai, pas encore observé** : un VRAI signal FVG/Divergence/NWOG/Judas Swing auto-exécuté n'a pas encore été capturé depuis ces fixes (le test-order-cycle bypasse volontairement le moteur de stratégie). Le mécanisme est identique (même `_submitOrder`), donc il n'y a pas de raison de douter qu'il fonctionnera pareil, mais ça reste à confirmer avec un signal réel le jour où un fire.
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/server.js`.
+
+## Bug réel trouvé par Esdras dans le journal (Invalid Date, faux "100% de réussite") — corrigé — 2026-09-13
+
+Esdras a remarqué que le journal de trading affichait "Invalid Date" et un taux de réussite de 100% (3/3) avec un P&L net figé à +0.00 pour les 3 trades de test (BTCUSD, mes propres cycles ouverture+fermeture de ce soir). Investigation → **deux bugs réels de la même famille que ceux corrigés plus tôt ce soir** (le courtier sérialise les entiers 64-bit — timestamps, ids, volumes — en STRINGS JSON, confirmé via un vrai dump tonight) :
+
+1. **`dealPairing.js`** : `sum + (d.closePositionDetail.grossProfit || 0)` utilisait `+` sur une string (`grossProfit`) — en JS, `+` avec un opérande string fait de la CONCATÉNATION, pas une addition (`0 + "-19"` → `"0-19"`, pas `-19`). Résultat divisé par 100 → `NaN`, qui devient silencieusement `null` en JSON. Côté client, `null >= 0` vaut **`true`** en JS — donc CHAQUE trade s'affichait comme une victoire, peu importe le vrai résultat, et la somme (`sum + null`) restait toujours exactement `0`. `entryTime`/`exitTime` stockés comme strings brutes cassaient aussi `new Date(...)` côté dashboard ("Invalid Date" — `new Date("1789...")` n'est PAS traité comme un epoch numérique par le constructeur `Date`, contrairement aux opérateurs arithmétiques).
+2. **`cTraderDataSource.js`/`_loadClosedDeals`** (bug plus grave, jamais observé en direct mais réel) : la même string `executionTimestamp` était passée telle quelle à `GuardrailEngine.recordTrade({time})`, qui calcule `lastTrade.time + cooldownMinutesAfterLoss*60000` avec un `+` — même piège. **Conséquence potentielle** : après un redémarrage (le bot redémarre souvent) où le dernier trade des dernières 24h était une perte, le calcul du cooldown produirait un nombre astronomique (des années), bloquant silencieusement TOUT le trading (`blocked:true, cooldown_active`) jusqu'au prochain redémarrage. Corrigé à la fois à l'endroit d'appel ET dans `GuardrailEngine.recordTrade` lui-même (`Number(time)`, défense en profondeur) pour qu'aucun futur appelant ne puisse réintroduire ce bug.
+
+**Fix** : `Number(...)` partout où `executionTimestamp`/`grossProfit` entrent dans un calcul ou un `new Date(...)`. Nouveaux tests de régression avec des fixtures STRING (la vraie forme du courtier, pas des nombres comme avant) dans `test/dealPairing.test.js` et `test/guardrailEngine.test.js` — ces tests auraient échoué sans le fix.
+
+Troisième symptôme signalé ("Pas de données de graphique pour ce trade") : limitation pré-existante, pas une régression — le fetch des bougies pour le mini-graphe échoue silencieusement pour ces 3 trades de test (log `err.message: undefined`, probablement une réponse d'erreur du courtier sans champ `.message`). Amélioré le log pour être diagnosticable la prochaine fois (`err.message || JSON.stringify(err)`), mais pas creusé plus loin ce soir — n'affecte que l'affichage du mini-graphe, jamais le trading réel.
+
+`npm test` : 419/419 (417 + 2 nouveaux tests de régression).
+
+**Fichiers** : `src/dataSources/dealPairing.js`, `src/dataSources/cTraderDataSource.js`, `src/engines/guardrailEngine.js`, `test/dealPairing.test.js`, `test/guardrailEngine.test.js`.

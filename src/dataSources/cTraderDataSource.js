@@ -344,8 +344,21 @@ export class CTraderDataSource {
     });
     for (const deal of res.deal || []) {
       if (deal.closePositionDetail) {
-        const pnl = deal.closePositionDetail.grossProfit / 100; // VERIFY units against real response
-        store.guardrail.recordTrade({ pnl, time: deal.executionTimestamp });
+        const pnl = deal.closePositionDetail.grossProfit / 100; // `/` auto-coerces a string operand - safe even though grossProfit is a string on this broker (confirmed live, see dealPairing.js's comment)
+        // Number(...) (2026-09-13, real bug found live): executionTimestamp
+        // is a STRING on this broker. GuardrailEngine.recordTrade stores
+        // `time` as-is and later does `lastTrade.time + cooldownMinutes...`
+        // (a PLUS, not a safe operator) to compute the cooldown window - a
+        // string `time` there means STRING CONCATENATION producing a huge
+        // garbage number, so after any restart where the last deal in the
+        // trailing 24h was a LOSS, the cooldown-after-loss check would
+        // compute an absurd multi-year `cooldownRemainingMs` and silently
+        // block ALL future trading (`blocked: true, cooldown_active`) until
+        // the next restart re-seeds with different data. This is exactly
+        // the kind of silent block this whole session has been hunting -
+        // found here, not yet observed live, but real and worth fixing
+        // immediately rather than waiting for a bust to prove it.
+        store.guardrail.recordTrade({ pnl, time: Number(deal.executionTimestamp) });
       }
     }
   }
@@ -417,9 +430,15 @@ export class CTraderDataSource {
           .map((bar) => this._trendbarToCandle(bar))
           .sort((a, b) => a.time - b.time);
       } catch (err) {
+        // err.message || JSON.stringify(err) (2026-09-13): a real occurrence
+        // logged plain `undefined` here, meaning the rejection wasn't a real
+        // Error (likely a raw ProtoOAErrorRes-shaped object from the broker,
+        // which carries errorCode/description, not .message) - stringify
+        // the whole thing as a fallback so a future occurrence is
+        // diagnosable instead of showing nothing.
         console.warn(
           `[cTrader] trade history: failed to fetch chart candles for ${symbolName} position ${trade.positionId}:`,
-          err.message
+          err.message || JSON.stringify(err)
         );
       }
       enriched.push({ ...trade, symbol: symbolName, candles });

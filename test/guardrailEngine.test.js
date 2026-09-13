@@ -48,6 +48,36 @@ test('a winning trade does not trigger cooldown', () => {
   assert.equal(status.blocked, false);
 });
 
+// 2026-09-13: real bug found live. cTraderDataSource.js's _loadClosedDeals
+// (boot-time replay of the last 24h of REAL closed deals, to seed the
+// guardrail after a restart) passed the broker's OWN executionTimestamp
+// straight through as `time` - and this broker serializes that field as a
+// numeric STRING, confirmed via a real ProtoOAExecutionEvent dump. Before
+// the fix, `lastTrade.time + cooldownMinutesAfterLoss * 60000` used a raw
+// `+`, which string-concatenates instead of adding once either operand is
+// a string - producing an astronomically large "cooldown end" that never
+// actually elapses. Net effect: after ANY restart (this bot restarts
+// often - see HANDOFF.md) where the last deal in the trailing 24h was a
+// loss, trading would be silently blocked (`cooldown_active`) for what
+// looks like decades, not the configured cooldown. Fixed with Number(time)
+// both at the call site AND inside recordTrade itself (defense in depth).
+test('recordTrade coerces a STRING time (matches this broker\'s real executionTimestamp shape) - cooldown still elapses normally', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 30, maxTradesPerDay: 10 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -100, time: String(DAY1), balanceAfter: 9900 }); // string, like the real broker response
+
+  const duringCooldown = g.getStatus(DAY1 + 10 * 60 * 1000);
+  assert.equal(duringCooldown.blocked, true);
+  assert.ok(duringCooldown.blockReasons.includes('cooldown_active'));
+  // Without the fix this would be an astronomically large number (string
+  // concatenation of two epoch-ms values), not a real ~20-minute remainder.
+  assert.ok(duringCooldown.cooldownRemainingMs <= 30 * 60 * 1000);
+
+  const afterCooldown = g.getStatus(DAY1 + 31 * 60 * 1000);
+  assert.equal(afterCooldown.blocked, false);
+  assert.equal(afterCooldown.cooldownRemainingMs, 0);
+});
+
 test('blocks once daily loss limit % is reached', () => {
   const g = new GuardrailEngine({ maxTradesPerDay: 10, dailyLossLimitPct: 2, cooldownMinutesAfterLoss: 0 });
   g.setBalance(10000, DAY1); // starting balance 10000, 2% = 200

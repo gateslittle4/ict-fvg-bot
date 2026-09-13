@@ -128,6 +128,17 @@ export class GuardrailEngine {
    */
   recordTrade({ pnl, time = Date.now(), balanceAfter } = {}) {
     if (typeof pnl !== 'number') throw new Error('recordTrade requires a numeric pnl');
+    // Number(...) (2026-09-13, defense in depth): a caller passing a
+    // numeric STRING for `time` (cTraderDataSource.js's _loadClosedDeals
+    // did exactly this - the broker's own executionTimestamp is a string -
+    // until fixed at the call site too) would silently corrupt the
+    // cooldown-after-loss check below: `lastTrade.time + cooldownMs` uses
+    // `+`, which string-concatenates rather than adds when either operand
+    // is a string, producing an astronomically large "cooldown end" that
+    // effectively never expires and blocks all trading. Coercing here means
+    // this class can never be broken this way again, regardless of what a
+    // future caller passes.
+    time = Number(time);
     this._ensureDay(time);
 
     if (typeof balanceAfter === 'number') {

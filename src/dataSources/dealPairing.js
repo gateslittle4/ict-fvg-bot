@@ -57,7 +57,26 @@ export function pairDealsIntoTrades(deals, orderLabelsById) {
     const closings = group.filter((d) => d.closePositionDetail);
     if (!opening || closings.length === 0) continue; // still open, or opening leg outside our fetch window
 
-    const closing = closings.reduce((a, b) => (b.executionTimestamp > a.executionTimestamp ? b : a));
+    // Number(...) everywhere executionTimestamp/grossProfit are used (2026-09-13,
+    // real bug found live via the trade journal showing "Invalid Date" and
+    // every trade as a "win" with net P&L stuck at +0.00): this broker
+    // serializes int64 fields (timestamps, ids, volumes) as JSON STRINGS,
+    // confirmed via a raw ProtoOAExecutionEvent dump the same session (see
+    // cTraderDataSource.js's _submitOrder/_waitForOrderIdBySymbol comments).
+    // `>` on two equal-length numeric strings happens to sort correctly
+    // (lexicographic order matches numeric order), so this specific
+    // comparison was never actually wrong - normalized anyway for safety
+    // since nothing here should depend on that coincidence. The real
+    // breakage was `sum + (d.closePositionDetail.grossProfit || 0)`: with a
+    // string grossProfit, `+` performs STRING CONCATENATION, not addition
+    // ("0" + "-19" -> "0-19"), so the result was NaN once divided by 100 -
+    // which JSON.stringify silently turns into `null` on the wire, and
+    // `null >= 0` is TRUE in JS, so every trade's pnl looked like a "win"
+    // client-side despite being unparseable. entryTime/exitTime stored as
+    // raw strings also broke `new Date(...)` on the dashboard directly
+    // ("Invalid Date") - Date() does NOT treat a numeric string as an epoch
+    // number the way arithmetic operators do.
+    const closing = closings.reduce((a, b) => (Number(b.executionTimestamp) > Number(a.executionTimestamp) ? b : a));
     const label = orderLabelsById ? orderLabelsById.get(opening.orderId) : undefined;
 
     trades.push({
@@ -65,10 +84,10 @@ export function pairDealsIntoTrades(deals, orderLabelsById) {
       symbolId: opening.symbolId,
       direction: opening.tradeSide === 'SELL' ? 'bearish' : 'bullish',
       entryPrice: opening.executionPrice,
-      entryTime: opening.executionTimestamp,
+      entryTime: Number(opening.executionTimestamp),
       exitPrice: closing.executionPrice,
-      exitTime: closing.executionTimestamp,
-      pnl: closings.reduce((sum, d) => sum + (d.closePositionDetail.grossProfit || 0), 0) / 100,
+      exitTime: Number(closing.executionTimestamp),
+      pnl: closings.reduce((sum, d) => sum + Number(d.closePositionDetail.grossProfit || 0), 0) / 100,
       source: parseSourceFromLabel(label),
     });
   }

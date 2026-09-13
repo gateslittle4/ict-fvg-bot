@@ -74,6 +74,43 @@ test('results are sorted newest-exit-first, across multiple positions', () => {
   assert.deepEqual(trades.map((t) => t.positionId), [2, 1]);
 });
 
+// 2026-09-13: real bug found live via the trade journal showing every trade
+// as a "win" with a stuck "+0.00" net P&L and "Invalid Date" for
+// entry/exit. Root cause: this broker serializes executionTimestamp and
+// grossProfit as numeric STRINGS (confirmed via a raw ProtoOAExecutionEvent
+// dump the same session), and `sum + (d.closePositionDetail.grossProfit ||
+// 0)` used `+`, which string-concatenates instead of adding once
+// grossProfit is a string - producing NaN once divided by 100, which
+// JSON.stringify silently turns into `null` on the wire. `null >= 0` is
+// TRUE in JS, so the dashboard's win-rate filter counted every trade as a
+// win regardless of its real outcome, and summing `null` values always
+// landed on exactly 0. entryTime/exitTime being raw strings also broke
+// `new Date(...)` client-side. This test uses string fixtures (the real
+// broker shape) instead of the plain-number fixtures every other test in
+// this file uses, specifically to catch a regression of this exact bug.
+test('pairDealsIntoTrades: handles this broker\'s REAL response shape - string executionTimestamp/grossProfit, not numbers', () => {
+  const deals = [
+    { positionId: 1, symbolId: 1, tradeSide: 'BUY', executionPrice: 100, executionTimestamp: '1000', dealStatus: 'FILLED' },
+    {
+      positionId: 1,
+      symbolId: 1,
+      tradeSide: 'SELL',
+      executionPrice: 90,
+      executionTimestamp: '2000',
+      dealStatus: 'FILLED',
+      closePositionDetail: { grossProfit: '-500' }, // a real LOSS, as a string - the exact shape that used to become a false "win"
+    },
+  ];
+  const trades = pairDealsIntoTrades(deals);
+  assert.equal(trades.length, 1);
+  assert.equal(trades[0].pnl, -5); // NOT null, NOT NaN, NOT a string - a real negative number
+  assert.equal(typeof trades[0].pnl, 'number');
+  assert.equal(trades[0].entryTime, 1000); // a real Number, not "1000" - new Date(1000) must be valid, new Date("1000") is NOT
+  assert.equal(typeof trades[0].entryTime, 'number');
+  assert.equal(trades[0].exitTime, 2000);
+  assert.equal(typeof trades[0].exitTime, 'number');
+});
+
 test('empty/undefined input returns no trades', () => {
   assert.deepEqual(pairDealsIntoTrades([]), []);
   assert.deepEqual(pairDealsIntoTrades(undefined), []);
