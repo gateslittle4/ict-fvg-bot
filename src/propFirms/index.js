@@ -60,11 +60,8 @@
 import { FTMO_1STEP, FTMO_1STEP_FUNDED, FTMO_2STEP } from './ftmo.js';
 import { FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, FUNDINGPIPS_ZERO } from './fundingPips.js';
 import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM, GOATFUNDEDTRADER_INSTANT_HERO } from './goatFundedTrader.js';
+import { CTI_1STEP } from './cti.js';
 
-// A 4th prop firm is coming (Esdras: "je te dirai le nom moi-même") - add its
-// file the same way as the three above, then list its program(s) here. No
-// placeholder entry is registered for it yet: an unverified made-up program
-// would be worse than simply not having one.
 export const PROP_FIRM_PROGRAMS = {
   [FTMO_1STEP.id]: FTMO_1STEP,
   [FTMO_1STEP_FUNDED.id]: FTMO_1STEP_FUNDED,
@@ -75,6 +72,7 @@ export const PROP_FIRM_PROGRAMS = {
   [GOATFUNDEDTRADER_1STEP.id]: GOATFUNDEDTRADER_1STEP,
   [GOATFUNDEDTRADER_INSTANT_PREMIUM.id]: GOATFUNDEDTRADER_INSTANT_PREMIUM,
   [GOATFUNDEDTRADER_INSTANT_HERO.id]: GOATFUNDEDTRADER_INSTANT_HERO,
+  [CTI_1STEP.id]: CTI_1STEP,
 };
 
 export function getPropFirmProgram(id) {

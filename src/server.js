@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT } from './config.js';
-import { getDefaultAccount, getAccount, listAccounts } from './accountRegistry.js';
+import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry } from './config.js';
+import { getDefaultAccount, getAccount, listAccounts, registerAccount } from './accountRegistry.js';
 import { MAX_AUTO_EXECUTE_HOURS } from './accountRuntime.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
@@ -15,6 +15,7 @@ import { resampleCandles } from './backtest/htfBias.js';
 import { buildChartOverlays } from './backtest/chartOverlays.js';
 import { startKeepAlive } from './keepAlive.js';
 import { fetchPerformanceBySymbol } from './dataSources/supabaseTradeLog.js';
+import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
 import { getPropFirmProgram } from './propFirms/index.js';
@@ -98,6 +99,63 @@ app.get('/api/accounts', (req, res) => {
       };
     }),
   });
+});
+
+// "Comptes" dashboard page backend (2026-09-13, see
+// supabaseAccountStore.js's header - Esdras: "un moyen de mettre les codes
+// dans le site à la main, sans redéployer"). Same ADMIN_EXPORT_TOKEN gate as
+// every other admin route in this file. GET never returns raw secrets (see
+// listDynamicAccountsRedacted) - only booleans for "is this credential set".
+function requireAdminToken(req, res) {
+  const configuredToken = process.env.ADMIN_EXPORT_TOKEN;
+  if (!configuredToken) {
+    res.status(404).json({ error: 'not enabled' });
+    return false;
+  }
+  const provided = req.query.token || req.body?.token;
+  if (provided !== configuredToken) {
+    res.status(403).json({ error: 'invalid or missing token' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/admin/accounts', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const accounts = await listDynamicAccountsRedacted();
+  res.json({ accounts });
+});
+
+app.post('/api/admin/accounts', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const { token, ...raw } = req.body || {};
+  if (!raw.id) return res.status(400).json({ error: 'id is required' });
+  const result = await saveDynamicAccount(raw);
+  if (!result.ok) return res.status(502).json(result);
+  res.json({ ok: true, note: 'Sauvegardé. Redémarre le bot (bouton ci-dessous) pour que ce compte se connecte.' });
+});
+
+app.delete('/api/admin/accounts/:id', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const result = await deleteDynamicAccount(req.params.id);
+  if (!result.ok) return res.status(502).json(result);
+  res.json({ ok: true, note: 'Supprimé de Supabase. Redémarre le bot pour que ça prenne effet (le compte reste actif jusque-là).' });
+});
+
+// Restart-only (NOT a redeploy - no rebuild, no git push, just this process
+// exiting so Render's own restart policy brings it back up in ~10-20s,
+// re-reading Supabase accounts + ACCOUNTS_JSON fresh on the new boot). This
+// is what actually satisfies "sans redéployer" for a newly-saved account -
+// saving to Supabase alone doesn't connect anything until the next boot,
+// and this is the fast way to get one without touching the deployed code.
+// Confirmed empirically this session: an uncaught crash earlier today was
+// auto-restarted by Render within seconds with a clean reconnect - this
+// uses that exact same recovery path, deliberately instead of accidentally.
+app.post('/api/admin/restart', (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  res.json({ ok: true, note: 'Redémarrage en cours - le bot sera de retour dans ~10-20 secondes.' });
+  console.log('[admin] restart requested via /api/admin/restart');
+  setTimeout(() => process.exit(0), 250); // let the response above actually flush first
 });
 
 // Shared by GET .../status (polled fallback / first paint) and the SSE
@@ -909,10 +967,27 @@ if (process.env.NODE_ENV !== 'test') {
     // KEEP_ALIVE=true - see keepAlive.js for the free-instance-hours
     // trade-off that makes it opt-in.
     startKeepAlive();
+
+    // Accounts added through the dashboard's Comptes page (2026-09-13, see
+    // supabaseAccountStore.js's header for the full "sans redéployer"
+    // rationale) - fetched here, normalized through the SAME
+    // normalizeAccountEntry() ACCOUNTS_JSON entries go through, then
+    // registered so bootAccount() below treats them identically to a
+    // static account. A Supabase hiccup here never blocks the static
+    // accounts (fetchDynamicAccounts() returns [] and logs, never throws).
+    const dynamicRawAccounts = await fetchDynamicAccounts();
+    const dynamicAccountConfigs = dynamicRawAccounts.map((raw, i) => normalizeAccountEntry(raw, CONFIG.accounts.length + i));
+    for (const accountConfig of dynamicAccountConfigs) {
+      registerAccount(accountConfig);
+    }
+    if (dynamicAccountConfigs.length > 0) {
+      console.log(`[boot] ${dynamicAccountConfigs.length} account(s) loaded from Supabase: ${dynamicAccountConfigs.map((a) => a.id).join(', ')}`);
+    }
+
     // Sequential, not parallel: keeps boot logs readable per account and
     // avoids N simultaneous cold connections at once - a few extra seconds
     // total at the "quelques comptes" scale this is designed for.
-    for (const accountConfig of CONFIG.accounts) {
+    for (const accountConfig of [...CONFIG.accounts, ...dynamicAccountConfigs]) {
       await bootAccount(accountConfig);
     }
   });

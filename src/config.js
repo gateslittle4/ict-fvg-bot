@@ -386,7 +386,7 @@ function resolveAccountRiskPct(accountMode, explicit) {
  *   broker               - { clientId, clientSecret, accessToken, accountId } (cTrader).
  *   matchTrader          - { email, password, brokerId, platformUrl, systemUuid, accountId }.
  */
-function normalizeAccountEntry(raw, index) {
+export function normalizeAccountEntry(raw, index) {
   const id = raw.id || `account-${index + 1}`;
   const accountMode = ACCOUNT_MODES.includes(raw.accountMode) ? raw.accountMode : 'challenge';
   const broker = {

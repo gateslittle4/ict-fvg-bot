@@ -4,21 +4,28 @@ import { PROP_FIRM_PROGRAMS, getPropFirmProgram, listPropFirmPrograms } from '..
 import { FTMO_1STEP, FTMO_1STEP_FUNDED, FTMO_2STEP } from '../src/propFirms/ftmo.js';
 import { FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, FUNDINGPIPS_ZERO } from '../src/propFirms/fundingPips.js';
 import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM, GOATFUNDEDTRADER_INSTANT_HERO } from '../src/propFirms/goatFundedTrader.js';
+import { CTI_1STEP } from '../src/propFirms/cti.js';
 
-// The 4th type here ('trailing-realtime-equity-never-resets', GoatFundedTrader
-// Instant Premium only) is NOT one GuardrailEngine's _overallDrawdownFloor()
-// recognizes - an unrecognized type fails OPEN there (never blocks live
-// trading on a guess), so this program's overall drawdown is measured only by
-// scripts/runGoatFundedTraderFloatingLossAnalysis.js today, not enforced live.
-// Listed here so a real typo in any OTHER program's type still fails this test.
-const KNOWN_DRAWDOWN_TYPES = ['static', 'trailing-eod', 'trailing-locks-at-start-balance', 'trailing-realtime-equity-never-resets'];
+// The last two types here ('trailing-realtime-equity-never-resets',
+// GoatFundedTrader Instant Premium/HERO; 'trailing-on-every-close', CTI
+// 1-Step) are NOT ones GuardrailEngine's _overallDrawdownFloor() recognizes
+// - an unrecognized type fails OPEN there (never blocks live trading on a
+// guess), so these programs' overall drawdown is measured only by their
+// own dedicated analysis scripts today, not enforced live. Listed here so
+// a real typo in any OTHER program's type still fails this test.
+const KNOWN_DRAWDOWN_TYPES = ['static', 'trailing-eod', 'trailing-locks-at-start-balance', 'trailing-realtime-equity-never-resets', 'trailing-on-every-close'];
 
 test('every registered program is keyed by its own id and has at least one phase', () => {
   for (const [key, program] of Object.entries(PROP_FIRM_PROGRAMS)) {
     assert.equal(program.id, key);
     assert.ok(Array.isArray(program.phases) && program.phases.length > 0, `${key} must have at least one phase`);
     for (const phase of program.phases) {
-      assert.equal(typeof phase.dailyLossLimitPct, 'number');
+      // null is valid here (2026-09-13, CTI 1-Step: "no daily loss limit")
+      // - accountRegistry.js's buildEffectiveConfig() falls back to the
+      // account's own generic guardrail default rather than forwarding
+      // null straight into GuardrailEngine (which has no null-disables
+      // convention for this field, unlike maxDrawdownPct).
+      assert.ok(typeof phase.dailyLossLimitPct === 'number' || phase.dailyLossLimitPct === null);
       assert.equal(typeof phase.maxDrawdownPct, 'number');
       assert.ok(KNOWN_DRAWDOWN_TYPES.includes(phase.maxDrawdownType));
     }
@@ -109,4 +116,13 @@ test('GoatFundedTrader Instant HERO: a DIFFERENT instant program from Instant Pr
   assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.consistencyRule.maxSharePct, 15);
   assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.consistencyRule.blocksPayoutOnly, true);
   assert.equal(GOATFUNDEDTRADER_INSTANT_HERO.profitSplit, 0.9); // better split than Instant Premium's 0.8
+});
+
+test('CTI 1-Step: +8% target, 5% drawdown (tightest of the 4 firms), no daily loss limit, no time limit', () => {
+  assert.equal(CTI_1STEP.phases.length, 1);
+  assert.equal(CTI_1STEP.phases[0].targetPct, 8);
+  assert.equal(CTI_1STEP.phases[0].maxDrawdownPct, 5);
+  assert.equal(CTI_1STEP.phases[0].dailyLossLimitPct, null);
+  assert.equal(CTI_1STEP.timeLimitDays, null);
+  assert.equal(CTI_1STEP.consistencyRule, null);
 });

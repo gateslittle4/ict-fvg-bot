@@ -2201,3 +2201,28 @@ Deux points suspects à investiguer avant un 3e essai :
 **Le token `ADMIN_EXPORT_TOKEN` a été régénéré** cette session (l'ancien n'était pas connu de cette session) — tout lien admin sauvegardé avant le 2026-09-12 ~21h UTC ne fonctionne plus. Nouvelle valeur connue de cette session seulement, pas notée ici (secret) — la régénérer à nouveau via l'API Render si besoin plutôt que de la chercher.
 
 **Fichiers** : `src/server.js` (2 nouveaux endpoints admin), `src/dataSources/cTraderDataSource.js` (`sendCommandWithTimeout` exporté). `npm test` 413/413 à chaque étape. Tout est déjà sur `claude/lire-handoff-hxisa5` (production) — PAS encore reporté sur `challenge/fundingpips-zero` (branche de recherche), à synchroniser.
+
+## Comptes ajoutables via le dashboard, sans redéployer — 2026-09-13
+
+Esdras, après avoir reçu ses identifiants CTI Free Trial (Match-Trader) et réalisé qu'ajouter un `brokerId` obligerait un redéploiement à chaque fois : *"Est-il possible de faire le site une façon de juste mettre ces codes dans le site à la main, sans redéployer?"*
+
+**Construit** : une nouvelle page dashboard **`/accounts.html`** ("Comptes") où on colle les identifiants d'un compte (cTrader ou Match-Trader), sauvegardés dans **Supabase** (déjà branché sur ce bot pour le journal des trades) au lieu d'`ACCOUNTS_JSON` — donc plus jamais besoin de toucher au code pour ajouter un compte.
+
+**Architecture** :
+- Nouvelle table Supabase `bot_accounts` (projet `Chfproject`, RLS activé, aucune policy anon/authenticated — accessible uniquement via la clé `service_role` déjà utilisée côté serveur, jamais exposée au navigateur) — même convention que `bot_trade_events`.
+- `src/dataSources/supabaseAccountStore.js` (nouveau) : `fetchDynamicAccounts()` (lecture brute pour le boot), `saveDynamicAccount()`/`deleteDynamicAccount()` (écriture), `listDynamicAccountsRedacted()` (lecture pour le dashboard — ne renvoie JAMAIS les vrais mots de passe/tokens, juste des booléens "identifiants présents").
+- `config.js` : `normalizeAccountEntry()` **exportée** (au lieu de privée) — les comptes Supabase passent par EXACTEMENT la même normalisation que les entrées `ACCOUNTS_JSON`, aucune deuxième logique qui pourrait diverger.
+- `accountRegistry.js` : nouvelle fonction `registerAccount()` pour ajouter un compte au registre APRÈS le chargement du module (les comptes Supabase ne sont connus qu'au boot, contrairement à `CONFIG.accounts` résolu à l'import).
+- `server.js` : le boot séquentiel appelle maintenant `fetchDynamicAccounts()` avant la boucle de connexion, normalise + enregistre chaque compte trouvé, puis les boot exactement comme les comptes statiques. Un raté Supabase ne bloque jamais les comptes statiques (retourne `[]`, ne lance jamais).
+- 3 nouvelles routes admin (même gate `ADMIN_EXPORT_TOKEN`) : `GET/POST /api/admin/accounts`, `DELETE /api/admin/accounts/:id`.
+- **`POST /api/admin/restart`** : PAS un redéploiement (aucun rebuild, aucun push) — juste `process.exit(0)`, et la politique de redémarrage de Render relance le processus en ~10-20s (le même mécanisme qui a déjà ramené le bot après le crash `connection.off()` plus tôt cette session — utilisé ici délibérément plutôt qu'accidentellement). C'est ce redémarrage (pas un redéploiement) qui reste nécessaire après avoir sauvegardé un nouveau compte — clairement expliqué sur la page.
+
+**Bug réel trouvé et corrigé en cours de route** : CTI n'a "aucune limite de perte journalière" — mais `GuardrailEngine` n'a **aucune convention "null désactive cette vérification"** pour `dailyLossLimitPct` (contrairement à `maxDrawdownPct`) : son check est une comparaison brute `dailyLossPct >= this.dailyLossLimitPct`, et `null` se convertit en `0` en JS, ce qui aurait **bloqué le trading presque immédiatement**. Trouvé en vérifiant AVANT de committer, pas après un incident. Corrigé dans `accountRegistry.js` : quand la règle de la prop firm est `null`, on retombe sur le réglage générique du compte (2% par défaut) au lieu de transmettre `null` — la protection journalière du bot reste active peu importe la firme, même philosophie que partout ailleurs cette session. Nouveau fichier `test/accountRegistry.test.js` (3 tests) qui couvre spécifiquement ce cas.
+
+**Nouveau fichier `src/propFirms/cti.js`** : `CTI_1STEP` (target 8%, drawdown 5%, aucune limite journalière, split 80%) enregistré dans le registre — le compte Free Trial actuel n'a volontairement AUCUN `propFirmProgramId` assigné (le trial n'a "aucune cible, aucune pression" per CTI eux-mêmes, inventer des chiffres de garde-fou serait pire que de ne pas en avoir) ; à assigner `cti-1step` une fois un vrai challenge payant acheté. Le mécanisme de plancher de CTI (trailing mis à jour à CHAQUE clôture de trade, pas seulement en fin de journée comme `trailing-eod` de FTMO) ne correspond à AUCUN des types déjà reconnus par `GuardrailEngine` — nouveau type `trailing-on-every-close`, volontairement NON reconnu (fail-open, jamais appliqué en direct), même précédent que le type `trailing-realtime-equity-never-resets` de GoatFundedTrader.
+
+**`npm test` : 417/417** (413 + 3 nouveaux tests `accountRegistry.test.js` + 1 nouveau test `cti.js` dans `propFirms.test.js`).
+
+**Reste à faire** : déployer, puis test de bout en bout réel contre le vrai Supabase en production (ajouter un compte factice via la page, vérifier qu'il apparaît, le supprimer).
+
+**Fichiers** : `src/dataSources/supabaseAccountStore.js`, `src/propFirms/cti.js` (nouveaux) ; `src/config.js`, `src/accountRegistry.js`, `src/server.js`, `public/index.html`, `public/chart.html`, `src/propFirms/index.js` (modifiés) ; `public/accounts.html` (nouveau) ; `test/accountRegistry.test.js` (nouveau), `test/propFirms.test.js` (modifié).
