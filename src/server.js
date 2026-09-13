@@ -537,13 +537,20 @@ function createAccountRouter(getStore) {
       return res.status(403).json({ error: 'invalid or missing token' });
     }
     const symbol = req.query.symbol;
-    if (!CONFIG.symbols.includes(symbol)) {
-      return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
-    }
-    const days = Math.min(Number(req.query.days) || 245, 245); // cTrader's own single-request cap for the M15 bucket (~35 weeks)
     if (typeof store.liveDataSource?.getHistoricalCandles !== 'function') {
       return res.status(503).json({ error: 'not connected to a live broker' });
     }
+    // 2026-09-13: was restricted to CONFIG.symbols (the 4 live-trading
+    // instruments) - loosened to any symbol the connected broker actually
+    // offers, so this same export can pull real history for a candidate
+    // symbol (e.g. BTCUSD, for a crypto strategy under research) BEFORE it's
+    // ever added to CONFIG.symbols. getHistoricalCandles() itself already
+    // rejects an unknown symbol via symbolIdByName, so this isn't opening
+    // anything the broker connection didn't already allow.
+    if (!store.liveDataSource.symbolIdByName?.get(symbol)) {
+      return res.status(400).json({ error: `Unknown symbol "${symbol}" for this broker - see .../admin/list-symbols` });
+    }
+    const days = Math.min(Number(req.query.days) || 245, 245); // cTrader's own single-request cap for the M15 bucket (~35 weeks)
     try {
       const candles = await store.liveDataSource.getHistoricalCandles({ symbol, days });
       res.set('Content-Type', 'text/csv');
