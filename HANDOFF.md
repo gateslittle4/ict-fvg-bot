@@ -2341,3 +2341,19 @@ Troisième symptôme signalé ("Pas de données de graphique pour ce trade") : l
 `npm test` : 419/419 (417 + 2 nouveaux tests de régression).
 
 **Fichiers** : `src/dataSources/dealPairing.js`, `src/dataSources/cTraderDataSource.js`, `src/engines/guardrailEngine.js`, `test/dealPairing.test.js`, `test/guardrailEngine.test.js`.
+
+## Spread BTCUSD : de la valeur devinée (25) à la valeur mesurée (18) — 2026-09-13
+
+Esdras a remarqué qu'aucun trade BTCUSD ne s'était encore déclenché malgré le M1 (qui génère un signal presque à chaque minute) : *"comment ca se fait qu'on a une strategy 1 min btc aussi facile"* puis *"ajuste le spread filter pour voir un vrai trade automatic"*.
+
+**Diagnostic** : les 13 derniers signaux validés sur BTCUSD (654 formations FVG en 17 minutes) avaient TOUS `blockedReason: "spread-too-tight"`. Le filtre exige une distance stop ≥ 3x le spread supposé. Le spread BTCUSD était une pure supposition (25$, jamais vérifiée) → seuil de 75$. Les distances stop réelles en M1 (naturellement petites) allaient de 6.60$ à 71.5$ — aucune n'atteignait 75$.
+
+**Deuxième bug trouvé en voulant vérifier le vrai spread** : `/admin/spread-check` retournait 0 échantillon depuis toujours, sur TOUS les symboles, malgré des heures de fonctionnement. Cause : `typeof event.bid === 'number'` échouait silencieusement chaque fois que ce courtier envoie `bid`/`ask` en string — même famille de bug que ceux trouvés plus tôt ce soir (le prix affiché au dashboard n'était pas affecté, car il vient de `trendbar.close`, un chemin différent). Corrigé avec `Number(event.bid)`/`Number(event.ask)` au lieu du garde `typeof`.
+
+**Résultat** : une fois déployé, 34 vrais ticks BTCUSD capturés en une minute — spread réel : min 17, max 18, moyenne 17.03. La supposition de 25 était ~47% trop haute. `DEFAULT_SPREADS.BTCUSD` mis à jour à **18** (le maximum observé, choix prudent plutôt que la moyenne) — un nombre MESURÉ, pas deviné. Nouveau seuil : 54$ au lieu de 75$ — une partie des signaux (ceux avec une distance stop entre 54 et 75) peuvent maintenant passer.
+
+`npm test` : 419/419.
+
+**Prochaine étape** : moniteur actif en arrière-plan pour confirmer qu'un vrai signal passe le filtre et qu'un ordre réel se déclenche ce soir.
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/backtest/transactionCosts.js`.
