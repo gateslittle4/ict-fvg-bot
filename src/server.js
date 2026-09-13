@@ -852,15 +852,14 @@ function createAccountRouter(getStore) {
       // be this order's own outcome (this endpoint is a manual, single-shot
       // admin diagnostic, never invoked concurrently with itself).
       const openFillPromise = waitForExecution((d) => {
-        // Tries every plausible field path, Number(...) both sides
-        // (2026-09-13: `d.order.symbolId` alone failed to match a REAL fill
-        // event whose orderId/positionId proved it WAS the right one - see
-        // cTraderDataSource.js's _waitForOrderIdBySymbol, hit the exact
-        // same guess-was-wrong problem in production and fixed identically;
-        // also still guards the separate protobuf-string-vs-Number
-        // mismatch this same block found earlier).
+        // Confirmed live (2026-09-13, raw event dump in cTraderDataSource.js
+        // - see _waitForOrderIdBySymbol's own comment): the real field is
+        // `order.tradeData.symbolId`, not the flatter `order.symbolId`
+        // guessed first (which is `undefined` on this broker's real
+        // response). Number(...) both sides also guards the separate
+        // protobuf-string-vs-Number mismatch this same block found earlier.
         const eventSymbolId =
-          d.order?.symbolId ?? d.order?.tradeData?.symbolId ?? d.position?.tradeData?.symbolId ?? d.position?.symbolId ?? d.deal?.symbolId ?? null;
+          d.order?.tradeData?.symbolId ?? d.order?.symbolId ?? d.position?.tradeData?.symbolId ?? d.position?.symbolId ?? d.deal?.symbolId ?? null;
         if (Number(eventSymbolId) !== Number(symbolId)) return false;
         if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
           throw new Error(`order ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
@@ -907,7 +906,7 @@ function createAccountRouter(getStore) {
         return d.executionType === 'ORDER_FILLED' && Boolean(d.deal?.closePositionDetail);
       });
       report.closed = true;
-      report.closePnl = typeof closeFill.deal.closePositionDetail.grossProfit === 'number' ? closeFill.deal.closePositionDetail.grossProfit / 100 : null;
+      report.closePnl = Number(closeFill.deal.closePositionDetail.grossProfit) / 100; // 2026-09-13: confirmed live this field is a STRING ("-19"), not a number - Number(...) instead of a `typeof === 'number'` guard that always failed and reported null
       console.error(`[admin/test-order-cycle] closed, pnl=${report.closePnl}`);
 
       res.json(report);
@@ -997,7 +996,7 @@ function createAccountRouter(getStore) {
       });
       const closeFill = await closeFillPromise;
       report.closed = true;
-      report.closePnl = typeof closeFill.deal.closePositionDetail.grossProfit === 'number' ? closeFill.deal.closePositionDetail.grossProfit / 100 : null;
+      report.closePnl = Number(closeFill.deal.closePositionDetail.grossProfit) / 100; // same fix as test-order-cycle above - grossProfit is a string on this broker
       console.error(`[admin/close-position] closed, pnl=${report.closePnl}`);
       res.json(report);
     } catch (err) {
