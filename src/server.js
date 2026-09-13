@@ -1004,6 +1004,42 @@ function createAccountRouter(getStore) {
     }
   });
 
+  // Manual clear of an unconfirmed "believed open" position (2026-09-13,
+  // found live while chasing why BTCUSD still couldn't auto-execute after
+  // the spread fix above: warm-up's own bulk replay, using the SAME live
+  // netting check as real processing, had already set openPositions for
+  // BTCUSD from a purely-reconstructed historical signal - never submitted
+  // to the broker (warm-up NEVER does that, see cTraderDataSource.js's
+  // warmUp() vs live ingestCandle() separation), `confirmed: false`,
+  // maxHoldingCandles=480 on M1 = up to 8 real hours before it would clear
+  // on its own. Until it clears, EVERY new candidate on that symbol is
+  // netting-blocked, real signals included - the engine believes a
+  // position is already open. Deliberately refuses to touch anything
+  // `confirmed: true` (a real broker-confirmed fill) - clearing that would
+  // let netting open a SECOND real position on top of one that's actually
+  // live, a real safety hazard this check exists specifically to prevent.
+  // Same ADMIN_EXPORT_TOKEN gate as every other admin route here.
+  router.post('/admin/clear-believed-position', (req, res) => {
+    if (!requireAdminToken(req, res)) return;
+    const store = getStore(req);
+    const symbol = String(req.query.symbol || req.body?.symbol || '').toUpperCase();
+    if (!CONFIG.symbols.includes(symbol)) {
+      return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
+    }
+    const position = store.strategyEngine.getOpenPosition(symbol);
+    if (!position) {
+      return res.json({ symbol, cleared: false, reason: 'nothing believed open for this symbol' });
+    }
+    const confirmed = (store.orderOutcomeLog || []).some(
+      (o) => o.symbol === symbol && o.signalId === position.id && o.outcome === 'filled'
+    );
+    if (confirmed) {
+      return res.status(409).json({ symbol, cleared: false, reason: 'this position is broker-CONFIRMED filled - refusing to clear a real position\'s belief (would let netting open a second one on top of it)' });
+    }
+    const cleared = store.strategyEngine.clearBelievedPosition(symbol, position.id);
+    res.json({ symbol, id: position.id, cleared });
+  });
+
   router.post('/lot-calc', (req, res) => {
     const store = getStore(req);
     try {
