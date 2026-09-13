@@ -2309,3 +2309,20 @@ Suite directe de l'entrée précédente ("Observabilité de l'exécution réelle
 **Reste à faire** : provoquer un vrai signal auto-exécuté en direct (attendre le prochain signal réel, ou en simuler un via le pipeline complet) pour confirmer que `pendingEntryOrderByOrderId` se peuple bien maintenant et que `_handleExecutionEvent` confirme réellement le remplissage - `test-order-cycle` prouve que le mécanisme SOUS-JACENT fonctionne (même code `_submitOrder`), mais n'a pas encore été observé sur un VRAI signal FVG/Divergence/NWOG/Judas Swing depuis ce fix.
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/server.js`.
+
+## Preuve complète, de bout en bout : le cycle réel ouverture+fermeture fonctionne — 2026-09-13
+
+Suite immédiate de l'entrée précédente. Deux bugs supplémentaires trouvés en re-testant juste après le fix du root cause :
+
+1. **`symbolId` mal placé dans le guess de repli** : `d.order?.symbolId` n'existe pas du tout sur ce courtier — confirmé via un dump JSON brut temporaire de l'événement réel. Le vrai champ est `order.tradeData.symbolId`. Corrigé (chaîne de repli réordonnée, le chemin confirmé en premier), dump temporaire retiré une fois son rôle rempli.
+2. **`closePositionDetail.grossProfit` est une chaîne** (`"-19"`), pas un nombre — le garde `typeof === 'number'` échouait toujours et affichait `closePnl: null` même sur une fermeture réussie. Corrigé avec `Number(...)`.
+
+**Preuve finale obtenue** : un appel `POST /api/admin/test-order-cycle?symbol=BTCUSD` a réussi intégralement en un seul appel — `openOrderId`, `positionId`, ET `closed:true` tous renseignés correctement, sur le compte demo réel (`fpmarketssc`). C'est la preuve concrète demandée par Esdras (*"fais en sorte que le trade s'exécute réellement"*, réponse "les deux" à la clarification) : le mécanisme sous-jacent (`_submitOrder`, partagé avec le vrai chemin `_handleAutoExecuteEntry`/`_handlePyramidOrderRequested`) fonctionne maintenant de bout en bout, pas seulement en théorie.
+
+**Nettoyage effectué en cours de route** : deux positions BTCUSD réelles laissées ouvertes par les timeouts des tests précédents (`41540705`, `41540812`) ont été fermées manuellement via le nouvel `/api/admin/close-position` une fois ses propres bugs corrigés. Compte confirmé à plat (`/api/account` : `positions:[]`) avant le test final propre.
+
+`npm test` : 417/417 à chaque étape (6 commits au total pour cette chaîne de découvertes, tous poussés sur `claude/lire-handoff-hxisa5` et déployés/vérifiés en direct un par un).
+
+**Toujours vrai, pas encore observé** : un VRAI signal FVG/Divergence/NWOG/Judas Swing auto-exécuté n'a pas encore été capturé depuis ces fixes (le test-order-cycle bypasse volontairement le moteur de stratégie). Le mécanisme est identique (même `_submitOrder`), donc il n'y a pas de raison de douter qu'il fonctionnera pareil, mais ça reste à confirmer avec un signal réel le jour où un fire.
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/server.js`.
