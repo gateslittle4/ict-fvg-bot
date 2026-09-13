@@ -786,8 +786,19 @@ export class CTraderDataSource {
    */
   async _submitOrder({ symbolId, orderType, tradeSide, lots, symbolSpec, price, stopLoss, takeProfit, label, expirationTimestamp }) {
     const accountId = Number(this.accountId);
-    const lotSize = symbolSpec.lotSize || 100000; // VERIFY: fall back is a forex-standard-lot guess, not confirmed for indices/metals here
-    const volume = Math.round(lots * lotSize * 100); // VERIFY units against a real response before going live
+    // rawVolume (2026-09-13, temporary BTCUSD spec - see lotCalculator.js):
+    // that spec's `lots` is already forced to exactly the broker's own
+    // minVolume, in the broker's OWN volume units - sending it straight
+    // through avoids stacking a guessed lotSize on top of an already
+    // guessed contract spec. Every other symbol keeps the existing
+    // (still-unverified) lots*lotSize*100 convention unchanged.
+    let volume;
+    if (symbolSpec.rawVolume) {
+      volume = Math.round(lots);
+    } else {
+      const lotSize = symbolSpec.lotSize || 100000; // VERIFY: fall back is a forex-standard-lot guess, not confirmed for indices/metals here
+      volume = Math.round(lots * lotSize * 100); // VERIFY units against a real response before going live
+    }
     const payload = { ctidTraderAccountId: accountId, symbolId, orderType, tradeSide, volume, stopLoss, takeProfit, label };
     if (orderType === 'STOP') payload.stopPrice = price;
     if (orderType === 'LIMIT') payload.limitPrice = price;

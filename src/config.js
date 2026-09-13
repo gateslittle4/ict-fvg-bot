@@ -78,14 +78,28 @@ function resolveRiskPctPerTrade() {
 }
 
 export const CONFIG = {
-  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD'],
+  // BTCUSD (2026-09-13, temporary): Esdras wanted to see the bot actually
+  // fire an order this weekend, when forex/indices/metals are closed - see
+  // HANDOFF.md for the full reasoning. Meant to be removed again right
+  // after tonight's test ("on va supprimer BTC juste après"), NOT a
+  // permanent addition like the other 4 - see the matching perSymbol entry
+  // below and the maxTradesPerDay bump just below for why.
+  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'BTCUSD'],
   timeframe: 'M15',
   accountMode: ACCOUNT_MODE, // 'challenge' | 'live' - see ACCOUNT_MODE comment above
   risk: {
     riskPctPerTrade: resolveRiskPctPerTrade(),
   },
   guardrails: {
-    maxTradesPerDay: 2,
+    // 2026-09-13: temporarily 3 instead of 2, ONLY while BTCUSD's temporary
+    // entry above is in place - GuardrailEngine's daily trade cap is
+    // ACCOUNT-WIDE (one shared counter across every symbol, not per-symbol,
+    // see guardrailEngine.js), so leaving this at 2 risked a BTCUSD signal
+    // consuming both of the day's slots and blocking a real EURUSD/XAUUSD/
+    // US100/US500 signal the same day. The extra slot is BTCUSD's dedicated
+    // budget, not a general loosening - revert to 2 in the same commit that
+    // removes BTCUSD.
+    maxTradesPerDay: 3,
     cooldownMinutesAfterLoss: 30,
     dailyLossLimitPct: 2,
     dayBoundaryHourUTC: 0,
@@ -181,6 +195,30 @@ export const CONFIG = {
         // data/backtest-input/ftmo-1step-xauusd-window-account-impact.md.
         sessionWindow: XAUUSD_WINDOW,
         liquiditySweepEnabled: true,
+      },
+      // TEMPORARY (2026-09-13) - see the `symbols` array and
+      // guardrails.maxTradesPerDay comments above for the full context.
+      // Baseline raw FVG, NO filters at all - none of the HTF-bias/
+      // structure/session concepts above make sense on a 24/7 market with
+      // no NY session structure, and this was deliberately decided BEFORE
+      // looking at any result, not fit to it. Backtested on only 7 months
+      // of real BTCUSD data pulled live from the broker (Feb-Sep 2026, no
+      // train/test split, spread estimated not confirmed - see
+      // transactionCosts.js's BTCUSD entry) - net expectancy was positive
+      // but thin (profit factor ~1.07-1.08 across RR 2/3/5, nowhere near
+      // the robustness of the 4 symbols above). rrMultiple: 3 picked as the
+      // middle of the three tested, not the best-looking one. This is a
+      // connectivity smoke test, not a validated strategy - remove this
+      // whole block (plus its transactionCosts.js spread entry, the
+      // `symbols` array entry above, and the maxTradesPerDay bump) once
+      // it's served its purpose.
+      BTCUSD: {
+        variant: 'baseline',
+        stopMode: 'fvg-edge',
+        rrMultiple: 3,
+        structureEnabled: false,
+        sessionEnabled: false,
+        liquiditySweepEnabled: false,
       },
     },
   },

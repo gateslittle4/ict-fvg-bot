@@ -23,6 +23,16 @@ export const DEFAULT_SPREADS = {
   US100: 1.0, // 1.0 point — INDICATIVE, verify against FundingPips cTrader spec
   US500: 0.4, // 0.4 point — INDICATIVE, verify against FundingPips cTrader spec
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec
+  // 2026-09-13, Esdras: "code une stratégie crypto à déployer ce soir pour
+  // voir si il va passer" - weekend connectivity smoke-test (forex/
+  // indices/metals close on weekends, crypto doesn't), NOT a validated
+  // strategy like the ones above. $25 round-turn on a ~$70k BTC price is a
+  // plausible order of magnitude for a retail/prop crypto CFD spread -
+  // completely UNVERIFIED against this broker's real spec (no live spread
+  // field surfaced by any admin endpoint so far). Meant to be removed after
+  // tonight's test, per Esdras's own plan ("on va supprimer BTC juste
+  // après") - see the matching temporary entries in config.js.
+  BTCUSD: 25,
 };
 
 /**

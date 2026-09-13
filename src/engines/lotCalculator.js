@@ -67,6 +67,33 @@ export const DEFAULT_SYMBOL_SPECS = {
     maxVolume: 50,
     verified: false,
   },
+  // TEMPORARY (2026-09-13) - see config.js's BTCUSD entries for the full
+  // context. Deliberately NOT a real risk-based spec like the ones above:
+  // BTCUSD's true contract spec (point size / value per point / lot
+  // convention) was never confirmed, and guessing one would stack a SECOND
+  // layer of made-up numbers on top of _submitOrder()'s own already-
+  // unverified `lots * lotSize * 100` volume conversion, on a real order.
+  // Instead min===step===max===1 forces calculateLotSize() to always
+  // return exactly 1 "lot" no matter the risk %/balance, and `rawVolume:
+  // true` tells _submitOrder() to send that 1 directly as the broker's
+  // `volume` field, bypassing the lots*lotSize*100 formula entirely - the
+  // SAME raw value (and same convention) ProtoOASymbolByIdReq's real
+  // minVolume returned for BTCUSD when /admin/test-order-cycle checked it
+  // live earlier today. Net effect: tonight the risk %/balance do NOT
+  // actually size BTCUSD's position - it always trades the broker's
+  // absolute minimum, on purpose, purely to test that a real order can
+  // flow through end to end. Remove alongside every other temporary
+  // BTCUSD entry.
+  BTCUSD: {
+    kind: 'crypto',
+    rawVolume: true,
+    pointSize: 1,
+    valuePerPointPerLot: 1,
+    minVolume: 1,
+    volumeStep: 1,
+    maxVolume: 1,
+    verified: false,
+  },
 };
 
 function decimalsOf(step) {
