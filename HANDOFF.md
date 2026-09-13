@@ -2289,3 +2289,23 @@ Dashboard (`index.html`) : badge ticker désormais `●POSITION` (bleu) seulemen
 **Reste à faire (prochaine étape immédiate)** : la partie "prouver que ça marche maintenant" de la demande d'Esdras — relancer `/api/admin/test-order-cycle` (son dernier état connu était un timeout suspect avec `volume:1`/`openOrderId: null`, potentiellement déjà corrigé par le commit `e55e827` d'une session parallèle, pas encore revérifié personnellement) — puis déployer ces changements et confirmer en direct que les nouveaux logs apparaissent bien dans `render logs` au prochain signal réel.
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/server.js`, `public/index.html`, `public/chart.html`.
+
+## 🎯 Root cause trouvé et corrigé : le pipeline de confirmation d'ordre réel était mort depuis le début — 2026-09-13
+
+Suite directe de l'entrée précédente ("Observabilité de l'exécution réelle..."). Dès le premier ajout de `console.log`, une relance réelle de `/admin/test-order-cycle` (BTCUSD) a révélé, en cascade, **trois bugs réels et jusque-là invisibles** :
+
+1. **`ProtoOANewOrderReq` répond `{}` (objet vide) sur ce courtier** — aucun `order.orderId` dans la réponse synchrone. `test-order-cycle` (et surtout **`_submitOrder` en production**) extrayaient `brokerOrderId` de cette réponse — donc **`brokerOrderId` valait `null` sur CHAQUE ordre réel jamais envoyé en direct depuis le déploiement de ce bot**. Confirmé indépendamment : le courtier a bien rempli l'ordre (`ORDER_ACCEPTED` puis `ORDER_FILLED`, ~600ms après envoi, orderId et positionId réels — visibles uniquement grâce aux nouveaux `console.log`).
+2. **Conséquence directe** : `_handleAutoExecuteEntry`/`_handlePyramidOrderRequested` conditionnent tout le suivi réel sur `if (brokerOrderId != null)` — donc `pendingEntryOrderByOrderId` n'a **jamais** été peuplé par un vrai ordre, et `_handleExecutionEvent` n'a **jamais** pu confirmer un remplissage/rejet réel. C'est le mécanisme exact derrière la correction d'Esdras *"ce n'est pas un trade, c'est une croyance"* — la boucle de confirmation était silencieusement morte depuis toujours, pas juste manquante de logs.
+3. **Bug de comparaison de type (2 endroits)** : `positionId`/`symbolId` venant du protobuf sont sérialisés en **string**, comparés avec `!==` contre des `Number` JS — ne matche jamais. A cassé `/admin/close-position` en direct (une vraie position BTCUSD laissée ouverte par le timeout du bug #1 a mis du temps à se fermer à cause de ce second bug, diagnostiqué et corrigé dans la foulée) et aurait cassé la même logique dans `test-order-cycle`.
+
+**Fix** : `_submitOrder` résout maintenant le vrai `orderId` depuis le `ProtoOAExecutionEvent` qui suit l'envoi (écouteur armé AVANT `sendCommand`, matché par `symbolId` normalisé en `Number` des deux côtés) au lieu de faire confiance à la réponse synchrone — exactement la même technique que le fix de `test-order-cycle`, appliquée là où ça compte vraiment pour le trading réel. Analyse de la seule course possible (l'événement de confirmation arrive et est traité par `_handleExecutionEvent` avant que `_submitOrder` ne retourne) : sans risque en pratique, car le courtier envoie toujours `ORDER_ACCEPTED` (porteur du orderId) strictement avant `ORDER_FILLED`/rejet — ~300ms d'écart observés en réel, largement suffisant pour que `pendingEntryOrderByOrderId.set()` s'exécute avant l'événement terminal.
+
+**Vérifié en direct, de bout en bout** : position BTCUSD réelle laissée ouverte par le bug #1 (positionId `41540705`) confirmée via `/api/account` (`status:"real-only"`) puis fermée avec succès via le nouvel endpoint `/api/admin/close-position` une fois le bug #3 corrigé.
+
+**Nouveau** : `POST /api/admin/close-position` (même garde `ADMIN_EXPORT_TOKEN`) pour fermer manuellement n'importe quelle position réelle sans dépendre d'un futur correctif de code.
+
+`npm test` : 417/417 à chaque étape.
+
+**Reste à faire** : provoquer un vrai signal auto-exécuté en direct (attendre le prochain signal réel, ou en simuler un via le pipeline complet) pour confirmer que `pendingEntryOrderByOrderId` se peuple bien maintenant et que `_handleExecutionEvent` confirme réellement le remplissage - `test-order-cycle` prouve que le mécanisme SOUS-JACENT fonctionne (même code `_submitOrder`), mais n'a pas encore été observé sur un VRAI signal FVG/Divergence/NWOG/Judas Swing depuis ce fix.
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/server.js`.
