@@ -866,7 +866,17 @@ export class CTraderDataSource {
       uuid = this.connection.on('ProtoOAExecutionEvent', (event) => {
         try {
           const d = event.descriptor;
-          if (Number(d.order?.symbolId) !== Number(symbolId) || d.order?.orderId == null) return;
+          // Tries every plausible field path (2026-09-13: `d.order.symbolId`
+          // alone just failed to match a REAL fill event whose
+          // orderId/positionId proved it WAS the right one - see the RAW
+          // dump added in _handleExecutionEvent above; this broker's actual
+          // field nesting for symbolId on an execution event still isn't
+          // confirmed, so check every field name/nesting a
+          // ProtoOAExecutionEvent could plausibly carry it under instead of
+          // betting on one guess a third time).
+          const eventSymbolId =
+            d.order?.symbolId ?? d.order?.tradeData?.symbolId ?? d.position?.tradeData?.symbolId ?? d.position?.symbolId ?? d.deal?.symbolId ?? null;
+          if (Number(eventSymbolId) !== Number(symbolId) || d.order?.orderId == null) return;
           clearTimeout(timer);
           safeRemove();
           resolve(d.order.orderId);
@@ -1057,6 +1067,16 @@ export class CTraderDataSource {
     // and unconditional, so "did the broker ever answer at all" is
     // answerable from `render logs` alone.
     console.log(`[execution-event] type=${event.executionType} orderId=${event.order?.orderId ?? 'n/a'} positionId=${event.position?.positionId ?? event.deal?.positionId ?? 'n/a'}`);
+    // TEMPORARY (2026-09-13) - _waitForOrderIdBySymbol's `d.order?.symbolId`
+    // guess just failed to match a real ORDER_FILLED event even though the
+    // orderId/positionId above proved it WAS the right event (same pattern
+    // as the openOrderId/`res?.order?.orderId` guess that also turned out
+    // wrong earlier tonight) - dumping the real order/position/deal shape
+    // once to find the actual field path instead of guessing a third time.
+    // Remove once the real path is confirmed and the guess is fixed.
+    if (event.order || event.position || event.deal) {
+      console.log(`[execution-event] RAW order=${JSON.stringify(event.order)} position=${JSON.stringify(event.position)} deal=${JSON.stringify(event.deal)}`);
+    }
     // A position closed on the broker side -> feed it into the guardrail engine
     // as ground truth (real trade, not a demo simulation).
     if (event.executionType === 'ORDER_FILLED' && event.deal?.closePositionDetail) {

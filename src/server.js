@@ -852,15 +852,16 @@ function createAccountRouter(getStore) {
       // be this order's own outcome (this endpoint is a manual, single-shot
       // admin diagnostic, never invoked concurrently with itself).
       const openFillPromise = waitForExecution((d) => {
-        // Number(...) on both sides (2026-09-13, third real bug found live
-        // this same session): the protobuf layer serializes large integer
-        // fields as STRINGS (confirmed - see /admin/close-position's own
-        // comment below for the positionId case that actually broke this
-        // exact way), so a bare !== between this symbolId (already a
-        // Number here) and d.order.symbolId (possibly a String) would
-        // silently never match, exactly like the openOrderId bug this
-        // block replaced.
-        if (Number(d.order?.symbolId) !== Number(symbolId)) return false;
+        // Tries every plausible field path, Number(...) both sides
+        // (2026-09-13: `d.order.symbolId` alone failed to match a REAL fill
+        // event whose orderId/positionId proved it WAS the right one - see
+        // cTraderDataSource.js's _waitForOrderIdBySymbol, hit the exact
+        // same guess-was-wrong problem in production and fixed identically;
+        // also still guards the separate protobuf-string-vs-Number
+        // mismatch this same block found earlier).
+        const eventSymbolId =
+          d.order?.symbolId ?? d.order?.tradeData?.symbolId ?? d.position?.tradeData?.symbolId ?? d.position?.symbolId ?? d.deal?.symbolId ?? null;
+        if (Number(eventSymbolId) !== Number(symbolId)) return false;
         if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
           throw new Error(`order ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
         }
