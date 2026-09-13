@@ -2231,3 +2231,38 @@ Autrement dit : **le compte réel utilise `defaultGuardrails()`, pas `CONFIG.gua
 4. Ne pas oublier le nettoyage complet promis à Esdras une fois le test terminé : retirer `BTCUSD` de `symbols`, l'entrée `fvg.perSymbol.BTCUSD`, remettre `maxTradesPerDay` à 2 (dans les DEUX endroits maintenant qu'on sait qu'il y en a deux), retirer `DEFAULT_SPREADS.BTCUSD`, retirer l'entrée `BTCUSD` de `lotCalculator.js`, et le branchement `rawVolume` dans `_submitOrder` peut rester (il est inerte pour tous les autres symboles) ou être retiré aussi par propreté.
 
 **Fichiers** : `src/config.js`, `src/backtest/transactionCosts.js`, `src/engines/lotCalculator.js`, `src/dataSources/cTraderDataSource.js`, `src/server.js` (export-candles loosening). Commits `a4f42da`, `ae6b8ea`, tous deux poussés et déployés sur `claude/lire-handoff-hxisa5`. `npm test` 413/413 à chaque étape — mais le comportement RÉEL en production (le plafond de 3) n'est PAS encore celui voulu, voir bug ci-dessus.
+
+## Comptes ajoutables via le dashboard, sans redéployer — 2026-09-13
+
+Esdras, après avoir reçu ses identifiants CTI Free Trial (Match-Trader) et réalisé qu'ajouter un `brokerId` obligerait un redéploiement à chaque fois : *"Est-il possible de faire le site une façon de juste mettre ces codes dans le site à la main, sans redéployer?"*
+
+**Construit** : une nouvelle page dashboard **`/accounts.html`** ("Comptes") où on colle les identifiants d'un compte (cTrader ou Match-Trader), sauvegardés dans **Supabase** (déjà branché sur ce bot pour le journal des trades) au lieu d'`ACCOUNTS_JSON` — donc plus jamais besoin de toucher au code pour ajouter un compte.
+
+**Architecture** :
+- Nouvelle table Supabase `bot_accounts` (projet `Chfproject`, RLS activé, aucune policy anon/authenticated — accessible uniquement via la clé `service_role` déjà utilisée côté serveur, jamais exposée au navigateur) — même convention que `bot_trade_events`.
+- `src/dataSources/supabaseAccountStore.js` (nouveau) : `fetchDynamicAccounts()` (lecture brute pour le boot), `saveDynamicAccount()`/`deleteDynamicAccount()` (écriture), `listDynamicAccountsRedacted()` (lecture pour le dashboard — ne renvoie JAMAIS les vrais mots de passe/tokens, juste des booléens "identifiants présents").
+- `config.js` : `normalizeAccountEntry()` **exportée** (au lieu de privée) — les comptes Supabase passent par EXACTEMENT la même normalisation que les entrées `ACCOUNTS_JSON`, aucune deuxième logique qui pourrait diverger.
+- `accountRegistry.js` : nouvelle fonction `registerAccount()` pour ajouter un compte au registre APRÈS le chargement du module (les comptes Supabase ne sont connus qu'au boot, contrairement à `CONFIG.accounts` résolu à l'import).
+- `server.js` : le boot séquentiel appelle maintenant `fetchDynamicAccounts()` avant la boucle de connexion, normalise + enregistre chaque compte trouvé, puis les boot exactement comme les comptes statiques. Un raté Supabase ne bloque jamais les comptes statiques (retourne `[]`, ne lance jamais).
+- 3 nouvelles routes admin (même gate `ADMIN_EXPORT_TOKEN`) : `GET/POST /api/admin/accounts`, `DELETE /api/admin/accounts/:id`.
+- **`POST /api/admin/restart`** : PAS un redéploiement (aucun rebuild, aucun push) — juste `process.exit(0)`, et la politique de redémarrage de Render relance le processus en ~10-20s (le même mécanisme qui a déjà ramené le bot après le crash `connection.off()` plus tôt cette session — utilisé ici délibérément plutôt qu'accidentellement). C'est ce redémarrage (pas un redéploiement) qui reste nécessaire après avoir sauvegardé un nouveau compte — clairement expliqué sur la page.
+
+**Bug réel trouvé et corrigé en cours de route** : CTI n'a "aucune limite de perte journalière" — mais `GuardrailEngine` n'a **aucune convention "null désactive cette vérification"** pour `dailyLossLimitPct` (contrairement à `maxDrawdownPct`) : son check est une comparaison brute `dailyLossPct >= this.dailyLossLimitPct`, et `null` se convertit en `0` en JS, ce qui aurait **bloqué le trading presque immédiatement**. Trouvé en vérifiant AVANT de committer, pas après un incident. Corrigé dans `accountRegistry.js` : quand la règle de la prop firm est `null`, on retombe sur le réglage générique du compte (2% par défaut) au lieu de transmettre `null` — la protection journalière du bot reste active peu importe la firme, même philosophie que partout ailleurs cette session. Nouveau fichier `test/accountRegistry.test.js` (3 tests) qui couvre spécifiquement ce cas.
+
+**Nouveau fichier `src/propFirms/cti.js`** : `CTI_1STEP` (target 8%, drawdown 5%, aucune limite journalière, split 80%) enregistré dans le registre — le compte Free Trial actuel n'a volontairement AUCUN `propFirmProgramId` assigné (le trial n'a "aucune cible, aucune pression" per CTI eux-mêmes, inventer des chiffres de garde-fou serait pire que de ne pas en avoir) ; à assigner `cti-1step` une fois un vrai challenge payant acheté. Le mécanisme de plancher de CTI (trailing mis à jour à CHAQUE clôture de trade, pas seulement en fin de journée comme `trailing-eod` de FTMO) ne correspond à AUCUN des types déjà reconnus par `GuardrailEngine` — nouveau type `trailing-on-every-close`, volontairement NON reconnu (fail-open, jamais appliqué en direct), même précédent que le type `trailing-realtime-equity-never-resets` de GoatFundedTrader.
+
+**`npm test` : 417/417** (413 + 3 nouveaux tests `accountRegistry.test.js` + 1 nouveau test `cti.js` dans `propFirms.test.js`).
+
+**Reste à faire** : déployer, puis test de bout en bout réel contre le vrai Supabase en production (ajouter un compte factice via la page, vérifier qu'il apparaît, le supprimer).
+
+**Fichiers** : `src/dataSources/supabaseAccountStore.js`, `src/propFirms/cti.js` (nouveaux) ; `src/config.js`, `src/accountRegistry.js`, `src/server.js`, `public/index.html`, `public/chart.html`, `src/propFirms/index.js` (modifiés) ; `public/accounts.html` (nouveau) ; `test/accountRegistry.test.js` (nouveau), `test/propFirms.test.js` (modifié).
+
+## Corrigé : les 2 sources de garde-fous dupliquées (maxTradesPerDay réel enfin à 3) — 2026-09-13
+
+Repris exactement là où la session précédente s'est arrêtée (voir son entrée juste au-dessus, "🚨 BUG RÉEL DÉCOUVERT JUSTE AVANT LA COUPURE"). Root cause confirmée et corrigée : `defaultGuardrails()` (`src/config.js`) avait sa PROPRE copie hardcodée `{maxTradesPerDay: 2, ...}`, complètement indépendante de `CONFIG.guardrails` (celle bumpée à 3 pour le test BTCUSD) — et c'est `defaultGuardrails()` qui alimente le vrai compte `'default'` en production.
+
+**Fix** : `defaultGuardrails()` retourne maintenant `{ ...CONFIG.guardrails }` au lieu d'un littéral séparé — une seule source de vérité, plus de risque de divergence future. Vérifié directement (`node -e` avec un import réel du module) : `CONFIG.accounts[0].guardrails.maxTradesPerDay` vaut bien **3** maintenant, pas 2. `npm test` 417/417.
+
+Fusionné avec le travail "Comptes via dashboard" de cette même session (branches synchronisées, conflit sur HANDOFF.md seulement, résolu en gardant les deux sections).
+
+**Prochaine étape** : déployer, revérifier en direct via `curl .../api/accounts` que `maxTradesPerDay:3` s'affiche vraiment, puis surveiller BTCUSD normalement. Ne pas oublier le nettoyage complet promis (retirer BTCUSD de partout) une fois le test terminé — la liste exacte des 5 endroits à toucher est déjà dans l'entrée précédente.

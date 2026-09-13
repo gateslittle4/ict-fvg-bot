@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Apex FVG — Comptes</title>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#05070a" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Apex FVG" />
+<style>
+  /* Same "Apex FVG" terminal palette as index.html/chart.html - see
+     index.html's :root for the source of truth these tokens are copied
+     from. */
+  :root {
+    --bg: #05070a;
+    --panel: #0e141b;
+    --panel-2: #131a22;
+    --panel-border: #202b37;
+    --text: #eaf0f6;
+    --muted: #8b98a5;
+    --green: #2fd480;
+    --red: #ff5c5f;
+    --amber: #e8b339;
+    --blue: #4c9eff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 16px;
+    padding-bottom: 48px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .topnav { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--panel-border); }
+  .topnav a {
+    padding: 8px 12px; color: var(--muted); text-decoration: none; font-size: 13px;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .topnav a:hover { color: var(--text); }
+  .topnav a.active { color: var(--text); border-bottom-color: var(--blue); }
+  .card {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px; max-width: 720px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  label.inline { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+  input[type="text"], input[type="password"], input[type="number"], select {
+    width: 100%; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--panel-border);
+    border-radius: 6px; color: var(--text); font: inherit; font-family: var(--mono); font-size: 13px;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--blue); }
+  fieldset { border: 1px solid var(--panel-border); border-radius: 8px; margin: 14px 0 0; padding: 10px 12px 4px; }
+  legend { padding: 0 6px; color: var(--muted); font-size: 12px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+  button {
+    font: inherit; font-size: 13px; padding: 9px 16px; border-radius: 6px; border: 1px solid var(--panel-border);
+    background: var(--panel-2); color: var(--text); cursor: pointer;
+  }
+  button:hover { border-color: var(--blue); }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #05070a; font-weight: 600; }
+  button.danger { border-color: var(--red); color: var(--red); background: transparent; }
+  button.warn { border-color: var(--amber); color: var(--amber); background: transparent; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .msg { font-size: 12px; margin-top: 10px; padding: 8px 10px; border-radius: 6px; display: none; }
+  .msg.ok { display: block; background: rgba(47,212,128,0.1); color: var(--green); border: 1px solid rgba(47,212,128,0.3); }
+  .msg.error { display: block; background: rgba(255,92,95,0.1); color: var(--red); border: 1px solid rgba(255,92,95,0.3); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--panel-border); }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-family: var(--mono); }
+  .tag.yes { background: rgba(47,212,128,0.15); color: var(--green); }
+  .tag.no { background: rgba(255,92,95,0.12); color: var(--red); }
+  .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  .gate { max-width: 420px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <h1>Apex FVG — Comptes</h1>
+  <p class="hint">Ajoute un compte (challenge ou financé, cTrader ou Match-Trader) sans toucher au code. Sauvegardé dans Supabase, pris en compte au prochain redémarrage du bot.</p>
+
+  <nav class="topnav">
+    <a href="/">Dashboard</a>
+    <a href="/chart.html">Graphique</a>
+    <a href="/accounts.html" class="active">Comptes</a>
+  </nav>
+
+  <div class="card gate" id="gate-card">
+    <h2>Token admin</h2>
+    <label for="token-input">Même token que les autres pages admin</label>
+    <input type="password" id="token-input" placeholder="ADMIN_EXPORT_TOKEN" autocomplete="off" />
+    <div class="actions">
+      <button class="primary" id="unlock-btn">Déverrouiller</button>
+    </div>
+    <div class="msg" id="gate-msg"></div>
+  </div>
+
+  <div id="app" hidden>
+    <div class="card">
+      <h2>Comptes déjà enregistrés</h2>
+      <table id="accounts-table">
+        <thead>
+          <tr><th>ID</th><th>Firme</th><th>Mode</th><th>Plateforme</th><th>Identifiants</th><th></th></tr>
+        </thead>
+        <tbody id="accounts-tbody"></tbody>
+      </table>
+      <p class="hint" id="accounts-empty" hidden>Aucun compte ajouté via cette page pour l'instant.</p>
+    </div>
+
+    <div class="card">
+      <h2>Ajouter / mettre à jour un compte</h2>
+      <form id="account-form">
+        <div class="row">
+          <div>
+            <label for="f-id">Identifiant (ex. cti-freetrial) *</label>
+            <input type="text" id="f-id" required />
+          </div>
+          <div>
+            <label for="f-label">Label affiché</label>
+            <input type="text" id="f-label" placeholder="CTI Free Trial" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="f-mode">Mode</label>
+            <select id="f-mode">
+              <option value="challenge">Challenge</option>
+              <option value="live">Live (financé)</option>
+            </select>
+          </div>
+          <div>
+            <label for="f-platform">Plateforme</label>
+            <select id="f-platform">
+              <option value="">Auto-détectée</option>
+              <option value="ctrader">cTrader</option>
+              <option value="matchtrader">Match-Trader</option>
+              <option value="mock">Démo interne (aucune connexion réelle)</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="f-risk">Risque par trade (%) — vide = automatique selon le mode</label>
+            <input type="number" id="f-risk" step="0.01" min="0.01" max="5" placeholder="0.5" />
+          </div>
+          <div>
+            <label for="f-program">Programme prop firm (optionnel)</label>
+            <input type="text" id="f-program" list="program-ids" placeholder="cti-1step" />
+            <datalist id="program-ids">
+              <option value="ftmo-1step"></option>
+              <option value="ftmo-1step-funded"></option>
+              <option value="ftmo-2step"></option>
+              <option value="fundingpips-1step-flex"></option>
+              <option value="fundingpips-2step-standard"></option>
+              <option value="fundingpips-zero"></option>
+              <option value="goatfundedtrader-1step"></option>
+              <option value="goatfundedtrader-instant-premium"></option>
+              <option value="goatfundedtrader-instant-hero"></option>
+              <option value="cti-1step"></option>
+            </datalist>
+            <p class="hint">Laisse vide pour un free trial ou tant que la firme n'a pas encore accordé le compte financé.</p>
+          </div>
+        </div>
+
+        <fieldset id="ctrader-fields">
+          <legend>cTrader</legend>
+          <div class="row">
+            <div><label for="f-ct-clientid">Client ID</label><input type="text" id="f-ct-clientid" autocomplete="off" /></div>
+            <div><label for="f-ct-clientsecret">Client Secret</label><input type="password" id="f-ct-clientsecret" autocomplete="off" /></div>
+          </div>
+          <div class="row">
+            <div><label for="f-ct-accesstoken">Access Token</label><input type="password" id="f-ct-accesstoken" autocomplete="off" /></div>
+            <div><label for="f-ct-accountid">Account ID (optionnel)</label><input type="text" id="f-ct-accountid" autocomplete="off" /></div>
+          </div>
+        </fieldset>
+
+        <fieldset id="matchtrader-fields">
+          <legend>Match-Trader</legend>
+          <div class="row">
+            <div><label for="f-mt-email">Email / Login</label><input type="text" id="f-mt-email" autocomplete="off" /></div>
+            <div><label for="f-mt-password">Mot de passe</label><input type="password" id="f-mt-password" autocomplete="off" /></div>
+          </div>
+          <div class="row">
+            <div><label for="f-mt-brokerid">Broker ID</label><input type="text" id="f-mt-brokerid" autocomplete="off" /></div>
+            <div><label for="f-mt-platformurl">URL plateforme</label><input type="text" id="f-mt-platformurl" placeholder="https://platform.citytradersimperium.com" autocomplete="off" /></div>
+          </div>
+          <div class="row">
+            <div><label for="f-mt-systemuuid">System UUID (optionnel)</label><input type="text" id="f-mt-systemuuid" autocomplete="off" /></div>
+            <div><label for="f-mt-accountid">Account ID (optionnel)</label><input type="text" id="f-mt-accountid" autocomplete="off" /></div>
+          </div>
+        </fieldset>
+
+        <div class="actions">
+          <button type="submit" class="primary">Sauvegarder ce compte</button>
+        </div>
+        <div class="msg" id="form-msg"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Appliquer les changements</h2>
+      <p class="hint">Sauvegarder un compte ne le connecte pas tout de suite — le bot doit redémarrer (~10-20s, pas un redéploiement) pour le lire. Redémarre une seule fois après avoir ajouté/modifié tout ce que tu veux.</p>
+      <div class="actions">
+        <button class="warn" id="restart-btn">Redémarrer le bot</button>
+      </div>
+      <div class="msg" id="restart-msg"></div>
+    </div>
+  </div>
+
+<script>
+const TOKEN_KEY = 'apexfvg_admin_token';
+let TOKEN = localStorage.getItem(TOKEN_KEY) || '';
+
+function showMsg(el, text, ok) {
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'error');
+}
+
+async function api(path, opts = {}) {
+  const url = new URL(path, location.origin);
+  url.searchParams.set('token', TOKEN);
+  const res = await fetch(url, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+async function loadAccounts() {
+  const { accounts } = await api('/api/admin/accounts');
+  const tbody = document.getElementById('accounts-tbody');
+  const empty = document.getElementById('accounts-empty');
+  tbody.innerHTML = '';
+  empty.hidden = accounts.length > 0;
+  for (const a of accounts) {
+    const tr = document.createElement('tr');
+    const credsTag = a.hasBrokerCreds
+      ? '<span class="tag yes">cTrader ok</span>'
+      : a.hasMatchTraderCreds
+        ? '<span class="tag yes">Match-Trader ok</span>'
+        : '<span class="tag no">incomplet</span>';
+    tr.innerHTML = `
+      <td>${a.id}</td>
+      <td>${a.propFirmProgramId || '—'}</td>
+      <td>${a.accountMode}</td>
+      <td>${a.platform || 'auto'}</td>
+      <td>${credsTag}</td>
+      <td><button class="danger" data-del="${a.id}">Supprimer</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('[data-del]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Supprimer le compte "${btn.dataset.del}" ? (le bot devra redémarrer pour que ça prenne effet)`)) return;
+      try {
+        await api(`/api/admin/accounts/${encodeURIComponent(btn.dataset.del)}`, { method: 'DELETE' });
+        loadAccounts();
+      } catch (err) {
+        alert('Erreur: ' + err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('unlock-btn').addEventListener('click', async () => {
+  TOKEN = document.getElementById('token-input').value.trim();
+  if (!TOKEN) return;
+  const gateMsg = document.getElementById('gate-msg');
+  try {
+    await api('/api/admin/accounts'); // validates the token against the real endpoint
+    localStorage.setItem(TOKEN_KEY, TOKEN);
+    document.getElementById('gate-card').hidden = true;
+    document.getElementById('app').hidden = false;
+    loadAccounts();
+  } catch (err) {
+    showMsg(gateMsg, 'Token invalide ou fonctionnalité désactivée côté serveur.', false);
+  }
+});
+
+document.getElementById('account-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const formMsg = document.getElementById('form-msg');
+  const g = (id) => document.getElementById(id).value.trim();
+  const riskRaw = g('f-risk');
+  const payload = {
+    id: g('f-id'),
+    label: g('f-label') || undefined,
+    accountMode: g('f-mode'),
+    platform: g('f-platform') || null,
+    riskPctPerTrade: riskRaw ? Number(riskRaw) : undefined,
+    propFirmProgramId: g('f-program') || null,
+    broker: {
+      clientId: g('f-ct-clientid') || null,
+      clientSecret: g('f-ct-clientsecret') || null,
+      accessToken: g('f-ct-accesstoken') || null,
+      accountId: g('f-ct-accountid') || null,
+    },
+    matchTrader: {
+      email: g('f-mt-email') || null,
+      password: g('f-mt-password') || null,
+      brokerId: g('f-mt-brokerid') || null,
+      platformUrl: g('f-mt-platformurl') || null,
+      systemUuid: g('f-mt-systemuuid') || null,
+      accountId: g('f-mt-accountid') || null,
+    },
+  };
+  try {
+    const result = await api('/api/admin/accounts', { method: 'POST', body: JSON.stringify(payload) });
+    showMsg(formMsg, result.note || 'Sauvegardé.', true);
+    e.target.reset();
+    loadAccounts();
+  } catch (err) {
+    showMsg(formMsg, 'Erreur: ' + err.message, false);
+  }
+});
+
+document.getElementById('restart-btn').addEventListener('click', async () => {
+  if (!confirm('Redémarrer le bot maintenant ? Coupure de ~10-20 secondes.')) return;
+  const restartMsg = document.getElementById('restart-msg');
+  try {
+    const result = await api('/api/admin/restart', { method: 'POST' });
+    showMsg(restartMsg, result.note, true);
+  } catch (err) {
+    showMsg(restartMsg, 'Erreur: ' + err.message, false);
+  }
+});
+
+// Auto-unlock if a token is already saved from a previous visit.
+if (TOKEN) {
+  api('/api/admin/accounts').then(() => {
+    document.getElementById('gate-card').hidden = true;
+    document.getElementById('app').hidden = false;
+    loadAccounts();
+  }).catch(() => { localStorage.removeItem(TOKEN_KEY); TOKEN = ''; });
+}
+</script>
+</body>
+</html>

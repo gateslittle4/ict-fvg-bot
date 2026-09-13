@@ -396,8 +396,20 @@ export function isLiveConfigured() {
 // RISK_PCT_PER_TRADE, BROKER_PLATFORM) - identical behavior to before
 // multi-account support existed, so nothing on the currently running
 // deployment has to change until ACCOUNTS_JSON is explicitly set.
+// FIXED 2026-09-13: this used to hardcode its own {maxTradesPerDay: 2, ...}
+// literal, a SECOND, independent copy of the same 4 numbers already set on
+// CONFIG.guardrails above - the two could (and did) drift: bumping
+// CONFIG.guardrails.maxTradesPerDay to 3 for the BTCUSD weekend test had NO
+// effect on the real 'default' account, which is built through THIS
+// function (see normalizeAccountEntry() below), still hardcoded at 2. A
+// real bug caught live via /api/accounts still reading maxTradesPerDay:2
+// after deploying the "fix" - see HANDOFF.md 2026-09-13. Now the only
+// source of truth: this function copies CONFIG.guardrails at call time
+// (safe - by the time any account is built via resolveAccounts() at the
+// bottom of this file, CONFIG.guardrails is already fully populated as
+// part of the CONFIG object literal above).
 function defaultGuardrails() {
-  return { maxTradesPerDay: 2, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 2, dayBoundaryHourUTC: 0 };
+  return { ...CONFIG.guardrails };
 }
 
 function resolveAccountRiskPct(accountMode, explicit) {
@@ -435,7 +447,7 @@ function resolveAccountRiskPct(accountMode, explicit) {
  *   broker               - { clientId, clientSecret, accessToken, accountId } (cTrader).
  *   matchTrader          - { email, password, brokerId, platformUrl, systemUuid, accountId }.
  */
-function normalizeAccountEntry(raw, index) {
+export function normalizeAccountEntry(raw, index) {
   const id = raw.id || `account-${index + 1}`;
   const accountMode = ACCOUNT_MODES.includes(raw.accountMode) ? raw.accountMode : 'challenge';
   const broker = {
