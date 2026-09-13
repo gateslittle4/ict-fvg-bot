@@ -691,7 +691,22 @@ export class CTraderDataSource {
         // Same /100000 scaling as _trendbarToCandle - VERIFY against a real
         // spot event's bid units before trusting the magnitude (display-only,
         // so a scaling error is cosmetic, never a wrong order).
-        const bid = typeof event.bid === 'number' ? event.bid / 100000 : null;
+        // Number(...) with an `!= null` guard, NOT `typeof === 'number'`
+        // (2026-09-13, real bug found live tonight while chasing why
+        // BTCUSD never traded): this broker serializes plenty of numeric
+        // protobuf fields as JSON STRINGS (confirmed repeatedly tonight -
+        // orderId, positionId, executionTimestamp, grossProfit, volume,
+        // symbolId all showed up quoted in a real raw dump), and a strict
+        // `typeof === 'number'` check silently treats a string bid/ask as
+        // absent. This means `recentTicksBySymbol` (the ONLY mechanism
+        // meant to verify DEFAULT_SPREADS' guessed values against reality -
+        // see /admin/spread-check) has likely NEVER recorded a single real
+        // tick since this feature was added, on ANY symbol, despite the
+        // dashboard's own live price clearly moving - that price comes from
+        // the trendbar's `close` a few lines below (a different, unaffected
+        // code path), not from this bid/ask folding, so the frozen-looking
+        // "0 samples" result never got noticed as a problem until tonight.
+        const bid = event.bid != null ? Number(event.bid) / 100000 : null;
         const existing = store.lastCandleBySymbol.get(symbolName);
         const folded = foldLiveBidIntoCandle(existing, bid);
         if (folded && folded !== existing) store.lastCandleBySymbol.set(symbolName, folded);
@@ -702,7 +717,7 @@ export class CTraderDataSource {
         // bid above (VERIFY against a real response, same caveat). Only
         // recorded when the SAME tick carries both sides - a tick with just
         // one side updated doesn't represent a real spread at that instant.
-        const ask = typeof event.ask === 'number' ? event.ask / 100000 : null;
+        const ask = event.ask != null ? Number(event.ask) / 100000 : null;
         if (bid !== null && ask !== null) {
           if (!store.recentTicksBySymbol.has(symbolName)) store.recentTicksBySymbol.set(symbolName, []);
           const ticks = store.recentTicksBySymbol.get(symbolName);
