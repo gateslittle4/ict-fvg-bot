@@ -50,6 +50,17 @@ const store = getDefaultAccount();
 
 // cTrader trendbar period enum name for our configured timeframe.
 const PERIOD_BY_TIMEFRAME = { M1: 'M1', M5: 'M5', M15: 'M15', M30: 'M30', H1: 'H1' };
+const TIMEFRAME_DURATION_MS = { M1: 60000, M5: 300000, M15: 900000, M30: 1800000, H1: 3600000 };
+
+// 2026-09-13 (Esdras: "on fait le changement pour m1 pour btc seulement,
+// laisser tout les autres pairs a leur configuration normale") - per-symbol
+// timeframe override, TEMPORARY alongside every other BTCUSD entry (see
+// config.js). Every other symbol keeps reading CONFIG.timeframe (M15)
+// exactly as before - this only branches for a symbol that explicitly sets
+// its own `timeframe` in CONFIG.fvg.perSymbol[symbolName].
+function resolveSymbolTimeframe(symbolName) {
+  return CONFIG.fvg.perSymbol?.[symbolName]?.timeframe || CONFIG.timeframe;
+}
 const MAX_SPREAD_SAMPLES = 500; // ring buffer size for store.recentTicksBySymbol - a few hours of ticks, plenty for a spread sanity check
 
 // @reiryoku/ctrader-layer's sendCommand() has NO built-in timeout - its promise
@@ -495,7 +506,6 @@ export class CTraderDataSource {
 
   async _subscribeLiveCandles(accountId) {
     const store = this.account;
-    const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
 
     for (const symbolName of this.symbols) {
       const symbolId = this.symbolIdByName.get(symbolName);
@@ -503,6 +513,16 @@ export class CTraderDataSource {
         console.warn(`[cTrader] symbol "${symbolName}" not found on this account - skipping`);
         continue;
       }
+
+      // Per-symbol timeframe (2026-09-13, temporary BTCUSD override - see
+      // resolveSymbolTimeframe()'s own comment). `period` used to be
+      // resolved ONCE outside this loop from the single global
+      // CONFIG.timeframe - every symbol besides BTCUSD still gets exactly
+      // that same value, this just makes the lookup per-iteration instead
+      // of hoisted, which changes nothing for them.
+      const symbolTimeframe = resolveSymbolTimeframe(symbolName);
+      const period = PERIOD_BY_TIMEFRAME[symbolTimeframe] || 'M15';
+      const isM1Override = symbolTimeframe === 'M1';
 
       // Warm up with a MUCH deeper history than the raw-FvgEngine days: the filtered
       // combo needs enough M15 candles behind it for its slowest lookback to be
@@ -515,11 +535,19 @@ export class CTraderDataSource {
       // live deploy rejected a count-only request). The M10-H1 bucket (which M15 falls
       // into) caps the from/to span at 35 weeks, so this single 90-day window request
       // needs no pagination.
-      const WARMUP_MS = 90 * 24 * 60 * 60 * 1000; // ~90 days
-      const WARMUP_M15_CANDLES = 90 * 24 * 4; // ~90 days, used as a response-size cap
+      // isM1Override (BTCUSD only): baseline config has NO HTF-bias/structure
+      // lookback at all - the only real warm-up need is CONFIG.fvg.maxAgeCandles
+      // (50) of context for zone staleness. A much smaller window (2 days of
+      // M1 = 2880 candles) covers that with room to spare, and - unverified,
+      // but worth avoiding rather than risking it - M1 is very likely capped
+      // at a MUCH shorter from/to span per request than the 35 weeks the
+      // M10-H1 bucket gets, so requesting 90 days of M1 here could simply be
+      // rejected by the broker.
+      const WARMUP_MS = isM1Override ? 2 * 24 * 60 * 60 * 1000 : 90 * 24 * 60 * 60 * 1000;
+      const WARMUP_CANDLE_CAP = isM1Override ? 2 * 24 * 60 : 90 * 24 * 4;
       const toTimestamp = Date.now();
       const fromTimestamp = toTimestamp - WARMUP_MS;
-      console.log(`[cTrader] ${symbolName}: requesting ${WARMUP_M15_CANDLES} ${period} candles of warm-up history...`);
+      console.log(`[cTrader] ${symbolName}: requesting ${WARMUP_CANDLE_CAP} ${period} candles of warm-up history...`);
       const history = await sendCommandWithTimeout(
         this.connection,
         'ProtoOAGetTrendbarsReq',
@@ -529,7 +557,7 @@ export class CTraderDataSource {
           toTimestamp,
           symbolId,
           period,
-          count: WARMUP_M15_CANDLES,
+          count: WARMUP_CANDLE_CAP,
         },
         60000 // this single response can be tens of thousands of bars across 3 symbols - give it more room than the default before calling it stuck
       );
@@ -876,9 +904,18 @@ export class CTraderDataSource {
       // - see HANDOFF.md), but it removes the dominant known cause of
       // missed fills without touching entry price, stop, or target.
       const FVG_LIMIT_EXPIRY_CANDLES = CONFIG.fvg.maxAgeCandles;
+      // 2026-09-13: was a hardcoded `* 15 * 60 * 1000` (assumed every symbol
+      // is on M15) - now resolves the SAME per-symbol timeframe
+      // _subscribeLiveCandles() actually subscribed this symbol on, so
+      // BTCUSD's temporary M1 override expires its LIMIT order after 50
+      // real minutes (matching maxAgeCandles), not 50 M15-shaped candles
+      // (~12.5h) it was never actually warmed up or backtested against at
+      // that timeframe. Every other symbol still resolves to M15 exactly as
+      // before - CANDLE_DURATION_MS only changes the constant multiplied in.
+      const candleDurationMs = TIMEFRAME_DURATION_MS[resolveSymbolTimeframe(symbolName)] || TIMEFRAME_DURATION_MS.M15;
       const lastCandle = store.lastCandleBySymbol.get(symbolName);
       const expirationTimestamp =
-        isFvg && lastCandle ? lastCandle.time + FVG_LIMIT_EXPIRY_CANDLES * 15 * 60 * 1000 : undefined;
+        isFvg && lastCandle ? lastCandle.time + FVG_LIMIT_EXPIRY_CANDLES * candleDurationMs : undefined;
 
       const brokerOrderId = await this._submitOrder({
         symbolId,

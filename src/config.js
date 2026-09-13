@@ -219,6 +219,17 @@ export const CONFIG = {
         structureEnabled: false,
         sessionEnabled: false,
         liquiditySweepEnabled: false,
+        // 2026-09-13, Esdras: "on fait le changement pour m1 pour btc
+        // seulement, laisser tout les autres pairs a leur configuration
+        // normale" - so she could see the pipeline actually fire tonight
+        // instead of waiting on M15 closes. Read by
+        // cTraderDataSource.js's resolveSymbolTimeframe() - every other
+        // symbol has no `timeframe` field here and keeps reading the
+        // global CONFIG.timeframe (M15) exactly as before. NOT backtested
+        // at M1 (the 7-month sanity check earlier tonight was M15) - purely
+        // a connectivity-speed choice, not a validated edge at this
+        // timeframe. Remove alongside every other temporary BTCUSD entry.
+        timeframe: 'M1',
       },
     },
   },
