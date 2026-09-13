@@ -812,6 +812,73 @@ export class CTraderDataSource {
    * with real money. Same for `timeInForce: 'GOOD_TILL_DATE'` below - the
    * exact enum name needs confirming against a real API response too.
    */
+  // 2026-09-13, the single most important bug found this session, via
+  // /admin/test-order-cycle's first real run: ProtoOANewOrderReq's
+  // synchronous response on THIS broker comes back as an EMPTY OBJECT ({})
+  // - no order.orderId, no orderId anywhere in it. `_submitOrder` used to
+  // derive brokerOrderId from exactly that response
+  // (`res?.order?.orderId ?? res?.orderId ?? null`), so it has ALWAYS
+  // resolved to `null` for every real order this process has ever placed
+  // live - which BOTH _handleAutoExecuteEntry and
+  // _handlePyramidOrderRequested gate real tracking behind
+  // (`if (brokerOrderId != null)`). Concretely, this means
+  // pendingEntryOrderByOrderId has never actually been populated by a real
+  // order, _handleExecutionEvent's confirmation branch has never matched
+  // anything, and NOT ONE real fill/rejection has ever been reconciled
+  // back into the engine's belief - exactly the gap behind Esdras's
+  // original "ce n'est pas un trade, c'est une croyance" correction. The
+  // broker DID keep filling orders in reality the whole time (independently
+  // confirmed live: ORDER_ACCEPTED then ORDER_FILLED arrived ~600ms after
+  // submission, with a real orderId/positionId) - only the confirmation
+  // path back into this process was silently dead.
+  //
+  // Fixed the same way as test-order-cycle: get the real orderId from the
+  // ProtoOAExecutionEvent that follows submission (matched by symbolId,
+  // Number(...) both sides - see _handleAutoExecuteEntry's own
+  // "Number(symbolId) is always true" precedent for why a bare !== on a
+  // protobuf-serialized field can silently never match), not from the
+  // unreliable synchronous response. Safe against the one theoretical race
+  // (the event arriving and being consumed by _handleExecutionEvent before
+  // this function even returns, so pendingEntryOrderByOrderId.set() runs
+  // too late to catch it) because the broker's own order lifecycle sends
+  // ORDER_ACCEPTED (this order now exists, carries the real orderId)
+  // strictly before ORDER_FILLED/REJECTED/etc for that same order - real
+  // captured evidence shows ~300ms between them, ample time for the awaited
+  // orderId to reach _handleAutoExecuteEntry/_handlePyramidOrderRequested
+  // and register the pending entry before any terminal event follows.
+  _waitForOrderIdBySymbol(symbolId, timeoutMs = 10000) {
+    return new Promise((resolve) => {
+      let uuid;
+      const safeRemove = () => {
+        try {
+          if (uuid != null) this.connection.removeEventListener(uuid);
+        } catch (err) {
+          console.error('[_submitOrder] removeEventListener failed (non-fatal):', err.message);
+        }
+      };
+      const timer = setTimeout(() => {
+        safeRemove();
+        // Resolves null, same as the old (broken) synchronous-response path
+        // did on every call - callers already handle a null brokerOrderId
+        // by skipping tracking/notification rather than throwing.
+        resolve(null);
+      }, timeoutMs);
+      uuid = this.connection.on('ProtoOAExecutionEvent', (event) => {
+        try {
+          const d = event.descriptor;
+          if (Number(d.order?.symbolId) !== Number(symbolId) || d.order?.orderId == null) return;
+          clearTimeout(timer);
+          safeRemove();
+          resolve(d.order.orderId);
+        } catch (err) {
+          clearTimeout(timer);
+          safeRemove();
+          resolve(null);
+        }
+      });
+    });
+  }
+
   async _submitOrder({ symbolId, orderType, tradeSide, lots, symbolSpec, price, stopLoss, takeProfit, label, expirationTimestamp }) {
     const accountId = Number(this.accountId);
     // rawVolume (2026-09-13, temporary BTCUSD spec - see lotCalculator.js):
@@ -834,8 +901,14 @@ export class CTraderDataSource {
       payload.expirationTimestamp = expirationTimestamp;
       payload.timeInForce = 'GOOD_TILL_DATE'; // VERIFY exact enum name against a real API response
     }
+    // Registered BEFORE sendCommand so the listener is armed no matter how
+    // quickly the broker replies - see _waitForOrderIdBySymbol's own
+    // comment for why this exists at all.
+    const orderIdFromEvent = this._waitForOrderIdBySymbol(symbolId);
     const res = await this.connection.sendCommand('ProtoOANewOrderReq', payload);
-    return res?.order?.orderId ?? res?.orderId ?? null; // VERIFY response shape against real API
+    const syncOrderId = res?.order?.orderId ?? res?.orderId ?? null;
+    if (syncOrderId != null) return syncOrderId; // some future response shape DOES carry it directly - trust it, no need to wait for the event
+    return orderIdFromEvent;
   }
 
   /**

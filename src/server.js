@@ -852,7 +852,15 @@ function createAccountRouter(getStore) {
       // be this order's own outcome (this endpoint is a manual, single-shot
       // admin diagnostic, never invoked concurrently with itself).
       const openFillPromise = waitForExecution((d) => {
-        if (d.order?.symbolId !== Number(symbolId)) return false;
+        // Number(...) on both sides (2026-09-13, third real bug found live
+        // this same session): the protobuf layer serializes large integer
+        // fields as STRINGS (confirmed - see /admin/close-position's own
+        // comment below for the positionId case that actually broke this
+        // exact way), so a bare !== between this symbolId (already a
+        // Number here) and d.order.symbolId (possibly a String) would
+        // silently never match, exactly like the openOrderId bug this
+        // block replaced.
+        if (Number(d.order?.symbolId) !== Number(symbolId)) return false;
         if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
           throw new Error(`order ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
         }
@@ -888,7 +896,10 @@ function createAccountRouter(getStore) {
       });
       const closeFill = await waitForExecution((d) => {
         const pid = d.deal?.positionId ?? d.position?.positionId;
-        if (pid !== positionId) return false;
+        // String(...) both sides - same protobuf string-vs-number bug as
+        // above; positionId here can itself already be a string (extracted
+        // from openFill the same way), so normalize instead of assuming.
+        if (String(pid) !== String(positionId)) return false;
         if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
           throw new Error(`close ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
         }
@@ -953,7 +964,12 @@ function createAccountRouter(getStore) {
           try {
             const d = event.descriptor;
             const pid = d.deal?.positionId ?? d.position?.positionId;
-            if (pid !== positionId) return;
+            // String(...) both sides (2026-09-13, real bug found live: this
+            // exact `pid !== positionId` timed out even though the close
+            // genuinely succeeded on the broker seconds later - protobuf
+            // serializes this field as a STRING, positionId here is a
+            // Number from req.query, so a bare !== can never match).
+            if (String(pid) !== String(positionId)) return;
             if (['ORDER_REJECTED', 'ORDER_CANCELLED', 'ORDER_EXPIRED'].includes(d.executionType)) {
               clearTimeout(timer);
               safeRemove();
