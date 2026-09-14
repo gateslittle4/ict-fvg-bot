@@ -91,15 +91,20 @@ export const CONFIG = {
     riskPctPerTrade: resolveRiskPctPerTrade(),
   },
   guardrails: {
-    // 2026-09-13: temporarily 3 instead of 2, ONLY while BTCUSD's temporary
-    // entry above is in place - GuardrailEngine's daily trade cap is
-    // ACCOUNT-WIDE (one shared counter across every symbol, not per-symbol,
-    // see guardrailEngine.js), so leaving this at 2 risked a BTCUSD signal
-    // consuming both of the day's slots and blocking a real EURUSD/XAUUSD/
-    // US100/US500 signal the same day. The extra slot is BTCUSD's dedicated
-    // budget, not a general loosening - revert to 2 in the same commit that
-    // removes BTCUSD.
-    maxTradesPerDay: 3,
+    // 2026-09-14 (Esdras, explicit: "leve un peu le garde fou qui empeche
+    // Les nouveaux trades pour linstant. On doit verifier que Tous Les
+    // trades passent normalement"): temporarily 20, ONLY to observe a
+    // handful more real trades go through cleanly tonight after the
+    // netting-fix + guardrail-day-reset-fix landed (both confirmed live
+    // separately, but not yet with a fresh trade taken under both fixes at
+    // once). tradesToday was already 12 (correctly retained now, see
+    // HANDOFF.md - that's the fix working, not a bug) against the old
+    // cap of 3, which is why every further trade was blocked. This account
+    // runs on cTrader's DEMO server (isDemo:true - see /api/accounts), not
+    // real money. REVERT to 3 (see the 2026-09-13 note this replaced, still
+    // true: ACCOUNT-WIDE cap shared across every symbol) once tonight's
+    // verification is done - not meant to stay loose long-term.
+    maxTradesPerDay: 20,
     cooldownMinutesAfterLoss: 30,
     dailyLossLimitPct: 2,
     dayBoundaryHourUTC: 0,
