@@ -736,7 +736,14 @@ export class CTraderDataSource {
         if (event.trendbar) {
           for (const bar of event.trendbar) {
             const candle = this._trendbarToCandle(bar);
-            const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle));
+            // Date.now() explicitly (2026-09-14) - see liveStrategyEngine.js's
+            // ingestCandle() comment: _toEngineCandle's -5h shift is correct
+            // for signal/session logic but must NOT reach GuardrailEngine's
+            // real-calendar-day bookkeeping, or its cooldown/daily-trade-count
+            // protection silently resets itself every day between ~00:00-05:00
+            // UTC (confirmed live: a real loss's 30-min cooldown vanished
+            // after ~3 minutes instead of holding for the full 30).
+            const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle), Date.now());
             store.pushSignalEvents(events);
             store.lastCandleBySymbol.set(symbolName, candle);
             const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);

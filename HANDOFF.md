@@ -2389,3 +2389,19 @@ Suite directe de l'entrée précédente ("Auto-clear stale warm-up beliefs"). Es
 `npm test` : 425/425 (changement front-end uniquement, `public/index.html`).
 
 **Fichiers** : `public/index.html`.
+
+## 🚨 Bug de sécurité réel trouvé en surveillant le bot : le garde-fou se réinitialisait silencieusement ~5h par jour — 2026-09-14
+
+Esdras a demandé une surveillance continue ("prend des notes pour detecter tt problem"). En observant le cooldown après perte en direct, j'ai remarqué quelque chose d'impossible : un cooldown de 30 minutes après une perte réelle (-0.99$ sur BTCUSD) a disparu complètement après seulement ~3 minutes, sans redémarrage du processus.
+
+**Cause racine trouvée** : `cTraderDataSource.js` (et `matchTraderDataSource.js`) transmettent à `LiveStrategyEngine.ingestCandle()` une bougie dont le `.time` est décalé de -5h (`_toEngineCandle`, convention "fixed EST as UTC" nécessaire pour que les filtres de session/biais HTF correspondent au backtest). Ce `candle.time` (décalé) était aussi utilisé pour le contrôle du garde-fou (`canTakeNewTrade(candle.time)`), alors que TOUTES les autres entrées du même `GuardrailEngine` (un vrai remplissage via `recordTrade(Date.now())`, le rejeu au boot via `_loadClosedDeals` avec le vrai timestamp du courtier, le dashboard via `getStatus()`) utilisent l'heure réelle non décalée.
+
+**Conséquence** : `GuardrailEngine._ensureDay()` réinitialise silencieusement `this.trades = []` dès qu'une incohérence de date est détectée. Entre 00h00 et 05h00 UTC chaque jour (la fenêtre où le décalage de -5h fait tomber sur la veille), CHAQUE bougie en direct faisait basculer la clé de jour entre "hier" (décalé) et "aujourd'hui" (réel) à chaque appel — effaçant en continu le compteur de trades du jour ET la protection anti-revenge-trading (cooldown après perte) pendant ~5h par jour, tous les jours, depuis que ce mécanisme existe. Un bug de sécurité réel, jamais détecté avant ce soir faute de surveillance active à ce moment précis de la journée.
+
+**Fix** : nouveau paramètre explicite `guardrailNow`, enfilé à travers `ingestCandle()` → chaque `_detect*Signal()` → chaque `_process*()`/`_blockReason()`, avec valeur par défaut `= candle.time` (donc TOUS les tests existants, le warm-up, et tout futur backtest restent identiques au bit près — seul le point d'appel EN DIRECT (`cTraderDataSource.js`/`matchTraderDataSource.js`) le remplace explicitement par `Date.now()`).
+
+**2 nouveaux tests de régression** dans `test/liveStrategyEngine.test.js` : un qui confirme que le cooldown survit au décalage quand `guardrailNow` est fourni, et un second qui **reproduit volontairement le bug** (sans `guardrailNow`) pour prouver que le test précédent teste vraiment quelque chose de réel.
+
+`npm test` : 427/427 (425 + 2 nouveaux).
+
+**Fichiers** : `src/liveStrategyEngine.js`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`, `test/liveStrategyEngine.test.js`.

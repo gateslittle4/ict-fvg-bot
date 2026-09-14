@@ -138,6 +138,78 @@ test('LiveStrategyEngine: guardrail block prevents a position from opening, but 
   assert.equal(engine.getOpenPosition('TEST1'), null);
 });
 
+// 2026-09-14: real bug found live. cTraderDataSource.js's live tick handler
+// feeds ingestCandle() a candle whose `.time` has been shifted -5h (the
+// "fixed EST as UTC" convention _toEngineCandle applies so session/HTF
+// logic matches backtest-validated behavior), while GuardrailEngine's OTHER
+// real inputs (a live fill's recordTrade, the dashboard's getStatus() poll)
+// use genuine, unshifted Date.now(). During the real-UTC window where the
+// shift crosses a calendar-day boundary (~00:00-05:00 UTC daily), a live
+// candle's guardrail check computed "yesterday" while every other call
+// computed "today" - GuardrailEngine's _ensureDay() silently wipes
+// `this.trades` on ANY dayKey mismatch, so this thrashed the daily
+// trade count and cooldown-after-loss protection clean, confirmed live: a
+// real loss's 30-minute cooldown vanished after ~3 minutes. Fixed with an
+// explicit `guardrailNow` parameter threaded through ingestCandle -> each
+// _detect*Signal -> each _process*/_blockReason, defaulting to `candle.time`
+// (so warmUp()'s bulk replay and every OTHER existing test above/below stay
+// byte-for-byte unaffected - only the live call site overrides it with
+// real Date.now()).
+test('LiveStrategyEngine: an explicit guardrailNow survives the live -5h candle-time shift (real fix)', () => {
+  const REAL_NOW = Date.UTC(2026, 8, 14, 1, 30, 0); // 2026-09-14T01:30:00Z
+  const FIVE_H = 5 * 3600 * 1000;
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, REAL_NOW);
+  guardrail.recordTrade({ pnl: -10, time: REAL_NOW, balanceAfter: 9990 }); // a real loss, real time -> 30-min cooldown starts
+
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+
+  // Live candles arriving minutes later - each candle's OWN .time is
+  // shifted -5h (matches _toEngineCandle), landing on the PREVIOUS
+  // calendar day even though real time has barely moved - exactly the live
+  // shape cTraderDataSource.js feeds in.
+  const guardrailNow = REAL_NOW + 5 * 60 * 1000;
+  const shiftedBase = guardrailNow - FIVE_H;
+  for (const cd of [c(shiftedBase, 100, 101, 99, 100), c(shiftedBase + M15, 100, 102, 100, 101), c(shiftedBase + 2 * M15, 102, 105, 103, 104)]) {
+    engine.ingestCandle('TEST1', cd, guardrailNow);
+  }
+  const evs = engine.ingestCandle('TEST1', c(shiftedBase + 3 * M15, 104, 104, 102, 103), guardrailNow);
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].blockedReason, 'guardrail'); // cooldown still active - NOT wiped by the shifted candle.time
+});
+
+test('LiveStrategyEngine: WITHOUT guardrailNow, the shifted candle.time reproduces the bug (documents why the fix above is needed)', () => {
+  const REAL_NOW = Date.UTC(2026, 8, 14, 1, 30, 0);
+  const FIVE_H = 5 * 3600 * 1000;
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, REAL_NOW);
+  guardrail.recordTrade({ pnl: -10, time: REAL_NOW, balanceAfter: 9990 });
+
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+
+  const shiftedBase = REAL_NOW + 5 * 60 * 1000 - FIVE_H;
+  for (const cd of [c(shiftedBase, 100, 101, 99, 100), c(shiftedBase + M15, 100, 102, 100, 101), c(shiftedBase + 2 * M15, 102, 105, 103, 104)]) {
+    engine.ingestCandle('TEST1', cd); // no 3rd arg - old behavior, defaults to candle.time
+  }
+  const evs = engine.ingestCandle('TEST1', c(shiftedBase + 3 * M15, 104, 104, 102, 103));
+  assert.equal(evs.length, 1);
+  // The cooldown got silently wiped by the day-key mismatch - the position
+  // opens as if the loss/cooldown never happened at all.
+  assert.notEqual(evs[0].blockedReason, 'guardrail');
+});
+
 test('LiveStrategyEngine: netting blocks a second FVG signal on the same symbol while a position is already open', () => {
   const guardrail = permissiveGuardrail();
   const engine = new LiveStrategyEngine({

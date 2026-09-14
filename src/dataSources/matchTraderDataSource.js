@@ -364,7 +364,11 @@ export class MatchTraderDataSource {
       // A bucket closed -> feed the ENGINE. _toEngineCandle shifts it into the
       // backtest's fixed-EST-as-UTC convention so the NY session filter reads
       // the correct wall-clock hour (see _toEngineCandle / candleTimeOffsetMs).
-      const events = store.strategyEngine.ingestCandle(symbol, this._toEngineCandle(closedCandle));
+      // Date.now() as the 3rd arg (2026-09-14) - same real bug fixed in
+      // cTraderDataSource.js: the shifted candle time must never reach
+      // GuardrailEngine's real-calendar-day bookkeeping, or its cooldown/
+      // daily-trade-count protection silently resets itself for ~5h every day.
+      const events = store.strategyEngine.ingestCandle(symbol, this._toEngineCandle(closedCandle), Date.now());
       store.pushSignalEvents(events);
 
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
