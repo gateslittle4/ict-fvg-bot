@@ -702,6 +702,21 @@ export class CTraderDataSource {
   }
 
   /**
+   * On-demand raw reconcile dump (2026-09-14, urgent live check: a BTCUSD
+   * position showed stopLoss:null on the dashboard while a floating loss
+   * kept growing - need to see whether the broker-side protective order
+   * genuinely still exists and at what price, without guessing. Same
+   * ProtoOAReconcileReq _clearStaleBeliefsAgainstBroker already uses at
+   * boot, exposed on demand instead of only at startup. Temporary
+   * diagnostic - not wired into any UI.
+   */
+  async debugReconcileRaw() {
+    return sendCommandWithTimeout(this.connection, 'ProtoOAReconcileReq', {
+      ctidTraderAccountId: Number(this.accountId),
+    });
+  }
+
+  /**
    * On-demand historical export (2026-09, ad-hoc research request: "peux-tu
    * tester le bot sur les 8 derniers mois qui viennent de passer" - the
    * existing 2019-2025 CSV backtests, and the live engine's own 90-day

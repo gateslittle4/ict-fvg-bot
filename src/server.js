@@ -717,6 +717,27 @@ function createAccountRouter(getStore) {
     res.json({ count: symbols.length, symbols });
   });
 
+  // Urgent live check (2026-09-14): a BTCUSD position showed stopLoss:null
+  // on the dashboard right after a LIMIT entry while its floating loss kept
+  // growing - needed to confirm the broker-side protective order genuinely
+  // still exists and at what price, without guessing again. Same
+  // ADMIN_EXPORT_TOKEN gate as the other admin routes; read-only (never
+  // calls ProtoOACancelOrderReq/ProtoOAClosePositionReq). Temporary
+  // diagnostic - not wired into any UI.
+  router.get('/admin/reconcile-raw', async (req, res) => {
+    if (!requireAdminToken(req, res)) return;
+    const store = getStore(req);
+    if (typeof store.liveDataSource?.debugReconcileRaw !== 'function') {
+      return res.status(503).json({ error: 'not connected to cTrader (this diagnostic only exists on that data source)' });
+    }
+    try {
+      const result = await store.liveDataSource.debugReconcileRaw();
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
   // Real open->close connectivity test (2026-09-12, at the user's explicit
   // request - "je veux tester ma plateforme pour la connexion", "vérifie
   // qu'une position peut s'ouvrir et fermer"). Deliberately bypasses the
