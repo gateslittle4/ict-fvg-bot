@@ -950,6 +950,19 @@ export class CTraderDataSource {
     // comment for why this exists at all.
     const orderIdFromEvent = this._waitForOrderIdBySymbol(symbolId);
     const res = await this.connection.sendCommand('ProtoOANewOrderReq', payload);
+    // TEMPORARY (2026-09-14) - a real LIMIT order (BTCUSD FVG signal,
+    // orderType='LIMIT', timeInForce='GOOD_TILL_DATE') got ZERO
+    // ProtoOAExecutionEvent within 10s tonight, unlike every MARKET order
+    // tested earlier (which got ORDER_ACCEPTED within ~300ms). sendCommand
+    // resolved without throwing, so the broker DID respond to the request
+    // itself - dumping that raw response plus the exact payload sent, to
+    // see whether it carries a rejection reason we're not currently
+    // checking, or whether 'GOOD_TILL_DATE' (never confirmed against a
+    // real response - see this function's own payload comment) is simply
+    // the wrong enum name for this broker. Remove once understood - this
+    // is the SAME `_submitOrder` every FVG signal on every symbol uses, so
+    // if this is broken here it's broken everywhere LIMIT orders are used.
+    console.log(`[_submitOrder] payload=${JSON.stringify(payload)} rawRes=${JSON.stringify(res)}`);
     const syncOrderId = res?.order?.orderId ?? res?.orderId ?? null;
     if (syncOrderId != null) return syncOrderId; // some future response shape DOES carry it directly - trust it, no need to wait for the event
     return orderIdFromEvent;
