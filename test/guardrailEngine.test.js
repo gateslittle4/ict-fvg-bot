@@ -194,3 +194,48 @@ test('consumeTargetReachedEvent fires exactly once, on the first call after the 
   assert.equal(g.consumeTargetReachedEvent(DAY1 + 3000), false); // already consumed - never fires again
   assert.equal(g.getStatus(DAY1 + 4000).targetReached, true); // status itself stays true regardless
 });
+
+// 2026-09-14 (Esdras, monitoring overnight - "on dirait que le garde-fou se
+// réinitialise à chaque redémarrage"): real bug found. cTraderDataSource.js's
+// _loadClosedDeals() replays the last 24h of REAL closed deals into
+// recordTrade() at boot specifically so tradesToday/dailyLossPct survive a
+// restart - but ProtoOADealListReq's response order is never guaranteed
+// chronological, and _ensureDay() (below) resets this.trades every time the
+// computed day-key changes. That reset is correct for recordTrade()'s real
+// intended use (a live, forward-only stream) but unsafe for a historical
+// batch replayed out of order - exactly what a 24h lookback window hits on
+// every boot after 00:00 UTC (it spans two calendar days). These two tests
+// document the failure this class is exposed to, and prove sorting the
+// deals chronologically before replay (the actual fix, in
+// cTraderDataSource.js's sortDealsChronologically()) is what's required -
+// GuardrailEngine itself is correct and unchanged.
+test('recordTrade: replaying deals OUT OF ORDER across a day boundary silently loses already-recorded same-day trades (documents why the caller must sort first)', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10 });
+  const yesterday = DAY1 - 20 * 3600 * 1000; // still within a 24h lookback window from DAY1
+  // Scrambled order, exactly what an unsorted ProtoOADealListReq response
+  // could hand _loadClosedDeals(): today, today, yesterday, today.
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000 }); // today, trade 1
+  g.recordTrade({ pnl: 10, time: DAY1 + 2000 }); // today, trade 2
+  g.recordTrade({ pnl: -5, time: yesterday }); // yesterday, out of order - flips the day-key BACKWARD
+  g.recordTrade({ pnl: 10, time: DAY1 + 3000 }); // today, trade 3 - flips forward again
+
+  // Bug: _ensureDay() wiped trades[] on both flips, so only the LAST today
+  // trade survived instead of all 3 - undercounting tradesToday.
+  const status = g.getStatus(DAY1 + 4000);
+  assert.equal(status.tradesToday, 1); // should be 3 - this is the bug, not the desired behavior
+});
+
+test('recordTrade: replaying the SAME deals in chronological order (the fix) counts every same-day trade correctly', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10 });
+  const yesterday = DAY1 - 20 * 3600 * 1000;
+  // Same 4 deals as above, sorted ascending by time first - what
+  // sortDealsChronologically() now guarantees before _loadClosedDeals()
+  // replays them.
+  g.recordTrade({ pnl: -5, time: yesterday });
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 2000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 3000 });
+
+  const status = g.getStatus(DAY1 + 4000);
+  assert.equal(status.tradesToday, 3); // all 3 of today's trades correctly counted
+});

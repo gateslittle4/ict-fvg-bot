@@ -141,6 +141,39 @@ export function foldLiveBidIntoCandle(existing, price) {
   };
 }
 
+// 2026-09-14 (Esdras, watching overnight: "on dirait que le garde-fou se
+// réinitialise à chaque redémarrage") - real bug found, but NOT the one it
+// first looked like. _loadClosedDeals() below already replays the last 24h
+// of REAL closed deals into GuardrailEngine.recordTrade() at boot specifically
+// so tradesToday/dailyLossPct survive a restart - that mechanism DOES exist.
+// The bug: ProtoOADealListReq's response order is never guaranteed
+// chronological (unverified against docs, and this broker's other quirks -
+// string-serialized numeric fields, inconsistent per-field - already earned
+// it the benefit of no doubt), and GuardrailEngine._ensureDay() WIPES
+// this.trades every time the computed day-key changes - correct for its
+// real intended use (a live, forward-only stream of trades as they close),
+// but unsafe for a historical batch replay whose 24h window almost always
+// spans two calendar days (any boot after 00:00 UTC pulls in some of
+// yesterday's deals too). If even one out-of-order deal from "yesterday"
+// lands between two "today" deals during replay, _ensureDay() flips the
+// day-key back and wipes out the today trades already recorded - then
+// flips forward again and starts today's count over from that point,
+// silently under-counting. Confirmed live: real BTCUSD trades from earlier
+// the same day were gone from tradesToday after a restart, and this
+// account DID have real closed deals late the prior evening still inside
+// the 24h lookback window at boot time.
+// Fix: sort chronologically (ascending) before replaying, so every
+// _ensureDay() transition this batch triggers moves strictly forward
+// through time, matching the one assumption _ensureDay() actually makes.
+// Number(...) - not a bare `-` on the raw values - because
+// executionTimestamp is a STRING on this broker (see the comment at the
+// call site below); `a - b` on two numeric strings still works via JS's
+// implicit coercion, but doing it explicitly here is the same defense-in-
+// depth precedent as every other numeric field on this broker.
+export function sortDealsChronologically(deals) {
+  return [...(deals || [])].sort((a, b) => Number(a.executionTimestamp) - Number(b.executionTimestamp));
+}
+
 export class CTraderDataSource {
   /**
    * @param {{account?: import('../accountRuntime.js').AccountRuntime, brokerConfig?: object, symbols?: string[]}} [opts]
@@ -362,7 +395,12 @@ export class CTraderDataSource {
       fromTimestamp: from,
       toTimestamp: to,
     });
-    for (const deal of res.deal || []) {
+    // sortDealsChronologically (2026-09-14, real bug found live monitoring
+    // overnight - see its own doc comment above) - res.deal's order is never
+    // guaranteed chronological, and replaying it out of order into
+    // GuardrailEngine.recordTrade() can silently wipe out today's
+    // already-recorded trades via _ensureDay()'s day-boundary reset.
+    for (const deal of sortDealsChronologically(res.deal)) {
       if (deal.closePositionDetail) {
         const pnl = deal.closePositionDetail.grossProfit / 100; // `/` auto-coerces a string operand - safe even though grossProfit is a string on this broker (confirmed live, see dealPairing.js's comment)
         // Number(...) (2026-09-13, real bug found live): executionTimestamp
