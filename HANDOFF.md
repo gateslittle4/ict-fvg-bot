@@ -2475,7 +2475,7 @@ Esdras : "Alors ? Tout se passe bien ?" — en vérifiant le fix ci-dessus EN DI
 
 **2 nouveaux tests** dans `test/guardrailEngine.test.js` : un qui reproduit exactement ce mécanisme (des trades réels correctement enregistrés se font effacer par un simple appel `canTakeNewTrade()` avec un temps historique ancien, comme le ferait le warm-up), et un qui prouve que l'ordre inverse (warm-up d'abord, rejeu réel ensuite) protège les trades.
 
-**Vérifié en direct** : log de démarrage confirmé (`tradesToday=12` au moment du rejeu) avant ce fix — vérification post-déploiement de ce fix à faire au prochain redémarrage (surveiller `/api/status`'s `tradesToday` plusieurs dizaines de secondes après un boot, pas seulement au log).
+**Vérifié en direct, CONFIRMÉ** : après déploiement de ce fix, `/api/status` montre `tradesToday:12` toujours correct 44 secondes après le redémarrage (`uptimeSec:44`) — plus d'écrasement par le warm-up. Les deux points de cette nuit (garde-fou + netting) sont maintenant réellement réglés, pas juste en apparence.
 
 `npm test` : 441/441.
 
