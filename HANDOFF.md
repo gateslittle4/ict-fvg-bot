@@ -2357,3 +2357,21 @@ Esdras a remarqué qu'aucun trade BTCUSD ne s'était encore déclenché malgré 
 **Prochaine étape** : moniteur actif en arrière-plan pour confirmer qu'un vrai signal passe le filtre et qu'un ordre réel se déclenche ce soir.
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/backtest/transactionCosts.js`.
+
+## 🎯 Premier trade automatique réel confirmé — 2026-09-14 00:09 UTC
+
+Suite directe des 3 entrées précédentes de ce soir. Après avoir corrigé le spread (25→18, mesuré en direct) et ajouté un moyen de vider une croyance non confirmée (bloquée par le netting du warm-up), un **vrai signal FVG en direct** (`BTCUSD-644`) a passé tous les filtres et s'est exécuté automatiquement :
+
+- Ordre LIMIT BUY envoyé à 00:09:01.210 UTC
+- `ORDER_ACCEPTED` par le courtier 228ms plus tard
+- `ORDER_FILLED` confirmé ~11.4s après (prix a touché le niveau limite)
+- **Position réelle ouverte** : entrée 76954.5, stop 76818, cible 77368, positionId `41542224`
+- `/api/account` confirme : `"status": "match"` — la croyance du bot ET la position réelle chez le courtier concordent, pour la première fois cette session sur n'importe quel symbole
+
+**Un signal LIMIT antérieur ce soir (`BTCUSD-640`) n'avait reçu AUCUN `ProtoOAExecutionEvent` en 10 secondes** (contrairement à tous les ordres MARKET testés plus tôt, confirmés en ~300ms) — un dump temporaire payload/réponse brute a été ajouté pour diagnostiquer, puis retiré une fois ce second signal prouvant que ce n'était pas un problème structurel (juste un raté ponctuel, réseau ou timing). Le log reste en version permanente allégée (`[_submitOrder] ... rawRes=...`), pas spammy (une fois par tentative réelle d'ordre), puisque c'est exactement le genre de trou d'observabilité que cette session cherchait à combler depuis le début.
+
+**Ce qui reste "temporaire"** : BTCUSD lui-même reste un test de connectivité, pas une stratégie validée (voir entrées précédentes) — mais le mécanisme d'exécution automatique (le même `_submitOrder`/`_handleAutoExecuteEntry` utilisé par TOUS les symboles réels) est maintenant prouvé fonctionner de bout en bout avec un vrai signal de stratégie, pas seulement via `/admin/test-order-cycle`.
+
+`npm test` : 419/419.
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js` (log permanent allégé).

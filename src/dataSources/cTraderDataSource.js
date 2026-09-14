@@ -950,19 +950,18 @@ export class CTraderDataSource {
     // comment for why this exists at all.
     const orderIdFromEvent = this._waitForOrderIdBySymbol(symbolId);
     const res = await this.connection.sendCommand('ProtoOANewOrderReq', payload);
-    // TEMPORARY (2026-09-14) - a real LIMIT order (BTCUSD FVG signal,
-    // orderType='LIMIT', timeInForce='GOOD_TILL_DATE') got ZERO
-    // ProtoOAExecutionEvent within 10s tonight, unlike every MARKET order
-    // tested earlier (which got ORDER_ACCEPTED within ~300ms). sendCommand
-    // resolved without throwing, so the broker DID respond to the request
-    // itself - dumping that raw response plus the exact payload sent, to
-    // see whether it carries a rejection reason we're not currently
-    // checking, or whether 'GOOD_TILL_DATE' (never confirmed against a
-    // real response - see this function's own payload comment) is simply
-    // the wrong enum name for this broker. Remove once understood - this
-    // is the SAME `_submitOrder` every FVG signal on every symbol uses, so
-    // if this is broken here it's broken everywhere LIMIT orders are used.
-    console.log(`[_submitOrder] payload=${JSON.stringify(payload)} rawRes=${JSON.stringify(res)}`);
+    // 2026-09-14: one real LIMIT order tonight (BTCUSD FVG signal) got zero
+    // ProtoOAExecutionEvent within 10s and had to fall back to the
+    // timeout/null path - a subsequent LIMIT order minutes later behaved
+    // normally (ORDER_ACCEPTED in ~230ms, ORDER_FILLED ~11s later, real
+    // position confirmed via /api/account showing reconciliation
+    // status:'match') - so that first miss reads as a one-off delay/drop,
+    // not a structural break in LIMIT order handling. Kept as a permanent
+    // (not spammy - once per real order attempt) log line rather than the
+    // original throwaway diagnostic, since this exact gap (an order placed
+    // with no confirmation either way) is precisely what this session's
+    // "corrige le pipeline" work was about closing.
+    console.log(`[_submitOrder] ${payload.orderType} ${payload.tradeSide} sent for symbolId=${symbolId}, rawRes=${JSON.stringify(res)}`);
     const syncOrderId = res?.order?.orderId ?? res?.orderId ?? null;
     if (syncOrderId != null) return syncOrderId; // some future response shape DOES carry it directly - trust it, no need to wait for the event
     return orderIdFromEvent;
