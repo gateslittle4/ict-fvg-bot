@@ -34,6 +34,31 @@ test('enrichRealPosition: a bearish (SELL) position profits when price falls', (
   assert.ok(Math.abs(enriched.grossFloatingPnl - 1000) < 1e-9); // short profits on a drop
 });
 
+// 2026-09-14 (Esdras: "creuse" a real position dashboard-displayed as
+// stopLoss:null/unprotected - it had a real numeric stop, this broker just
+// serializes SOME numeric protobuf fields as JSON strings, inconsistently
+// per-field (confirmed 3 other times already this session: bid/ask,
+// grossProfit, positionId/symbolId). A bare `typeof x === 'number'` guard
+// silently reads a real "19800" as absent. Without the toNumberOrNull() fix
+// this test fails: stopLoss/takeProfit/entryPrice/floating P&L all come
+// back null despite every value being genuinely present.
+test('enrichRealPosition: broker-serialized STRING price/stopLoss/takeProfit are read as real numbers, not silently treated as absent', () => {
+  const pos = realPosition({ price: '20000', stopLoss: '19800', takeProfit: '20600' });
+  const enriched = enrichRealPosition(pos, '20010');
+  assert.equal(enriched.entryPrice, 20000);
+  assert.equal(enriched.stopLoss, 19800);
+  assert.equal(enriched.takeProfit, 20600);
+  assert.equal(enriched.currentPrice, 20010);
+  assert.ok(Math.abs(enriched.grossFloatingPnl - 1000) < 1e-9);
+});
+
+test('enrichRealPosition: a genuinely MISSING stopLoss/takeProfit (undefined) still reports null, not NaN', () => {
+  const pos = realPosition({ stopLoss: undefined, takeProfit: undefined });
+  const enriched = enrichRealPosition(pos, 20010);
+  assert.equal(enriched.stopLoss, null);
+  assert.equal(enriched.takeProfit, null);
+});
+
 test('enrichRealPosition: swap and commission (scaled by moneyDigits) are added into net floating P&L', () => {
   const pos = realPosition({ swap: -150, commission: -200, moneyDigits: 2 }); // -$1.50 swap, -$2.00 commission
   const enriched = enrichRealPosition(pos, 20010);
