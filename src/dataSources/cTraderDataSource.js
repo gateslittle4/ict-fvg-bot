@@ -410,16 +410,43 @@ export class CTraderDataSource {
     const store = this.account;
     const to = Date.now();
     const from = to - 24 * 3600 * 1000; // last 24h is enough to seed today's guardrail state
-    const res = await sendCommandWithTimeout(this.connection, 'ProtoOADealListReq', {
-      ctidTraderAccountId: Number(accountId),
-      fromTimestamp: from,
-      toTimestamp: to,
-    });
+    let res;
+    try {
+      res = await sendCommandWithTimeout(this.connection, 'ProtoOADealListReq', {
+        ctidTraderAccountId: Number(accountId),
+        fromTimestamp: from,
+        toTimestamp: to,
+      });
+    } catch (err) {
+      // Best-effort (2026-09-14, same discipline as
+      // _clearStaleBeliefsAgainstBroker below): a failed request here must
+      // never block boot - the guardrail just starts this session with an
+      // under-counted tradesToday/dailyPnl instead of the real one, same as
+      // before this whole reconstruction existed. Logged loud (not before
+      // tonight) specifically because a SILENT failure here is
+      // indistinguishable from "genuinely 0 trades today" on the dashboard -
+      // exactly the confusion that made this bug so hard to pin down live.
+      console.warn('[cTrader] _loadClosedDeals request failed (non-fatal, boot continues, guardrail under-seeded this session):', err.message);
+      return;
+    }
+    // 2026-09-14: this broker's ProtoOAErrorRes still comes back as a
+    // resolved response (matched by clientMsgId), not a rejected promise -
+    // sendCommandWithTimeout only catches TRANSPORT-level failures
+    // (timeout), not an application-level error payload like this. Without
+    // this check, a rate-limited response (confirmed to happen on this
+    // broker under heavy request volume - see the trade-history chart-candle
+    // fetch failures elsewhere tonight) would silently look like "0 deals",
+    // exactly the same invisible failure mode as the try/catch above.
+    if (!Array.isArray(res.deal)) {
+      console.warn('[cTrader] _loadClosedDeals got an unexpected response shape (no deal array) - guardrail under-seeded this session:', JSON.stringify(res).slice(0, 500));
+      return;
+    }
     // sortDealsChronologically (2026-09-14, real bug found live monitoring
     // overnight - see its own doc comment above) - res.deal's order is never
     // guaranteed chronological, and replaying it out of order into
     // GuardrailEngine.recordTrade() can silently wipe out today's
     // already-recorded trades via _ensureDay()'s day-boundary reset.
+    let recorded = 0;
     for (const deal of sortDealsChronologically(res.deal)) {
       if (deal.closePositionDetail) {
         const pnl = deal.closePositionDetail.grossProfit / 100; // `/` auto-coerces a string operand - safe even though grossProfit is a string on this broker (confirmed live, see dealPairing.js's comment)
@@ -437,8 +464,14 @@ export class CTraderDataSource {
         // found here, not yet observed live, but real and worth fixing
         // immediately rather than waiting for a bust to prove it.
         store.guardrail.recordTrade({ pnl, time: Number(deal.executionTimestamp) });
+        recorded++;
       }
     }
+    // Loud on purpose (2026-09-14) - the ONLY way to tell "the reconstruction
+    // ran and genuinely found nothing" apart from "it silently failed" was
+    // exactly the confusion that made tonight's bug-hunt slow. Cheap to log,
+    // expensive to debug blind again.
+    console.log(`[cTrader] _loadClosedDeals: replayed ${recorded} real closed deal(s) from the last 24h into the guardrail (tradesToday=${store.guardrail.getStatus(to).tradesToday})`);
   }
 
   /**
