@@ -1237,6 +1237,23 @@ export class CTraderDataSource {
     // and unconditional, so "did the broker ever answer at all" is
     // answerable from `render logs` alone.
     console.log(`[execution-event] type=${event.executionType} orderId=${event.order?.orderId ?? 'n/a'} positionId=${event.position?.positionId ?? event.deal?.positionId ?? 'n/a'}`);
+    // 2026-09-14 (Esdras, live: a real BTCUSD take-profit close on positionId
+    // 41549468/orderId 50200971 produced exactly one ORDER_FILLED event that
+    // did NOT enter the closePositionDetail branch below - the durable
+    // real-P&L journal silently missed it. dealPairing.js proves
+    // closePositionDetail definitely exists for this same close (it's what
+    // ProtoOADealListReq/the boot "last 24h of closed deals" load and
+    // /trade-history read), so the gap is in what THIS push event
+    // (ProtoOAExecutionEvent) actually carries for a broker-triggered
+    // TP/SL bracket fill specifically - never confirmed live before tonight
+    // (every previously-logged real close in this journal was a MANUAL/
+    // guardrail-driven close, a different code path). Dumping the raw
+    // event.deal/event.position here (once, only on ORDER_FILLED, cheap)
+    // until the next real close reveals the actual shape - don't guess at
+    // a fix for an undocumented broker payload.
+    if (event.executionType === 'ORDER_FILLED') {
+      console.log('[execution-event:raw-fill] deal=' + JSON.stringify(event.deal) + ' position=' + JSON.stringify(event.position));
+    }
     // A position closed on the broker side -> feed it into the guardrail engine
     // as ground truth (real trade, not a demo simulation).
     if (event.executionType === 'ORDER_FILLED' && event.deal?.closePositionDetail) {
