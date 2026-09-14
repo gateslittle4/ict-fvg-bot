@@ -2405,3 +2405,17 @@ Esdras a demandé une surveillance continue ("prend des notes pour detecter tt p
 `npm test` : 427/427 (425 + 2 nouveaux).
 
 **Fichiers** : `src/liveStrategyEngine.js`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`, `test/liveStrategyEngine.test.js`.
+
+## À DISCUTER LA PROCHAINE SESSION : les 2 journaux ne concordent pas (17% vs 0% de réussite) — 2026-09-14
+
+Esdras a remarqué une vraie contradiction sur le dashboard (screenshot) : pour les mêmes 6 trades BTCUSD,
+- **"Journal durable par instrument"** (persisté en Supabase) affiche **17% (1G/5P), -2.00R**
+- **"Journal de trading"** (interroge cTrader en direct, celui corrigé ce soir pour le bug Invalid Date/faux P&L) affiche **0% (0/6), -4.77$**
+
+Demande explicite : **garder ça pour en discuter la prochaine session, pas le corriger ce soir.**
+
+**Cause précise identifiée** (pas juste une supposition — code lu) : `cTraderDataSource.js`'s `_logTradeOutcomes()` (ligne ~1288) écrit dans le journal durable Supabase un `outcome` ('win'/'loss') qui vient de `e.outcome`, produit par la résolution INTERNE du moteur (`_resolveOpenPosition` dans `liveStrategyEngine.js` — sa propre simulation "le stop ou la cible a-t-il été touché" contre les plus hauts/plus bas des bougies), **PAS le résultat réel confirmé par le courtier**. C'est exactement le même thème que tout le reste de cette session (croyance du moteur vs confirmation réelle) — sauf que cette fois c'est le JOURNAL DURABLE (pas juste l'affichage "position ouverte") qui se base sur la croyance plutôt que la réalité. Le "Journal de trading" (cTrader en direct, `dealPairing.js`), lui, utilise le vrai P&L réalisé du courtier — d'où l'écart : slippage, spread, ou une clôture réelle légèrement différente du niveau simulé peuvent faire diverger les deux.
+
+**Question à trancher la prochaine session** : est-ce que le journal durable devrait plutôt enregistrer le résultat RÉEL confirmé (comme `dealPairing.js` le fait), ou les deux ont-ils leur utilité propre (croyance du moteur vs réalité du courtier) et il faut juste les étiqueter plus clairement pour ne pas prêter à confusion ?
+
+**Fichiers concernés** : `src/dataSources/cTraderDataSource.js` (`_logTradeOutcomes`), `src/liveStrategyEngine.js` (`_resolveOpenPosition`), `src/dataSources/supabaseTradeLog.js`, `src/backtest/recentPerformanceReport.js`, `src/dataSources/dealPairing.js` (pour comparaison).
