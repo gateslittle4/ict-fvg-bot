@@ -272,7 +272,18 @@ export class MatchTraderDataSource {
   // ---- auth ----
 
   async _login({ email, password, brokerId }) {
-    const res = await fetch(`${this.baseUrl}/manager/co-login`, {
+    // 2026-09-14, CONFIRMED LIVE (Esdras, City Traders Imperium/Match-Trader,
+    // via her own browser DevTools Network tab - the actual POST fired by
+    // CTI's own login form): the real path is `/mtr-core-edge/v2/login`, NOT
+    // `/manager/co-login` as this file originally guessed from the Platform
+    // API PDF (see file header - that doc never covered CTI's specific
+    // white-label edge/gateway routing, which splits different endpoint
+    // groups under different `*-edge` prefixes, e.g. `/match-trader-edge/`
+    // for the pre-login available-brokers list vs `/mtr-core-edge/` for the
+    // login itself). `/manager/co-login` produced a real HTTP 403 tonight -
+    // this is the fix, not a guess. Body shape sent ({email, password,
+    // brokerId}) already matched the real request's ~58-byte payload size.
+    const res = await fetch(`${this.baseUrl}/mtr-core-edge/v2/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, brokerId }),
