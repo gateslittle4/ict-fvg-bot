@@ -241,6 +241,115 @@ test('LiveStrategyEngine: netting blocks a second FVG signal on the same symbol 
   assert.equal(engine.getOpenPosition('TEST1').id, firstOpen.id);
 });
 
+// 2026-09-14 (Esdras, monitoring overnight - real double-position bug,
+// recurred twice live: 02:00 opposite-direction, 09:11 same-direction): a
+// simulated stop/target hit (_resolveOpenPosition, from candle highs/lows)
+// can land before the REAL broker-side close confirms. Live, that used to
+// delete openPositions immediately on the simulated hit, so netting saw the
+// symbol as free and let a second real position open on top of the first,
+// still-open one. deferCloseToRealConfirmation fixes this for the live call
+// site only (see liveStrategyEngine.js/cTraderDataSource.js for the full
+// story) - these tests drive the FIRST position to actually hit its target
+// (candle 4, high=110 >= the ~109.6 target), then a SECOND, independent gap
+// forms and tries to validate a few candles later. The buffer candles
+// (5-6) are deliberately flat/low enough that they don't accidentally form
+// their OWN gap against candle 3's high(104) - verified empirically, not
+// just by inspection, before committing to these exact numbers.
+function firstPositionAndResolution(engine, opts) {
+  for (const cd of [c(0, 100, 101, 99, 100), c(M15, 100, 102, 100, 101), c(2 * M15, 102, 105, 103, 104), c(3 * M15, 104, 104, 102, 103)]) {
+    engine.ingestCandle('TEST1', cd, cd.time, opts);
+  }
+  const firstOpen = engine.getOpenPosition('TEST1');
+  // target ~= entry(103) + 3R(2.2) = 109.6 (fvg-edge stop, see the very first test in this file) - high=110 hits it.
+  const resolvedEvs = engine.ingestCandle('TEST1', c(4 * M15, 103, 110, 103, 108), 4 * M15, opts);
+  return { firstOpen, resolvedEvs };
+}
+
+function secondGapCandles() {
+  return [
+    c(5 * M15, 108, 108, 103, 105), // buffer - low<=104 keeps this from pairing into a spurious gap with candle 3
+    c(6 * M15, 105, 106, 104, 105), // buffer
+    c(7 * M15, 105, 107, 105, 106), // c1 of the second gap
+    c(8 * M15, 106, 107, 105, 106.5), // c2
+    c(9 * M15, 106.5, 109, 108, 108.5), // c3: c1.high(107) < c3.low(108) -> gap [107,108]
+  ];
+}
+const SECOND_GAP_REENTRY = c(10 * M15, 108.5, 108.6, 106, 107); // low dips back into [107,108]
+
+test('LiveStrategyEngine: deferCloseToRealConfirmation defaults to false (warm-up/backtest/every other caller unchanged) - a simulated target hit clears the belief immediately, netting does not block a new signal', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({ symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1 });
+  const { firstOpen, resolvedEvs } = firstPositionAndResolution(engine);
+  assert.ok(resolvedEvs.some((e) => e.type === 'closed' && e.outcome === 'win'));
+  assert.equal(engine.getOpenPosition('TEST1'), null, 'belief cleared immediately - old/default behavior, unchanged');
+
+  for (const cd of secondGapCandles()) engine.ingestCandle('TEST1', cd);
+  const secondEvs = engine.ingestCandle('TEST1', SECOND_GAP_REENTRY);
+  const secondValidated = secondEvs.find((e) => e.type === 'validated');
+  assert.ok(secondValidated);
+  assert.equal(secondValidated.blockedReason, null, 'nothing believed open anymore - free to trade');
+  assert.notEqual(engine.getOpenPosition('TEST1').id, firstOpen.id);
+});
+
+test('LiveStrategyEngine: deferCloseToRealConfirmation=true (live) - a simulated target hit does NOT clear the belief, netting still blocks a new signal (the actual double-position fix)', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({ symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1 });
+  const opts = { deferCloseToRealConfirmation: true };
+  const { firstOpen, resolvedEvs } = firstPositionAndResolution(engine, opts);
+  assert.ok(resolvedEvs.some((e) => e.type === 'closed' && e.outcome === 'win'), 'still emits the informational closed event, same as before');
+  // The bug this fixes: belief must still be there (not deleted) so netting stays blocked.
+  assert.ok(engine.getOpenPosition('TEST1'), 'belief NOT cleared yet - waiting on the real broker close');
+  assert.equal(engine.getOpenPosition('TEST1').id, firstOpen.id);
+  assert.equal(engine.getOpenPosition('TEST1').awaitingRealClose, true);
+
+  for (const cd of secondGapCandles()) engine.ingestCandle('TEST1', cd, cd.time, opts);
+  const secondEvs = engine.ingestCandle('TEST1', SECOND_GAP_REENTRY, SECOND_GAP_REENTRY.time, opts);
+  const secondValidated = secondEvs.find((e) => e.type === 'validated');
+  assert.ok(secondValidated, 'expected the second gap to reach validated stage');
+  assert.equal(secondValidated.blockedReason, 'netting', 'THE FIX: still netted - a second real position must not open on top of the first, unconfirmed-closed one');
+  assert.equal(engine.getOpenPosition('TEST1').id, firstOpen.id, 'still the original belief, untouched');
+});
+
+test('LiveStrategyEngine: deferCloseToRealConfirmation=true - once the REAL close is confirmed (clearBelievedPosition), netting opens back up for a new signal', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({ symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1 });
+  const opts = { deferCloseToRealConfirmation: true };
+  const { firstOpen } = firstPositionAndResolution(engine, opts);
+
+  // The REAL broker confirmation arrives (cTraderDataSource.js's _handleExecutionEvent) -
+  // this is the only thing that should release the belief once deferred.
+  const cleared = engine.clearBelievedPosition('TEST1', firstOpen.id);
+  assert.equal(cleared, true);
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+
+  for (const cd of secondGapCandles()) engine.ingestCandle('TEST1', cd, cd.time, opts);
+  const secondEvs = engine.ingestCandle('TEST1', SECOND_GAP_REENTRY, SECOND_GAP_REENTRY.time, opts);
+  const secondValidated = secondEvs.find((e) => e.type === 'validated');
+  assert.ok(secondValidated);
+  assert.equal(secondValidated.blockedReason, null, 'freed up the instant the real close confirmed - a new position can open');
+  assert.notEqual(engine.getOpenPosition('TEST1').id, firstOpen.id);
+});
+
+test('LiveStrategyEngine: _maybeRequestPyramid does not fire on a position that just simulated-closed this same candle under deferCloseToRealConfirmation', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['TEST1'] },
+  });
+  for (const cd of [c(0, 100, 101, 99, 100), c(M15, 100, 102, 100, 101), c(2 * M15, 102, 105, 103, 104), c(3 * M15, 104, 104, 102, 103)]) {
+    engine.ingestCandle('TEST1', cd, cd.time, { deferCloseToRealConfirmation: true });
+  }
+  // Same candle both crosses the addAtR pyramid trigger AND hits the target -
+  // without the awaitingRealClose guard in _maybeRequestPyramid, this could
+  // wrongly request a pyramid add-on on a position that just closed.
+  const events = engine.ingestCandle('TEST1', c(4 * M15, 103, 110, 103, 108), 4 * M15, { deferCloseToRealConfirmation: true });
+  assert.equal(events.some((e) => e.type === 'pyramid-order-requested'), false);
+});
+
 // Fixed-EST-as-UTC convention (nySession.js, also used by
 // test/fvgMultiTouch.test.js): a Wednesday at 15:00 UTC is 10:00 NY (EST).
 const SESSION_MULTI_TOUCH_CFG = {

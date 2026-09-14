@@ -273,7 +273,18 @@ export class LiveStrategyEngine {
   // call site that actually has real wall-clock time (cTraderDataSource.js's
   // live tick handler) supply it explicitly, without touching any other
   // caller's behavior.
-  ingestCandle(symbol, candle, guardrailNow = candle.time) {
+  // deferCloseToRealConfirmation (2026-09-14, real double-position bug found
+  // monitoring overnight - see _resolveOpenPosition's own header for the
+  // full story): opt-in, default false, so every existing caller (warm-up,
+  // backtests, every existing test, and matchTraderDataSource.js - which has
+  // no real-close confirmation loop yet) keeps today's exact behavior. Only
+  // cTraderDataSource.js's live tick handler passes true, because it alone
+  // has the real ProtoOAExecutionEvent confirmation loop
+  // (_handleExecutionEvent -> clearBelievedPosition) needed to eventually
+  // release a belief held pending under this flag - turning it on anywhere
+  // else would strand that belief forever, a worse bug than the one this
+  // fixes.
+  ingestCandle(symbol, candle, guardrailNow = candle.time, { deferCloseToRealConfirmation = false } = {}) {
     if (!this.history.has(symbol)) return [];
     const hist = this.history.get(symbol);
     if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) {
@@ -283,7 +294,7 @@ export class LiveStrategyEngine {
 
     const events = [];
 
-    this._resolveOpenPosition(symbol, candle, events);
+    this._resolveOpenPosition(symbol, candle, events, deferCloseToRealConfirmation);
     this._maybeRequestPyramid(symbol, candle, events);
 
     if (this.fvgConfig[symbol]) {
@@ -305,9 +316,32 @@ export class LiveStrategyEngine {
     return events;
   }
 
-  _resolveOpenPosition(symbol, candle, events) {
+  // 2026-09-14, real double-position bug found monitoring overnight (recurred
+  // twice: 02:00 opposite-direction, 09:11 same-direction): this method
+  // decides "stop/target/timeout hit" purely from candle highs/lows - a
+  // SIMULATION, same as the backtest. Live, that simulated hit can land
+  // BEFORE the REAL broker-side stop/target order actually fills (a real
+  // fill took up to ~10s tonight) - deleting openPositions right here, as
+  // this used to do unconditionally, means netting (_blockReason's
+  // `openPositions.has(symbol)` check) sees the symbol as free and lets a
+  // NEW signal open a second real position on top of the first, still-open
+  // one. With deferCloseToRealConfirmation, this method still detects the
+  // simulated hit and still emits the 'closed' event (informational -
+  // signal log / notifications, not the durable journal, which already logs
+  // real broker P&L only - see cTraderDataSource.js's
+  // openPositionInfoByPositionId), but leaves the belief IN openPositions,
+  // guarded so it fires only once (`awaitingRealClose`) - netting stays
+  // blocked until clearBelievedPosition() (called from
+  // cTraderDataSource.js's _handleExecutionEvent on the REAL confirmed
+  // close) removes it. Without the flag (warm-up, backtests, every existing
+  // test, matchTraderDataSource.js), behavior is byte-for-bit unchanged:
+  // there is no real broker confirmation loop to eventually release a
+  // deferred belief in those contexts, so deferring there would strand it
+  // forever instead of fixing anything.
+  _resolveOpenPosition(symbol, candle, events, deferCloseToRealConfirmation = false) {
     const open = this.openPositions.get(symbol);
     if (!open || candle.time <= open.entryTime) return;
+    if (open.awaitingRealClose) return; // already simulated-resolved, waiting on the real broker close - see header above
 
     const bullish = open.direction === 'bullish';
     const hitStop = bullish ? candle.low <= open.stopPrice : candle.high >= open.stopPrice;
@@ -317,7 +351,11 @@ export class LiveStrategyEngine {
     if (!hitStop && !hitTarget && !timedOut) return;
 
     const outcome = hitStop ? 'loss' : hitTarget ? 'win' : 'timeout';
-    this.openPositions.delete(symbol);
+    if (deferCloseToRealConfirmation) {
+      open.awaitingRealClose = true; // netting (openPositions.has(symbol)) stays blocked until the REAL close confirms
+    } else {
+      this.openPositions.delete(symbol);
+    }
     events.push({
       type: 'closed',
       source: open.source,
@@ -361,6 +399,13 @@ export class LiveStrategyEngine {
     if (!this.pyramidConfig || !this.pyramidConfig.symbols.includes(symbol)) return;
     const open = this.openPositions.get(symbol);
     if (!open || open.source !== 'fvg') return; // only ever validated for FVG trades on these symbols - see config.js comment
+    // 2026-09-14: with deferCloseToRealConfirmation, _resolveOpenPosition (which
+    // runs right before this, same candle) can leave `open` in the map with
+    // awaitingRealClose=true instead of deleting it outright - without this
+    // check, a pyramid add-on could get requested on a position that just
+    // simulated-closed this very candle (previously impossible, since the old
+    // unconditional delete meant `open` was already gone by the time this ran).
+    if (open.awaitingRealClose) return;
     if (this.pyramidPositions.get(symbol)) return; // already requested/placed for this trade
     if (candle.time <= open.entryTime) return; // same conservative "next candle" ordering as everywhere else in this project
 

@@ -317,6 +317,25 @@ export class CTraderDataSource {
     console.log('[cTrader] checking warm-up beliefs against the real broker account...');
     await this._clearStaleBeliefsAgainstBroker(accountId);
 
+    // 2026-09-14: safety net for the deferCloseToRealConfirmation fix above -
+    // a believed-open position now only clears via the REAL
+    // ProtoOAExecutionEvent close confirmation (_handleExecutionEvent), not
+    // this method's own boot-time-only run. If that real confirmation is
+    // ever missed (a dropped event, a disconnect at the wrong instant), the
+    // belief would otherwise sit stuck blocking netting on that symbol until
+    // the next restart. Re-running the SAME real-broker-state check every 5
+    // minutes (not just once at boot) means a genuinely stuck belief - one
+    // backed by neither a real position nor a pending order - self-heals
+    // within minutes instead of surviving until someone notices or the
+    // process happens to restart. Same best-effort discipline as the
+    // boot-time call: a failed reconcile here just gets logged and retried
+    // next tick, never throws.
+    this._staleBeliefSweep = setInterval(() => {
+      this._clearStaleBeliefsAgainstBroker(accountId).catch((err) =>
+        console.warn('[cTrader] periodic stale-belief sweep failed (non-fatal, retries next tick):', err.message)
+      );
+    }, 5 * 60 * 1000);
+
     // ROOT CAUSE FIX (2026-09-10): connection.on(name, listener) delivers a
     // CTraderLayerEvent WRAPPER, not the raw decoded payload - see
     // CTraderLayerEmitter.notifyListeners() (`new CTraderLayerEvent({ type,
@@ -346,6 +365,7 @@ export class CTraderDataSource {
   async stop() {
     const store = this.account;
     if (this._heartbeat) clearInterval(this._heartbeat);
+    if (this._staleBeliefSweep) clearInterval(this._staleBeliefSweep);
     if (this.connection) await this.connection.close?.();
     store.mode = 'demo';
   }
@@ -801,7 +821,16 @@ export class CTraderDataSource {
             // protection silently resets itself every day between ~00:00-05:00
             // UTC (confirmed live: a real loss's 30-min cooldown vanished
             // after ~3 minutes instead of holding for the full 30).
-            const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle), Date.now());
+            // deferCloseToRealConfirmation: true (2026-09-14, real
+            // double-position bug found monitoring overnight - see
+            // liveStrategyEngine.js's _resolveOpenPosition for the full
+            // story) - only this live call site gets it: this data source
+            // alone has the real ProtoOAExecutionEvent confirmation loop
+            // (_handleExecutionEvent -> clearBelievedPosition) needed to
+            // eventually release a belief held pending under this flag.
+            const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle), Date.now(), {
+              deferCloseToRealConfirmation: true,
+            });
             store.pushSignalEvents(events);
             store.lastCandleBySymbol.set(symbolName, candle);
             const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
