@@ -2375,3 +2375,17 @@ Suite directe des 3 entrées précédentes de ce soir. Après avoir corrigé le 
 `npm test` : 419/419.
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js` (log permanent allégé).
+
+## Bug réel trouvé par Esdras : "Écart bot/courtier ⚠ statut inconnu" sur des symboles au repos — 2026-09-14
+
+Suite directe de l'entrée précédente ("Auto-clear stale warm-up beliefs"). Esdras a envoyé un screenshot montrant 3 cartes "Écart bot/courtier ⚠ statut inconnu" alors que rien n'était censé se passer.
+
+**Cause** : `refreshAccount()` (public/index.html) filtrait les "écarts" avec `r.status !== 'match'` — ce qui laisse passer `'none'` (aucun des deux côtés ne croit avoir quelque chose d'ouvert, l'état NORMAL) comme si c'était un écart. `reconciliationExplanation()` n'avait aucune branche pour `'none'`, donc ça retombait sur le message générique "statut inconnu".
+
+**Pourquoi ça n'était jamais apparu avant** : avant le fix précédent (nettoyage automatique des croyances périmées), un symbole restait presque toujours coincé en `believed-only` après chaque redémarrage — `'none'` n'apparaissait quasiment jamais en pratique. En corrigeant CE bug-là, les symboles retombent légitimement à `'none'` bien plus souvent entre deux signaux réels — ce qui a rendu ce second bug (préexistant, pas introduit ce soir) enfin visible.
+
+**Fix** : exclure `'none'` du filtre d'écarts (seuls `real-only`/`believed-only` sont de vrais écarts), plus une branche défensive pour `'none'` dans `reconciliationExplanation()`.
+
+`npm test` : 425/425 (changement front-end uniquement, `public/index.html`).
+
+**Fichiers** : `public/index.html`.
