@@ -802,10 +802,19 @@ async function refreshRecentPerformance() {
     }
     const s = data.summary;
     const netWin = s.totalR >= 0;
+    // 2026-09-14, "on fait tout de facon honnete" - totalR is now NET of a
+    // real spread cost (recentPerformanceReport.js), where before it was a
+    // spread-free simulation (a win always counted as the full configured
+    // RR, a loss always exactly -1R). totalGrossR shown alongside, muted,
+    // so the cost of trading is visible rather than hidden behind one
+    // optimistic number - same gross/net split the real backtest reports
+    // already use.
     summaryEl.innerHTML = `
       <div class="stat-row"><span class="label">Signaux (${s.windowDays}j)</span><span>${s.count}</span></div>
       <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt(s.winRatePct, 0)}% (${s.wins}G / ${s.losses}P${s.timeouts ? ' / ' + s.timeouts + ' expirés' : ''})</span></div>
-      <div class="stat-row"><span class="label">Total en R</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.totalR)}R</span></div>
+      <div class="stat-row"><span class="label">Total en R (net du spread)</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.totalR)}R</span></div>
+      <div class="stat-row"><span class="label meta">dont brut (sans spread)</span><span class="meta">${s.totalGrossR >= 0 ? '+' : ''}${fmt(s.totalGrossR)}R</span></div>
+      <div class="meta" style="margin-top:4px">Simulation : un gain = la cible RR configurée, une perte = -1R exactement, moins le spread réel. Pas un ordre réellement passé - voir le journal durable pour les vrais résultats confirmés par le courtier.</div>
     `;
     listEl.innerHTML = data.trades.length
       ? '<ul class="signal-list">' + data.trades.slice(0, 30).map((t) => {
