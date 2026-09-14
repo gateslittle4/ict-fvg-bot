@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enrichRealPosition, reconcileAccount, estimateEquity, computeStaleBeliefsToClear } from '../src/dataSources/accountReconciliation.js';
+import { enrichRealPosition, reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from '../src/dataSources/accountReconciliation.js';
 
 function realPosition(overrides = {}) {
   return {
@@ -236,4 +236,74 @@ test('computeStaleBeliefsToClear: real/pending on ONE symbol never affects an un
     getBelievedPosition: (s) => ({ id: `${s}-1` }), // both believe something is open
   });
   assert.deepEqual(toClear, [{ symbol: 'BTCUSD', id: 'BTCUSD-1' }]); // only the unbacked one clears
+});
+
+// 2026-09-14, real bug found live: a filled LIMIT order's position came
+// back stopLoss:null with no working pending order behind it either (the
+// broker's own contingent stop order had vanished) - nothing noticed until
+// checked by hand via /api/admin/reconcile-raw. computeMissingStopFixes()
+// is the decision logic behind cTraderDataSource.js's fix: resubmit the
+// stop this process originally asked for, but only when it's truly missing
+// and we actually know what to resubmit.
+test('computeMissingStopFixes: flags a real open position with no stopLoss and no backing pending order', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: (id) => (id === '1' ? { stopPrice: 78069.5, takeProfit: 78827.5 } : null),
+  });
+  assert.deepEqual(toFix, [{ positionId: 1, symbolId: 101, stopPrice: 78069.5, takeProfit: 78827.5 }]);
+});
+
+test('computeMissingStopFixes: leaves a position alone when its stopLoss is already a real number', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: 78069.5, tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, []);
+});
+
+test('computeMissingStopFixes: leaves a position alone when a genuinely working pending order still protects it', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [{ positionId: 1, orderStatus: 'ORDER_STATUS_ACCEPTED' }],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, []);
+});
+
+test('computeMissingStopFixes: a CANCELLED/EXPIRED pending order does not count as protection', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [{ positionId: 1, orderStatus: 'ORDER_STATUS_CANCELLED' }],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, [{ positionId: 1, symbolId: 101, stopPrice: 78069.5, takeProfit: null }]);
+});
+
+test('computeMissingStopFixes: a position this process never saw the entry of is left alone, not guessed', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: () => null, // this instance never observed this position's entry
+  });
+  assert.deepEqual(toFix, []);
+});
+
+test('computeMissingStopFixes: a broker-serialized STRING stopLoss (e.g. "78069.5") reads as present, not missing', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: '78069.5', tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, []);
+});
+
+test('computeMissingStopFixes: a non-open position (e.g. already closed) is never touched', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_CLOSED', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, []);
 });

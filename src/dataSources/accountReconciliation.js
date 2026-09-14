@@ -212,3 +212,59 @@ export function computeStaleBeliefsToClear({ realPositions, pendingOrders, symbo
   }
   return toClear;
 }
+
+/**
+ * Pure decision logic behind cTraderDataSource.js's stop-protection sweep
+ * (2026-09-14, found live: a real BTCUSD position filled via a LIMIT order
+ * came back from the broker with stopLoss:null AND a genuinely separate
+ * pending stop order (a broker quirk - takeProfit attaches natively to the
+ * position, stopLoss doesn't for this order type) - that separate order
+ * later vanished (most likely a missed execution event across one of two
+ * process restarts in the following minutes) with NOTHING noticing: the
+ * existing 5-minute stale-belief sweep only checks whether a real position
+ * OR pending order exists for netting purposes, never whether a real open
+ * position's OWN protection is still intact. Confirmed live via
+ * /api/admin/reconcile-raw: position.stopLoss null AND pendingOrders empty
+ * for that positionId - a real position sat completely unprotected with no
+ * self-healing, unlike every other belief/state gap fixed earlier tonight.
+ *
+ * A position only needs fixing when its OWN stopLoss field is missing AND
+ * no pending order is linked to it (checked by `order.positionId`, per this
+ * project's own vendored OpenApiModelMessages.proto - not a guess) - a
+ * position whose stop lives as that kind of separate working order must
+ * never be touched. `getTrackedStopPrice` returns null when this process
+ * never observed this position's own entry (e.g. it was already open before
+ * this instance booted) - there is nothing safe to resubmit without a real
+ * stop level to use, so those are left alone rather than invented.
+ *
+ * @param {object[]} realPositions - raw ProtoOAReconcileRes.position array
+ * @param {object[]} pendingOrders - raw ProtoOAReconcileRes.order array
+ * @param {(positionId: string) => {stopPrice: number, takeProfit: number|null}|null} getTrackedStopPrice
+ * @returns {{positionId: number, symbolId: number|null, stopPrice: number, takeProfit: number|null}[]}
+ */
+export function computeMissingStopFixes({ realPositions, pendingOrders, getTrackedStopPrice }) {
+  const openPositions = (realPositions || []).filter(
+    (p) => !p.positionStatus || p.positionStatus === 'POSITION_STATUS_OPEN'
+  );
+  const protectedPositionIds = new Set(
+    (pendingOrders || [])
+      .filter((o) => (!o.orderStatus || o.orderStatus === 'ORDER_STATUS_ACCEPTED') && o.positionId != null)
+      .map((o) => String(o.positionId))
+  );
+
+  const toFix = [];
+  for (const pos of openPositions) {
+    if (toNumberOrNull(pos.stopLoss) !== null) continue; // already protected on the position itself
+    const positionId = String(pos.positionId);
+    if (protectedPositionIds.has(positionId)) continue; // a separate working stop order still exists
+    const tracked = getTrackedStopPrice(positionId);
+    if (!tracked || !Number.isFinite(tracked.stopPrice)) continue; // never observed this position's own entry - nothing safe to resubmit
+    toFix.push({
+      positionId: pos.positionId,
+      symbolId: pos.tradeData?.symbolId ?? null,
+      stopPrice: tracked.stopPrice,
+      takeProfit: Number.isFinite(tracked.takeProfit) ? tracked.takeProfit : null,
+    });
+  }
+  return toFix;
+}

@@ -36,7 +36,7 @@ import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
-import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear } from './accountReconciliation.js';
+import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
 import { createTradeLogClient, logClosedTrade } from './supabaseTradeLog.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
@@ -699,6 +699,40 @@ export class CTraderDataSource {
         console.log(`[cTrader] cleared stale believed-open position on boot: ${symbol} id=${id} (no matching real position or pending order at the broker)`);
       }
     }
+
+    // 2026-09-14 (found live: a real BTCUSD position came back with
+    // stopLoss:null and NO working pending order behind it either - see
+    // accountReconciliation.js's computeMissingStopFixes for the full story
+    // and dealPairing.js/openPositionInfoByPositionId for why this process
+    // is the only place that remembers what the stop was ever supposed to
+    // be). Reuses the SAME reconcile response above - no extra broker
+    // round-trip - so this runs on every boot AND every 5-minute sweep tick,
+    // matching the stale-belief check's own cadence exactly.
+    const toFix = computeMissingStopFixes({
+      realPositions: res.position || [],
+      pendingOrders: res.order || [],
+      getTrackedStopPrice: (positionId) => this.openPositionInfoByPositionId.get(positionId) || null,
+    });
+    for (const fix of toFix) {
+      try {
+        // ProtoOAAmendPositionSLTPReq - confirmed against this project's own
+        // vendored OpenApiMessages.proto, not a guess: stopLoss/takeProfit
+        // are both independently `optional`, i.e. an amend that only sets
+        // stopLoss leaves takeProfit untouched - still passing the tracked
+        // takeProfit too (when known) as a second safety net in case that
+        // assumption is wrong, never to overwrite a real, different value.
+        await sendCommandWithTimeout(this.connection, 'ProtoOAAmendPositionSLTPReq', {
+          ctidTraderAccountId: Number(accountId),
+          positionId: Number(fix.positionId),
+          stopLoss: fix.stopPrice,
+          ...(fix.takeProfit != null ? { takeProfit: fix.takeProfit } : {}),
+        });
+        console.log(`[cTrader] resubmitted missing stop-loss on positionId=${fix.positionId}: stopLoss=${fix.stopPrice}`);
+        this._notifyText(`⚠️ Stop de protection manquant détecté sur une position réelle (id ${fix.positionId}) - resoumis automatiquement à ${fix.stopPrice}.`);
+      } catch (err) {
+        console.error(`[cTrader] failed to resubmit missing stop-loss on positionId=${fix.positionId} (will retry next sweep tick):`, err.message);
+      }
+    }
   }
 
   /**
@@ -1335,6 +1369,15 @@ export class CTraderDataSource {
           direction: signal.suggestedSide === 'buy' ? 'bullish' : 'bearish',
           entryPrice: signal.entryPrice,
           riskAmount: sizing.actualRiskAmount,
+          // 2026-09-14 (found live: a real position came back stopLoss:null
+          // with no working stop order behind it either - see
+          // accountReconciliation.js's computeMissingStopFixes) - the ONLY
+          // record of what this position's intended protection was, so the
+          // periodic sweep below can resubmit it if the broker ever drops
+          // it. Never used to size/open anything - purely a memory of what
+          // WE already asked the broker for at entry time.
+          stopPrice: signal.stopPrice,
+          targetPrice: signal.targetPrice,
         });
         this._notifyText(
           `🤖 [${signal.source.toUpperCase()}] Entrée auto envoyée sur ${symbolName} (${signal.suggestedSide.toUpperCase()}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
