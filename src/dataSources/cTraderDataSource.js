@@ -199,13 +199,23 @@ export class CTraderDataSource {
     // lives only in memory, wiped on every Render restart/sleep. Opt-in,
     // same pattern as keepAlive.js: createTradeLogClient() returns null
     // (persistence silently skipped) unless SUPABASE_URL/SUPABASE_SERVICE_KEY
-    // are set. openTradesById pairs a 'closed' event back to the 'validated'
-    // event that opened it (same pairing recentPerformanceReport.js already
-    // does for its own in-memory replay) so the logged row has an
-    // entryTime/rrMultiple to work with - 'closed' events alone don't carry
-    // either (see liveStrategyEngine.js's _resolveOpenPosition()).
+    // are set.
     this.tradeLogClient = createTradeLogClient();
-    this.openTradesById = new Map();
+    // 2026-09-14 FIX (Esdras: "corrige pour voir le vrai P&L du courtier",
+    // after spotting the durable journal (17%) disagreeing with the live
+    // cTrader-queried journal (0%) on the SAME trades): this used to be
+    // openTradesById, filled from the ENGINE's own simulated 'validated'/
+    // 'closed' events (LiveStrategyEngine's _resolveOpenPosition guessing
+    // stop-vs-target from candle highs/lows) - logged on EVERY candle
+    // regardless of whether a real order was ever sent or confirmed. Now
+    // keyed by the REAL broker positionId (always String()'d - this
+    // broker serializes it as a JSON string on some events, a bug pattern
+    // hit twice already tonight) and populated ONLY once
+    // _handleExecutionEvent confirms a real fill (see there) - so the
+    // durable journal logs the SAME real grossProfit dealPairing.js's
+    // trade-history view already uses, not a second, independently-guessed
+    // outcome.
+    this.openPositionInfoByPositionId = new Map();
   }
 
   async start() {
@@ -756,8 +766,6 @@ export class CTraderDataSource {
               if (e.type === 'pyramid-order-requested') this._handlePyramidOrderRequested(symbolName, symbolId, e);
               if (e.type === 'pyramid-order-cancel-requested') this._handlePyramidOrderCancelRequested(symbolName, e);
             }
-
-            this._logTradeOutcomes(events);
           }
         }
 
@@ -1162,6 +1170,15 @@ export class CTraderDataSource {
           symbolName,
           source: signal.source,
           signalId: signal.id,
+          // 2026-09-14: carried through to openPositionInfoByPositionId once
+          // this fill is confirmed (see _handleExecutionEvent) - needed to
+          // log a REAL trade outcome (direction/entryPrice for the record,
+          // riskAmount as the denominator for a real R-multiple) once the
+          // position actually closes, instead of the engine's simulated
+          // stop-vs-target guess.
+          direction: signal.suggestedSide === 'buy' ? 'bullish' : 'bearish',
+          entryPrice: signal.entryPrice,
+          riskAmount: sizing.actualRiskAmount,
         });
         this._notifyText(
           `🤖 [${signal.source.toUpperCase()}] Entrée auto envoyée sur ${symbolName} (${signal.suggestedSide.toUpperCase()}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
@@ -1193,9 +1210,35 @@ export class CTraderDataSource {
     // A position closed on the broker side -> feed it into the guardrail engine
     // as ground truth (real trade, not a demo simulation).
     if (event.executionType === 'ORDER_FILLED' && event.deal?.closePositionDetail) {
-      const pnl = event.deal.closePositionDetail.grossProfit / 100;
+      const pnl = Number(event.deal.closePositionDetail.grossProfit) / 100;
       store.setBalance(store.balance + pnl);
       store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance });
+
+      // 2026-09-14 (Esdras: "corrige pour voir le vrai P&L du courtier"):
+      // logs the REAL outcome/pnl to the durable Supabase journal, using
+      // the context captured at fill time above - only for a position THIS
+      // process actually opened via auto-execute (pyramid legs aren't
+      // tracked here, a known gap, not fixed tonight). outcome/rMultiple
+      // are derived from the real `pnl` above, not a simulated stop/target
+      // guess - matches what dealPairing.js's trade-history view already
+      // computes from the same closePositionDetail.
+      {
+        const closedPositionId = String(event.deal.positionId ?? event.position?.positionId);
+        const info = this.openPositionInfoByPositionId.get(closedPositionId);
+        if (info) {
+          this.openPositionInfoByPositionId.delete(closedPositionId);
+          logClosedTrade(this.tradeLogClient, {
+            symbol: info.symbolName,
+            source: info.source,
+            direction: info.direction,
+            outcome: pnl >= 0 ? 'win' : 'loss',
+            rMultiple: info.riskAmount > 0 ? pnl / info.riskAmount : null,
+            entryPrice: info.entryPrice,
+            entryTime: info.entryTime,
+            exitTime: Date.now(),
+          });
+        }
+      }
       // Prop-firm challenge target alert (2026-09, multi-account rollout -
       // see src/propFirms/index.js). Fires ONCE, the first real trade close
       // that confirms the target is reached - trading keeps going either way
@@ -1258,6 +1301,14 @@ export class CTraderDataSource {
       const unfilledTypes = new Set(['ORDER_CANCELLED', 'ORDER_EXPIRED', 'ORDER_REJECTED']);
       if (event.executionType === 'ORDER_FILLED' && !event.deal?.closePositionDetail) {
         this.pendingEntryOrderByOrderId.delete(event.order.orderId);
+        // 2026-09-14: remember this REAL position (String() - see this
+        // class's own openPositionInfoByPositionId comment for why) so the
+        // eventual real close below can log a durable trade row from
+        // confirmed broker data, not a simulated guess.
+        const filledPositionId = event.position?.positionId ?? event.deal?.positionId;
+        if (filledPositionId != null) {
+          this.openPositionInfoByPositionId.set(String(filledPositionId), { ...pending, entryTime: Date.now() });
+        }
         store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'filled', executionType: event.executionType });
         console.log(`[auto-execute] CONFIRMED FILLED: ${pending.symbolName} source=${pending.source} orderId=${event.order.orderId} - real position opened at the broker.`);
         this._notifyText(`✅ [${pending.source.toUpperCase()}] Ordre confirmé REMPLI sur ${pending.symbolName} - position réellement ouverte chez le courtier.`);
@@ -1274,43 +1325,6 @@ export class CTraderDataSource {
         // a late-arriving confirmation for the old one.
         store.strategyEngine.clearBelievedPosition(pending.symbolName, pending.signalId);
         this._notifyText(`⚠️ [${pending.source.toUpperCase()}] Ordre JAMAIS rempli sur ${pending.symbolName} (${event.executionType}) - aucune position réelle, signal abandonné.`);
-      }
-    }
-  }
-
-  // Pairs each 'closed' event back to the 'validated' event that opened it
-  // (same id, matching recentPerformanceReport.js's own openById pairing)
-  // and persists the outcome via supabaseTradeLog.js. A no-op when
-  // tradeLogClient is null (SUPABASE_URL/SUPABASE_SERVICE_KEY unset) -
-  // logClosedTrade() already checks that, but skipping the pairing work
-  // entirely when it can't go anywhere avoids growing openTradesById for no
-  // reason on a bot that never configured persistence.
-  _logTradeOutcomes(events) {
-    if (!this.tradeLogClient) return;
-    for (const e of events) {
-      if (e.type === 'validated' && !e.blockedReason) {
-        this.openTradesById.set(e.id, e);
-      }
-      if (e.type === 'closed') {
-        const opened = this.openTradesById.get(e.id);
-        if (!opened) continue; // opened before this process started tracking (e.g. right after a restart) - no real entryTime to log, same "exclude rather than guess" call recentPerformanceReport.js makes
-        this.openTradesById.delete(e.id);
-        const rMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
-        logClosedTrade(this.tradeLogClient, {
-          symbol: e.symbol,
-          source: e.source,
-          direction: e.direction,
-          outcome: e.outcome,
-          rMultiple,
-          entryPrice: opened.entryPrice,
-          // opened.validatedAt/e.exitTime are engine-internal candle times,
-          // shifted -5h from real wall-clock (see _toEngineCandle() above) -
-          // shift back before this reaches Supabase, same correction as
-          // server.js's buildStatusPayload()/buildSignalsPayload() apply for
-          // the dashboard, so the durable journal isn't silently 5h off too.
-          entryTime: opened.validatedAt + this.candleTimeOffsetMs,
-          exitTime: e.exitTime + this.candleTimeOffsetMs,
-        });
       }
     }
   }

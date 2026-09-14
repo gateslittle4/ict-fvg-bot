@@ -565,7 +565,8 @@ function createAccountRouter(getStore) {
   // "je perds beaucoup en US500, est-ce normal?" - unlike .../recent-performance
   // above (a 90-day in-memory REPLAY that resets on every restart), this reads
   // real outcomes actually logged since persistence was turned on (see
-  // supabaseTradeLog.js and cTraderDataSource.js's _logTradeOutcomes()) -
+  // supabaseTradeLog.js and cTraderDataSource.js's _handleExecutionEvent(),
+  // which logs a REAL confirmed close - see its 2026-09-14 comment) -
   // grows over calendar time, survives Render sleeping/redeploying. Returns
   // an explicit `reason` (not an error) when SUPABASE_URL/SUPABASE_SERVICE_KEY
   // aren't set - persistence is opt-in, same as keepAlive.js.
