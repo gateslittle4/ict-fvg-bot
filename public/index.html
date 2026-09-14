@@ -15,6 +15,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Apex FVG" />
 <style>
+  /* 2026-09-14 (Esdras: "j'aimerais que mon dashboard soit comme Les
+     dashboard des grands compagnies de trading... trop simple" - chose
+     "terminal sombre type Bloomberg/prop firm" over a softer consumer-broker
+     look when asked which direction). Same color roles as before (kept so
+     every existing win/loss/pill/badge class still means the same thing),
+     but every SHAPE decision moves toward "dense data terminal": corners go
+     from soft (10px) to near-square (3px), body copy tightens, headers/
+     labels go monospace (a real terminal doesn't switch fonts between
+     numbers and labels), and a permanent 3-up status strip + live clock
+     replace what used to be a single stacked column of cards. */
   :root {
     --bg: #05070a;
     --bg-inset: #0a0e13;
@@ -31,157 +41,175 @@
     --blue: #4c9eff;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
-    --radius: 10px;
-    --shadow-card: 0 1px 0 rgba(255,255,255,0.02) inset, 0 10px 24px -16px rgba(0,0,0,0.7);
+    --radius: 3px;
   }
   * { box-sizing: border-box; }
   html { background: var(--bg); }
   body {
     margin: 0;
-    background:
-      radial-gradient(1200px 500px at 50% -10%, rgba(76,158,255,0.06), transparent 60%),
-      var(--bg);
+    background: var(--bg);
     color: var(--text);
     font-family: var(--sans);
     -webkit-font-smoothing: antialiased;
     padding: 0 16px 32px;
-    max-width: 1180px;
+    max-width: 1360px;
     margin: 0 auto;
+    font-size: 13px;
   }
   ::selection { background: rgba(76,158,255,0.35); }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-thumb { background: var(--panel-border-strong); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--panel-border-strong); border-radius: 0; }
 
-  /* ---------- Header ---------- */
+  /* ---------- Header (terminal chrome: brand + live clock + connection banner) ---------- */
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 16px; padding: 20px 4px 16px; flex-wrap: wrap;
+    gap: 16px; padding: 12px 4px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--panel-border);
   }
-  .topbar-brand { display: flex; align-items: center; gap: 12px; }
+  .topbar-brand { display: flex; align-items: center; gap: 10px; }
   .brand-mark {
-    width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(155deg, #4c9eff, #2f6fd6); color: #fff; font-weight: 800; font-size: 15px;
-    box-shadow: 0 4px 14px -4px rgba(76,158,255,0.7); flex-shrink: 0;
+    width: 28px; height: 28px; border-radius: 3px; display: flex; align-items: center; justify-content: center;
+    background: var(--bg-inset); color: var(--blue); font-weight: 800; font-size: 12px; font-family: var(--mono);
+    border: 1px solid var(--panel-border-strong); flex-shrink: 0;
   }
-  h1 { font-size: 17px; margin: 0; letter-spacing: 0.1px; }
-  .subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  h1 { font-size: 14px; margin: 0; letter-spacing: 0.3px; font-family: var(--mono); font-weight: 700; text-transform: uppercase; }
+  .subtitle { color: var(--faint); font-size: 10.5px; margin-top: 2px; font-family: var(--mono); letter-spacing: 0.2px; }
+
+  #clock {
+    font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.5px;
+    padding: 0 12px; border-left: 1px solid var(--panel-border); border-right: 1px solid var(--panel-border);
+  }
+  @media (max-width: 640px) { #clock { display: none; } }
 
   .banner {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 7px 14px 7px 10px;
-    border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 10px;
+    border-radius: var(--radius);
     font-weight: 600;
-    font-size: 12.5px;
+    font-size: 11.5px;
     letter-spacing: 0.2px;
     white-space: nowrap;
     font-family: var(--mono);
   }
   .banner::before {
-    content: ''; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-    box-shadow: 0 0 0 3px currentColor / 20%;
+    content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
   }
-  .banner.demo { background: rgba(232,179,57,0.12); color: var(--amber); border: 1px solid rgba(232,179,57,0.35); }
-  .banner.live { background: rgba(47,212,128,0.12); color: var(--green); border: 1px solid rgba(47,212,128,0.35); }
+  .banner.demo { background: rgba(232,179,57,0.1); color: var(--amber); border: 1px solid rgba(232,179,57,0.35); }
+  .banner.live { background: rgba(47,212,128,0.1); color: var(--green); border: 1px solid rgba(47,212,128,0.35); }
   .banner.live::before { animation: pulse-dot 2s ease-in-out infinite; }
   @keyframes pulse-dot {
     0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(47,212,128,0.5); }
     50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(47,212,128,0); }
   }
 
-  /* ---------- Ticker (live prices, prominent) ---------- */
+  /* ---------- Ticker (live prices, dense market-strip style) ---------- */
   .ticker {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px;
     background: var(--panel-border);
     border: 1px solid var(--panel-border);
-    border-radius: var(--radius);
+    border-radius: 0;
     overflow: hidden;
-    margin-bottom: 14px;
-    box-shadow: var(--shadow-card);
+    margin: 10px 0 14px;
   }
   @media (max-width: 640px) { .ticker { grid-template-columns: 1fr; } }
   .ticker-cell {
     background: var(--panel);
-    padding: 12px 16px;
+    padding: 8px 12px;
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border-left: 2px solid transparent;
   }
-  .ticker-sym { font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; }
-  .ticker-sym .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); margin-right: 6px; vertical-align: 1px; }
-  .ticker-price { font-family: var(--mono); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
+  .ticker-sym { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; font-family: var(--mono); }
+  .ticker-sym .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--blue); margin-right: 6px; vertical-align: 1px; }
+  .ticker-price { font-family: var(--mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
   .ticker-price.flash-up { color: var(--green); }
   .ticker-price.flash-down { color: var(--red); }
-  .ticker-meta { font-size: 11px; color: var(--faint); font-family: var(--mono); }
-  .ticker-pos { color: var(--blue); font-size: 11px; font-weight: 700; }
+  .ticker-meta { font-size: 10px; color: var(--faint); font-family: var(--mono); }
+  .ticker-pos { color: var(--blue); font-size: 10px; font-weight: 700; }
   /* Deliberately distinct from .ticker-pos (2026-09-13, honesty fix - see
      server.js's withRealTimePosition): this is the engine's own unconfirmed
      belief, not yet matched to a real broker fill in orderOutcomeLog. */
-  .ticker-signal { color: var(--amber); font-size: 11px; font-weight: 700; }
+  .ticker-signal { color: var(--amber); font-size: 10px; font-weight: 700; }
 
   /* ---------- Layout ---------- */
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-bottom: 12px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+  .grid .card { margin-bottom: 0; border: none; }
   @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  /* Permanent 3-up status strip (2026-09-14) - a real trading terminal shows
+     account/risk/execution-mode side by side at all times, never stacked
+     full-width one under the other. Same background-as-grid-line trick as
+     .grid/.ticker above (1px gaps painted by the parent's own background,
+     no extra border rules needed per cell). */
+  .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-bottom: 12px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+  .status-grid .card { margin-bottom: 0; border: none; }
+  @media (max-width: 900px) { .status-grid { grid-template-columns: 1fr; } }
   .card {
-    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    background: var(--panel);
     border: 1px solid var(--panel-border);
     border-radius: var(--radius);
-    padding: 16px 18px;
-    margin-bottom: 12px;
-    box-shadow: var(--shadow-card);
+    padding: 12px 14px;
+    margin-bottom: 10px;
   }
-  .grid .card { margin-bottom: 0; }
   .card h2 {
-    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700;
-    color: var(--muted); margin: 0 0 12px; padding-bottom: 10px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
+    color: var(--muted); margin: 0 0 10px; padding-bottom: 8px;
     border-bottom: 1px solid var(--panel-border);
     display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--mono);
   }
-  .meta { color: var(--muted); font-size: 12px; }
+  .meta { color: var(--muted); font-size: 11.5px; }
 
   /* Group headers between sections of cards (2026-09-14, Esdras: dashboard
      read as a flat, undifferentiated stack of 13 cards - grouping by what
      each answers - "is it healthy right now" / "what's the bot seeing" /
      "what actually happened" / "tools" - and labeling each group makes that
-     structure visible instead of implied by card order alone). */
+     structure visible instead of implied by card order alone). Styled as a
+     terminal panel divider: bracketed label + a rule filling the rest of
+     the row, rather than a plain floating line of text. */
   .section-title {
-    font-size: 13px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
-    color: var(--faint); margin: 28px 0 10px; padding: 0 2px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;
+    color: var(--faint); margin: 22px 0 8px; padding: 0 2px;
+    font-family: var(--mono);
+    display: flex; align-items: center; gap: 10px;
   }
+  .section-title::before { content: '//'; color: var(--panel-border-strong); }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--panel-border); }
   .section-title:first-of-type { margin-top: 4px; }
 
   /* ---------- Journal filters + CSV export ---------- */
   .btn-ghost {
-    text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 11.5px;
+    text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 11px;
     background: transparent; color: var(--blue); border: 1px solid var(--panel-border-strong);
-    border-radius: 6px; padding: 4px 9px; margin: 0; cursor: pointer;
+    border-radius: var(--radius); padding: 4px 9px; margin: 0; cursor: pointer; font-family: var(--mono);
   }
   .btn-ghost:hover { background: rgba(76,158,255,0.1); }
   .journal-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   .filter-select {
-    padding: 6px 9px; border-radius: 7px; border: 1px solid var(--panel-border);
-    background: var(--bg-inset); color: var(--text); font-size: 12.5px; font-family: var(--sans);
+    padding: 5px 8px; border-radius: var(--radius); border: 1px solid var(--panel-border);
+    background: var(--bg-inset); color: var(--text); font-size: 11.5px; font-family: var(--mono);
   }
   .filter-select:focus { outline: none; border-color: var(--blue); }
 
   /* ---------- Nav tabs ---------- */
-  .topnav { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--panel-border); }
+  .topnav { display: flex; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--panel-border); }
   .topnav a {
-    color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 600;
-    padding: 9px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.2px;
-    transition: color 0.15s ease;
+    color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600;
+    padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px;
+    transition: color 0.15s ease; font-family: var(--mono); text-transform: uppercase;
   }
   .topnav a:hover { color: var(--text); }
-  .topnav a.active { color: var(--text); border-bottom-color: var(--blue); }
+  .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
 
   /* ---------- Multi-account switcher + overview (2026-09, Phase 3 of the
      multi-account rollout - see HANDOFF.md "Multi-compte") - hidden
      entirely while only one account exists (today's reality), so nothing
      changes visually until a second real account is actually configured. ---------- */
   #account-switcher-wrap { display: flex; align-items: center; gap: 7px; }
-  #account-switcher-wrap label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
-  #account-switcher { padding: 6px 9px; border-radius: 7px; border: 1px solid var(--panel-border); background: var(--bg-inset); color: var(--text); font-size: 12.5px; font-family: var(--sans); }
+  #account-switcher-wrap label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; font-family: var(--mono); }
+  #account-switcher { padding: 5px 8px; border-radius: var(--radius); border: 1px solid var(--panel-border); background: var(--bg-inset); color: var(--text); font-size: 11.5px; font-family: var(--mono); }
   .account-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
   .account-overview-row {
-    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px;
-    padding: 10px 12px; cursor: pointer; transition: border-color 0.15s ease;
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius);
+    padding: 10px 12px; cursor: pointer; transition: border-color 0.15s ease; font-family: var(--mono);
   }
   .account-overview-row:hover { border-color: var(--panel-border-strong); }
   .account-overview-row.active { border-color: var(--blue); }
@@ -193,8 +221,8 @@
      itself: nothing to see until a second real account exists. */
   .firm-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
   .firm-tab {
-    padding: 6px 14px; border-radius: 999px; border: 1px solid var(--panel-border); background: var(--bg-inset);
-    color: var(--muted); font-size: 12.5px; font-family: var(--sans); font-weight: 600; cursor: pointer;
+    padding: 5px 12px; border-radius: var(--radius); border: 1px solid var(--panel-border); background: var(--bg-inset);
+    color: var(--muted); font-size: 11.5px; font-family: var(--mono); font-weight: 600; cursor: pointer;
     transition: border-color 0.15s ease, color 0.15s ease;
   }
   .firm-tab:hover { border-color: var(--panel-border-strong); }
@@ -202,58 +230,59 @@
   .firm-tab .count { color: var(--muted); font-weight: 400; }
 
   /* ---------- Stats / pills ---------- */
-  .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 13.5px; }
-  .stat-row .label { color: var(--muted); font-size: 12.5px; }
+  .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-size: 12.5px; }
+  .stat-row .label { color: var(--muted); font-size: 11.5px; }
   .stat-row > span:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; font-family: var(--mono); }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: var(--radius); font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px; font-family: var(--mono); }
   .pill.ok { background: rgba(47,212,128,0.12); color: var(--green); }
   .pill.blocked { background: rgba(255,92,95,0.12); color: var(--red); }
 
   /* ---------- Signal lists ---------- */
   .signal-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
-  .signal-item { padding: 9px 2px; border-bottom: 1px solid var(--panel-border); font-size: 13px; line-height: 1.5; }
+  .signal-item { padding: 7px 2px; border-bottom: 1px solid var(--panel-border); font-size: 12px; line-height: 1.5; font-family: var(--mono); }
   .signal-item:last-child { border-bottom: none; }
   .signal-item .dir-bullish { color: var(--green); font-weight: 700; }
   .signal-item .dir-bearish { color: var(--red); font-weight: 700; }
-  .signal-item .meta { color: var(--faint); font-size: 11.5px; }
-  .badge-actionable { background: rgba(76,158,255,0.16); color: var(--blue); border: 1px solid rgba(76,158,255,0.35); padding: 1px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 700; margin-left: 6px; letter-spacing: 0.3px; }
-  .badge-blocked { background: rgba(255,92,95,0.1); color: #ff9698; border: 1px solid rgba(255,92,95,0.3); padding: 1px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 700; margin-left: 6px; letter-spacing: 0.3px; }
+  .signal-item .meta { color: var(--faint); font-size: 10.5px; }
+  .badge-actionable { background: rgba(76,158,255,0.16); color: var(--blue); border: 1px solid rgba(76,158,255,0.35); padding: 1px 6px; border-radius: var(--radius); font-size: 9.5px; font-weight: 700; margin-left: 6px; letter-spacing: 0.3px; }
+  .badge-blocked { background: rgba(255,92,95,0.1); color: #ff9698; border: 1px solid rgba(255,92,95,0.3); padding: 1px 6px; border-radius: var(--radius); font-size: 9.5px; font-weight: 700; margin-left: 6px; letter-spacing: 0.3px; }
 
   /* ---------- Forms / calculator ---------- */
   form.calc { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  form.calc label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); display: block; margin-bottom: 5px; font-weight: 600; }
+  form.calc label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); display: block; margin-bottom: 5px; font-weight: 600; font-family: var(--mono); }
   form.calc input, form.calc select {
-    width: 100%; padding: 9px 10px; border-radius: 7px; border: 1px solid var(--panel-border);
-    background: var(--bg-inset); color: var(--text); font-size: 14px; font-family: var(--mono);
+    width: 100%; padding: 8px 9px; border-radius: var(--radius); border: 1px solid var(--panel-border);
+    background: var(--bg-inset); color: var(--text); font-size: 13px; font-family: var(--mono);
     transition: border-color 0.15s ease;
   }
   form.calc input:focus, form.calc select:focus { outline: none; border-color: var(--blue); }
   form.calc .full { grid-column: 1 / -1; }
   button {
-    background: var(--blue); color: #fff; border: none; border-radius: 7px;
-    padding: 10px 16px; font-size: 13px; font-weight: 700; cursor: pointer; margin-top: 4px;
-    letter-spacing: 0.2px; transition: filter 0.15s ease, transform 0.05s ease;
+    background: var(--blue); color: #05070a; border: none; border-radius: var(--radius);
+    padding: 9px 16px; font-size: 12px; font-weight: 700; cursor: pointer; margin-top: 4px;
+    letter-spacing: 0.4px; transition: filter 0.15s ease, transform 0.05s ease;
+    font-family: var(--mono); text-transform: uppercase;
   }
-  button:hover { filter: brightness(1.1); }
+  button:hover { filter: brightness(1.15); }
   button:active { transform: scale(0.98); }
-  .result { margin-top: 14px; padding: 14px; border-radius: var(--radius); background: var(--bg-inset); border: 1px solid var(--panel-border); font-size: 13.5px; }
-  .result .big { font-size: 26px; font-weight: 800; color: var(--blue); font-family: var(--mono); margin: 4px 0; }
-  .warn { color: var(--amber); font-size: 12px; margin-top: 6px; }
+  .result { margin-top: 12px; padding: 12px; border-radius: var(--radius); background: var(--bg-inset); border: 1px solid var(--panel-border); font-size: 12.5px; }
+  .result .big { font-size: 24px; font-weight: 800; color: var(--blue); font-family: var(--mono); margin: 4px 0; }
+  .warn { color: var(--amber); font-size: 11.5px; margin-top: 6px; }
   .mismatch-alert {
-    margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+    margin-top: 10px; padding: 9px 11px; border-radius: var(--radius);
     background: rgba(232,179,57,0.1); border: 1px solid rgba(232,179,57,0.35);
-    color: var(--amber); font-size: 12.5px; line-height: 1.5;
+    color: var(--amber); font-size: 11.5px; line-height: 1.5;
   }
-  .mismatch-alert strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 12px; }
-  .err { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .mismatch-alert strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 11.5px; }
+  .err { color: var(--red); font-size: 12px; margin-top: 8px; }
   .win { color: var(--green); }
 
   /* ---------- Live price card (legacy list form, still used) ---------- */
-  .price-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; font-family: var(--mono); }
-  .price-row .sym { color: var(--muted); font-family: var(--sans); }
+  .price-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; font-family: var(--mono); }
+  .price-row .sym { color: var(--muted); font-family: var(--mono); }
 
   /* ---------- Auto-execute ---------- */
-  .auto-status { font-size: 13px; margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: var(--bg-inset); border: 1px solid var(--panel-border); }
+  .auto-status { font-size: 12px; margin-bottom: 12px; padding: 9px 11px; border-radius: var(--radius); background: var(--bg-inset); border: 1px solid var(--panel-border); font-family: var(--mono); }
   .auto-status.active { color: var(--green); font-weight: 600; border-color: rgba(47,212,128,0.3); }
   .auto-status.inactive { color: var(--muted); }
   .auto-btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -270,27 +299,28 @@
      own card (background/border/radius, real gap between them via the
      parent's own spacing) and the chart is nearly twice as tall. */
   .journal-item {
-    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 10px;
-    padding: 14px 16px; margin-bottom: 14px;
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius);
+    padding: 12px 14px; margin-bottom: 10px;
   }
   .journal-item:last-child { margin-bottom: 0; }
-  .journal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 10px; flex-wrap: wrap; gap: 4px; }
+  .journal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; margin-bottom: 10px; flex-wrap: wrap; gap: 4px; font-family: var(--mono); }
   .journal-pnl { font-family: var(--mono); }
   .journal-pnl.win { color: var(--green); font-weight: 700; }
   .journal-pnl.loss { color: var(--red); font-weight: 700; }
-  .journal-chart { width: 100%; height: 240px; display: block; background: var(--bg); border: 1px solid var(--panel-border); border-radius: 8px; }
+  .journal-chart { width: 100%; height: 240px; display: block; background: var(--bg); border: 1px solid var(--panel-border); border-radius: var(--radius); }
 
   /* ---------- Performance overview (equity curve + key metrics) ---------- */
-  .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 14px; }
-  .metric-tile { background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; padding: 10px 12px; }
-  .metric-tile .metric-label { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; }
-  .metric-tile .metric-value { font-family: var(--mono); font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; margin-bottom: 14px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+  .metric-tile { background: var(--bg-inset); padding: 9px 11px; }
+  .metric-tile .metric-label { color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; font-family: var(--mono); }
+  .metric-tile .metric-value { font-family: var(--mono); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .metric-tile .metric-value.win { color: var(--green); }
   .metric-tile .metric-value.loss { color: var(--red); }
-  .equity-chart { width: 100%; height: 140px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; margin-bottom: 14px; }
-  .strategy-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .strategy-table th { text-align: left; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border); }
-  .strategy-table td { padding: 7px 8px; border-bottom: 1px solid var(--panel-border); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .equity-chart { width: 100%; height: 140px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin-bottom: 14px; }
+  .strategy-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+  .strategy-table th { text-align: left; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border-strong); }
+  .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
+  .strategy-table tr:hover td { background: var(--bg-inset); }
   .strategy-table tr:last-child td { border-bottom: none; }
 </style>
 </head>
@@ -307,6 +337,7 @@
       <label for="account-switcher">Compte</label>
       <select id="account-switcher"></select>
     </div>
+    <span id="clock">--:--:--</span>
     <div id="banner" class="banner demo">Chargement…</div>
   </header>
 
@@ -341,20 +372,22 @@
 
   <div class="section-title">État actuel</div>
 
-  <div class="card">
-    <h2>Garde-fous</h2>
-    <div id="guardrail-body">—</div>
-  </div>
+  <div class="status-grid">
+    <div class="card">
+      <h2>Garde-fous</h2>
+      <div id="guardrail-body">—</div>
+    </div>
 
-  <div class="card" id="account-card">
-    <h2>Compte réel (cTrader)</h2>
-    <div class="meta" style="margin-bottom:8px;">Solde/marge réels du courtier ; équité et P&amp;L flottant estimés (dernier prix vu, pas un flux instantané).</div>
-    <div id="account-body">—</div>
-  </div>
+    <div class="card" id="account-card">
+      <h2>Compte réel (cTrader)</h2>
+      <div class="meta" style="margin-bottom:8px;">Solde/marge réels ; équité et P&amp;L flottant estimés (dernier prix vu, pas un flux instantané).</div>
+      <div id="account-body">—</div>
+    </div>
 
-  <div class="card" id="auto-execute-card">
-    <h2>Mode indisponible (exécution automatique des entrées)</h2>
-    <div id="auto-execute-body">—</div>
+    <div class="card" id="auto-execute-card">
+      <h2>Mode indisponible (exécution auto)</h2>
+      <div id="auto-execute-body">—</div>
+    </div>
   </div>
 
   <div class="section-title">Signaux</div>
@@ -491,6 +524,15 @@ let currentAccountId = null;
 function acctUrl(suffix) {
   return `/api/accounts/${encodeURIComponent(currentAccountId)}${suffix}`;
 }
+
+// Live clock (2026-09-14, "terminal" pass) - purely cosmetic, matches the
+// same local-time convention fmtTime() already uses elsewhere on this page.
+function tickClock() {
+  const el = document.getElementById('clock');
+  if (el) el.textContent = new Date().toLocaleTimeString('fr-FR');
+}
+tickClock();
+setInterval(tickClock, 1000);
 
 const previousPrices = {}; // symbol -> last seen lastPrice, for the ticker's up/down flash effect
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
