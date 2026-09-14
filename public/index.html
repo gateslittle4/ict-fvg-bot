@@ -251,13 +251,23 @@
   button.danger { background: rgba(255,92,95,0.15); color: #ff9698; border: 1px solid rgba(255,92,95,0.4); }
 
   /* ---------- Trade journal ---------- */
-  .journal-item { border-bottom: 1px solid var(--panel-border); padding: 12px 0; }
-  .journal-item:last-child { border-bottom: none; }
-  .journal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 8px; flex-wrap: wrap; gap: 4px; }
+  /* 2026-09-14, Esdras (screenshot): trades read as one continuous strip
+     (a thin border-bottom, 12px padding) instead of separate cards, and
+     each chart was squeezed to 130px tall across the full window width -
+     hard to tell where one trade ends and the next starts, and too short
+     to actually see a position's price action. Each item now reads as its
+     own card (background/border/radius, real gap between them via the
+     parent's own spacing) and the chart is nearly twice as tall. */
+  .journal-item {
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .journal-item:last-child { margin-bottom: 0; }
+  .journal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 10px; flex-wrap: wrap; gap: 4px; }
   .journal-pnl { font-family: var(--mono); }
   .journal-pnl.win { color: var(--green); font-weight: 700; }
   .journal-pnl.loss { color: var(--red); font-weight: 700; }
-  .journal-chart { width: 100%; height: 130px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; }
+  .journal-chart { width: 100%; height: 240px; display: block; background: var(--bg); border: 1px solid var(--panel-border); border-radius: 8px; }
 
   /* ---------- Performance overview (equity curve + key metrics) ---------- */
   .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 14px; }
@@ -733,7 +743,9 @@ function renderSignals(data) {
 // actual entry/exit prices (verified, from the deal history) - deliberately
 // no stop/target line, see the journal card's own explanation for why.
 function renderTradeChart(trade, decimals) {
-  const W = 600, H = 130, PAD_L = 46, PAD_R = 8, PAD_T = 10, PAD_B = 8;
+  // H was 130 (2026-09-14: matches .journal-chart's new CSS height - see its
+  // own comment - so nothing here renders visually stretched/squashed).
+  const W = 600, H = 240, PAD_L = 46, PAD_R = 8, PAD_T = 10, PAD_B = 8;
   const candles = trade.candles || [];
   if (candles.length === 0) {
     return '<div class="meta">Pas de données de graphique pour ce trade.</div>';

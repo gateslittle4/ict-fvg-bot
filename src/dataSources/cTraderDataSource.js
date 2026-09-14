@@ -431,18 +431,28 @@ export class CTraderDataSource {
 
     const trades = pairDealsIntoTrades(res.deal || [], orderLabelsById).slice(0, maxTrades);
 
-    const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
-    const CHART_MARGIN_MS = 12 * 15 * 60 * 1000; // ~3h of M15 padding on each side, for visual context around the trade
-
     const enriched = [];
     for (const trade of trades) {
       const symbolName = this.symbolNameById.get(trade.symbolId) || `#${trade.symbolId}`;
+      // 2026-09-14, Esdras (screenshot): the trade-history mini-chart looked
+      // wrong for BTCUSD - was already flagged as a known, unfixed gap when
+      // per-symbol timeframes shipped ("getTradeHistory()'s chart-candle
+      // export still assume the global CONFIG.timeframe"). Concretely: a
+      // BTCUSD trade lasting a few M1 minutes was being charted with M15
+      // candles and a 3-HOUR margin sized for M15 - the real trade shrank to
+      // a sliver between two dashed lines lost in hours of irrelevant
+      // padding, exactly what the screenshot showed. Same per-symbol
+      // resolution already used for live subscriptions/order-expiry - every
+      // other symbol (still M15) is completely unaffected.
+      const symbolTimeframe = resolveSymbolTimeframe(symbolName);
+      const period = PERIOD_BY_TIMEFRAME[symbolTimeframe] || 'M15';
+      const chartMarginMs = 12 * (TIMEFRAME_DURATION_MS[symbolTimeframe] || TIMEFRAME_DURATION_MS.M15);
       let candles = [];
       try {
         const history = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
           ctidTraderAccountId: Number(accountId),
-          fromTimestamp: trade.entryTime - CHART_MARGIN_MS,
-          toTimestamp: trade.exitTime + CHART_MARGIN_MS,
+          fromTimestamp: trade.entryTime - chartMarginMs,
+          toTimestamp: trade.exitTime + chartMarginMs,
           symbolId: trade.symbolId,
           period,
         });
