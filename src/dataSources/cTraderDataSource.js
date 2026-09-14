@@ -1183,6 +1183,26 @@ export class CTraderDataSource {
         this._notifyText(
           `🤖 [${signal.source.toUpperCase()}] Entrée auto envoyée sur ${symbolName} (${signal.suggestedSide.toUpperCase()}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
         );
+      } else {
+        // 2026-09-14 (found live, monitoring BTCUSD's M1 cadence: a
+        // _waitForOrderIdBySymbol timeout - no ProtoOAExecutionEvent within
+        // 10s - left the engine's 'validated'-time belief stuck open with
+        // NOTHING ever able to clear it, since pendingEntryOrderByOrderId
+        // was never populated for this signal - every later signal on this
+        // symbol was rejected as 'netting' until someone manually called
+        // /admin/clear-believed-position. Clearing it here immediately is
+        // the same judgment call that route already makes (never touch a
+        // CONFIRMED position) applied one step earlier: this branch by
+        // definition never learned a real orderId, so there is nothing to
+        // confirm against either way - leaving the belief stuck helps
+        // nobody. The rare case where the broker actually DID accept this
+        // order despite the timeout isn't silently lost: real-vs-believed
+        // reconciliation (/api/account) still flags it 'real-only' the
+        // moment it's checked, exactly the safety net already built for
+        // this.
+        store.strategyEngine.clearBelievedPosition(symbolName, signal.id);
+        console.warn(`[auto-execute] no orderId within timeout for ${symbolName} - clearing believed-open so future signals aren't netting-blocked.`);
+        this._notifyText(`⚠️ [${signal.source.toUpperCase()}] Aucune confirmation du courtier sur ${symbolName} (délai dépassé) - signal abandonné, croyance nettoyée.`);
       }
     } catch (err) {
       console.warn(`[auto-execute] failed to submit entry for ${symbolName}:`, err.message);
