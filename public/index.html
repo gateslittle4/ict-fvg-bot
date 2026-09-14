@@ -559,6 +559,18 @@ function renderStatus(data) {
 const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judasSwing: 'Judas Swing' };
 function reconciliationExplanation(r) {
   if (r.status === 'match') return '✓ correspond';
+  // 'none' (2026-09-14, bug réel trouvé par Esdras : "Écart bot/courtier ⚠
+  // statut inconnu" affiché pour des symboles parfaitement au repos) - ni le
+  // bot ni le courtier ne pensent avoir quoi que ce soit d'ouvert, c'est
+  // l'état NORMAL la plupart du temps, pas un écart. Resté invisible tant
+  // que le bug du nettoyage automatique (voir HANDOFF.md) laissait presque
+  // toujours au moins un symbole coincé en "believed-only" après chaque
+  // redémarrage - une fois CE bug-là corrigé, les symboles retombent
+  // légitimement à "none" bien plus souvent, ce qui a rendu celui-ci enfin
+  // visible. Le vrai fix est le filtre ci-dessous (refreshAccount), pas
+  // seulement cette branche - gardée en défense en profondeur si cette
+  // fonction est un jour appelée ailleurs sans passer par ce filtre.
+  if (r.status === 'none') return '✓ rien d\'ouvert, des deux côtés';
   if (r.status === 'real-only') return `⚠ ${r.symbol} : position réelle chez le courtier sans alerte du bot (trade manuel ?)`;
   if (r.status === 'believed-only') {
     const src = sourceLabelFull[r.source] || r.source || 'un signal';
@@ -586,7 +598,11 @@ async function refreshAccount() {
     }
     const pnl = data.floatingPnlEstimate || 0;
     const pnlClass = pnl > 0 ? 'win' : pnl < 0 ? 'loss' : '';
-    const mismatches = (data.reconciliation || []).filter((r) => r.status !== 'match');
+    // 'none' excluded too (2026-09-14, real bug): a symbol where NEITHER
+    // side thinks anything is open is the normal resting state, not a
+    // mismatch - only 'real-only'/'believed-only' are genuine discrepancies
+    // worth an "Écart bot/courtier" alert card.
+    const mismatches = (data.reconciliation || []).filter((r) => r.status !== 'match' && r.status !== 'none');
 
     let html = `
       <div class="stat-row"><span class="label">Solde (réel)</span><span>${fmt(data.balance)}</span></div>
