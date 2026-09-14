@@ -239,3 +239,58 @@ test('recordTrade: replaying the SAME deals in chronological order (the fix) cou
   const status = g.getStatus(DAY1 + 4000);
   assert.equal(status.tradesToday, 3); // all 3 of today's trades correctly counted
 });
+
+// 2026-09-14 (Esdras: "Alors? Tout se passe bien?" - checking the sort fix
+// above live turned up a SECOND, bigger bug behind it): cTraderDataSource.js's
+// warmUp() replays thousands of real HISTORICAL candles through the shared
+// LiveStrategyEngine at every boot, whose signal-candidate path calls
+// GuardrailEngine.canTakeNewTrade(candle.time) - a READ that still mutates
+// via _ensureDay()'s day-boundary reset, using genuinely old candle
+// timestamps, by design (warm-up needs its OWN internal day-boundary
+// bookkeeping to stay consistent as it replays the past). The bug: warm-up
+// shares the SAME GuardrailEngine instance as the real, already-seeded
+// production guardrail - so any real trades _loadClosedDeals() had just
+// recorded got silently wiped the moment warm-up's replay crossed its
+// first day boundary, even though canTakeNewTrade() looks like a pure
+// read. Confirmed live: the sort fix was proven correct in isolation, yet
+// tradesToday still showed 0 seconds after a boot whose own log line
+// said the reconstruction itself briefly got the count right. Fix:
+// _loadClosedDeals() now runs AFTER warm-up in start(), not before -
+// this documents WHY that ordering matters (GuardrailEngine itself didn't
+// change - canTakeNewTrade() is legitimately allowed to observe an old
+// `now` and reset the day, that's correct for real usage; only the BOOT
+// SEQUENCE needed to stop calling it with historical time after the real
+// seed instead of before).
+test('canTakeNewTrade (a read-only check on its face) still resets tradesToday via _ensureDay when called with an unrelated OLD historical time - documents why warm-up must run BEFORE the real-history seed, not after', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10 });
+  // _loadClosedDeals seeds 3 real trades from today.
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 2000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 3000 });
+  assert.equal(g.getStatus(DAY1 + 4000).tradesToday, 3);
+
+  // warmUp() replays a candle from weeks ago, hits a signal candidate, and
+  // asks canTakeNewTrade() using that candle's own real (old) time - same
+  // as LiveStrategyEngine._blockReason()'s default `guardrailNow = candle.time`.
+  const weeksAgo = DAY1 - 30 * 24 * 3600 * 1000;
+  g.canTakeNewTrade(weeksAgo);
+
+  // The bug this test documents: even though canTakeNewTrade() reads like
+  // a pure check, today's just-seeded trades are gone.
+  assert.equal(g.getStatus(DAY1 + 5000).tradesToday, 0); // should still be 3 - this is the bug, not the desired behavior
+});
+
+test('the fix in practice: seeding real trade history AFTER warm-up (not before) means nothing is left to disturb it', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10 });
+  // warmUp() runs first now (cTraderDataSource.js's new boot order) - its
+  // historical candle replay touches the guardrail with old timestamps...
+  const weeksAgo = DAY1 - 30 * 24 * 3600 * 1000;
+  g.canTakeNewTrade(weeksAgo);
+  g.canTakeNewTrade(weeksAgo + 24 * 3600 * 1000);
+  // ...then _loadClosedDeals() seeds the real trades LAST, nothing runs afterward to disturb them.
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 2000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 3000 });
+
+  assert.equal(g.getStatus(DAY1 + 4000).tradesToday, 3);
+});

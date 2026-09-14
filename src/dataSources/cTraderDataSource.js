@@ -302,10 +302,41 @@ export class CTraderDataSource {
     console.log(`[cTrader] loaded ${this.symbolIdByName.size} symbols`);
     console.log('[cTrader] loading balance...');
     await this._loadBalance(accountId);
-    console.log('[cTrader] loading last 24h of closed deals...');
-    await this._loadClosedDeals(accountId);
     console.log('[cTrader] subscribing to live candles for', this.symbols.join(', '));
     await this._subscribeLiveCandles(accountId);
+
+    // 2026-09-14 (Esdras: "Alors? Tout se passe bien?" - checking on the
+    // guardrail fix live turned up a SECOND, bigger bug behind it): moved
+    // here, AFTER warmUp() (called inside _subscribeLiveCandles above), not
+    // before it as originally written. warmUp() replays THOUSANDS of real
+    // historical candles per symbol (90 days of M15, ~2 days of M1 BTCUSD)
+    // through the SAME shared LiveStrategyEngine, whose signal-candidate
+    // path calls GuardrailEngine.canTakeNewTrade(candle.time) for its own
+    // internal netting/blocking bookkeeping - using each candidate's real,
+    // historical (genuinely OLD) timestamp, by design, so warm-up's own
+    // simulated day-boundary logic stays internally consistent as it
+    // replays through the past. The problem: that call reaches
+    // GuardrailEngine._ensureDay(), which unconditionally WIPES
+    // this.trades the instant the computed day-key differs from the
+    // current one - and warm-up crosses MANY such day boundaries while
+    // replaying 90 days of history. With _loadClosedDeals() running BEFORE
+    // this (as originally written), every real trade it had just replayed
+    // from the last 24h got wiped the moment warm-up's OWN historical
+    // replay reached its first day-crossing candidate - completely
+    // silently, since warm-up's dayKey naturally lands back on today by
+    // the time it finishes (it always replays up through "now"), so the
+    // dashboard showed the right DAY but tradesToday=0 regardless of how
+    // many real trades had actually happened. Confirmed live: the
+    // 2026-09-14 sort-order fix (see sortDealsChronologically above) was
+    // proven correct in isolation (replaying the exact real deals through
+    // it produces the right count) yet /api/status kept showing
+    // tradesToday:0 seconds after a boot whose own log line confirmed the
+    // reconstruction itself briefly got it right. Running this AFTER
+    // warm-up instead means it's the LAST thing to touch the guardrail
+    // before this account goes live - nothing runs afterward to disturb
+    // it again.
+    console.log('[cTrader] loading last 24h of closed deals...');
+    await this._loadClosedDeals(accountId);
 
     // 2026-09-14: every symbol has now been through warmUp() (called inside
     // _subscribeLiveCandles above), which can leave a purely-historical

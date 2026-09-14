@@ -2463,6 +2463,24 @@ Suite du point 2 ci-dessus. Avant de corriger, vérifié que l'autre session (en
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js` (`sortDealsChronologically`, `_loadClosedDeals`), `test/cTraderDataSource.test.js`, `test/guardrailEngine.test.js`.
 
+## RÉSOLU (la vraie cause complète, cette fois vérifiée en direct) : le warm-up écrasait le rejeu des trades réels, à chaque démarrage, depuis toujours — 2026-09-14
+
+Esdras : "Alors ? Tout se passe bien ?" — en vérifiant le fix ci-dessus EN DIRECT (pas juste via les tests), `/api/status` montrait toujours `tradesToday:0` quelques secondes après un redémarrage, alors que le tout nouveau log de démarrage confirmait "replayed 16 real closed deal(s)... tradesToday=12" au moment précis du rejeu. Le fix du tri (ci-dessus) est réel et nécessaire, mais **insuffisant seul** — voici pourquoi, trouvé en lisant le code, pas juste supposé après avoir rejoué les 16 vrais deals via `sortDealsChronologically` + `GuardrailEngine` en isolation (résultat : `tradesToday:12`, comportement correct confirmé) puis en cherchant pourquoi la prod ne montrait pas ce même résultat quelques secondes plus tard.
+
+**La vraie cause** : `warmUp()` (rejeu de MILLIERS de vraies bougies historiques par symbole — 90 jours de M15, ~2 jours de M1 pour BTCUSD — à CHAQUE démarrage) partage le MÊME `LiveStrategyEngine`/`GuardrailEngine` que la production réelle. Le chemin de détection de signal du warm-up appelle `GuardrailEngine.canTakeNewTrade(candle.time)` pour sa propre logique interne de netting/blocage — avec le VRAI timestamp historique (ancien) de chaque bougie candidate, par conception (le warm-up a besoin de sa propre cohérence de "jour" au fil de son rejeu du passé). Le problème : `canTakeNewTrade()` a l'air d'une simple lecture, mais elle appelle `_ensureDay()`, qui **vide `this.trades` sans condition** dès que la clé du jour calculée change — et un rejeu de 90 jours d'historique traverse forcément des dizaines de frontières de jour. Résultat : n'importe quel trade réel que `_loadClosedDeals()` venait de recharger (peu importe qu'il soit maintenant correctement trié) se faisait effacer à la POM du warm-up dès sa première bougie candidate franchissant un jour différent — silencieusement, puisque le warm-up retombe naturellement sur "aujourd'hui" à la toute fin de son rejeu (il rejoue toujours jusqu'à "maintenant"), donc le tableau de bord affichait bien le BON jour (`dayKey` correct) mais `tradesToday` retombé à 0 quel que soit le nombre de vrais trades survenus.
+
+**Pourquoi ça n'avait jamais marché, même avant cette nuit** : `_loadClosedDeals()` (ajoutée par l'autre session plus tôt cette nuit) s'exécutait AVANT `_subscribeLiveCandles()` (qui déclenche le warm-up) dans `start()` — donc cette reconstruction n'a probablement JAMAIS eu d'effet observable depuis sa création, écrasée à chaque fois par le warm-up qui suit immédiatement après. Le fix du tri (entrée précédente) était un vrai bug corrigé, mais son effet restait invisible tant que cet ordre n'était pas aussi corrigé.
+
+**Fix** : `_loadClosedDeals()` s'exécute maintenant APRÈS `_subscribeLiveCandles()` (donc après le warm-up complet de tous les symboles), juste avant `_clearStaleBeliefsAgainstBroker()` — dernière chose à toucher le garde-fou avant que le compte passe en direct, plus rien ensuite pour le perturber. `GuardrailEngine` lui-même n'a pas changé (son comportement est correct pour son usage réel) — seul l'ORDRE de démarrage devait changer.
+
+**2 nouveaux tests** dans `test/guardrailEngine.test.js` : un qui reproduit exactement ce mécanisme (des trades réels correctement enregistrés se font effacer par un simple appel `canTakeNewTrade()` avec un temps historique ancien, comme le ferait le warm-up), et un qui prouve que l'ordre inverse (warm-up d'abord, rejeu réel ensuite) protège les trades.
+
+**Vérifié en direct** : log de démarrage confirmé (`tradesToday=12` au moment du rejeu) avant ce fix — vérification post-déploiement de ce fix à faire au prochain redémarrage (surveiller `/api/status`'s `tradesToday` plusieurs dizaines de secondes après un boot, pas seulement au log).
+
+`npm test` : 441/441.
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js` (`start()` — ordre de `_loadClosedDeals()`), `test/guardrailEngine.test.js`.
+
 ## CTI/Match-Trader (`cti-freetrial`) : bloqué par un vrai challenge anti-bot Cloudflare, pas un problème d'identifiants — 2026-09-14
 
 Première tentative de connexion RÉELLE au compte Match-Trader de City Traders Imperium (`cti-freetrial`, compte Supabase dynamique via `/accounts.html`) cette nuit. Progrès factuels, dans l'ordre :
