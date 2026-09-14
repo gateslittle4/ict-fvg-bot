@@ -1257,6 +1257,27 @@ export class CTraderDataSource {
             entryTime: info.entryTime,
             exitTime: Date.now(),
           });
+          // 2026-09-14 (found live, monitoring BTCUSD right after the
+          // null-orderId fix): the engine's own belief (openPositions) was
+          // NEVER cleared by a REAL confirmed close - only by its OWN
+          // internal candle-simulated stop/target check
+          // (_resolveOpenPosition, liveStrategyEngine.js) catching up on a
+          // LATER candle, or by the other clearBelievedPosition() call
+          // sites (boot cleanup, an order that never filled at all). On
+          // BTCUSD's fast M1 cadence the broker's real bracket order can
+          // close a position before the engine's own per-candle simulation
+          // re-checks it, leaving a real "believed-only" gap. Confirmed
+          // live: after a real close, reconciliation kept reporting
+          // botBelievesOpen:true/realOpenCount:0 for several minutes -
+          // harmless to the account itself (netting correctly kept
+          // rejecting every later signal rather than risking a second real
+          // position on top), but it silently threw away every real signal
+          // in that window, the exact "aucune erreure" gap Esdras asked to
+          // watch for. Clearing it here, the moment reality is actually
+          // confirmed, is the direct fix - matched by id so a newer signal
+          // already superseding this one on the same symbol is never
+          // clobbered (see clearBelievedPosition's own guard).
+          store.strategyEngine.clearBelievedPosition(info.symbolName, info.signalId);
         }
       }
       // Prop-firm challenge target alert (2026-09, multi-account rollout -
