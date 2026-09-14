@@ -136,6 +136,17 @@
   }
   .meta { color: var(--muted); font-size: 12px; }
 
+  /* Group headers between sections of cards (2026-09-14, Esdras: dashboard
+     read as a flat, undifferentiated stack of 13 cards - grouping by what
+     each answers - "is it healthy right now" / "what's the bot seeing" /
+     "what actually happened" / "tools" - and labeling each group makes that
+     structure visible instead of implied by card order alone). */
+  .section-title {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+    color: var(--faint); margin: 28px 0 10px; padding: 0 2px;
+  }
+  .section-title:first-of-type { margin-top: 4px; }
+
   /* ---------- Journal filters + CSV export ---------- */
   .btn-ghost {
     text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 11.5px;
@@ -328,6 +339,8 @@
        redemander explicitement - discrétion au travail, pas une préférence
        esthétique. -->
 
+  <div class="section-title">État actuel</div>
+
   <div class="card">
     <h2>Garde-fous</h2>
     <div id="guardrail-body">—</div>
@@ -339,37 +352,12 @@
     <div id="account-body">—</div>
   </div>
 
-  <div class="card" id="order-log-card">
-    <h2>Ordres envoyés (résultat réel)</h2>
-    <div class="meta" style="margin-bottom:8px;">Rempli/jamais rempli confirmé par le courtier (pas une supposition) — voir "Écart bot/courtier" ci-dessus pour l'explication d'un ordre jamais rempli.</div>
-    <div id="order-log-body">—</div>
-  </div>
-
   <div class="card" id="auto-execute-card">
     <h2>Mode indisponible (exécution automatique des entrées)</h2>
     <div id="auto-execute-body">—</div>
   </div>
 
-  <!-- Réglages (2026-09, 4ème et dernière "feature terminal pro" choisie) -
-       le risque % est réellement modifiable en direct (setRiskPctPerTrade(),
-       effectif immédiatement, voir sa note ci-dessous pour la nuance
-       redémarrage). La liste des symboles est affichée mais PAS modifiable
-       depuis ce site: elle est câblée à la souscription live/au warm-up 90
-       jours au démarrage (cTraderDataSource.js) et aux clés netting/historique
-       de LiveStrategyEngine - la changer sans redémarrer risquerait de
-       désynchroniser le suivi d'une position déjà ouverte. Pas une limite
-       artificielle, une vraie contrainte du câblage actuel. -->
-  <div class="card" id="settings-card">
-    <h2>Réglages</h2>
-    <div class="stat-row"><span class="label">Risque actuel par trade</span><span id="settings-risk-current">—</span></div>
-    <div class="journal-toolbar">
-      <input type="number" id="settings-risk-input" class="filter-select" step="0.05" min="0.05" max="2" placeholder="ex: 0.5" style="width:100px;" />
-      <button type="button" id="settings-risk-save" class="btn-ghost">Enregistrer</button>
-    </div>
-    <div class="meta" id="settings-risk-note" style="margin-top:6px;">Effectif immédiatement sur les prochains signaux (jamais rétroactif) — revient à la valeur par défaut au prochain redémarrage, sauf si tu me demandes de la rendre permanente.</div>
-    <div class="stat-row" style="margin-top:14px;"><span class="label">Symboles actifs</span><span id="settings-symbols-current">—</span></div>
-    <div class="meta">Non modifiable ici — câblé à la connexion live au démarrage (souscription courtier + 90 jours d'historique par symbole). Demande-moi directement pour ajouter/retirer un symbole (redéploiement nécessaire).</div>
-  </div>
+  <div class="section-title">Signaux</div>
 
   <div class="grid">
     <div class="card">
@@ -382,12 +370,7 @@
     </div>
   </div>
 
-  <div class="card">
-    <h2>Performance récente (90 derniers jours, hypothétique)</h2>
-    <div class="meta" style="margin-bottom:8px;">Simulation sur les 90 derniers jours de vrais prix — pas des trades réels.</div>
-    <div id="recent-perf-summary">Chargement…</div>
-    <div id="recent-perf-list" style="margin-top:8px;"></div>
-  </div>
+  <div class="section-title">Journal &amp; performance (réel)</div>
 
   <div class="card">
     <h2>Performance globale (journal durable)</h2>
@@ -425,6 +408,44 @@
     </div>
     <div id="journal-summary" style="margin-bottom:10px;"></div>
     <div id="journal-list"></div>
+  </div>
+
+  <div class="card" id="order-log-card">
+    <h2>Ordres envoyés (résultat réel)</h2>
+    <div class="meta" style="margin-bottom:8px;">Rempli/jamais rempli confirmé par le courtier (pas une supposition) — voir "Écart bot/courtier" plus haut pour l'explication d'un ordre jamais rempli.</div>
+    <div id="order-log-body">—</div>
+  </div>
+
+  <div class="section-title">Simulation (pas des trades réels)</div>
+
+  <div class="card">
+    <h2>Performance récente (90 derniers jours, hypothétique)</h2>
+    <div class="meta" style="margin-bottom:8px;">Simulation sur les 90 derniers jours de vrais prix — pas des trades réels.</div>
+    <div id="recent-perf-summary">Chargement…</div>
+    <div id="recent-perf-list" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="section-title">Outils &amp; réglages</div>
+
+  <!-- Réglages (2026-09, 4ème et dernière "feature terminal pro" choisie) -
+       le risque % est réellement modifiable en direct (setRiskPctPerTrade(),
+       effectif immédiatement, voir sa note ci-dessous pour la nuance
+       redémarrage). La liste des symboles est affichée mais PAS modifiable
+       depuis ce site: elle est câblée à la souscription live/au warm-up 90
+       jours au démarrage (cTraderDataSource.js) et aux clés netting/historique
+       de LiveStrategyEngine - la changer sans redémarrer risquerait de
+       désynchroniser le suivi d'une position déjà ouverte. Pas une limite
+       artificielle, une vraie contrainte du câblage actuel. -->
+  <div class="card" id="settings-card">
+    <h2>Réglages</h2>
+    <div class="stat-row"><span class="label">Risque actuel par trade</span><span id="settings-risk-current">—</span></div>
+    <div class="journal-toolbar">
+      <input type="number" id="settings-risk-input" class="filter-select" step="0.05" min="0.05" max="2" placeholder="ex: 0.5" style="width:100px;" />
+      <button type="button" id="settings-risk-save" class="btn-ghost">Enregistrer</button>
+    </div>
+    <div class="meta" id="settings-risk-note" style="margin-top:6px;">Effectif immédiatement sur les prochains signaux (jamais rétroactif) — revient à la valeur par défaut au prochain redémarrage sauf changement permanent en configuration.</div>
+    <div class="stat-row" style="margin-top:14px;"><span class="label">Symboles actifs</span><span id="settings-symbols-current">—</span></div>
+    <div class="meta">Non modifiable ici — câblé à la connexion live au démarrage (souscription courtier + 90 jours d'historique par symbole). Ajout/retrait d'un symbole = changement de configuration (redéploiement nécessaire).</div>
   </div>
 
   <div class="card">
@@ -686,7 +707,7 @@ function renderAutoExecute(ae) {
     `;
   } else {
     body.innerHTML = `
-      <div class="auto-status inactive">Semi-automatique (normal) — alerte, tu cliques toi-même Buy/Sell</div>
+      <div class="auto-status inactive">Semi-automatique (normal) — alerte envoyée, exécution manuelle (Buy/Sell)</div>
       <div class="auto-btn-row">
         <button class="secondary" onclick="setAutoExecute(true, 4)">Activer 4h</button>
         <button class="secondary" onclick="setAutoExecute(true, 8)">Activer 8h</button>
