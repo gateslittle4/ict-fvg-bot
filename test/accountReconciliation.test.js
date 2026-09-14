@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enrichRealPosition, reconcileAccount, estimateEquity } from '../src/dataSources/accountReconciliation.js';
+import { enrichRealPosition, reconcileAccount, estimateEquity, computeStaleBeliefsToClear } from '../src/dataSources/accountReconciliation.js';
 
 function realPosition(overrides = {}) {
   return {
@@ -135,4 +135,80 @@ test('estimateEquity: balance plus floating P&L, positive and negative', () => {
   assert.equal(estimateEquity(10000, -150), 9850);
   assert.equal(estimateEquity(10000, 0), 10000);
   assert.equal(estimateEquity(10000, null), 10000);
+});
+
+// 2026-09-14, real bug found live: warm-up's bulk replay can reconstruct a
+// "believed open" position that was NEVER submitted to the broker - left
+// alone, it blocks every new real candidate on that symbol via netting for
+// hours. computeStaleBeliefsToClear() is the decision logic behind
+// cTraderDataSource.js's boot-time auto-fix for this.
+const symbolIdByName = new Map([
+  ['US100', 100],
+  ['BTCUSD', 101],
+]);
+
+test('computeStaleBeliefsToClear: clears a belief with NO real position and NO pending order', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [],
+    pendingOrders: [],
+    symbols: ['BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => (s === 'BTCUSD' ? { id: 'BTCUSD-1' } : null),
+  });
+  assert.deepEqual(toClear, [{ symbol: 'BTCUSD', id: 'BTCUSD-1' }]);
+});
+
+test('computeStaleBeliefsToClear: leaves a belief alone when a REAL position backs it', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [{ tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    symbols: ['BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => (s === 'BTCUSD' ? { id: 'BTCUSD-1' } : null),
+  });
+  assert.deepEqual(toClear, []);
+});
+
+test('computeStaleBeliefsToClear: leaves a belief alone when a genuinely PENDING order backs it (must not clobber a real working LIMIT order)', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [],
+    pendingOrders: [{ tradeData: { symbolId: 101 }, orderStatus: 'ORDER_STATUS_ACCEPTED' }],
+    symbols: ['BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => (s === 'BTCUSD' ? { id: 'BTCUSD-1' } : null),
+  });
+  assert.deepEqual(toClear, []);
+});
+
+test('computeStaleBeliefsToClear: a non-ACCEPTED order (e.g. already filled/rejected) does NOT count as outstanding', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [],
+    pendingOrders: [{ tradeData: { symbolId: 101 }, orderStatus: 'ORDER_STATUS_REJECTED' }],
+    symbols: ['BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => (s === 'BTCUSD' ? { id: 'BTCUSD-1' } : null),
+  });
+  assert.deepEqual(toClear, [{ symbol: 'BTCUSD', id: 'BTCUSD-1' }]);
+});
+
+test('computeStaleBeliefsToClear: a symbol with no belief at all is simply skipped, not an error', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [],
+    pendingOrders: [],
+    symbols: ['US100', 'BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: () => null,
+  });
+  assert.deepEqual(toClear, []);
+});
+
+test('computeStaleBeliefsToClear: real/pending on ONE symbol never affects an unrelated symbol\'s stale belief', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [{ tradeData: { symbolId: 100 } }], // US100 is real
+    pendingOrders: [],
+    symbols: ['US100', 'BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => ({ id: `${s}-1` }), // both believe something is open
+  });
+  assert.deepEqual(toClear, [{ symbol: 'BTCUSD', id: 'BTCUSD-1' }]); // only the unbacked one clears
 });

@@ -36,7 +36,7 @@ import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
-import { reconcileAccount, estimateEquity } from './accountReconciliation.js';
+import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear } from './accountReconciliation.js';
 import { createTradeLogClient, logClosedTrade } from './supabaseTradeLog.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
@@ -264,6 +264,16 @@ export class CTraderDataSource {
     console.log('[cTrader] subscribing to live candles for', this.symbols.join(', '));
     await this._subscribeLiveCandles(accountId);
 
+    // 2026-09-14: every symbol has now been through warmUp() (called inside
+    // _subscribeLiveCandles above), which can leave a purely-historical
+    // "believed open" position behind, blocking real trading via netting
+    // until it naturally times out or someone clears it by hand - see
+    // _clearStaleBeliefsAgainstBroker's own header for the full story.
+    // Runs once here, right before this account goes live, so a stale
+    // belief never survives a restart unnoticed again.
+    console.log('[cTrader] checking warm-up beliefs against the real broker account...');
+    await this._clearStaleBeliefsAgainstBroker(accountId);
+
     // ROOT CAUSE FIX (2026-09-10): connection.on(name, listener) delivers a
     // CTraderLayerEvent WRAPPER, not the raw decoded payload - see
     // CTraderLayerEmitter.notifyListeners() (`new CTraderLayerEvent({ type,
@@ -487,6 +497,66 @@ export class CTraderDataSource {
     });
 
     return { ...result, balance: store.balance, equityEstimate: estimateEquity(store.balance, result.floatingPnlEstimate) };
+  }
+
+  /**
+   * Boot-time auto-fix (2026-09-14, at Esdras's explicit request after a
+   * night of manually clearing this by hand via /admin/clear-believed-position):
+   * warmUp()'s bulk replay uses the SAME live netting check as real
+   * processing, so it can reconstruct a "believed open" position from
+   * purely historical data - never submitted to the broker. Until now that
+   * belief just sat there (up to maxHoldingCandles, hours) blocking every
+   * new real candidate on that symbol via netting, and the only fix was a
+   * manual admin call.
+   *
+   * Runs once per boot, right after every symbol has been through
+   * warmUp() (see start()), and asks the broker directly - via the SAME
+   * ProtoOAReconcileReq the dashboard's /api/account reconciliation
+   * uses - what's REALLY outstanding for each symbol: not just open
+   * positions (`res.position`), but PENDING orders too (`res.order` -
+   * confirmed via this project's own vendored OpenApiMessages.proto:
+   * "The list of trader's account pending orders", not a guess). A belief
+   * only gets auto-cleared when NEITHER exists for that symbol - so a
+   * genuinely working LIMIT order that just hasn't filled yet (which
+   * would show up in `res.order`, not `res.position`) is correctly left
+   * alone, unlike a naive "real position count == 0" check would.
+   *
+   * Deliberately does NOT touch anything real (never calls
+   * ProtoOACancelOrderReq/ProtoOAClosePositionReq) - only clears the
+   * engine's own in-memory bookkeeping, exactly like the manual admin
+   * endpoint already did, just automatically instead of requiring a human
+   * to notice and act.
+   */
+  async _clearStaleBeliefsAgainstBroker(accountId) {
+    const store = this.account;
+    let res;
+    try {
+      res = await sendCommandWithTimeout(this.connection, 'ProtoOAReconcileReq', {
+        ctidTraderAccountId: Number(accountId),
+      });
+    } catch (err) {
+      // Best-effort - a failed reconcile must never block boot. Any stale
+      // belief left behind here can still be cleared manually as before,
+      // or will resolve on its own once maxHoldingCandles elapses.
+      console.warn('[cTrader] stale-belief reconcile failed (non-fatal, boot continues):', err.message);
+      return;
+    }
+    // The actual decision (which symbols to clear) is a pure function in
+    // accountReconciliation.js, unit-tested there without needing a live
+    // connection - this method is just the thin live-data wiring.
+    const toClear = computeStaleBeliefsToClear({
+      realPositions: res.position || [],
+      pendingOrders: res.order || [],
+      symbols: this.symbols,
+      symbolIdByName: this.symbolIdByName,
+      getBelievedPosition: (symbol) => store.strategyEngine.getOpenPosition(symbol),
+    });
+    for (const { symbol, id } of toClear) {
+      const cleared = store.strategyEngine.clearBelievedPosition(symbol, id);
+      if (cleared) {
+        console.log(`[cTrader] cleared stale believed-open position on boot: ${symbol} id=${id} (no matching real position or pending order at the broker)`);
+      }
+    }
   }
 
   /**

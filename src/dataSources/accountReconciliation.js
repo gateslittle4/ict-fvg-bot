@@ -143,3 +143,53 @@ export function reconcileAccount({ realPositions, symbolNameById, currentPriceBy
 export function estimateEquity(balance, floatingPnlEstimate) {
   return balance + (floatingPnlEstimate || 0);
 }
+
+/**
+ * Pure decision logic behind cTraderDataSource.js's
+ * _clearStaleBeliefsAgainstBroker() (2026-09-14, at Esdras's request after a
+ * night of manually clearing this by hand) - separated out so it's testable
+ * without a live/mocked broker connection, same discipline as
+ * reconcileAccount() above.
+ *
+ * warmUp()'s bulk replay uses the SAME live netting check as real
+ * processing, so it can reconstruct a "believed open" position from purely
+ * historical data that was NEVER submitted to the broker - left alone, that
+ * belief blocks every new real candidate on that symbol via netting until
+ * it naturally times out (maxHoldingCandles, often hours) or someone clears
+ * it by hand. A belief is only ever a false positive to clear here if
+ * NEITHER a real open position NOR a genuinely pending order backs it -
+ * checking pending orders too (not just positions) is what makes this safe
+ * to run unattended: a real LIMIT order that just hasn't filled yet would
+ * show up in `pendingOrders`, not `realPositions`, and must NOT be cleared
+ * out from under it (that would let netting open a SECOND real order on
+ * the same symbol once the first one eventually fills).
+ *
+ * @param {object[]} realPositions - raw ProtoOAReconcileRes.position array
+ * @param {object[]} pendingOrders - raw ProtoOAReconcileRes.order array (only ORDER_STATUS_ACCEPTED entries count as genuinely outstanding)
+ * @param {string[]} symbols - every symbol this account trades
+ * @param {Map<string,number>} symbolIdByName
+ * @param {(symbol: string) => {id: string}|null} getBelievedPosition - e.g. store.strategyEngine.getOpenPosition
+ * @returns {{symbol: string, id: string}[]} beliefs to clear, in `symbols` order
+ */
+export function computeStaleBeliefsToClear({ realPositions, pendingOrders, symbols, symbolIdByName, getBelievedPosition }) {
+  const outstandingSymbolIds = new Set();
+  for (const pos of realPositions || []) {
+    const sid = pos.tradeData?.symbolId;
+    if (sid != null) outstandingSymbolIds.add(Number(sid));
+  }
+  for (const ord of pendingOrders || []) {
+    if (ord.orderStatus && ord.orderStatus !== 'ORDER_STATUS_ACCEPTED') continue;
+    const sid = ord.tradeData?.symbolId;
+    if (sid != null) outstandingSymbolIds.add(Number(sid));
+  }
+
+  const toClear = [];
+  for (const symbol of symbols || []) {
+    const believed = getBelievedPosition(symbol);
+    if (!believed) continue;
+    const symbolId = symbolIdByName.get(symbol);
+    if (symbolId != null && outstandingSymbolIds.has(Number(symbolId))) continue;
+    toClear.push({ symbol, id: believed.id });
+  }
+  return toClear;
+}
