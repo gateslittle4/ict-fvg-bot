@@ -288,7 +288,18 @@ export class MatchTraderDataSource {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, brokerId }),
     });
-    if (!res.ok) throw new Error(`Match-Trader login failed: HTTP ${res.status}`);
+    if (!res.ok) {
+      // 2026-09-14: the URL fix above didn't clear the 403 - could be wrong
+      // credentials, or Cloudflare bot-management rejecting a plain
+      // server-side fetch() outright (no browser fingerprint/JS challenge
+      // cookie) rather than the API itself rejecting the login. Logging the
+      // body (truncated - Cloudflare block pages are large HTML, a real API
+      // error is short JSON) distinguishes the two instead of guessing
+      // again. Never includes the request's own email/password - only what
+      // the SERVER sent back.
+      const text = await res.text().catch(() => '');
+      throw new Error(`Match-Trader login failed: HTTP ${res.status} body=${text.slice(0, 500)}`);
+    }
     const setCookie = res.headers.get('set-cookie');
     this.coAuthToken = parseCookie(setCookie, 'co-auth');
     this.refreshToken = parseCookie(setCookie, 'rt');
