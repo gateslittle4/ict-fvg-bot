@@ -3219,6 +3219,20 @@ Esdras : "Combien de semaine de losing strike on a?" Ajouté un regroupement par
 
 **Fichiers** : `scripts/replayLastWeekOnRealData.js`.
 
+## Est-ce qu'un challenge aurait brûlé pendant la série de 4 semaines perdantes ? — 2026-09-15
+
+Esdras, suite directe à la série perdante trouvée : "que se passerait-il avec le challenge? On aurait pas brûlé le compte du 17 août au jour que tu as vu encore perdant?"
+
+Nouveau script `scripts/checkChallengeSurvivalOnRealTrades.js` — réutilise le MÊME rejeu réel (145 trades, combo production complet, 2026-02-10 → 2026-09-15) mais simule le solde/plancher de plusieurs vrais programmes prop firm (`src/propFirms/*.js`, déjà sourcés/vérifiés dans des sessions précédentes) au risque challenge réel (0.5%/trade, compounding, `CONFIG`'s propre défaut challenge — pas le 0.3% actuellement en mode live), via le VRAI `GuardrailEngine` (même calcul de plancher `_overallDrawdownFloor()` que la production, pas réimplémenté).
+
+**Résultat : sur la série du 17 août au 13 septembre, AUCUN des 5 programmes testés n'aurait cassé son plancher.** Au 17 août, le solde avait déjà +37,3% de coussin (accumulé depuis février, porté notamment par une semaine à +27R mi-avril) ; le point le plus bas de la série (10 septembre) n'est redescendu qu'à +28,6% — largement au-dessus de tous les planchers testés (FTMO 1-Step 10% trailing fin de journée, FTMO 2-Step 10% statique, FundingPips Phase 1 10% statique, FundingPips Flex 12% statique, FundingPips Instant 5% trailing-verrouillé-au-départ).
+
+**Un seul programme a effectivement brûlé sur toute la fenêtre de 7 mois — mais PAS pendant cette série** : FundingPips Instant (plancher le plus serré, 5% trailing) a cassé son plancher le **5 mars 2026**, à cause d'une série perdante bien plus tôt (mi-février/début mars, avant que le coussin ne se construise) — un problème totalement différent, déjà loin derrière au moment de la série d'août-septembre.
+
+**Limite explicite** : seuls les 3 types de plancher réellement implémentés dans `GuardrailEngine._overallDrawdownFloor()` (`static`, `trailing-eod`, `trailing-locks-at-start-balance`) ont pu être simulés correctement. CTI (`trailing-on-every-close`) et GoatFundedTrader (`trailing-realtime-equity-never-resets`) ne sont PAS encore reconnus par cette fonction (elle échoue "ouvert" - jamais de blocage - plutôt que de deviner une formule) : ces deux-là ne sont pas simulés ici, pas parce qu'ils survivraient forcément, mais parce que ce serait un faux "jamais brûlé" tant que leur mécanique de trailing spécifique n'est pas codée.
+
+**Fichiers** : `scripts/checkChallengeSurvivalOnRealTrades.js` (nouveau).
+
 ## Suite : 3 derniers mois (plafond réel trouvé) — 2026-09-15
 
 Esdras : "regards alors 3 mois precedent". Plafond technique trouvé et signalé honnêtement plutôt qu'ignoré : `GET /api/accounts/:id/candles` clampe sa réponse à 5000 bougies M15 maximum (`server.js`), donc la fenêtre la plus ancienne accessible par cette route est ~77 jours (1er juillet → 15 septembre), pas tout à fait 3 mois calendaires pleins. Aller plus loin demanderait la route admin `/admin/export-candles` (gated `ADMIN_EXPORT_TOKEN`, pas dispo dans ce sandbox) ou d'attendre plus d'historique réel — délibérément PAS de redémarrage de la connexion broker en prod juste pour ce chiffre (ça couperait le bot en train de trader).
