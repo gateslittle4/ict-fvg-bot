@@ -2571,3 +2571,21 @@ Suite directe du constat "aucune paire forex ne tient" (USDCAD inclus) : recomma
 `npm test` : 459/459 (inchangé).
 
 **Fichiers** : `data/backtest-input/GER40.csv` (nouveau, converti depuis les fichiers HistData fournis par Esdras), `src/backtest/transactionCosts.js` (+`GER40`), 13 scripts `scripts/run*StrategyAnalysis.js` (SYMBOLS étendu), 13 rapports `data/backtest-input/*-strategy-analysis.md` régénérés (ligne GER40 ajoutée, résultats des 7 autres instruments inchangés). Vérifications de robustesse (répartition achat/vente, répartition annuelle) faites en scripts ad hoc, non committées (à refaire proprement si on va plus loin sur ce candidat).
+
+## GER40 — contrôle de robustesse des 3 mécanismes restants (NWOG, Unicorn Model, Asian Range Fade) — 2026-09-15
+
+Suite demandée par Esdras ("Oui" après proposition explicite) : appliquer le même contrôle répartition achat/vente + année par année aux 3 mécanismes qui passaient le verdict formel sur GER40 mais n'avaient pas encore été vérifiés.
+
+| Mécanisme | Achat (n / totalR) | Vente (n / totalR) | Part achat du profit total | Verdict |
+|---|---|---|---|---|
+| NWOG | 255 / +25.21R | 263 / +25.03R | 50% | ✅ **vraiment bidirectionnel** |
+| Unicorn Model | 524 / +69.41R | 550 / **-5.19R** | 108% (vente légèrement négative) | ❌ **piège de biais haussier** |
+| Asian Range Fade | 398 / +78.83R | 457 / **-47.42R** | 251% (vente franchement négative) | ❌ **piège de biais haussier confirmé** |
+
+**Unicorn Model et Asian Range Fade rejetés** malgré leur "✅ tient" formel : dans les deux cas, la vente est nette négative sur tout l'historique (achat qui compense/dépasse une vente perdante) — exactement le même piège déjà démasqué sur Asian Range Breakout. Asian Range Fade a en plus une bizarrerie structurelle notée en passant : aucun trade signalé avant 2018 sur cet historique 2010-2025 (à creuser si ce mécanisme est repris un jour, mais sans incidence sur le verdict de rejet ici).
+
+**NWOG passe le contrôle** : répartition quasi parfaitement 50/50 achat/vente (25.21R vs 25.03R), positif 10 années sur 16 (2010,13,14,15,18,19,21,23,24,25 ; négatif 2011,12,16,17,20,22). Un peu moins régulier que Weekly Liquidity Sweep (12/16), et 2025 à lui seul représente environ 45% du profit net cumulé (22.57R sur ~50R net) — à surveiller, sans être aussi concentré qu'un faux signal type USDJPY (les autres années positives restent significatives, pas un seul point qui porte tout).
+
+**Conclusion mise à jour** : **deux candidats crédibles sur GER40 maintenant** — Weekly Liquidity Sweep (le plus solide : bidirectionnel, 12/16 années positives) et NWOG (bidirectionnel, 10/16 années positives, mais 2025 anormalement fort à surveiller). Asian Range Breakout, Unicorn Model et Asian Range Fade sont tous les trois désormais rejetés comme pièges de biais haussier malgré leur verdict formel "✅ tient". Breaker Block reste dans la zone grise (partiellement biaisé, ni rejeté ni validé). **Toujours rien recommandé pour du capital réel** — prochaine étape logique si on continue : forward-test démo de Weekly Liquidity Sweep et/ou NWOG sur GER40.
+
+`npm test` : 459/459 (inchangé). Script de vérification ad hoc, non committé (même convention que le contrôle précédent).
