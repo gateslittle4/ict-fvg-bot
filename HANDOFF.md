@@ -3034,3 +3034,11 @@ Esdras, en regardant la vue d'ensemble multi-comptes : "Regarde. Je ne me rappel
 `npm test` : 519/519 (inchangé — changement d'affichage pur côté client). Vérifié visuellement (Playwright, `/api/accounts` simulé avec un compte live + un compte en repli démo).
 
 **Non corrigé, à surveiller séparément** : le login Match-Trader de CTI reste bloqué par Cloudflare — reste à investiguer si ça vaut la peine de retenter (peut-être un problème temporaire côté CTI, ou une politique anti-bot qui bloque structurellement les logins automatisés).
+
+## Nouveaux comptes restaient sur l'ancien mode "semi-automatique" — corrigé — 2026-09-15
+
+Esdras : "on dirait que les nouveaux comptes suivent l'ancien système trade semi-automatique". Confirmé : `armAutoExecuteIfConfigured()` (qui applique `AUTO_EXECUTE_ALWAYS_ON` — voir son propre commentaire, "applied to EVERY account uniformly") n'était en réalité appelé QUE sur le chemin de connexion réelle RÉUSSIE dans `bootAccount()` — jamais dans les 2 branches de repli (échec de connexion → mode démo, ou aucun identifiant configuré du tout). Un compte comme `cti-freetrial`, bloqué en permanence sur un échec de connexion (voir l'entrée précédente sur le challenge Cloudflare), ne recevait donc jamais l'armement automatique et restait figé sur le mode semi-automatique par défaut — contredisant le comportement voulu et déjà appliqué à `default`.
+
+**Corrigé** (`src/server.js`, `bootAccount()`) : l'appel à `armAutoExecuteIfConfigured(account)` sort des 2 blocs `try` pour s'exécuter une seule fois, après les 3 branches (succès cTrader, succès Match-Trader, échec/pas d'identifiants → démo) — vraiment uniforme sur tout compte, comme documenté. Le mode démo/simulé (`mockDataSource.js`) ignore de toute façon ce drapeau (il simule toujours, peu importe) — ce correctif ne change donc aucun comportement simulé, seulement ce que le tableau de bord affiche pour ces comptes-là.
+
+`npm test` : 519/519 (inchangé — `bootAccount()` n'a pas de test dédié, changement vérifié manuellement en local avec `AUTO_EXECUTE_ALWAYS_ON=true`).

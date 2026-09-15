@@ -1157,7 +1157,6 @@ async function bootAccount(accountConfig) {
       await live.start();
       account.liveDataSource = live;
       console.log(`[boot:${account.id}] connected live to Match-Trader.`);
-      armAutoExecuteIfConfigured(account);
     } catch (err) {
       console.error(`[boot:${account.id}] live Match-Trader connection failed, falling back to demo mode:`, err.message);
       startMockDataSource(account);
@@ -1168,7 +1167,6 @@ async function bootAccount(accountConfig) {
       await live.start();
       account.liveDataSource = live;
       console.log(`[boot:${account.id}] connected live to cTrader.`);
-      armAutoExecuteIfConfigured(account);
     } catch (err) {
       console.error(`[boot:${account.id}] live cTrader connection failed, falling back to demo mode:`, err.message);
       startMockDataSource(account);
@@ -1177,6 +1175,19 @@ async function bootAccount(accountConfig) {
     console.log(`[boot:${account.id}] no broker credentials configured — starting in demo mode.`);
     startMockDataSource(account);
   }
+  // 2026-09-15 (Esdras: "on dirait que les nouveaux comptes suivent l'ancien
+  // système trade semi-automatique") - this used to only run on the
+  // successful-connection path above, so any account that hit a connection
+  // failure (falls back to mock - e.g. cti-freetrial's Match-Trader login
+  // blocked by a Cloudflare challenge, a persistent failure that never
+  // clears on retry) NEVER got AUTO_EXECUTE_ALWAYS_ON applied, silently
+  // staying on the pre-automatic default (semi-automatic) forever -
+  // contradicting this env var's own documented intent ("applied to EVERY
+  // account uniformly"). Mock mode itself ignores the autoExecute flag
+  // entirely (ignores nothing, ALWAYS simulates), so arming it here changes
+  // no simulated behavior - it only fixes what the dashboard displays for
+  // that account, which is exactly the inconsistency Esdras noticed.
+  armAutoExecuteIfConfigured(account);
 }
 
 if (process.env.NODE_ENV !== 'test') {
