@@ -303,7 +303,7 @@ export class LiveStrategyEngine {
     const events = [];
 
     this._resolveOpenPosition(symbol, candle, events, deferCloseToRealConfirmation);
-    this._maybeRequestPyramid(symbol, candle, events);
+    this._maybeRequestPyramid(symbol, candle, events, guardrailNow);
 
     if (this.fvgConfig[symbol]) {
       events.push(...this._detectFvgSignal(symbol, candle, guardrailNow));
@@ -407,7 +407,7 @@ export class LiveStrategyEngine {
    * `pyramidConfig` is null/disabled (the default) - existing behavior is
    * completely unchanged in that case.
    */
-  _maybeRequestPyramid(symbol, candle, events) {
+  _maybeRequestPyramid(symbol, candle, events, guardrailNow = candle.time) {
     if (!this.pyramidConfig || !this.pyramidConfig.symbols.includes(symbol)) return;
     const open = this.openPositions.get(symbol);
     if (!open || open.source !== 'fvg') return; // only ever validated for FVG trades on these symbols - see config.js comment
@@ -420,6 +420,24 @@ export class LiveStrategyEngine {
     if (open.awaitingRealClose) return;
     if (this.pyramidPositions.get(symbol)) return; // already requested/placed for this trade
     if (candle.time <= open.entryTime) return; // same conservative "next candle" ordering as everywhere else in this project
+    // 2026-09-15 (Esdras, after seeing the numbers - see HANDOFF.md): a
+    // pyramid leg that fires while its own symbol is still in cooldown from
+    // a recent loss performs dramatically worse (4-12% win rate, net
+    // negative) than one that fires clear of it (50-60% win rate, strongly
+    // positive) - a recent loss on this symbol looks like a leading
+    // indicator of a choppier regime, exactly where adding a second unit is
+    // most likely to also get whipsawed. Previously this function never
+    // consulted the guardrail at all. Same canTakeNewTrade(now, symbol) call
+    // every other live source already uses via _blockReason() - covers the
+    // per-symbol cooldown this was actually tested against, plus
+    // maxTradesPerDay/dailyLossLimitPct/overall-drawdown for free (adding
+    // MORE exposure once any of those has already tripped make no sense
+    // either). guardrailNow (NOT candle.time directly) - same live -5h
+    // candle-time-shift lesson already applied to every other source's own
+    // guardrail check (see ingestCandle()'s own comment) - candle.time is
+    // the shifted "fixed EST as UTC" engine clock in live operation, wrong
+    // for GuardrailEngine's real-calendar-day bookkeeping.
+    if (!this.guardrail.canTakeNewTrade(guardrailNow, symbol)) return;
 
     const addAtR = this.pyramidConfig.addAtR ?? 1;
     const bullish = open.direction === 'bullish';

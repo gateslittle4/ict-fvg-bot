@@ -941,6 +941,62 @@ test('LiveStrategyEngine (pyramid): +1R reached requests an independent add-on o
   assert.ok(Math.abs(open.targetPrice - 109.6) < 1e-9);
 });
 
+// 2026-09-15 (Esdras, after seeing the combined-portfolio numbers - see
+// HANDOFF.md): pyramid legs that fire while their own symbol is in an
+// active cooldown from a recent loss perform dramatically worse (4-12% win
+// rate) than ones that don't (50-60%) - _maybeRequestPyramid now consults
+// the guardrail like every other live source, instead of never checking it
+// at all.
+// The loss is recorded AFTER openBullishTest1() opens the FVG position, not
+// before - recording it any earlier would ALSO block the FVG's own entry on
+// candle 3 (it's gated by this same per-symbol cooldown too), which would
+// silently prevent the position from ever opening at all rather than
+// testing what this test actually wants to check (the already-open
+// position's pyramid add-on being gated).
+
+test('LiveStrategyEngine (pyramid): blocked while its own symbol is in an active cooldown from a recent loss', () => {
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, 0);
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['TEST1'] },
+  });
+  openBullishTest1(engine); // opens cleanly - no loss recorded yet
+  guardrail.recordTrade({ pnl: -50, time: 3 * M15 + 5 * 60 * 1000, balanceAfter: 9950, symbol: 'TEST1' }); // a loss on TEST1 shortly after entry
+  const guardrailNow = 4 * M15 + 5 * 60 * 1000; // ~20 min after the loss - still within the 30-min cooldown
+  const evs = engine.ingestCandle('TEST1', c(4 * M15, 103, 105.3, 103, 104), guardrailNow);
+  assert.equal(evs.filter((e) => e.type === 'pyramid-order-requested').length, 0, 'no pyramid order requested while the symbol is cooling down');
+  assert.equal(engine.getPyramidPending('TEST1'), null);
+});
+
+test('LiveStrategyEngine (pyramid): fires normally once its own symbol\'s cooldown has elapsed', () => {
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, 0);
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['TEST1'] },
+  });
+  openBullishTest1(engine);
+  guardrail.recordTrade({ pnl: -50, time: 3 * M15 + 5 * 60 * 1000, balanceAfter: 9950, symbol: 'TEST1' });
+  const guardrailNow = 3 * M15 + 36 * 60 * 1000; // 31 min after the loss - cooldown has cleared
+  const evs = engine.ingestCandle('TEST1', c(4 * M15, 103, 105.3, 103, 104), guardrailNow);
+  assert.equal(evs.filter((e) => e.type === 'pyramid-order-requested').length, 1, 'requests normally once the cooldown has cleared');
+});
+
+test('LiveStrategyEngine (pyramid): a loss on a DIFFERENT symbol does not block this symbol\'s pyramid (per-symbol cooldown, not account-wide)', () => {
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, 0);
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['TEST1'] },
+  });
+  openBullishTest1(engine);
+  guardrail.recordTrade({ pnl: -50, time: 3 * M15 + 5 * 60 * 1000, balanceAfter: 9950, symbol: 'OTHERSYM' });
+  const guardrailNow = 4 * M15 + 5 * 60 * 1000; // still well within OTHERSYM's cooldown, but that's a different symbol
+  const evs = engine.ingestCandle('TEST1', c(4 * M15, 103, 105.3, 103, 104), guardrailNow);
+  assert.equal(evs.filter((e) => e.type === 'pyramid-order-requested').length, 1, 'an unrelated symbol\'s loss must not silence this one\'s pyramid');
+});
+
 test('LiveStrategyEngine (pyramid): only requests once per trade - a second candle past +1R does not re-fire', () => {
   const engine = engineWithPyramid();
   openBullishTest1(engine);

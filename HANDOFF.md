@@ -2794,3 +2794,24 @@ Suite directe de la simulation combinée : Esdras a confirmé vouloir garder un 
 **5 nouveaux tests** dans `test/guardrailEngine.test.js` (perte sur un symbole ne bloque pas un autre ; chaque cooldown s'éteint indépendamment ; repli compte-global sans symbole ; `maxTradesPerDay`/`dailyLossLimitPct` restent bien partagés) + 2 tests existants dans `test/liveStrategyEngine.test.js` corrigés (ils enregistraient une perte sans `symbol`, cassés par ce changement de comportement volontaire — pas une régression).
 
 `npm test` : 469/469 (465 + 4 nouveaux guardrail, 2 corrigés).
+
+## Pyramidage soumis au garde-fou par symbole — décision d'Esdras, codée après tests supplémentaires — 2026-09-15
+
+Suite directe de la découverte précédente (pyramidage jamais vérifié par le garde-fou, et les legs déclenchés pendant un cooldown actif se révèlent quasi toujours perdants). Esdras a demandé plus de tests avant de trancher — chiffres déjà donnés (4-12% de réussite pendant cooldown vs 50-60% hors cooldown, sur 2 fenêtres différentes) — puis a confirmé : "Oui, tres bien".
+
+**Codé** : `src/liveStrategyEngine.js` (`_maybeRequestPyramid`) — nouveau garde `if (!this.guardrail.canTakeNewTrade(guardrailNow, symbol)) return;` juste avant de calculer l'unité d'ajout, réutilisant le même appel que toutes les autres sources (couvre le cooldown par symbole ET, gratuitement, `maxTradesPerDay`/`dailyLossLimitPct`/drawdown global). **Piège évité en cours de route** : la fonction ne recevait jamais `guardrailNow` (seulement `candle`) — sans corriger ça, le même bug de décalage -5h en live (déjà trouvé et corrigé pour FVG/Divergence/NWOG/Judas Swing) serait réapparu ici. Signature étendue à `_maybeRequestPyramid(symbol, candle, events, guardrailNow = candle.time)`, câblée sur le VRAI `guardrailNow` côté live (`ingestCandle`), laissée par défaut côté replay en masse (comportement déjà correct là).
+
+**3 nouveaux tests** (`test/liveStrategyEngine.test.js`) : bloqué pendant le cooldown du symbole ; se déclenche normalement une fois le cooldown écoulé ; une perte sur un AUTRE symbole ne bloque pas celui-ci (par symbole, pas compte-global). Un vrai bug de méthodologie de test trouvé et corrigé en écrivant ces tests : enregistrer la perte AVANT d'ouvrir la position FVG bloquait aussi l'OUVERTURE de la position elle-même (soumise au même garde-fou) — corrigé en enregistrant la perte après l'ouverture, comme un vrai scénario le ferait.
+
+**Résultat mesuré, avec le vrai code corrigé** (rejoué avec la simulation combinée) :
+
+| | 2024-2025, sans le correctif | **avec le correctif** | 7 derniers mois, sans | **avec** |
+|---|---|---|---|---|
+| Trades pyramid | 58 (WR 36.2%) | **33 (WR 60.6%)** | 20 (WR 35.0%) | **12 (WR 50.0%)** |
+| Espérance pyramid (R) | +65.55 | **+85.69** | +21.23 | **+23.63** |
+| Solde final (portefeuille complet) | 113 172$ | **125 236$** | 21 520$ | **21 789$** |
+| Drawdown max | 11.30% | **10.38%** | 5.07% | 5.07% |
+
+Exactement ce qu'annonçait la recherche : les 25 (puis 8) legs perdants pendant le cooldown disparaissent complètement, ne laissant que les legs rentables — meilleur résultat avec MOINS de trades.
+
+`npm test` : 472/472 (469 + 3 nouveaux).
