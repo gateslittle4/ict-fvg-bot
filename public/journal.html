@@ -183,17 +183,6 @@
   .strategy-table tr:hover td { background: var(--bg-inset); }
   .strategy-table tr:last-child td { border-bottom: none; }
 
-  /* ---------- Calendrier de performance (2026-09-15) ---------- */
-  .calendar-wrap { overflow-x: auto; padding-bottom: 4px; }
-  .calendar-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 1fr); gap: 3px; width: max-content; }
-  .calendar-cell {
-    width: 15px; height: 15px; border-radius: 2px; background: var(--bg-inset); border: 1px solid var(--panel-border);
-    cursor: default;
-  }
-  .calendar-legend { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 10.5px; color: var(--faint); font-family: var(--mono); }
-  .calendar-legend .calendar-cell { width: 11px; height: 11px; }
-  .calendar-months { display: flex; gap: 3px; font-size: 9.5px; color: var(--faint); font-family: var(--mono); margin-bottom: 4px; width: max-content; }
-
   /* ---------- Calendrier mensuel (2026-09-15, Esdras: "un calendrier des
      jours du mois... genre le 📆 avec les chiffres totaux de chaque jour,
      gain ou perte, chiffre brut et %") - a real wall-calendar grid, one
@@ -286,12 +275,6 @@
     <h2>Journal durable par instrument</h2>
     <div class="meta" style="margin-bottom:8px;">Même journal, détaillé par instrument.</div>
     <div id="trade-log-summary">Chargement…</div>
-  </div>
-
-  <div class="card">
-    <h2>Calendrier de performance</h2>
-    <div class="meta" style="margin-bottom:8px;">Un carré par jour où au moins un trade s'est clôturé — vert/rouge selon le R total du jour, intensité proportionnelle. Heure de sortie en heure locale de ton navigateur.</div>
-    <div id="calendar-body">Chargement…</div>
   </div>
 
   <div class="card">
@@ -420,82 +403,6 @@ function deriveTradeR(equityCurve) {
     entryTime: p.entryTime,
     r: i === 0 ? p.cumulativeR : p.cumulativeR - equityCurve[i - 1].cumulativeR,
   }));
-}
-
-// Calendrier de performance (2026-09-15, Esdras: liste d'idées demandée) -
-// GitHub-contributions-style grid, one column per week, one row per weekday
-// (Lundi en haut). Grouped by LOCAL calendar day (the viewer's own
-// timezone, via toLocaleDateString - a trade closed at 23h50 in France
-// shouldn't count for the next UTC day). Color intensity scales with the
-// day's total R relative to the biggest single day in the window, clamped
-// so one huge outlier day doesn't wash out every other day to near-white.
-function renderCalendar(equityCurve) {
-  const trades = deriveTradeR(equityCurve);
-  if (trades.length === 0) {
-    return '<div class="meta">Pas encore de trade clôturé.</div>';
-  }
-  const byDay = new Map(); // 'YYYY-MM-DD' (local) -> { r, count }
-  for (const t of trades) {
-    const d = new Date(t.time);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const bucket = byDay.get(key) || { r: 0, count: 0, date: new Date(d.getFullYear(), d.getMonth(), d.getDate()) };
-    bucket.r += t.r;
-    bucket.count++;
-    byDay.set(key, bucket);
-  }
-  const maxAbsR = Math.max(0.01, ...[...byDay.values()].map((b) => Math.abs(b.r)));
-
-  // Fixed ~14-week window ending today, Monday-first weeks - a stable,
-  // predictable grid rather than one whose column count depends on how far
-  // back the oldest trade happens to be.
-  const WEEKS = 14;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayDow = (today.getDay() + 6) % 7; // 0=Monday
-  const gridStart = new Date(today);
-  gridStart.setDate(today.getDate() - todayDow - (WEEKS - 1) * 7);
-
-  const monthLabels = [];
-  const cells = [];
-  let lastMonth = null;
-  for (let w = 0; w < WEEKS; w++) {
-    const weekStart = new Date(gridStart);
-    weekStart.setDate(gridStart.getDate() + w * 7);
-    const label = weekStart.getMonth() !== lastMonth ? weekStart.toLocaleDateString('fr-FR', { month: 'short' }) : '';
-    if (label) lastMonth = weekStart.getMonth();
-    monthLabels.push(`<span style="width:15px;">${label}</span>`);
-    for (let d = 0; d < 7; d++) {
-      const day = new Date(weekStart);
-      day.setDate(weekStart.getDate() + d);
-      if (day > today) { cells.push('<div class="calendar-cell" style="visibility:hidden;"></div>'); continue; }
-      const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-      const bucket = byDay.get(key);
-      let bg = 'var(--bg-inset)';
-      let title = day.toLocaleDateString('fr-FR');
-      if (bucket) {
-        const intensity = 0.18 + 0.72 * Math.min(1, Math.abs(bucket.r) / maxAbsR);
-        bg = bucket.r >= 0 ? `rgba(47,212,128,${intensity.toFixed(2)})` : `rgba(255,92,95,${intensity.toFixed(2)})`;
-        title += ` — ${bucket.r >= 0 ? '+' : ''}${fmt(bucket.r)}R (${bucket.count} trade${bucket.count > 1 ? 's' : ''})`;
-      }
-      cells.push(`<div class="calendar-cell" style="background:${bg};" title="${title}"></div>`);
-    }
-  }
-
-  return `
-    <div class="calendar-wrap">
-      <div class="calendar-months">${monthLabels.join('')}</div>
-      <div class="calendar-grid">${cells.join('')}</div>
-    </div>
-    <div class="calendar-legend">
-      <span>Perte</span>
-      <span class="calendar-cell" style="background:rgba(255,92,95,0.8);"></span>
-      <span class="calendar-cell" style="background:rgba(255,92,95,0.3);"></span>
-      <span class="calendar-cell" style="background:var(--bg-inset);"></span>
-      <span class="calendar-cell" style="background:rgba(47,212,128,0.3);"></span>
-      <span class="calendar-cell" style="background:rgba(47,212,128,0.8);"></span>
-      <span>Gain</span>
-    </div>
-  `;
 }
 
 // Calendrier mensuel (2026-09-15, Esdras: "un calendrier des jours du mois...
@@ -791,7 +698,6 @@ function renderRecoveryStats(equityCurve) {
 
 function renderOverview(data) {
   const el = document.getElementById('overview-body');
-  const calendarEl = document.getElementById('calendar-body');
   const monthCalEl = document.getElementById('month-calendar-body');
   const timeStatsEl = document.getElementById('time-stats-body');
   const sessionStatsEl = document.getElementById('session-stats-body');
@@ -800,14 +706,12 @@ function renderOverview(data) {
   if (!overall || overall.totalSignals === 0) {
     const emptyMsg = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
     el.innerHTML = emptyMsg;
-    if (calendarEl) calendarEl.innerHTML = emptyMsg;
     if (monthCalEl) monthCalEl.innerHTML = emptyMsg;
     if (timeStatsEl) timeStatsEl.innerHTML = emptyMsg;
     if (sessionStatsEl) sessionStatsEl.innerHTML = emptyMsg;
     if (recoveryEl) recoveryEl.innerHTML = emptyMsg;
     return;
   }
-  if (calendarEl) calendarEl.innerHTML = renderCalendar(data.equityCurve);
   if (monthCalEl) {
     monthCalDailyBuckets = buildDailyBuckets(data.equityCurve);
     if (monthCalYear === undefined) {

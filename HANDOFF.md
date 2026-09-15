@@ -2990,3 +2990,9 @@ Esdras : "Rapport PDF exportable du journal" — une des idées offertes plus t�
 `npm test` : 492/492 (inchangé — fonctionnalité 100% côté client).
 
 **Fichiers** : `public/journal.html`, `src/server.js`, `package.json`.
+
+## Retrait de l'ancienne heatmap (petits carrés) — 2026-09-15
+
+Esdras : "Tu peux retirer l'ancien calendrier que j'avais vu avec les petits carrés. Je l'aimais pas de toute façon." — la heatmap GitHub-contributions-style (`renderCalendar()`, carte "Calendrier de performance") est retirée de `public/journal.html` (CSS, HTML, fonction JS, câblage dans `renderOverview`) ; le calendrier mensuel réel ($/%) prend sa place. `deriveTradeR()` conservé (encore utilisé par les stats heure/jour et session).
+
+`npm test` : 496/496 (inchangé — retrait HTML/CSS/JS pur côté client).
