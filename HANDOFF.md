@@ -3159,3 +3159,15 @@ Esdras, après l'audit "quelles sont les données utiles mais noyées ?" : "on p
 **Vérifié** : `npm test` 531/531 (inchangé, aucun test existant ne touche ce chemin). Playwright — carte challenge rendue correctement (cible/plancher/barre, position 15% calculée juste), table de positions avec `units: 0.01` affiché "0.01" (plus "0"), clic sur "Fermer" → dialogue de confirmation correct → requête réelle vers `/positions/:id/close` → réponse serveur réelle (503 "not connected to a live broker" en mode démo local, chemin d'erreur affiché correctement dans l'alerte) — testé contre le VRAI serveur de dev, pas seulement des routes mockées, donc le chemin serveur est confirmé de bout en bout, pas seulement le rendu client.
 
 **Fichiers** : `public/index.html`, `src/server.js`.
+
+## Le plus long écart réel entre deux trades (combo complet) — 2026-09-15
+
+Esdras, après la réponse sur les moyennes de fréquence (trades/an) : "OK" puis "dis-le moi" — le vrai plus long écart mesuré, pas juste une moyenne.
+
+Nouveau script `scripts/computeInterTradeGaps.js` — réutilise EXACTEMENT la même simulation que `checkOutcomeSerialCorrelationFullCombo.js` (combo FVG US100+US500+XAUUSD + Divergence US100/US500, même config, même guardrail, même timeline chronologique) mais trace `entryTime` de chaque trade OUVERT (pas la clôture — "un jour sans trade" veut dire aucune ouverture ce jour-là) et calcule l'écart en jours entre ouvertures consécutives.
+
+**Piège trouvé avant de répondre** : les 10 plus longs écarts bruts tombent tous en 2018 (jusqu'à 55 jours), sauf un. Cause vérifiée directement via `csvLoader` : `XAUUSD.csv` commence en 2018-01-01, mais `US100.csv`/`US500.csv` ne commencent qu'en 2019-01-01 — toute l'année 2018 n'a donc QUE XAUUSD réellement tradable dans ce "combo à 3 symboles", pas un vrai régime établi. Aurait donné une réponse trompeuse (des écarts qui reflètent des données manquantes, pas un vrai silence du combo). Exclu explicitement, chiffre séparé donné pour 2019+ (régime établi, les 3 symboles FVG réellement disponibles).
+
+**Résultat (2019-2025, 1373 écarts sur 1374 trades)** : le plus long écart réel est de **18,8 jours** (2023-06-08 → 2023-06-26), suivi de 16,4j (2023-03-20 → 2023-04-05) et 13,5j (2023-06-26 → 2023-07-10) — 2023 concentre les plus longs silences. Moyenne 1,86 jour, médiane 0,91 jour, 33% des écarts dépassent 2 jours. Cohérent avec la réponse déjà donnée sur les moyennes annuelles (24-148 trades/an) : les écarts de plusieurs jours sont fréquents et normaux, mais 2 jours reste loin du record historique de ce combo (18,8 jours).
+
+**Fichiers** : `scripts/computeInterTradeGaps.js` (nouveau).
