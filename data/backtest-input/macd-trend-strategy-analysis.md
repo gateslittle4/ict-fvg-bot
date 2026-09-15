@@ -5,9 +5,9 @@
 | Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Durée médiane (j, train) | Verdict |
 |---|---|---|---|---|---|---|---|---|---|---|
 | US100 | 120 | 34.2% | 0.98 | -0.01 | 52 | 28.8% | 0.55 | -0.25 | 7 | ❌ ne tient pas |
-| US500 | 122 | 35.2% | 1.02 | 0.01 | 49 | 32.7% | 0.63 | -0.17 | 8 | ❌ ne tient pas |
+| US500 | 122 | 35.2% | 1.02 | 0.01 | 49 | 32.7% | 0.64 | -0.17 | 8 | ❌ ne tient pas |
 | XAUUSD | 126 | 34.1% | 0.93 | -0.03 | 46 | 30.4% | 1.64 | 0.26 | 9 | ⚠️ affaibli |
-| EURUSD | 158 | 31.0% | 0.85 | -0.07 | 53 | 34.0% | 0.57 | -0.21 | 8 | ❌ ne tient pas |
+| EURUSD | 158 | 31.0% | 0.84 | -0.07 | 53 | 34.0% | 0.57 | -0.21 | 8 | ❌ ne tient pas |
 | GBPUSD | 120 | 40.0% | 0.93 | -0.03 | 46 | 39.1% | 0.70 | -0.14 | 10.5 | ❌ ne tient pas |
 | USDJPY | 208 | 27.9% | 0.79 | -0.11 | 47 | 25.5% | 0.75 | -0.14 | 8 | ❌ ne tient pas |
 | USDCAD | 331 | 32.9% | 0.81 | -0.08 | 54 | 24.1% | 0.53 | -0.28 | 9 | ❌ ne tient pas |

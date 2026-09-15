@@ -4,10 +4,10 @@
 
 | Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Durée médiane (j, train) | Verdict |
 |---|---|---|---|---|---|---|---|---|---|---|
-| US100 | 22 | 40.9% | 2.05 | 0.28 | 6 | 33.3% | 0.15 | -0.30 | 3.5 | ❓ pas assez de trades |
+| US100 | 22 | 40.9% | 2.06 | 0.29 | 6 | 33.3% | 0.15 | -0.29 | 3.5 | ❓ pas assez de trades |
 | US500 | 28 | 21.4% | 0.31 | -0.37 | 6 | 50.0% | 0.38 | -0.22 | 5 | ❓ pas assez de trades |
 | XAUUSD | 33 | 27.3% | 0.67 | -0.14 | 14 | 21.4% | 0.56 | -0.17 | 4 | ❌ ne tient pas |
-| EURUSD | 26 | 26.9% | 0.43 | -0.23 | 5 | 0.0% | 0.00 | -0.82 | 4.5 | ❓ pas assez de trades |
+| EURUSD | 26 | 26.9% | 0.42 | -0.23 | 5 | 0.0% | 0.00 | -0.83 | 4.5 | ❓ pas assez de trades |
 | GBPUSD | 18 | 33.3% | 0.29 | -0.20 | 8 | 37.5% | 1.19 | 0.06 | 4 | ❓ pas assez de trades |
 | USDJPY | 39 | 33.3% | 1.00 | 0.00 | 9 | 33.3% | 1.10 | 0.04 | 8 | ❓ pas assez de trades |
 | USDCAD | 53 | 28.3% | 1.19 | 0.06 | 9 | 11.1% | 0.02 | -0.57 | 7 | ❓ pas assez de trades |

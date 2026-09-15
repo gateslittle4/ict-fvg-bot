@@ -17,8 +17,12 @@
 
 export const DEFAULT_SPREADS = {
   // price units (e.g. 0.0001 = 1 pip for a 4-decimal forex pair)
-  EURUSD: 0.00010, // ~1.0 pip round-turn — typical standard-account retail/prop spread
-  GBPUSD: 0.00015, // ~1.5 pips — GBP pairs typically run a bit wider than EURUSD
+  // 2026-09-15: Esdras sent a Market Watch screenshot of her real cTrader
+  // account (GBPUSD/EURUSD/GER40/US100/US30/US500 side by side) - same
+  // single-snapshot caveat as GER40 below (not an average over time), but
+  // real broker numbers instead of guesses for these 4.
+  EURUSD: 0.00011, // Sell 1.15321 / Buy 1.15332 — was 0.00010 (close guess)
+  GBPUSD: 0.00015, // Sell 1.34683 / Buy 1.34698 — matches the prior guess exactly
   USDJPY: 0.012, // ~1.2 pips (1 pip = 0.01 for this pair) — INDICATIVE, verify against FundingPips cTrader spec
   // 2026-09-15, Esdras uploaded real HistData USDCAD M1 (2010-2018,
   // 2020-2025) to research a genuinely new pair - same indicative-spread
@@ -27,8 +31,8 @@ export const DEFAULT_SPREADS = {
   // exotic - similar liquidity profile to EURUSD/GBPUSD, not USDJPY's
   // different pip scale).
   USDCAD: 0.00015, // ~1.5 pips — INDICATIVE, never confirmed against a real broker spec
-  US100: 1.0, // 1.0 point — INDICATIVE, verify against FundingPips cTrader spec
-  US500: 0.4, // 0.4 point — INDICATIVE, verify against FundingPips cTrader spec
+  US100: 0.6, // Sell 29074.45 / Buy 29075.05 — was 1.0, a 67% overestimate
+  US500: 0.25, // Sell 7605.47 / Buy 7605.72 — was 0.4, a 60% overestimate
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec
   // 2026-09-15, Esdras uploaded real HistData GRXEUR M1 (2010-2025) to
   // research a genuinely new instrument - the DAX40 index. Was 1.0 (a pure

@@ -2643,6 +2643,42 @@ Points (1) et (2) ci-dessus réglés directement par Esdras : elle a confirmé G
 
 **Leçon à retenir** : le rejet initial de NWOG n'était pas faux en soi (le contrôle était correct), mais reposait sur une donnée d'entrée jamais vérifiée (le spread). Exactement le genre d'erreur que la discipline "vérifier les chiffres surprenants" de ce projet est censée attraper — ici c'est Esdras qui a fourni la vraie donnée en répondant à une question simple (quel spread vois-tu dans l'app), pas une improvisation.
 
-**Conclusion mise à jour : deux candidats crédibles sur GER40 — Weekly Liquidity Sweep ET NWOG.** Il reste pareil qu'avant : rien codé en live/démo pour l'instant, ces deux mécanismes n'existent qu'en scripts de backtest, pas dans `LiveStrategyEngine`.
+**Conclusion mise à jour : deux candidats crédibles sur GER40 — Weekly Liquidity Sweep ET NWOG.** Il reste pareil qu'avant pour Weekly Liquidity Sweep (backtest seulement). **Correction : NWOG N'EST PAS backtest-only** — voir section suivante, c'est en fait déjà live en production sur US100, une erreur de ma part corrigée immédiatement en la découvrant.
 
 `npm test` : 459/459. Fichiers modifiés : `src/backtest/transactionCosts.js` (GER40: 1.0 → 0.5), 13 rapports `data/backtest-input/*-strategy-analysis.md` régénérés (ligne GER40 uniquement). Scripts de vérification ad hoc, non committés.
+
+## Spreads US100/US500/EURUSD corrigés (screenshot Market Watch d'Esdras) — 2026-09-15
+
+Suite à la question d'Esdras ("et pour les autres paires, tu ne m'avais pas demandé les spreads ?") — juste après GER40, elle a raison : seul BTCUSD avait une vraie mesure (via de vrais ticks captés en live), tout le reste était une pure estimation jamais vérifiée, y compris US100/US500/XAUUSD qui sont pourtant les instruments EN PRODUCTION. Elle a envoyé un screenshot du Market Watch cTrader (GBPUSD/EURUSD/GER40/US100/US30/US500) :
+
+| Symbole | Ancien (estimation) | Réel (screenshot) | Écart |
+|---|---|---|---|
+| GBPUSD | 0.00015 | 0.00015 | confirmé exactement |
+| EURUSD | 0.00010 | 0.00011 | proche |
+| US100 | 1.0 | **0.6** | surestimé de 67% |
+| US500 | 0.4 | **0.25** | surestimé de 60% |
+| US30 | — | 1.4 | pas un symbole suivi dans ce projet, pour info seulement |
+
+`transactionCosts.js` corrigé, les 13 rapports d'analyse régénérés (seules les lignes US100/US500/EURUSD changent partout, vérifié). XAUUSD/USDJPY/USDCAD restent des estimations non vérifiées — pas dans ce screenshot.
+
+`npm test` : 459/459.
+
+## CRITIQUE — NWOG est déjà LIVE sur US100 (pas backtest-only, erreur corrigée) et son edge en production ressemble à un piège de biais haussier — 2026-09-15
+
+En creusant pourquoi le rapport NWOG montrait déjà "✅ tient" sur US100/US500 avant même la correction de spread, découverte d'une erreur de ma part : j'avais dit à Esdras que NWOG "n'existe qu'en script de backtest, pas dans LiveStrategyEngine" — **FAUX**. NWOG est en réalité **déjà en exécution automatique complète sur US100** depuis une décision antérieure documentée plus haut dans ce fichier ("NWOG intégré en mode ALERTE (Phase 1)" puis "Statut final : NWOG en exécution automatique complète, US100 seulement"). `CONFIG.nwog.symbols = ['US100']`, câblé dans `liveStrategyEngine.js` (`_processNwogCandidate`), même chemin `openPositions`/netting/auto-exécution que FVG et Divergence. Corrigé immédiatement auprès d'Esdras.
+
+**Plus important : comme le contrôle achat/vente était en tête (fait toute la session sur GER40), je l'ai appliqué par réflexe à NWOG/US100 — le mécanisme qui trade déjà avec du capital réel.** Jamais fait avant cette session (le concept de ce contrôle n'existait pas encore quand NWOG est passé en live) :
+
+| | US100 (LIVE, capital réel) | US500 (pas live) |
+|---|---|---|
+| Profit total achat | +87.43R | +51.20R |
+| Profit total vente | **-1.70R** | **+0.01R** |
+| Part du profit venant des achats | **102%** | **100%** |
+| Blocs de 2 ans positifs | 3/4 | 4/4 |
+| Meilleure année seule | 2025 = 33% du profit | 2025 = 56% du profit |
+
+**Signal d'alarme identique à celui qui a fait rejeter Asian Range Breakout/Unicorn Model sur GER40** : la quasi-totalité du profit de NWOG/US100 vient des achats, les ventes sont à l'équilibre (US500) ou légèrement négatives (US100) sur toute la période 2019-2025. Le verdict formel train/test qui a justifié la mise en live de NWOG était calculé correctement, mais n'avait jamais été croisé avec ce contrôle directionnel — inventé plus tard dans le projet (USDJPY, puis systématisé sur GER40 aujourd'hui). Interprétation prudente : ça ne veut pas dire que NWOG va nécessairement mal se comporter (si le Nasdaq continue de monter sur le long terme, un signal biaisé achat peut continuer à "marcher" comme proxy d'être long sur un indice haussier), mais l'histoire "mécanisme ICT bidirectionnel avec un vrai edge" n'est pas ce que montrent les données — c'est vraisemblablement en grande partie la tendance générale du marché.
+
+**Aucune action prise sur le live sans confirmation d'Esdras** — elle a été informée directement dans la conversation avec les chiffres bruts, décision lui appartenant explicitement (dans l'esprit de la même discipline "jamais changer le compte réel sans son accord conscient" déjà appliquée quand NWOG est passé en live la première fois).
+
+`npm test` : 459/459 (inchangé). Script de vérification ad hoc, non committé.

@@ -6,10 +6,10 @@
 
 | Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |
 |---|---|---|---|---|---|---|---|---|---|
-| US100 | 983 | 26.9% | 0.94 | -0.05 | 300 | 28.7% | 1.03 | 0.03 | ⚠️ affaibli |
-| US500 | 793 | 25.7% | 0.86 | -0.12 | 271 | 31.7% | 1.16 | 0.13 | ⚠️ affaibli |
+| US100 | 1108 | 27.1% | 0.98 | -0.01 | 339 | 29.5% | 1.11 | 0.09 | ⚠️ affaibli |
+| US500 | 974 | 26.5% | 0.92 | -0.07 | 314 | 33.8% | 1.32 | 0.24 | ⚠️ affaibli |
 | XAUUSD | 485 | 26.2% | 0.84 | -0.14 | 215 | 26.0% | 0.87 | -0.11 | ❌ ne tient pas |
-| EURUSD | 230 | 29.6% | 1.00 | -0.00 | 2 | 50.0% | 2.18 | 0.77 | ❓ pas assez de trades |
+| EURUSD | 214 | 30.8% | 1.05 | 0.04 | 1 | 100.0% | ∞ | 2.82 | ❓ pas assez de trades |
 | GBPUSD | 188 | 23.9% | 0.75 | -0.23 | 1 | 100.0% | ∞ | 2.72 | ❓ pas assez de trades |
 | USDJPY | 312 | 29.8% | 1.04 | 0.03 | 4 | 0.0% | 0.00 | -1.14 | ❓ pas assez de trades |
 | USDCAD | 178 | 27.5% | 0.89 | -0.10 | 1 | 0.0% | 0.00 | -1.24 | ❓ pas assez de trades |
@@ -19,10 +19,10 @@
 
 | Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |
 |---|---|---|---|---|---|---|---|---|---|
-| US100 | 211 | 29.9% | 1.12 | 0.10 | 92 | 23.9% | 0.85 | -0.13 | ❌ ne tient pas |
-| US500 | 190 | 29.5% | 1.07 | 0.06 | 96 | 21.9% | 0.73 | -0.23 | ❌ ne tient pas |
+| US100 | 237 | 28.7% | 1.09 | 0.07 | 98 | 22.4% | 0.80 | -0.16 | ❌ ne tient pas |
+| US500 | 213 | 29.1% | 1.09 | 0.07 | 100 | 23.0% | 0.81 | -0.15 | ❌ ne tient pas |
 | XAUUSD | 155 | 26.5% | 0.89 | -0.10 | 77 | 35.1% | 1.42 | 0.30 | ⚠️ affaibli |
-| EURUSD | 97 | 18.6% | 0.53 | -0.46 | 22 | 18.2% | 0.51 | -0.50 | ❌ ne tient pas |
+| EURUSD | 87 | 18.4% | 0.52 | -0.48 | 22 | 18.2% | 0.49 | -0.52 | ❌ ne tient pas |
 | GBPUSD | 76 | 21.1% | 0.63 | -0.35 | 16 | 0.0% | 0.00 | -1.24 | ❌ ne tient pas |
 | USDJPY | 125 | 25.6% | 0.80 | -0.18 | 38 | 28.9% | 0.98 | -0.02 | ❌ ne tient pas |
 | USDCAD | 140 | 19.3% | 0.55 | -0.44 | 24 | 12.5% | 0.33 | -0.70 | ❌ ne tient pas |
