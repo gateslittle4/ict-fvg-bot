@@ -2496,3 +2496,22 @@ Première tentative de connexion RÉELLE au compte Match-Trader de City Traders 
 Esdras a refusé explicitement l'option "laisser CTI de côté" ("si je fais ça, je ne pourrai participer à aucun challenge") — CTI reste la priorité, pas une option secondaire. Session suivante : reprendre sur l'option 2 (headless) pendant qu'Esdras avance sur l'option 1 de son côté, sauf si elle dit avoir eu une réponse du support CTI entre-temps.
 
 **Fichiers concernés** : `src/dataSources/matchTraderDataSource.js` (`_login`, `_refreshAuth` — probablement le même problème là-bas, jamais atteint), `src/dataSources/supabaseAccountStore.js`, `public/accounts.html`.
+
+## Patterns de bougies classiques (Morning/Evening Star, Doji Star) testés et rejetés — 2026-09-15
+
+Esdras, après une journée calme sans signal validé sur les 4 stratégies déjà en prod : "pour l'or, pourquoi pas des patterns connus? Comme diament, etoile etc?" — deux idées proposées (étoile, diamant), une seule retenue pour être codée : le pattern "diamant" (sommet/creux) a été explicitement écarté avant même d'écrire du code, car il exige plusieurs paramètres subjectifs de détection de pics/creux (fenêtre, tolérance) choisis avant de voir un résultat — exactement le genre de surface de paramètres libres que ce projet évite partout ailleurs. Le pattern étoile, lui, est une simple relation OHLC sur 3 bougies (pas de fenêtre à choisir), donc testable proprement.
+
+**Méthode** (`src/backtest/starPatterns.js`, 11 tests unitaires) : définitions textbook (Bulkowski, Investopedia), pas inventées — Morning Star = bougie 1 baissière à corps réel, bougie 2 "étoile" (corps ≤ 30% du corps de la bougie 1), bougie 3 haussière refermant au-delà du milieu du corps de la bougie 1 ; Evening Star = miroir exact. Adaptation documentée pour du M15 intrajournalier (les patterns textbook supposent un vrai gap entre bougies, rare en intrabougie sur forex/CFD M15) : l'exigence de gap est assouplie en "le corps de la bougie 2 reste majoritairement hors du corps de la bougie 1". Entrée à l'ouverture de la bougie après la confirmation, stop au-delà de l'extrême des 3 bougies, cible fixe 1:3, timeout 480 bougies M15 — mêmes conventions que NWOG/Judas Swing. Deux variantes testées : Star (large) et Doji Star (bougie 2 doit aussi être un vrai doji, corps ≤ 10% de sa propre amplitude) — les deux seuils sont des seuils textbook standards, fixés avant de lancer quoi que ce soit sur les données de ce projet.
+
+**Résultat : rejeté partout, sans ambiguïté** — testé sur les 6 instruments disponibles (pas seulement l'or, même discipline que partout ailleurs) :
+
+| Variante | US100 | US500 | XAUUSD | EURUSD | GBPUSD | USDJPY |
+|---|---|---|---|---|---|---|
+| Star | ⚠️ affaibli (train -0.06R, test +0.02R) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Doji Star | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+11 des 12 cellules testées rejetées franchement (espérance négative des deux côtés train/test), la seule exception (US100/Star) n'est qu'un train déjà négatif avec un test à peine positif (+0.02R) — pas un edge, un artefact de bruit. XAUUSD (la question initiale d'Esdras) : rejeté dans les deux variantes (-0.05R/-0.08R pour Star, -0.04R/-0.04R pour Doji Star). Confirme empiriquement le consensus académique déjà évoqué avant de coder (les patterns de bougies classiques ont un edge faible ou nul sur des marchés liquides une fois les coûts réels comptés) — vérifié plutôt que supposé.
+
+`npm test` : 459/459.
+
+**Fichiers** : `src/backtest/starPatterns.js` (nouveau), `test/starPatterns.test.js` (nouveau), `scripts/runStarPatternsStrategyAnalysis.js` (nouveau), `data/backtest-input/star-patterns-strategy-analysis.md` (nouveau, rapport complet).
