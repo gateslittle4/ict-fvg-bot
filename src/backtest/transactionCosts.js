@@ -31,10 +31,13 @@ export const DEFAULT_SPREADS = {
   US500: 0.4, // 0.4 point — INDICATIVE, verify against FundingPips cTrader spec
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec
   // 2026-09-15, Esdras uploaded real HistData GRXEUR M1 (2010-2025) to
-  // research a genuinely new instrument - the DAX40 index. Same indicative
-  // convention as US100/US500 above (1-1.5 points typical retail/prop CFD
-  // spread on a major EU index), never confirmed against a real broker spec.
-  GER40: 1.0, // 1.0 point — INDICATIVE, never confirmed against a real broker spec
+  // research a genuinely new instrument - the DAX40 index. Was 1.0 (a pure
+  // guess, same indicative convention as US100/US500). UPDATE same day:
+  // Esdras sent a screenshot of GER40 in her real cTrader account -
+  // Sell 25452.5 / Buy 25453.0 - a single observed snapshot, not an
+  // average like BTCUSD's measured spread, but a real broker number
+  // rather than a guess. Exactly half the previous estimate.
+  GER40: 0.5, // 0.5 point — single real observation from Esdras's cTrader account, not yet averaged over time
   // 2026-09-13, Esdras: "code une stratégie crypto à déployer ce soir pour
   // voir si il va passer" - weekend connectivity smoke-test (forex/
   // indices/metals close on weekends, crypto doesn't), NOT a validated

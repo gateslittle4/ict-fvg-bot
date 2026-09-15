@@ -15,7 +15,7 @@ Version la plus large - n'importe quel petit corps compte comme "étoile".
 | GBPUSD | 1344 | 26.0% | 0.87 | -0.11 | 527 | 26.0% | 0.84 | -0.14 | ❌ ne tient pas |
 | USDJPY | 2212 | 25.4% | 0.84 | -0.14 | 624 | 24.6% | 0.84 | -0.13 | ❌ ne tient pas |
 | USDCAD | 3443 | 23.0% | 0.73 | -0.24 | 495 | 26.1% | 0.82 | -0.16 | ❌ ne tient pas |
-| GER40 | 2515 | 25.9% | 0.94 | -0.05 | 523 | 29.8% | 1.20 | 0.14 | ⚠️ affaibli |
+| GER40 | 2568 | 26.0% | 0.99 | -0.00 | 524 | 29.9% | 1.25 | 0.18 | ⚠️ affaibli |
 
 ## Variante 2 : Doji Star (bougie 2 doit AUSSI être un vrai doji - corps ≤ 10% de sa propre amplitude)
 
@@ -30,4 +30,4 @@ Version plus stricte - filtre la variante 1 pour ne garder que les vrais doji co
 | GBPUSD | 916 | 24.9% | 0.82 | -0.16 | 358 | 25.1% | 0.80 | -0.18 | ❌ ne tient pas |
 | USDJPY | 1532 | 25.1% | 0.82 | -0.16 | 429 | 21.5% | 0.70 | -0.26 | ❌ ne tient pas |
 | USDCAD | 2360 | 23.6% | 0.75 | -0.23 | 336 | 28.9% | 0.94 | -0.05 | ❌ ne tient pas |
-| GER40 | 1733 | 26.6% | 0.97 | -0.02 | 376 | 29.8% | 1.18 | 0.13 | ⚠️ affaibli |
+| GER40 | 1782 | 26.6% | 1.02 | 0.02 | 377 | 30.0% | 1.23 | 0.17 | ✅ tient |

@@ -2625,3 +2625,24 @@ Esdras a demandé si on pouvait "coder" Weekly Liquidity Sweep. Avant de répond
 - **GER40** (le seul instrument robuste) : c'est un NOUVEL instrument, pas encore dans l'infra live. Avant de coder quoi que ce soit, il manque : (1) confirmation du vrai spread auprès du courtier (actuellement 1.0 point, pure estimation jamais vérifiée), (2) confirmation que le DAX/GER40 est bien disponible comme CFD tradable sur le compte cTrader utilisé, (3) un vrai module de stratégie dans `LiveStrategyEngine` (aujourd'hui seuls FVG et Divergence tournent en live — Weekly Liquidity Sweep n'existe qu'en script de backtest), (4) un test démo avant toute idée de capital réel.
 
 `npm test` : 459/459 (inchangé). Script de vérification ad hoc, non committé.
+
+## GER40 — vrai spread confirmé par Esdras (0.5, pas 1.0) — NWOG réhabilité, tout re-testé — 2026-09-15
+
+Points (1) et (2) ci-dessus réglés directement par Esdras : elle a confirmé GER40 disponible sur son compte cTrader (visible directement dans l'app), et envoyé une capture d'écran du Market Watch : **Sell 25452.5 / Buy 25453.0 → spread réel = 0.5 point**, soit la MOITIÉ de l'estimation utilisée jusqu'ici (1.0, une pure supposition jamais vérifiée). `transactionCosts.js` corrigé (`GER40: 0.5`), les 13 rapports d'analyse régénérés avec le vrai chiffre (seules les lignes GER40 changent, tous les autres instruments inchangés — vérifié par `git diff`).
+
+**Conséquence importante : le rejet précédent de NWOG (contrôle par blocs de 2 ans, avec l'ancien spread 1.0) était en partie un artefact du mauvais spread.** Un spread surestimé filtre plus de trades comme "non viables" (distance < spread×3) et déforme la distribution dans le temps. Avec le vrai spread 0.5, tout redevenu à revérifier :
+
+| | NWOG (spread 1.0, rejeté) | NWOG (spread 0.5, réel) | Weekly Liquidity Sweep (spread 0.5, réel) |
+|---|---|---|---|
+| Répartition achat/vente | 50/50 | 59% achat / 41% vente | 32% achat / **68% vente** |
+| Blocs de 2 ans positifs | 3/8 | **6/8** | 6/8 |
+| Meilleure année seule | 45% du profit | **22% du profit** | 16% du profit |
+| Espérance globale | 0.10R | **0.20R** | 0.24R (était 0.17R avec l'ancien spread) |
+
+**NWOG est réhabilité : c'est bien un second candidat crédible sur GER40, pas un faux positif.** Avec le bon spread, il passe désormais le même seuil de robustesse (6/8 blocs positifs, aucune année ne domine à plus de 22%) que Weekly Liquidity Sweep, et sa répartition achat/vente (59/41) reste raisonnablement équilibrée — rien à voir avec les 82-146% d'Unicorn Model/Asian Range Fade, dont le rejet est reconfirmé avec le vrai spread (toujours nettement biaisés achat, vente nette négative sur Asian Range Fade). Weekly Liquidity Sweep reste aussi solide qu'avant, et même légèrement mieux (espérance 0.17R → 0.24R, concentration maximale 22%→16%).
+
+**Leçon à retenir** : le rejet initial de NWOG n'était pas faux en soi (le contrôle était correct), mais reposait sur une donnée d'entrée jamais vérifiée (le spread). Exactement le genre d'erreur que la discipline "vérifier les chiffres surprenants" de ce projet est censée attraper — ici c'est Esdras qui a fourni la vraie donnée en répondant à une question simple (quel spread vois-tu dans l'app), pas une improvisation.
+
+**Conclusion mise à jour : deux candidats crédibles sur GER40 — Weekly Liquidity Sweep ET NWOG.** Il reste pareil qu'avant : rien codé en live/démo pour l'instant, ces deux mécanismes n'existent qu'en scripts de backtest, pas dans `LiveStrategyEngine`.
+
+`npm test` : 459/459. Fichiers modifiés : `src/backtest/transactionCosts.js` (GER40: 1.0 → 0.5), 13 rapports `data/backtest-input/*-strategy-analysis.md` régénérés (ligne GER40 uniquement). Scripts de vérification ad hoc, non committés.
