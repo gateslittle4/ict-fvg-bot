@@ -3245,6 +3245,19 @@ Ajouté au même script un vrai calcul de drawdown peak-to-trough (pas seulement
 
 **Fichiers** : `scripts/checkChallengeSurvivalOnRealTrades.js`.
 
+## Explication de la série perdante (13 août → 14 septembre) — 2026-09-15
+
+Esdras : "Comment pourrais-tu expliquer cette perte continue? Fais des recherche."
+
+**Investigation directe sur les vraies données (pas une supposition)** :
+- **Divergence (US500) est à 0 gagnant sur 6, et les 6 sont dans la MÊME direction (bullish US500)** — le mécanisme parie sur un rattrapage d'US500 vs US100 après un décrochage statistique, mais US100 a progressé plus vite qu'US500 sur toute la période (US100 +2,32% du 1er août au 15 septembre contre US500 +1,32%, XAUUSD +5,19% — mesuré directement sur les vraies bougies) : l'écart a continué à se creuser au lieu de se refermer, donc le pari de retour à la moyenne a perdu à chaque fois, pas par malchance ponctuelle mais parce que la prémisse (retour à la moyenne) ne s'est pas vérifiée sur cette fenêtre précise.
+- **Volatilité mesurablement plus basse pendant la série que juste avant** : amplitude moyenne par bougie M15 (% du prix) pendant le drawdown vs la période de référence juste avant : US100 0,131% contre 0,186% (-29%), US500 0,075% contre 0,125% (-40%), XAUUSD 0,198% contre 0,238% (-17%). Un marché plus calme réduit mécaniquement les chances qu'un signal FVG (RR 4-5, a besoin d'un vrai mouvement suivi) atteigne sa cible avant de retourner au stop — cohérent avec le FVG à 0/9 déjà trouvé sur cette même fenêtre.
+- **Recherche externe (WebSearch) pour contextualiser, pas pour prouver une causalité précise sur CETTE donnée broker simulée** : le "summer lull" (creux estival) d'août est un phénomène saisonnier réel et documenté sur les marchés actions US/européens — volume en baisse d'environ 30% par rapport au pic de mars, volatilité réalisée en moyenne ~1 point sous la moyenne long terme en juin-juillet-août, participation institutionnelle réduite (vacances européennes notamment). Cohérent avec ce qui est mesuré ci-dessus, sans prétendre que c'est LA cause exacte de cette série précise sur ce flux de données broker/démo daté 2026.
+
+**Conclusion** : pas un bug ni un edge cassé — un régime de marché plus calme/moins directionnel pendant cette fenêtre précise a mécaniquement pénalisé à la fois le mécanisme de retour à la moyenne (Divergence, la prémisse ne s'est pas vérifiée) et les mécanismes de suivi de mouvement (FVG, pas assez d'amplitude pour atteindre une cible RR4-5). Rien à corriger dans le code ; à surveiller si un prochain épisode de volatilité basse prolongée reproduit le même schéma, ça renforcerait l'hypothèse plutôt que de la confirmer définitivement sur un seul épisode.
+
+**Fichiers** : aucun changement de code, recherche/diagnostic seulement.
+
 ## Suite : 3 derniers mois (plafond réel trouvé) — 2026-09-15
 
 Esdras : "regards alors 3 mois precedent". Plafond technique trouvé et signalé honnêtement plutôt qu'ignoré : `GET /api/accounts/:id/candles` clampe sa réponse à 5000 bougies M15 maximum (`server.js`), donc la fenêtre la plus ancienne accessible par cette route est ~77 jours (1er juillet → 15 septembre), pas tout à fait 3 mois calendaires pleins. Aller plus loin demanderait la route admin `/admin/export-candles` (gated `ADMIN_EXPORT_TOKEN`, pas dispo dans ce sandbox) ou d'attendre plus d'historique réel — délibérément PAS de redémarrage de la connexion broker en prod juste pour ce chiffre (ça couperait le bot en train de trader).
