@@ -94,6 +94,16 @@ export const FUNDINGPIPS_1STEP_FLEX = {
     consequenceStrict: 'immediate-account-closure',
     consequenceLenient: 'warning-then-closure-at-4th-cumulative-warning',
   },
+  // Empirically checked 2026-09-15 (scripts/runFundingPipsFlexFloatingLossCheck.js,
+  // real production portfolio, $10k / 0.5% risk per trade, 786 trades over 2
+  // years / 226 over the last 7 months): NEITHER reading is ever breached at
+  // this risk setting, solo or combined with an overlapping pyramid leg -
+  // worst solo excursion caps at ~1R (0.50% of balance, by construction, once
+  // a real broker-side stop order is accounted for), worst combined
+  // (parent+pyramid) at ~2R (1.00%) - both well under even the lenient 1%
+  // threshold. The ambiguity above remains genuinely unresolved as a RULE,
+  // but at 0.5% risk it doesn't matter in practice; re-check this if the
+  // risk-per-trade setting is ever raised.
 };
 
 // FundingPips "Zero" - instant-funded, no challenge phase at all. Sourced

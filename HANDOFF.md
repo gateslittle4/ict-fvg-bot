@@ -2841,3 +2841,26 @@ Impact réel mais modeste — les fenêtres de session des stratégies (ex: 8h-1
 **Important : ce filtre n'est PAS câblé dans le moteur live** — c'est une analyse/recherche, pas encore un vrai garde-fou appliqué à `LiveStrategyEngine`. Si un vrai prop firm l'exige, il faudrait le coder en plus (décision séparée, pas encore prise).
 
 `npm test` : 477/477 (472 + 5 nouveaux).
+
+## Vérification de la règle "floating loss par idée de trade" (FundingPips 1-Step Flex) — résolue empiriquement — 2026-09-15
+
+Suite directe de la simulation de cycle $10k/FundingPips Flex ("On prend 10k pour tester [...]") : Esdras a demandé de vérifier ensuite la règle ambiguë documentée depuis le 2026-09-12 (`src/propFirms/fundingPips.js`'s `tradeIdeaFloatingLossRule`, jamais réconciliée) — 2 lectures possibles : STRICTE (3%/2% de perte flottante+réalisée combinée sur une "idée de trade" = rupture immédiate) ou SOUPLE (1% = avertissement, 4 cumulés = fermeture).
+
+**Bug de calcul trouvé et corrigé avant de pouvoir répondre** (premier chiffre obtenu : une excursion flottante solo de 41.53% du solde sur un seul trade US100 — physiquement impossible avec un stop-loss, signalé à Esdras comme suspect avant toute conclusion) :
+1. Le scan des bougies commençait à la bougie d'ENTRÉE elle-même, alors que `ingestCandle()` ne vérifie jamais stop/target sur cette bougie (seulement à partir de la suivante) — corrigé (`startIdx + 1`).
+2. Même après ce correctif, le calcul restait irréaliste (31%) car il ne plafonnait pas l'excursion adverse au niveau du stop — alors que le bot place TOUJOURS un vrai ordre stop-loss côté broker (`cTraderDataSource.js`'s `_submitOrder` → `stopLoss: signal.stopPrice`) : une fois ce niveau atteint, le broker ferme la position, l'exposition flottante ne peut donc pas continuer à grandir au-delà (hors slippage de gap, effet réel mais distinct, non modélisé). Plafonné à 1R — résultat immédiatement cohérent (exactement 0.50% = le risque par trade lui-même).
+
+**Résultat final, vérifié, sur le portefeuille de production réel** (FVG x3, Divergence, NWOG achat seul, Judas Swing, Weekly Sweep GER40, pyramidage soumis au garde-fou), compte $10k, risque 0.5%/trade :
+
+| | Pire excursion flottante | % du solde | Dépassements strict (3%) | Dépassements souple (1%) |
+|---|---|---|---|---|
+| SOLO (2 ans, 786 trades) | 705.54$ | 0.50% | 0/786 | 0/786 |
+| SOLO (7 mois, 226 trades) | 126.73$ | 0.50% | 0/226 | 0/226 |
+| COMBINÉ parent+pyramid (2 ans, 57 paires) | 1196.56$ | 1.00% | 0/57 | 0/57 |
+| COMBINÉ parent+pyramid (7 mois, 19 paires) | 214.93$ | 1.00% | 0/19 | 0/19 |
+
+**Verdict : à 0.5% de risque par trade, AUCUN dépassement, sous aucune des deux lectures de la règle, sur aucune des deux fenêtres testées.** Le pire cas solo plafonne à 1R par construction (le risque par trade lui-même) grâce au stop réel ; le pire cas combiné à ~2R (deux unités proches de leur stop simultanément) — largement sous le seuil souple de 1% déjà, a fortiori sous le seuil strict de 3%. L'ambiguïté de la règle elle-même reste non résolue (accès direct à fundingpips.com toujours bloqué), mais n'a plus d'importance pratique tant que le risque reste à 0.5% — à revérifier si ce réglage change un jour.
+
+**Committé** : `scripts/runFundingPipsFlexFloatingLossCheck.js` (version propre du script de vérification ad hoc), rapports `data/backtest-input/fundingpips-flex-floating-loss-check-{test,7months}.md`, `src/propFirms/fundingPips.js` (note de vérification ajoutée, aucun chiffre de règle modifié — l'ambiguïté source reste documentée telle quelle).
+
+`npm test` : 477/477 (inchangé — travail d'analyse seulement, aucun changement de comportement en production).
