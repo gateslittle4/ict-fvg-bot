@@ -3269,3 +3269,30 @@ Esdras : "regards alors 3 mois precedent". Plafond technique trouvé et signalé
 Probabilité binomiale de ≤1 gagnant sur 11 essais à p=38% : ~4% — bas, mais pas suffisant pour conclure formellement à un bug ou un changement de régime avec seulement 11 trades. Reste la même recommandation que la note précédente : surveiller FVG spécifiquement dans les semaines à venir, et si la sous-performance persiste au-delà de ce format, creuser le spread réel vs supposé dans `transactionCosts.js`/`DEFAULT_SPREADS` en priorité (c'est le paramètre le plus susceptible d'être décalé de la réalité sans jamais planter).
 
 **Fichiers** : `scripts/replayLastWeekOnRealData.js`.
+
+## Cette série s'est-elle déjà produite les années passées ? — 2026-09-15
+
+Esdras, suite directe à l'explication de la série perdante : "Est ce que ca sait produit deja das les donnees des annees passes? Si ca sest produit peut wtre on pourait eviter ce mois non?"
+
+Nouveau `scripts/checkAugustSeasonalityAcrossYears.js` — rejoue le MÊME combo de production complet (même construction que `replayLastWeekOnRealData.js`/`checkChallengeSurvivalOnRealTrades.js`) sur les **7 années complètes des CSV historiques déjà validés (2019-2025)**, puis isole dans CHAQUE année la fenêtre calendaire EXACTE de la série 2026 (17 août → 7 septembre) — même mois/jour, année différente, pas une fenêtre glissante.
+
+**Résultat : aucune année passée n'a connu un épisode comparable sur cette fenêtre précise.**
+
+| Année | Trades | W/L | Total R | Semaines perdantes | Plus longue série |
+|---|---|---|---|---|---|
+| 2019 | 17 | 6/11 | +8R | 0/3 | 0 |
+| 2020 | 27 | 11/16 | +25R | 1/4 | 1 |
+| 2021 | 21 | 7/13 | +10R | 1/4 | 1 |
+| 2022 | 21 | 6/15 | +9R | 2/4 | 1 |
+| 2023 | 20 | 4/16 | **-3R** | 2/4 | 1 |
+| 2024 | 16 | 7/9 | +22R | 1/4 | 1 |
+| 2025 | 23 | 7/16 | +11R | 1/3 | 1 |
+| **2026** | — | — | **négatif** | **4/4** | **4** |
+
+**6 des 7 années sont nettement POSITIVES sur cette même fenêtre** (de +8R à +25R) ; seule 2023 est légèrement négative (-3R), et même là, jamais plus d'une semaine perdante d'affilée. 2026 est donc un vrai cas isolé — pas un pli saisonnier qui se répète chaque année, mais une combinaison de circonstances propre à cette année précise (le régime de volatilité mesurablement plus bas trouvé dans la note précédente).
+
+**Réponse à "peut-on éviter ce mois" : non, ce serait une mauvaise idée.** Exclure systématiquement la fenêtre du 17 août au 7 septembre chaque année aurait sacrifié en moyenne ~+12R par an (moyenne des 6 années positives), pour n'éviter qu'un seul -3R (2023) sur 7 ans — un marché perdant-perdant classique de sur-ajustement à un seul épisode (même discipline déjà appliquée dans `calendar-exclusion-analysis.md` : ne jamais exclure une période a posteriori juste parce qu'elle a mal tourné une fois).
+
+`npm test` : 531/531 (inchangé — script d'analyse seul, aucun changement de comportement en production).
+
+**Fichiers** : `scripts/checkAugustSeasonalityAcrossYears.js` (nouveau).
