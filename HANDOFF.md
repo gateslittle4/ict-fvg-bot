@@ -2589,3 +2589,21 @@ Suite demandée par Esdras ("Oui" après proposition explicite) : appliquer le m
 **Conclusion mise à jour** : **deux candidats crédibles sur GER40 maintenant** — Weekly Liquidity Sweep (le plus solide : bidirectionnel, 12/16 années positives) et NWOG (bidirectionnel, 10/16 années positives, mais 2025 anormalement fort à surveiller). Asian Range Breakout, Unicorn Model et Asian Range Fade sont tous les trois désormais rejetés comme pièges de biais haussier malgré leur verdict formel "✅ tient". Breaker Block reste dans la zone grise (partiellement biaisé, ni rejeté ni validé). **Toujours rien recommandé pour du capital réel** — prochaine étape logique si on continue : forward-test démo de Weekly Liquidity Sweep et/ou NWOG sur GER40.
 
 `npm test` : 459/459 (inchangé). Script de vérification ad hoc, non committé (même convention que le contrôle précédent).
+
+## GER40 — validation "walk-forward" par blocs de 2 ans : NWOG rétrogradé, Weekly Liquidity Sweep confirmé seul candidat robuste — 2026-09-15
+
+Esdras, invitée à choisir entre (a) creuser la validation statistique, (b) construire l'infra de trading live pour GER40, ou (c) vérifier Breaker Block, a choisi (a) — rester en recherche avant toute idée de déploiement. Les deux mécanismes (NWOG, Weekly Liquidity Sweep) sont des définitions mécaniques FIXES, sans paramètre à ajuster — pas de vrai "walk-forward" au sens optimisation, donc l'interprétation retenue : découper l'historique en blocs de 2 ans (plus fin que le découpage annuel déjà fait, assez large pour rester lisible) et vérifier que l'edge tient sur CHAQUE fenêtre, pas seulement en moyenne — plus un contrôle de sensibilité (retirer la meilleure année et revérifier l'espérance).
+
+| | NWOG | Weekly Liquidity Sweep |
+|---|---|---|
+| Blocs de 2 ans nets positifs | **3/8** (2014-15, 2018-19, 2024-25) | **6/8** (tout sauf 2020-21, 2022-23) |
+| Meilleure année seule | 2025 : +22.57R (**45%** du profit net total) | 2014 : +24.10R (22% du profit net total) |
+| Espérance en retirant la meilleure année | 0.10R → **0.06R** (totalR 50.24 → 27.67, quasi divisé par 2) | 0.17R → 0.14R (totalR 108.67 → 84.56, à peine affecté) |
+
+**NWOG rétrogradé.** Le contrôle achat/vente (50/50) disait "bidirectionnel", mais ce contrôle-là ne protège pas contre un profil dans le TEMPS — exactement la distinction déjà vue avec USDJPY (bidirectionnel n'égale pas robuste). À la granularité 2 ans, NWOG n'est net positif que sur 3 fenêtres sur 8 : deux bonnes périodes (2014-15, 2018-19) et surtout la toute dernière (2024-25, portée presque entièrement par 2025) séparées par de longues zones plates ou négatives (2010-11, 2016-17, 2020-21, 2022-23). Sans 2025, l'espérance est quasiment divisée par deux. Ce n'est pas un rejet aussi net qu'Asian Range Breakout/Unicorn Model/Asian Range Fade (il reste positif même sans sa meilleure année), mais ce n'est plus un "candidat crédible" — trop concentré pour être présenté comme tel.
+
+**Weekly Liquidity Sweep confirmé.** 6 blocs de 2 ans sur 8 nets positifs, faiblesse limitée aux deux blocs déjà identifiés (2020-21, 2022-23) — cohérent avec le contrôle année par année précédent. Retirer sa meilleure année (2014, 22% du total) laisse l'espérance et le totalR quasiment intacts (0.17R→0.14R, 108.67R→84.56R) : l'edge n'est pas porté par une seule fenêtre chanceuse.
+
+**Conclusion finale sur GER40 (cette session) : un seul candidat vraiment crédible — Weekly Liquidity Sweep.** NWOG passe le verdict formel et le contrôle achat/vente, mais pas le contrôle de concentration temporelle — à ne plus présenter comme un second candidat sans creuser davantage (ou tout simplement le laisser de côté). Asian Range Breakout, Unicorn Model, Asian Range Fade restent rejetés (biais haussier). Breaker Block toujours en zone grise, non revérifié cette session. **Toujours rien recommandé pour du capital réel ni pour un déploiement démo** — Esdras a explicitement choisi de ne pas construire l'infra live tant que la recherche n'est pas plus solide.
+
+`npm test` : 459/459 (inchangé). Script de vérification ad hoc, non committé.
