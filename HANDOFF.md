@@ -2878,3 +2878,27 @@ Esdras : "rend mon site encore plus important/impressionant/utile/professionel",
 Aucun changement backend — `npm test` : 477/477 (inchangé).
 
 **Fichiers** : `public/index.html` uniquement.
+
+## Le journal a son propre onglet, avec un vrai journal par trade (stratégie + R-multiple) — 2026-09-15
+
+Esdras : "pour le journal, ne le mets pas dans la première page, donne-lui un onglet tout seul car il faut le graphe soit grand et donne tout le charte impliqué dans la transaction et plusieurs bougies avant et après de façon a avoir une vue d'ensemble sur tout le trade" — puis, en cours de route : "il faut aussi ajouter la stratégie utilisée aussi, tout information nécessaire pour un vrai journal, le nombre de RRR etc".
+
+**Nouveau `public/journal.html`** — déplacé depuis `index.html` : Performance globale (journal durable, courbe d'équité + métriques), Journal durable par instrument, et Journal de trading (la liste détaillée). Ajouté au menu du haut sur toutes les pages.
+
+**Le graphique par trade, maintenant sur sa propre page** :
+- Bien plus grand (SVG 600×240 → 1100×460, hauteur CSS 240px → 460px).
+- `chartMarginMs` (`cTraderDataSource.js`) augmenté de 12x à 30x la durée du timeframe du symbole — vraiment plus de contexte de chaque côté du trade.
+
+**Vraies informations par trade ajoutées, aucune inventée** :
+- Stratégie : déjà récupérée, maintenant sa propre étiquette visible à côté de la direction/symbole au lieu d'être noyée dans une parenthèse.
+- R-multiple : NOUVEAU. L'historique de deals de cTrader n'a aucune notion de "risque" une fois une position clôturée (déjà la raison pour laquelle stop/cible ne s'affichaient pas non plus) — le journal durable (Supabase) l'avait déjà calculé au moment de la clôture, mais aucun endpoint n'exposait les lignes individuelles, seulement des agrégats. Ajouté `fetchRecentTradeRows()` (lignes brutes) et `enrichTradesWithRMultiple()` (jointure pure : symbole + heure de sortie la plus proche à ±30s, chaque ligne durable réclamée par au plus un trade du courtier, jamais deviné quand aucune correspondance n'existe) à `supabaseTradeLog.js`, câblé dans `getTradeHistory()` en enrichissement best-effort — opt-in (silencieusement ignoré si la persistance n'est pas configurée), ne bloque jamais l'endpoint si la requête durable échoue.
+
+`index.html` : les 3 cartes déplacées retirées (HTML + JS). `refreshTradeLog()` alimente maintenant juste les 3 chiffres du bandeau principal (ajouté hier) — la seule chose qui avait encore besoin de `/trade-log` sur cette page.
+
+**11 nouveaux tests** (`test/supabaseTradeLog.test.js`) pour `enrichTradesWithRMultiple`.
+
+**Vérifié visuellement** (pas juste en lisant le code) : serveur local + capture Playwright avec de vraies données de trade simulées (bougies, un R-multiple apparié et un non apparié) — a confirmé le grand graphique, l'étiquette de stratégie, le badge R, et le repli "R-multiple indisponible" fonctionnent tous correctement. Re-capturé aussi `index.html` pour confirmer que la page reste propre sans les 3 cartes (pas de trou dans la mise en page).
+
+`npm test` : 483/483.
+
+**Fichiers** : `public/journal.html` (nouveau), `public/index.html`, `public/chart.html`, `public/accounts.html`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/supabaseTradeLog.js`, `test/supabaseTradeLog.test.js`.
