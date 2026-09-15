@@ -131,6 +131,7 @@ import { computeZScoreSeries, alignByTime } from './backtest/correlation.js';
 import { computeAtrSeries } from './backtest/rsiDivergence.js';
 import { detectNwogEvents } from './backtest/nwog.js';
 import { detectJudasSwingEvents } from './backtest/judasSwing.js';
+import { detectWeeklySweepEvents } from './backtest/weeklyLiquiditySweep.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
@@ -166,6 +167,12 @@ export class LiveStrategyEngine {
     // `judasSwing` comment and HANDOFF.md). Not defaulted so the three
     // backtest/report engines don't silently start folding it in.
     judasSwingConfig = null,
+    // Same opt-in-only pattern as nwogConfig/judasSwingConfig above
+    // (2026-09-15, GER40 - Esdras's explicit "on va plus vite" request,
+    // straight to full auto-execute, no alert-only observation phase - see
+    // HANDOFF.md). Not defaulted so the three backtest/report engines don't
+    // silently start folding it in.
+    weeklySweepConfig = null,
     guardrail,
     riskPctPerTrade = CONFIG.risk.riskPctPerTrade,
     spreads = {},
@@ -177,6 +184,7 @@ export class LiveStrategyEngine {
     this.divergenceConfig = divergenceConfig || null;
     this.nwogConfig = nwogConfig || null;
     this.judasSwingConfig = judasSwingConfig || null;
+    this.weeklySweepConfig = weeklySweepConfig || null;
     this.guardrail = guardrail;
     this.riskPctPerTrade = riskPctPerTrade;
     this.spreads = spreads;
@@ -311,6 +319,10 @@ export class LiveStrategyEngine {
 
     if (this.judasSwingConfig && this.judasSwingConfig.symbols.includes(symbol)) {
       events.push(...this._detectJudasSwingSignal(symbol, candle, guardrailNow));
+    }
+
+    if (this.weeklySweepConfig && this.weeklySweepConfig.symbols.includes(symbol)) {
+      events.push(...this._detectWeeklySweepSignal(symbol, candle, guardrailNow));
     }
 
     return events;
@@ -894,6 +906,109 @@ export class LiveStrategyEngine {
     return signal;
   }
 
+  /**
+   * Pure computation of every Weekly Liquidity Sweep entry candidate implied
+   * by one symbol's full candle history - reuses detectWeeklySweepEvents()
+   * (src/backtest/weeklyLiquiditySweep.js) UNCHANGED (PWH/PWL sweep+reclaim,
+   * no time-of-day restriction - not reimplemented here), then shifts each
+   * event forward one candle to its entry, same pattern as
+   * _computeNwogCandidates()/_computeJudasSwingCandidates() above.
+   */
+  _computeWeeklySweepCandidates(candles) {
+    const events = detectWeeklySweepEvents(candles);
+    const candidates = [];
+    for (const e of events) {
+      const entryIndex = e.index + 1;
+      if (entryIndex >= candles.length) continue; // signal candle is the most recent one - entry hasn't printed yet
+      candidates.push({ direction: e.direction, entryTime: candles[entryIndex].time, stopReference: e.sweepExtreme });
+    }
+    return candidates;
+  }
+
+  _detectWeeklySweepSignal(symbol, candle, guardrailNow = candle.time) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeWeeklySweepCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processWeeklySweepCandidate(symbol, candle, candidate, guardrailNow)];
+  }
+
+  /**
+   * Shared tail of Weekly Liquidity Sweep signal handling - same shape and
+   * same openPositions/netting/auto-execute participation as
+   * _processNwogCandidate()/_processJudasSwingCandidate() above (2026-09-15,
+   * GER40 - Esdras's explicit "on va plus vite" request, straight to full
+   * auto-execute, no alert-only observation phase first - see HANDOFF.md for
+   * the research this was validated against and its stated caveats: a single
+   * train/test split, never observed live before now). Same validStopSide
+   * guard as every other source here, same reasoning (smtDivergence.js's
+   * lesson) even though never observed to fail on GER40 specifically.
+   */
+  _processWeeklySweepCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
+    const cfg = this.weeklySweepConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // weeklyLiquiditySweep.js: "Entry at the OPEN of the next candle after the reclaim"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `weeklysweep-${symbol}-${candle.time}`;
+    const suggestedSide = bullish ? 'buy' : 'sell';
+
+    if (distance <= 0 || !validStopSide) {
+      return {
+        type: 'validated',
+        source: 'weeklysweep',
+        symbol,
+        id,
+        direction: candidate.direction,
+        suggestedSide,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
+
+    const signal = {
+      type: 'validated',
+      source: 'weeklysweep',
+      symbol,
+      id,
+      direction: candidate.direction,
+      suggestedSide,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'weeklysweep',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
+  }
+
   // -------------------------------------------------------------------------
   // Bulk warm-up (2026-09): reconstructs this engine's state (history,
   // openPositions, pyramidPositions, formationIndexBySymbol) from a full
@@ -981,6 +1096,14 @@ export class LiveStrategyEngine {
         ? this._computeJudasSwingCandidates(candles)
         : null;
 
+    // Weekly Liquidity Sweep candidates (2026-09-15, GER40 - see config.js's
+    // `weeklySweep` comment and HANDOFF.md). Same shape as NWOG/Judas Swing's
+    // own precomputation above: only needs this symbol's own final history.
+    const weeklySweepCandidates =
+      this.weeklySweepConfig && this.weeklySweepConfig.symbols.includes(symbol)
+        ? this._computeWeeklySweepCandidates(candles)
+        : null;
+
     for (let i = 0; i < candles.length; i++) {
       const candle = candles[i];
       if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
@@ -1026,6 +1149,14 @@ export class LiveStrategyEngine {
         const candidate = judasSwingCandidates.find((cd) => cd.entryTime === candle.time);
         if (candidate) {
           const signal = this._processJudasSwingCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (weeklySweepCandidates) {
+        const candidate = weeklySweepCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processWeeklySweepCandidate(symbol, candle, candidate);
           if (onEvent) onEvent(signal, candle);
         }
       }

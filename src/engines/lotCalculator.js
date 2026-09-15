@@ -67,6 +67,21 @@ export const DEFAULT_SYMBOL_SPECS = {
     maxVolume: 50,
     verified: false,
   },
+  // GER40 (2026-09-15, Weekly Liquidity Sweep - see config.js's
+  // `weeklySweep` comment): same shape/convention as US100/US500 above
+  // (index CFD, $1/point/lot placeholder) - never confirmed against
+  // FundingPips' real GER40 contract spec, same caveat as every other entry
+  // in this table. Esdras's real cTrader screenshot confirmed the SPREAD
+  // (0.5 point, see transactionCosts.js) but not this risk-sizing value.
+  GER40: {
+    kind: 'index',
+    pointSize: 1,
+    valuePerPointPerLot: 1, // VERIFY against broker specs
+    minVolume: 0.1,
+    volumeStep: 0.1,
+    maxVolume: 50,
+    verified: false,
+  },
   // TEMPORARY (2026-09-13) - see config.js's BTCUSD entries for the full
   // context. Deliberately NOT a real risk-based spec like the ones above:
   // BTCUSD's true contract spec (point size / value per point / lot

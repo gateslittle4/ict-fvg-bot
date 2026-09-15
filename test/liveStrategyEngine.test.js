@@ -788,6 +788,103 @@ test('LiveStrategyEngine: netting blocks a second Judas Swing signal while an ea
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
 
+// --- Weekly Liquidity Sweep (PWH/PWL, GER40) - LIVE, auto-executed
+// (2026-09-15, at Esdras's explicit "on va plus vite" request - straight to
+// full auto-execute, no alert-only phase). Same week-boundary-gap detection
+// mechanics as NWOG above (both use the same [20h,100h] gap window - see
+// weeklyLiquiditySweep.js), same openPositions/netting/auto-execute path.
+
+const WEEKLYSWEEP_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+
+test('LiveStrategyEngine (Weekly Sweep): a sweep+reclaim of the PREVIOUS WEEK high fires a "validated" signal one candle later, entry = candle.open, and opens a REAL position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, weeklySweepConfig: WEEKLYSWEEP_CFG, guardrail, riskPctPerTrade: 1,
+  });
+
+  // Week 1: high = 100.5 (from c1/c2). Week 2 opens after a weekend-sized
+  // gap; c3 sweeps above week 1's high (100.5) intra-candle but CLOSES back
+  // inside it -> bearish bet on a fade back down, stopReference = high.
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 100.2, 101, 100, 100.3); // sweeps 100.5, closes back inside -> bearish
+  const c4 = c(c3.time + M15, 100.25, 100.3, 99.8, 100);
+
+  engine.ingestCandle('TEST1', c1);
+  engine.ingestCandle('TEST1', c2);
+  const gapEvents = engine.ingestCandle('TEST1', c3);
+  assert.equal(gapEvents.filter((e) => e.source === 'weeklysweep').length, 0, 'the sweep+reclaim candle itself does not fire a signal - entry waits one more candle');
+
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'weeklysweep');
+  assert.equal(entryEvents.length, 1);
+  const sig = entryEvents[0];
+  assert.equal(sig.direction, 'bearish');
+  assert.equal(sig.suggestedSide, 'sell');
+  assert.equal(sig.entryPrice, 100.25);
+  assert.equal(sig.stopPrice, 101);
+  assert.ok(Math.abs(sig.distance - 0.75) < 1e-9);
+  assert.equal(sig.blockedReason, null);
+  assert.equal(engine.getOpenPosition('TEST1').source, 'weeklysweep', 'a clean signal now claims the REAL netting slot, same as FVG/Divergence/NWOG/Judas Swing');
+});
+
+test('LiveStrategyEngine (Weekly Sweep): resolves to a WIN when the fixed 1:3 target is hit', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, weeklySweepConfig: WEEKLYSWEEP_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 100.2, 101, 100, 100.3);
+  const c4 = c(c3.time + M15, 100.25, 100.3, 99.8, 100); // entry 100.25, stop 101, distance 0.75, target = 100.25 - 2.25 = 98.0
+  const c5 = c(c4.time + M15, 99.9, 100, 97.8, 98); // low 97.8 <= target 98.0 -> WIN
+
+  for (const candle of [c1, c2, c3, c4]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', c5).filter((e) => e.type === 'closed' && e.source === 'weeklysweep');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'win');
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+});
+
+test('LiveStrategyEngine (Weekly Sweep): resolves to a LOSS when the stop is hit', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, weeklySweepConfig: WEEKLYSWEEP_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 100.2, 101, 100, 100.3);
+  const c4 = c(c3.time + M15, 100.25, 100.3, 99.8, 100); // stop 101
+  const c5 = c(c4.time + M15, 100.3, 101.2, 100, 101); // high 101.2 >= stop 101 -> LOSS
+
+  for (const candle of [c1, c2, c3, c4]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', c5).filter((e) => e.type === 'closed' && e.source === 'weeklysweep');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'loss');
+});
+
+test('LiveStrategyEngine: netting blocks a Weekly Sweep signal on a symbol that already has an open FVG position (and vice versa - same shared slot)', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, weeklySweepConfig: WEEKLYSWEEP_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake', direction: 'bullish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 50, targetPrice: 500, distance: 50, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 100.2, 101, 100, 100.3);
+  const c4 = c(c3.time + M15, 100.25, 100.3, 99.8, 100);
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'weeklysweep');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, matches how a blocked FVG/Divergence/NWOG/Judas Swing signal is also still reported');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+  assert.equal(engine.getOpenPosition('TEST1').source, 'fvg', 'the pre-existing real position must remain untouched, no double-booking');
+});
+
 // --- Pyramid add-on ("stops indépendants, sans breakeven") ---------------
 
 function engineWithPyramid(pyramidConfig = { enabled: true, addAtR: 1, symbols: ['TEST1'] }) {

@@ -31,7 +31,7 @@ const MAX_LOG_LENGTH = 200;
 export const MAX_AUTO_EXECUTE_HOURS = 7 * 24;
 
 // Sources covered by the volatility-regime research (checkVolatilityRegimeImpactFullCombo.js /
-// runFtmo1StepVolAdaptiveRiskAccountImpact.js) - NWOG/Judas Swing/pyramid were never part of
+// runFtmo1StepVolAdaptiveRiskAccountImpact.js) - NWOG/Judas Swing/Weekly Sweep/pyramid were never part of
 // that study, so tagging them would imply a finding that was never actually tested.
 const VOL_REGIME_SOURCES = new Set(['fvg', 'divergence']);
 
@@ -83,6 +83,9 @@ export class AccountRuntime {
       // LIVE, auto-executed - see config.js's `judasSwing` comment. Same
       // opt-in-only pattern as nwogConfig above.
       judasSwingConfig: config.judasSwing,
+      // LIVE, auto-executed (2026-09-15, GER40) - see config.js's
+      // `weeklySweep` comment. Same opt-in-only pattern as nwogConfig above.
+      weeklySweepConfig: config.weeklySweep,
       guardrail: this.guardrail,
       riskPctPerTrade: config.risk.riskPctPerTrade,
       spreads,

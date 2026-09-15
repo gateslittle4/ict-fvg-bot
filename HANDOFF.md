@@ -2695,3 +2695,39 @@ Suite directe de la section précédente : Esdras informée que le côté vente 
 **Effet concret** : NWOG continue de fonctionner exactement pareil côté achat (mécanisme inchangé, pas retuné). Côté vente, les signaux sont toujours détectés et visibles sur le dashboard (utile si on veut un jour revenir en arrière ou juste observer), mais plus aucun ordre réel n'est envoyé au courtier pour cette direction.
 
 `npm test` : 461/461 (459 + 2 nouveaux).
+
+## Audit des stratégies live réellement actives — 2026-09-15
+
+Suite aux questions d'Esdras ("et les autres strategy? Ils ne sont pas plus profitable sur buy only?" puis "on a combien de strategy code qui roule?"). Rejoué la VRAIE config actuelle (FVG, Divergence, Judas Swing) via `LiveStrategyEngine` sur tout l'historique réel, même contrôle achat/vente que pour NWOG/GER40 :
+
+| Stratégie | Achat | Vente | Verdict |
+|---|---|---|---|
+| Divergence (US100/US500) | 100% | 0 trade | Pas un biais — achète TOUJOURS le retardataire de la paire par conception, jamais l'inverse. Rien à couper. |
+| FVG US100 | 70% (702R/642) | 30% (305R/277) | WR quasi identique (34.9% vs 35.0%) — les deux côtés marchent vraiment. |
+| FVG US500 | 39% | **61%** (62R/46, WR 39.1%) | La vente est meilleure que l'achat ici — l'inverse de NWOG. |
+| FVG XAUUSD | 79% (53R) | 21% (**+14R**, WR 23.5%) | Plus faible côté vente mais clairement positif, pas proche de zéro. |
+| Judas Swing EURUSD | 43% | **57%** (89R vs 67R) | Vente légèrement meilleure. |
+
+**Conclusion : le cas NWOG/US100 était vraiment l'exception, pas la règle.** Aucune des 3 autres stratégies live ne montre le même profil "un côté ne rapporte quasiment rien" — rien à changer sur FVG/Divergence/Judas Swing.
+
+**Inventaire complet demandé** : 4 vrais mécanismes codés (FVG ×3 instruments, Divergence, NWOG, Judas Swing = 6 combinaisons instrument/stratégie), + 1 test temporaire (FVG baseline BTCUSD, M1, toujours pas retiré) + 1 add-on optionnel (pyramidage, derrière `PYRAMID_ENABLED`).
+
+**Vérification de l'historique réel (7 jours, `/api/trade-history`)** : 20 trades au total, **0 provenant des 4 vrais mécanismes**, 19 BTCUSD (le smoke-test temporaire, -17.27R net, 15% de réussite — toujours pas retiré malgré le plan initial "on va supprimer BTC juste après"), 1 transaction manuelle GER40 d'Esdras (test de dispo/visibilité, +1.73, 12 secondes de hold). Zéro trade sur les 4 vrais mécanismes en 7 jours n'est pas forcément anormal (signaux peu fréquents par construction — FVG/Divergence/NWOG/Judas Swing tournent tous à quelques trades par semaine au mieux en historique), mais le BTCUSD qui saigne activement pendant ce temps est un vrai sujet en attente de décision d'Esdras (retrait proposé, pas encore fait).
+
+## Weekly Liquidity Sweep déployé en LIVE sur GER40 — auto-exécution directe, décision d'Esdras "on va plus vite" — 2026-09-15
+
+Suite de toute la recherche GER40 de la journée : Esdras a demandé ma recommandation, j'ai proposé une approche par étapes (Phase 1 alerte seulement, observation de quelques semaines, puis auto-exécution démo), elle a répondu "On VA plus vite" — clarifié via question explicite : auto-exécution complète directe sur le compte démo actuel, sans phase d'observation, un seul mécanisme (Weekly Liquidity Sweep seul, pas NWOG en même temps, pour pouvoir attribuer clairement un futur problème/succès à l'un ou l'autre).
+
+**Codé** (même schéma exact que NWOG/Judas Swing — aucune nouvelle architecture inventée) :
+- `src/liveStrategyEngine.js` : nouveau constructeur `weeklySweepConfig`, `_computeWeeklySweepCandidates()` (réutilise `detectWeeklySweepEvents()` de `weeklyLiquiditySweep.js`, backtest UNCHANGED), `_detectWeeklySweepSignal()`, `_processWeeklySweepCandidate()` — même garde `validStopSide` (leçon smtDivergence.js), même participation au VRAI `openPositions`/netting partagé avec FVG/Divergence/NWOG/Judas Swing, source `'weeklysweep'`. Câblé dans le chemin par-tick (`ingestCandle`) ET le chemin bulk warm-up.
+- `src/config.js` : `GER40` ajouté à `CONFIG.symbols` (le bot le surveille maintenant en continu). Nouveau bloc `CONFIG.weeklySweep = { symbols: ['GER40'], rrMultiple: 3, maxHoldingM15Candles: 480 }` — même convention RR/timeout déjà validée dans le backtest, rien re-réglé.
+- `src/accountRuntime.js` : `weeklySweepConfig: config.weeklySweep` câblé dans le VRAI moteur live (même schéma opt-in que `nwogConfig`/`judasSwingConfig` — les 3 moteurs jetables de backtest/rapport restent inchangés, décision délibérée cohérente avec le précédent NWOG).
+- `src/engines/lotCalculator.js` : spec GER40 ajoutée (même forme que US100/US500 — indice CFD, $1/point/lot, non vérifié auprès du courtier, même réserve que toutes les autres entrées de cette table). Sans ça, l'auto-exécution aurait juste ignoré silencieusement chaque signal GER40 ("no symbol spec - skipping entry").
+- Étiquetage de source répliqué partout où NWOG/Judas Swing l'avaient fait (même discipline établie) : notifications ntfy dans `cTraderDataSource.js` ET `matchTraderDataSource.js`, regex `parseSourceFromLabel` de `dealPairing.js`, labels du dashboard (`sourceLabel`/`sourceLabelFull`/`sourceLabelShort` dans `public/index.html`).
+- 4 nouveaux tests dans `test/liveStrategyEngine.test.js` (signal validé + position réelle, résolution win, résolution loss, netting bloque un signal quand une position FVG existe déjà) — même couverture que NWOG à son lancement initial.
+
+**Ce qui reste non vérifié, dit explicitement** : un seul découpage train/test a jamais été fait sur ce mécanisme (comme partout dans ce projet), jamais observé en conditions réelles avant maintenant, le spread (0.5) vient d'un seul screenshot pas d'une moyenne, et la spec de lot GER40 est une estimation non confirmée (comme US100/US500 le sont aussi). Décision consciente d'Esdras d'aller vite malgré ces réserves nommées.
+
+`npm test` : 465/465 (461 + 4 nouveaux).
+
+**Fichiers** : `src/liveStrategyEngine.js`, `src/config.js`, `src/accountRuntime.js`, `src/engines/lotCalculator.js`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`, `src/dataSources/dealPairing.js`, `public/index.html`, `test/liveStrategyEngine.test.js`.

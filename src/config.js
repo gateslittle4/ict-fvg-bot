@@ -84,7 +84,13 @@ export const CONFIG = {
   // after tonight's test ("on va supprimer BTC juste après"), NOT a
   // permanent addition like the other 4 - see the matching perSymbol entry
   // below and the maxTradesPerDay bump just below for why.
-  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'BTCUSD'],
+  //
+  // GER40 (2026-09-15): added for Weekly Liquidity Sweep - see the
+  // `weeklySweep` config block below and HANDOFF.md for the full research
+  // (the most credible finding of that session: real spread confirmed 0.5
+  // via Esdras's own cTrader screenshot, bidirectional, robust across 2-year
+  // blocks - but only ONE train/test split, never observed live before now).
+  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'BTCUSD', 'GER40'],
   timeframe: 'M15',
   accountMode: ACCOUNT_MODE, // 'challenge' | 'live' - see ACCOUNT_MODE comment above
   risk: {
@@ -302,6 +308,30 @@ export const CONFIG = {
   judasSwing: {
     symbols: ['EURUSD'],
     rrMultiple: 3, // same convention already validated in src/backtest/judasSwing.js - not re-tuned here
+    maxHoldingM15Candles: 480,
+  },
+  // Weekly Liquidity Sweep (ICT PWH/PWL sweep+reclaim) on GER40 - LIVE,
+  // auto-executed (2026-09-15), at Esdras's explicit "on va plus vite"
+  // request: straight to full auto-execute, no alert-only observation phase
+  // first (same fast-track pattern as NWOG's own original rollout). The
+  // most credible research finding of a long GER40 research thread: real
+  // spread confirmed (0.5, from Esdras's own cTrader screenshot),
+  // bidirectional (32% long / 68% short - not a long-bias artifact like
+  // Asian Range Breakout/Unicorn Model/Asian Range Fade were on this same
+  // instrument), robust across 2-year blocks (6/8 positive, no single year
+  // above 16% of net profit) - see HANDOFF.md for the full writeup and its
+  // stated caveats: a single train/test split, never observed live before
+  // now, and GER40's spread is one screenshot, not an averaged measurement.
+  // NWOG was ALSO found credible on GER40 but deliberately NOT deployed
+  // alongside this in the same step - Esdras chose to start with one
+  // mechanism at a time so a future problem/success can be attributed to
+  // one signal, not two at once.
+  //
+  // Scoped to GER40 ONLY - never tested against US100/US500 in a way that
+  // survived the same robustness bar (see HANDOFF.md's GER40 sections).
+  weeklySweep: {
+    symbols: ['GER40'],
+    rrMultiple: 3, // same convention already validated in src/backtest/weeklyLiquiditySweep.js - not re-tuned here
     maxHoldingM15Candles: 480,
   },
   // Pyramid add-on ("stops indépendants, sans breakeven" - see HANDOFF.md):
