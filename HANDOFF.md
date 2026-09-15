@@ -3296,3 +3296,37 @@ Nouveau `scripts/checkAugustSeasonalityAcrossYears.js` — rejoue le MÊME combo
 `npm test` : 531/531 (inchangé — script d'analyse seul, aucun changement de comportement en production).
 
 **Fichiers** : `scripts/checkAugustSeasonalityAcrossYears.js` (nouveau).
+
+## Le pire mois, et le meilleur mois pour démarrer un challenge — 2026-09-15
+
+Esdras : "Et Le mois de janvier a fevrier? Ny a til pas un mois qui produit le plus de perte au lieu de gain? En plus j'aimerais savoir si je decide de prendre Le challenge, dans quel mois commencer."
+
+Deux questions distinctes, traitées séparément dans le nouveau `scripts/checkMonthlySeasonalityAndChallengeStart.js` (même rejeu 7 ans du combo réel que le script précédent) :
+
+**A) Y a-t-il un mois qui perd plus qu'il ne gagne ?** Regroupé par mois calendaire, toutes années confondues (2019-2025) :
+
+| Mois | Total R (7 ans cumulés) |
+|---|---|
+| février (pire) | +82R |
+| décembre | +91R |
+| mars | +111R |
+| mai | +121R |
+| juin | +129R |
+| août | +132R |
+| avril | +159R |
+| septembre / novembre | +168R |
+| juillet | +177R |
+| janvier | +184R |
+| octobre (meilleur) | +197R |
+
+**Réponse : non, aucun mois n'est net négatif.** Les 12 mois sont tous POSITIFS sur 7 ans cumulés — février est le plus faible (+82R, 29% de réussite, le taux le plus bas de l'année) mais reste largement gagnant, pas un mois à éviter en soi.
+
+**B) Dans quel mois commencer un challenge ?** Simulé un vrai départ de challenge (FTMO 1-Step comme référence — cible 10%, perte quotidienne max 3%, plancher trailing-eod 10%, risque 0.5%/trade compounding, même `GuardrailEngine._overallDrawdownFloor()` que la production) au 1er de CHAQUE mois, sur chacune des 7 années où ce mois existe dans les données, fenêtre d'observation de 90 jours (choisie avant de regarder un résultat — aucun de ces programmes n'a de vraie limite de temps réglementaire).
+
+**Résultat : le plancher n'a JAMAIS cassé, peu importe le mois de départ (0/7 dans les 12 cas).** La cible de profit est atteinte dans 7 cas sur 7 pour 10 des 12 mois ; janvier et février sont les deux seuls à n'atteindre la cible que 6 fois sur 7 dans la fenêtre de 90 jours (une année sur les deux n'a simplement pas eu le temps, jamais cassé pour autant). Classement (moins de casse d'abord, puis le plus rapide) : **octobre (24j en moyenne) > juillet (26j) > septembre (28j) > mai (30j) > janvier (31j) > juin (32j) > avril (35j) > novembre (36j) > décembre (37j) > février (37j) > août (38j) > mars (39j)**.
+
+**Recommandation directe** : octobre est le meilleur mois pour démarrer (le plus rapide vers la cible, jamais cassé sur 7 ans) ; février reste le plus lent à atteindre la cible (cohérent avec le point A), mais même lui n'a jamais cassé le plancher dans cette simulation — pas un mois à éviter absolument, juste un mois où s'attendre à une progression plus lente vers la cible.
+
+`npm test` : 531/531 (inchangé — script d'analyse seul).
+
+**Fichiers** : `scripts/checkMonthlySeasonalityAndChallengeStart.js` (nouveau).
