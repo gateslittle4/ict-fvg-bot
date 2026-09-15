@@ -612,7 +612,7 @@ function renderStatus(data) {
               ? ' <span class="ticker-pos">●POSITION</span>'
               : ' <span class="ticker-signal">●signal (non confirmé)</span>'
             : ''
-        }</div>
+        }${s.cooldownRemainingMs > 0 ? ` <span class="ticker-signal">⏸ cooldown ${fmtDuration(s.cooldownRemainingMs)}</span>` : ''}</div>
         <div class="ticker-meta">${fmtTime(s.lastCandleTime)}</div>
       </div>
       <div class="ticker-price ${flashClass}">${fmt(s.lastPrice, priceDecimals(s.symbol))}</div>

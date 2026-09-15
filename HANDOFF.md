@@ -2777,3 +2777,20 @@ Esdras a remarqué que le passage à vide de déc 2024-jan 2025 (-11.61% de draw
 **Note méthodologique** : cette vérification utilise TOUTE la fenêtre 2019-2025 (train + test), contrairement au reste du projet qui exclut le train pour éviter le biais — c'était le bon choix ici puisque la question posée est purement calendaire/saisonnière (est-ce que ce mois est structurellement différent), pas une validation de la performance elle-même. Le solde final affiché par la simulation sur 7 ans (10 000$ → ~2.1M$, composé à 0.5%/trade sur 2278 trades) n'est PAS une prévision réaliste — c'est un artefact de la composition sans plafond de taille de position, retraits, ou split de profit prop firm ; ignoré ici, seule la comparaison RELATIVE entre fenêtres décembre-janvier compte.
 
 `npm test` : 465/465 (inchangé). Script de vérification ad hoc, non committé.
+
+## Cooldown-après-perte : passé de "tout le compte" à "par symbole" — décision d'Esdras, codée — 2026-09-15
+
+Suite directe de la simulation combinée : Esdras a confirmé vouloir garder un filet de sécurité, mais a demandé de le rendre par symbole après avoir vu le coût réel (~19 000$ de profit manqué sur 2 ans, taux de réussite des trades bloqués MEILLEUR que ceux qui sont passés — aucune justification "revenge trading" pour un bot 100% automatisé où chaque mécanisme est indépendant).
+
+**Codé** : `src/engines/guardrailEngine.js` — nouveau `this.lastTradeBySymbol` (Map symbole → dernière perte), en plus de `this.trades` (compte global, inchangé). `recordTrade({..., symbol})` alimente les deux. `getStatus(now, symbol)`/`canTakeNewTrade(now, symbol)` acceptent un paramètre `symbol` optionnel : fourni → cooldown vérifié pour CE symbole seulement ; omis → repli sur le comportement global d'avant (les appels d'affichage comme `/api/status` n'ont pas besoin d'être précis). **`maxTradesPerDay` et `dailyLossLimitPct` restent volontairement partagés sur tout le compte** — ceux-là protègent le risque TOTAL, pas le comportement récent d'un seul instrument.
+
+**Câblé partout où un trade réel est enregistré** (même discipline que NWOG/Judas Swing/Weekly Sweep avant) :
+- `liveStrategyEngine.js` (`_blockReason`) passe maintenant `symbol` à `canTakeNewTrade()` — c'est le seul appel qui bloque vraiment une entrée.
+- `cTraderDataSource.js` (2 endroits : replay au démarrage + confirmation temps réel) : `symbol` résolu via `symbolNameById.get(deal.symbolId)`.
+- `matchTraderDataSource.js` : l'endroit temps réel résout via `_symbolFromInstrument()` ; le replay au démarrage reste SANS symbole (le format de cette donnée n'a jamais été confirmé — pas de supposition, ce trade-là ne nourrit juste aucun cooldown par symbole).
+- `mockDataSource.js` : `symbol` propagé depuis l'événement de signal.
+- `/api/status` (`server.js`) et le dashboard (`public/index.html`) : chaque symbole affiche maintenant SON PROPRE cooldown restant (badge ⏸), plutôt que le repli générique compte-global qui ne reflète plus ce qui bloque vraiment une entrée.
+
+**5 nouveaux tests** dans `test/guardrailEngine.test.js` (perte sur un symbole ne bloque pas un autre ; chaque cooldown s'éteint indépendamment ; repli compte-global sans symbole ; `maxTradesPerDay`/`dailyLossLimitPct` restent bien partagés) + 2 tests existants dans `test/liveStrategyEngine.test.js` corrigés (ils enregistraient une perte sans `symbol`, cassés par ce changement de comportement volontaire — pas une régression).
+
+`npm test` : 469/469 (465 + 4 nouveaux guardrail, 2 corrigés).

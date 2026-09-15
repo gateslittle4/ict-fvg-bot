@@ -494,7 +494,11 @@ export class CTraderDataSource {
         // the kind of silent block this whole session has been hunting -
         // found here, not yet observed live, but real and worth fixing
         // immediately rather than waiting for a bust to prove it.
-        store.guardrail.recordTrade({ pnl, time: Number(deal.executionTimestamp) });
+        // symbolNameById may not have this id yet if _loadSymbols() hasn't
+        // resolved (boot ordering) - undefined symbol just means this
+        // specific replayed trade doesn't seed any symbol's cooldown,
+        // tradesToday/dailyLossPct are unaffected either way.
+        store.guardrail.recordTrade({ pnl, time: Number(deal.executionTimestamp), symbol: this.symbolNameById.get(deal.symbolId) });
         recorded++;
       }
     }
@@ -1448,7 +1452,7 @@ export class CTraderDataSource {
     if (event.executionType === 'ORDER_FILLED' && event.deal?.closePositionDetail) {
       const pnl = Number(event.deal.closePositionDetail.grossProfit) / 100;
       store.setBalance(store.balance + pnl);
-      store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance });
+      store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance, symbol: this.symbolNameById.get(event.deal.symbolId) });
 
       // 2026-09-14 (Esdras: "corrige pour voir le vrai P&L du courtier"):
       // logs the REAL outcome/pnl to the durable Supabase journal, using

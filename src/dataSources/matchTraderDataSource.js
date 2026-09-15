@@ -442,6 +442,9 @@ export class MatchTraderDataSource {
       for (const entry of entries) {
         if (typeof entry.profit !== 'number' || !entry.time) continue;
         if (entry.time < from || entry.time > to) continue;
+        // No confirmed symbol field on this shape (see this method's own
+        // "unconfirmed" comment above) - omitted rather than guessed; this
+        // replayed trade just doesn't seed any symbol's cooldown.
         this.account.guardrail.recordTrade({ pnl: entry.profit, time: entry.time });
       }
     } catch (err) {
@@ -476,7 +479,7 @@ export class MatchTraderDataSource {
       // exact if there was no slippage between the last poll and the actual
       // close and only approximate otherwise. Flagged, not silently assumed exact.
       const pnl = typeof prevSnapshot.profit === 'number' ? prevSnapshot.profit : 0;
-      store.guardrail.recordTrade({ pnl, time: Date.now() });
+      store.guardrail.recordTrade({ pnl, time: Date.now(), symbol: this._symbolFromInstrument(prevSnapshot.instrument) });
 
       for (const [symbol, trackedKey] of this.pyramidPositionKeyBySymbol) {
         if (trackedKey === key) {

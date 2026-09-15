@@ -206,6 +206,12 @@ function buildStatusPayload(store) {
       lastHigh: last ? last.high : null,
       lastLow: last ? last.low : null,
       openPosition: withRealTimePosition(symbol, store.strategyEngine.getOpenPosition(symbol), store.orderOutcomeLog),
+      // 2026-09-15: cooldown-after-loss is now scoped PER SYMBOL (see
+      // guardrailEngine.js) - the top-level `guardrail` block below still
+      // reports the account-wide fallback (no symbol) for backward
+      // compatibility, which no longer reflects what actually gates a new
+      // entry on any ONE symbol. This is the real per-symbol number.
+      cooldownRemainingMs: store.guardrail.getStatus(Date.now(), symbol).cooldownRemainingMs,
     };
   });
 

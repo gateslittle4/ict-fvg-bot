@@ -480,7 +480,7 @@ export class LiveStrategyEngine {
     // ingestCandle()'s own comment for the full story: candle.time is the
     // shifted "fixed EST as UTC" engine clock, wrong for GuardrailEngine's
     // real-calendar-day bookkeeping in live operation.
-    if (!this.guardrail.canTakeNewTrade(guardrailNow)) return 'guardrail';
+    if (!this.guardrail.canTakeNewTrade(guardrailNow, symbol)) return 'guardrail';
     return null;
   }
 

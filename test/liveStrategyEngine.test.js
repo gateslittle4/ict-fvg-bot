@@ -160,7 +160,7 @@ test('LiveStrategyEngine: an explicit guardrailNow survives the live -5h candle-
   const FIVE_H = 5 * 3600 * 1000;
   const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
   guardrail.setBalance(10000, REAL_NOW);
-  guardrail.recordTrade({ pnl: -10, time: REAL_NOW, balanceAfter: 9990 }); // a real loss, real time -> 30-min cooldown starts
+  guardrail.recordTrade({ pnl: -10, time: REAL_NOW, balanceAfter: 9990, symbol: 'TEST1' }); // a real loss, real time -> 30-min cooldown starts (per-symbol since 2026-09-15 - see guardrailEngine.js)
 
   const engine = new LiveStrategyEngine({
     symbols: ['TEST1'],
@@ -189,7 +189,7 @@ test('LiveStrategyEngine: WITHOUT guardrailNow, the shifted candle.time reproduc
   const FIVE_H = 5 * 3600 * 1000;
   const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
   guardrail.setBalance(10000, REAL_NOW);
-  guardrail.recordTrade({ pnl: -10, time: REAL_NOW, balanceAfter: 9990 });
+  guardrail.recordTrade({ pnl: -10, time: REAL_NOW, balanceAfter: 9990, symbol: 'TEST1' });
 
   const engine = new LiveStrategyEngine({
     symbols: ['TEST1'],

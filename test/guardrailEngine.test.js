@@ -40,6 +40,67 @@ test('enforces cooldown after a losing trade and clears once it elapses', () => 
   assert.equal(afterCooldown.cooldownRemainingMs, 0);
 });
 
+// 2026-09-15 (Esdras, explicit request after seeing the cost of an
+// account-wide cooldown in the combined-portfolio simulation - see
+// HANDOFF.md): cooldown-after-loss scoped per symbol. maxTradesPerDay/
+// dailyLossLimitPct deliberately stay account-wide (checked separately
+// below) - only the cooldown gets this treatment.
+test('cooldown is scoped per symbol - a loss on one symbol does not block a different symbol', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 30, maxTradesPerDay: 10, dailyLossLimitPct: 100 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -100, time: DAY1, balanceAfter: 9900, symbol: 'EURUSD' });
+
+  const eurusdStatus = g.getStatus(DAY1 + 10 * 60 * 1000, 'EURUSD');
+  assert.equal(eurusdStatus.blocked, true);
+  assert.ok(eurusdStatus.blockReasons.includes('cooldown_active'));
+
+  const ger40Status = g.getStatus(DAY1 + 10 * 60 * 1000, 'GER40');
+  assert.equal(ger40Status.blocked, false, 'an unrelated symbol must not be silenced by another symbol\'s loss');
+
+  assert.equal(g.canTakeNewTrade(DAY1 + 10 * 60 * 1000, 'EURUSD'), false);
+  assert.equal(g.canTakeNewTrade(DAY1 + 10 * 60 * 1000, 'GER40'), true);
+});
+
+test('cooldown per symbol still clears after the configured window, independently per symbol', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 30, maxTradesPerDay: 10, dailyLossLimitPct: 100 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -100, time: DAY1, balanceAfter: 9900, symbol: 'EURUSD' });
+  g.recordTrade({ pnl: -50, time: DAY1 + 5 * 60 * 1000, balanceAfter: 9850, symbol: 'GER40' });
+
+  // Both still cooling down 10 min after their own loss.
+  assert.equal(g.canTakeNewTrade(DAY1 + 10 * 60 * 1000, 'EURUSD'), false);
+  assert.equal(g.canTakeNewTrade(DAY1 + 8 * 60 * 1000, 'GER40'), false);
+
+  // EURUSD's 30 min elapses first (it lost first) - GER40 still cooling down at that exact instant.
+  assert.equal(g.canTakeNewTrade(DAY1 + 31 * 60 * 1000, 'EURUSD'), true);
+  assert.equal(g.canTakeNewTrade(DAY1 + 31 * 60 * 1000, 'GER40'), false);
+
+  // GER40 clears 5 min later (30 min after its own loss).
+  assert.equal(g.canTakeNewTrade(DAY1 + 36 * 60 * 1000, 'GER40'), true);
+});
+
+test('getStatus()/canTakeNewTrade() without a symbol fall back to the account-wide last trade (display-only callers, e.g. the dashboard)', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 30, maxTradesPerDay: 10, dailyLossLimitPct: 100 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -100, time: DAY1, balanceAfter: 9900, symbol: 'EURUSD' });
+
+  const noSymbolStatus = g.getStatus(DAY1 + 10 * 60 * 1000);
+  assert.equal(noSymbolStatus.blocked, true);
+  assert.ok(noSymbolStatus.blockReasons.includes('cooldown_active'));
+});
+
+test('maxTradesPerDay and dailyLossLimitPct stay account-wide even with per-symbol cooldown - a busy symbol still trips the shared caps', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 0, maxTradesPerDay: 2, dailyLossLimitPct: 100 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: 10, time: DAY1, balanceAfter: 10010, symbol: 'EURUSD' });
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000, balanceAfter: 10020, symbol: 'GER40' });
+
+  // 2 trades already recorded today, account-wide - max_trades_reached blocks EVERY symbol, not just the ones that traded.
+  assert.equal(g.canTakeNewTrade(DAY1 + 2000, 'EURUSD'), false);
+  assert.equal(g.canTakeNewTrade(DAY1 + 2000, 'US100'), false);
+  assert.ok(g.getStatus(DAY1 + 2000, 'US100').blockReasons.includes('max_trades_reached'));
+});
+
 test('a winning trade does not trigger cooldown', () => {
   const g = new GuardrailEngine({ maxTradesPerDay: 10 });
   g.setBalance(10000, DAY1);
