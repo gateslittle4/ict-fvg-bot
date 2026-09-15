@@ -128,6 +128,17 @@ async function main() {
   const latestCandleTime = Math.max(...REAL_SYMBOLS.map((s) => historyBySymbol[s][historyBySymbol[s].length - 1].time));
   const rolling7d = trades.filter((t) => t.entryTime >= latestCandleTime - 7 * 86400000);
   summarize('Repère secondaire : 7 derniers jours glissants (jusqu\'à la donnée la plus récente)', rolling7d);
+
+  // Esdras, suite : "regarde LA semaine d'avant alors, regarde sur les 30
+  // derniers jours" - semaine calendaire encore précédente (lundi 31 août ->
+  // dimanche 6 sept 2026), puis fenêtre glissante des 30 derniers jours.
+  const weekBeforeMonday = new Date('2026-08-31T00:00:00Z').getTime();
+  const weekBeforeNextMonday = new Date('2026-09-07T00:00:00Z').getTime();
+  const weekBefore = trades.filter((t) => t.entryTime >= weekBeforeMonday && t.entryTime < weekBeforeNextMonday);
+  summarize('Semaine calendaire d\'avant (lundi 31 août -> dimanche 6 sept 2026)', weekBefore);
+
+  const rolling30d = trades.filter((t) => t.entryTime >= latestCandleTime - 30 * 86400000);
+  summarize('30 derniers jours glissants (jusqu\'à la donnée la plus récente)', rolling30d);
 }
 
 main();

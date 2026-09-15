@@ -3183,3 +3183,16 @@ Nouveau script `scripts/replayLastWeekOnRealData.js` — construit un `LiveStrat
 **Résultat, semaine calendaire du lundi 7 au dimanche 13 septembre 2026** : **4 trades, 0 gagnant / 4 perdants, -4R** — 2× Divergence US500, 1× FVG US100, 1× NWOG US100. Repère secondaire (7 derniers jours glissants jusqu'à maintenant) : 3 trades (1W/2L, +1R), incluant le Weekly Sweep GER40 qui vient de gagner (+3R) le 15 septembre. Sur toute la fenêtre disponible (~2,5 mois, 39 trades au total, tous mécanismes/symboles réels confondus), rythme cohérent avec les moyennes déjà documentées (~3,5/semaine).
 
 **Fichiers** : `scripts/replayLastWeekOnRealData.js` (nouveau).
+
+## Suite : semaine d'avant + 30 derniers jours (même rejeu réel) — 2026-09-15
+
+Esdras, en suite directe : "regarde LA semaine d'avant alors, regarde sur les 30 derniers jours". Deux fenêtres ajoutées au même script (`replayLastWeekOnRealData.js`), même rejeu, mêmes données déjà en cache (pas de nouvel appel réseau) :
+
+- **Semaine d'avant (31 août → 6 sept)** : 5 trades, 0W/5L, -5R.
+- **30 derniers jours glissants** : 20 trades, **2W/18L (10% de réussite), -12R** (≈ -3,6% du compte au risque actuel de 0,3%/trade, confirmé en direct via `/api/status`).
+
+**Signal notable trouvé en creusant par source, pas juste le total** : le -12R n'est PAS réparti uniformément — **FVG est à 0/9 sur cette fenêtre** (alors que son taux de gain backtesté validé tourne autour de 38-41% pour US100 multi-touch), pendant que Judas Swing et Weekly Sweep ont chacun décroché 1 gagnant sur 3. C'est FVG qui tire tout le mois vers le bas, pas un problème uniforme sur les 5 mécanismes.
+
+**Vérification statistique avant de crier au bug** : à un vrai taux de gain de 38%, la probabilité d'enchaîner 0 gagnant sur 9 trades FVG est d'environ 1,4% (calcul binomial (1-0.38)^9) — rare, mais pas du tout impossible sur un échantillon aussi petit. Pas assez d'éléments pour conclure à un bug ou un changement de régime avec seulement 9 trades — **à surveiller dans les semaines qui viennent** : si FVG continue nettement sous son taux de gain backtesté au-delà de ce mois, ce sera le signal à creuser (spread réel vs supposé dans les coûts, changement de régime de marché récent, etc.), pas avant.
+
+**Fichiers** : `scripts/replayLastWeekOnRealData.js`.
