@@ -160,6 +160,32 @@
   .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
   .strategy-table tr:hover td { background: var(--bg-inset); }
   .strategy-table tr:last-child td { border-bottom: none; }
+
+  /* ---------- Calendrier de performance (2026-09-15) ---------- */
+  .calendar-wrap { overflow-x: auto; padding-bottom: 4px; }
+  .calendar-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 1fr); gap: 3px; width: max-content; }
+  .calendar-cell {
+    width: 15px; height: 15px; border-radius: 2px; background: var(--bg-inset); border: 1px solid var(--panel-border);
+    cursor: default;
+  }
+  .calendar-legend { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 10.5px; color: var(--faint); font-family: var(--mono); }
+  .calendar-legend .calendar-cell { width: 11px; height: 11px; }
+  .calendar-months { display: flex; gap: 3px; font-size: 9.5px; color: var(--faint); font-family: var(--mono); margin-bottom: 4px; width: max-content; }
+
+  /* ---------- Statistiques heure/jour (2026-09-15) - simple horizontal bar
+     rows, same "text/numbers over decorative charts" discipline as the rest
+     of the project - the bar itself is just a background-width gradient,
+     not a separate chart library. ---------- */
+  .time-stat-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 11.5px; font-family: var(--mono); }
+  .time-stat-label { width: 78px; flex-shrink: 0; color: var(--muted); }
+  .time-stat-bar-wrap { flex: 1; height: 16px; background: var(--bg-inset); border-radius: var(--radius); overflow: hidden; position: relative; }
+  .time-stat-bar { height: 100%; }
+  .time-stat-bar.win { background: rgba(47,212,128,0.45); }
+  .time-stat-bar.loss { background: rgba(255,92,95,0.45); }
+  .time-stat-value { width: 130px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .time-stats-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 760px) { .time-stats-cols { grid-template-columns: 1fr; } }
+  .time-stats-cols h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); margin: 0 0 8px; font-family: var(--mono); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -182,6 +208,18 @@
     <h2>Journal durable par instrument</h2>
     <div class="meta" style="margin-bottom:8px;">Même journal, détaillé par instrument.</div>
     <div id="trade-log-summary">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Calendrier de performance</h2>
+    <div class="meta" style="margin-bottom:8px;">Un carré par jour où au moins un trade s'est clôturé — vert/rouge selon le R total du jour, intensité proportionnelle. Heure de sortie en heure locale de ton navigateur.</div>
+    <div id="calendar-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Statistiques par heure et jour de la semaine</h2>
+    <div class="meta" style="margin-bottom:8px;">Même journal durable, réparti par heure de sortie et par jour de la semaine (heure locale) — pour repérer si le bot performe mieux à certains moments.</div>
+    <div id="time-stats-body">Chargement…</div>
   </div>
 
   <div class="section-title">Chaque trade, en détail</div>
@@ -258,13 +296,172 @@ function renderEquityCurve(equityCurve) {
   `;
 }
 
+// Per-trade R, derived from the SAME equityCurve every other card here
+// already uses (2026-09-15) - no new endpoint, no new data: equityCurve is
+// a running cumulative sum in chronological order, so each trade's own R
+// is just the delta from the previous point (the first trade's R is its
+// cumulative value itself, since it started from 0). `time` on each point
+// is the durable journal's exit_time (see supabaseTradeLog.js) - real
+// broker-confirmed close time, not a guess.
+function deriveTradeR(equityCurve) {
+  if (!equityCurve) return [];
+  return equityCurve.map((p, i) => ({
+    time: p.time,
+    r: i === 0 ? p.cumulativeR : p.cumulativeR - equityCurve[i - 1].cumulativeR,
+  }));
+}
+
+// Calendrier de performance (2026-09-15, Esdras: liste d'idées demandée) -
+// GitHub-contributions-style grid, one column per week, one row per weekday
+// (Lundi en haut). Grouped by LOCAL calendar day (the viewer's own
+// timezone, via toLocaleDateString - a trade closed at 23h50 in France
+// shouldn't count for the next UTC day). Color intensity scales with the
+// day's total R relative to the biggest single day in the window, clamped
+// so one huge outlier day doesn't wash out every other day to near-white.
+function renderCalendar(equityCurve) {
+  const trades = deriveTradeR(equityCurve);
+  if (trades.length === 0) {
+    return '<div class="meta">Pas encore de trade clôturé.</div>';
+  }
+  const byDay = new Map(); // 'YYYY-MM-DD' (local) -> { r, count }
+  for (const t of trades) {
+    const d = new Date(t.time);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const bucket = byDay.get(key) || { r: 0, count: 0, date: new Date(d.getFullYear(), d.getMonth(), d.getDate()) };
+    bucket.r += t.r;
+    bucket.count++;
+    byDay.set(key, bucket);
+  }
+  const maxAbsR = Math.max(0.01, ...[...byDay.values()].map((b) => Math.abs(b.r)));
+
+  // Fixed ~14-week window ending today, Monday-first weeks - a stable,
+  // predictable grid rather than one whose column count depends on how far
+  // back the oldest trade happens to be.
+  const WEEKS = 14;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayDow = (today.getDay() + 6) % 7; // 0=Monday
+  const gridStart = new Date(today);
+  gridStart.setDate(today.getDate() - todayDow - (WEEKS - 1) * 7);
+
+  const monthLabels = [];
+  const cells = [];
+  let lastMonth = null;
+  for (let w = 0; w < WEEKS; w++) {
+    const weekStart = new Date(gridStart);
+    weekStart.setDate(gridStart.getDate() + w * 7);
+    const label = weekStart.getMonth() !== lastMonth ? weekStart.toLocaleDateString('fr-FR', { month: 'short' }) : '';
+    if (label) lastMonth = weekStart.getMonth();
+    monthLabels.push(`<span style="width:15px;">${label}</span>`);
+    for (let d = 0; d < 7; d++) {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + d);
+      if (day > today) { cells.push('<div class="calendar-cell" style="visibility:hidden;"></div>'); continue; }
+      const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+      const bucket = byDay.get(key);
+      let bg = 'var(--bg-inset)';
+      let title = day.toLocaleDateString('fr-FR');
+      if (bucket) {
+        const intensity = 0.18 + 0.72 * Math.min(1, Math.abs(bucket.r) / maxAbsR);
+        bg = bucket.r >= 0 ? `rgba(47,212,128,${intensity.toFixed(2)})` : `rgba(255,92,95,${intensity.toFixed(2)})`;
+        title += ` — ${bucket.r >= 0 ? '+' : ''}${fmt(bucket.r)}R (${bucket.count} trade${bucket.count > 1 ? 's' : ''})`;
+      }
+      cells.push(`<div class="calendar-cell" style="background:${bg};" title="${title}"></div>`);
+    }
+  }
+
+  return `
+    <div class="calendar-wrap">
+      <div class="calendar-months">${monthLabels.join('')}</div>
+      <div class="calendar-grid">${cells.join('')}</div>
+    </div>
+    <div class="calendar-legend">
+      <span>Perte</span>
+      <span class="calendar-cell" style="background:rgba(255,92,95,0.8);"></span>
+      <span class="calendar-cell" style="background:rgba(255,92,95,0.3);"></span>
+      <span class="calendar-cell" style="background:var(--bg-inset);"></span>
+      <span class="calendar-cell" style="background:rgba(47,212,128,0.3);"></span>
+      <span class="calendar-cell" style="background:rgba(47,212,128,0.8);"></span>
+      <span>Gain</span>
+    </div>
+  `;
+}
+
+// Statistiques par heure et jour de la semaine (2026-09-15) - same
+// deriveTradeR() source, bucketed by the LOCAL hour/weekday of each
+// trade's real exit time. Bars are relative to the biggest |R| bucket in
+// each table independently (hour vs weekday), not a shared scale - the
+// two tables answer different questions, forcing one scale on both would
+// just make whichever has fewer buckets look artificially flat.
+function renderTimeStats(equityCurve) {
+  const trades = deriveTradeR(equityCurve);
+  if (trades.length === 0) {
+    return '<div class="meta">Pas encore de trade clôturé.</div>';
+  }
+
+  function bucketBy(keyFn, labels) {
+    const buckets = labels.map(() => ({ r: 0, count: 0, wins: 0 }));
+    for (const t of trades) {
+      const k = keyFn(new Date(t.time));
+      buckets[k].r += t.r;
+      buckets[k].count++;
+      if (t.r >= 0) buckets[k].wins++;
+    }
+    return buckets.map((b, i) => ({ ...b, label: labels[i] }));
+  }
+
+  function renderRows(buckets) {
+    const nonEmpty = buckets.filter((b) => b.count > 0);
+    if (nonEmpty.length === 0) return '<div class="meta">Aucune donnée.</div>';
+    const maxAbsR = Math.max(0.01, ...nonEmpty.map((b) => Math.abs(b.r)));
+    return nonEmpty.map((b) => {
+      const win = b.r >= 0;
+      const widthPct = Math.max(4, Math.round((Math.abs(b.r) / maxAbsR) * 100));
+      const winRatePct = Math.round((b.wins / b.count) * 100);
+      return `
+        <div class="time-stat-row">
+          <span class="time-stat-label">${b.label}</span>
+          <span class="time-stat-bar-wrap"><span class="time-stat-bar ${win ? 'win' : 'loss'}" style="width:${widthPct}%;"></span></span>
+          <span class="time-stat-value journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(b.r)}R <span class="meta">(${b.count}, ${winRatePct}%)</span></span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  const hourLabels = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}h`);
+  const hourBuckets = bucketBy((d) => d.getHours(), hourLabels);
+
+  const dowLabels = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+  const dowBuckets = bucketBy((d) => (d.getDay() + 6) % 7, dowLabels);
+
+  return `
+    <div class="time-stats-cols">
+      <div>
+        <h3>Par heure de sortie (locale)</h3>
+        ${renderRows(hourBuckets)}
+      </div>
+      <div>
+        <h3>Par jour de la semaine</h3>
+        ${renderRows(dowBuckets)}
+      </div>
+    </div>
+  `;
+}
+
 function renderOverview(data) {
   const el = document.getElementById('overview-body');
+  const calendarEl = document.getElementById('calendar-body');
+  const timeStatsEl = document.getElementById('time-stats-body');
   const overall = data.overall;
   if (!overall || overall.totalSignals === 0) {
-    el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+    const emptyMsg = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+    el.innerHTML = emptyMsg;
+    if (calendarEl) calendarEl.innerHTML = emptyMsg;
+    if (timeStatsEl) timeStatsEl.innerHTML = emptyMsg;
     return;
   }
+  if (calendarEl) calendarEl.innerHTML = renderCalendar(data.equityCurve);
+  if (timeStatsEl) timeStatsEl.innerHTML = renderTimeStats(data.equityCurve);
   const netWin = overall.finalEquityR >= 0;
   const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
   const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);

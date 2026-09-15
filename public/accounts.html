@@ -345,6 +345,17 @@ if (TOKEN) {
     loadAccounts();
   }).catch(() => { localStorage.removeItem(TOKEN_KEY); TOKEN = ''; });
 }
+
+// PWA install support (2026-09-15: this page had the manifest link but
+// never actually registered the service worker, unlike index.html/
+// chart.html/journal.html - Chrome/Android needs a registered fetch
+// handler before it offers "Add to Home Screen" at all, per sw.js's own
+// comment, so a visit starting here couldn't trigger the install prompt).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

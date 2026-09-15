@@ -545,13 +545,29 @@ const previousPrices = {}; // symbol -> last seen lastPrice, for the ticker's up
 // endpoints distincts, jamais tous prêts en même temps) puis appellent
 // renderHeroStrip() - jamais de second fetch dédié, uniquement des données
 // déjà récupérées ailleurs sur cette page.
-const heroState = { balance: null, dailyPnl: null, dailyLossPct: null, blocked: null, equityEstimate: null, totalR: null, winRatePct: null, totalTrades: null };
+const heroState = { balance: null, dailyPnl: null, dailyLossPct: null, blocked: null, equityEstimate: null, totalR: null, winRatePct: null, totalTrades: null, freshestTickTime: null };
+// Santé de connexion (2026-09-15, Esdras: liste d'idées demandée) - the
+// simplest honest signal that the live feed is actually alive: age of the
+// MOST RECENT candle across every subscribed symbol. Deliberately not
+// per-symbol-timeframe-aware (an M15 symbol's own candle can legitimately
+// be ~14 min old and still be healthy) - BTCUSD's M1 cadence means the
+// FRESHEST tick across all symbols stays under a couple minutes whenever
+// the connection is genuinely alive, and goes stale together with
+// everything else the moment it isn't. One number, not five.
+function connectionHealth(ageMs) {
+  if (ageMs === null) return { label: '—', cls: '' };
+  ageMs = Math.max(0, ageMs); // clock drift / accelerated demo-mode clocks can put the "latest" candle a hair in the future - never show a negative age
+  if (ageMs < 2 * 60 * 1000) return { label: `🟢 données fraîches (${Math.round(ageMs / 1000)}s)`, cls: 'win' };
+  if (ageMs < 10 * 60 * 1000) return { label: `🟡 ralenti (${Math.round(ageMs / 60000)} min)`, cls: '' };
+  return { label: `🔴 aucune donnée récente (${Math.round(ageMs / 60000)} min)`, cls: 'loss' };
+}
 function renderHeroStrip() {
   const el = document.getElementById('hero-strip');
   if (!el) return;
   const dailyClass = heroState.dailyPnl === null ? '' : heroState.dailyPnl > 0 ? 'win' : heroState.dailyPnl < 0 ? 'loss' : '';
   const totalRClass = heroState.totalR === null ? '' : heroState.totalR >= 0 ? 'win' : 'loss';
   const equity = heroState.equityEstimate !== null ? heroState.equityEstimate : heroState.balance;
+  const health = connectionHealth(heroState.freshestTickTime === null ? null : Date.now() - heroState.freshestTickTime);
   el.innerHTML = `
     <div class="hero-tile">
       <div class="hero-label">Équité (réelle)</div>
@@ -573,8 +589,21 @@ function renderHeroStrip() {
       <div class="hero-value">${heroState.winRatePct === null ? '—' : fmt(heroState.winRatePct, 0) + '%'}</div>
       <div class="hero-sub">journal durable, tous instruments</div>
     </div>
+    <div class="hero-tile">
+      <div class="hero-label">Santé connexion</div>
+      <div class="hero-value ${health.cls}" style="font-size:15px;">${health.label}</div>
+      <div class="hero-sub">bougie la plus récente, tous symboles</div>
+    </div>
   `;
 }
+// Re-render on its own clock, not just when new /api/status data arrives
+// (2026-09-15) - the whole point of a connection-health indicator is to
+// catch a feed that's gone quiet, so its displayed age must keep climbing
+// in real time even if the SSE stream itself stalls (the freshestTickTime
+// it's computed from simply stops advancing - only a live Date.now() at
+// render time reveals that as a growing "il y a Xmin" instead of a frozen
+// number that looks fine at a glance).
+setInterval(renderHeroStrip, 5000);
 
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 const fmtTime = (t) => t ? new Date(t).toLocaleTimeString('fr-FR') : '—';
@@ -644,6 +673,8 @@ function renderStatus(data) {
   heroState.dailyPnl = g.dailyPnl;
   heroState.dailyLossPct = g.dailyLossPct;
   heroState.blocked = g.blocked;
+  const tickTimes = data.symbols.map((s) => s.lastCandleTime).filter((t) => t !== null && t !== undefined);
+  heroState.freshestTickTime = tickTimes.length > 0 ? Math.max(...tickTimes) : null;
   renderHeroStrip();
 
   document.getElementById('prices-body').innerHTML = data.symbols.map((s) => {
@@ -727,11 +758,30 @@ async function refreshAccount() {
     // worth an "Écart bot/courtier" alert card.
     const mismatches = (data.reconciliation || []).filter((r) => r.status !== 'match' && r.status !== 'none');
 
+    // Exposition totale (2026-09-15, Esdras: liste d'idées demandée) -
+    // combined REAL risk across every open position, i.e. what's actually
+    // at stake if every stop got hit at once - not the same thing as
+    // marginUsedReal above (margin is a broker leverage mechanic, not a
+    // loss-at-risk figure). Only computable per position when the broker
+    // reports a real stopLoss - a position without one (or missing
+    // entryPrice/units) is excluded and flagged as partial, same honesty
+    // convention as floatingPnlIsPartial above, never guessed.
+    const positions = data.positions || [];
+    let totalRiskAmount = 0;
+    let riskKnownCount = 0;
+    for (const p of positions) {
+      if (p.stopLoss === null || p.entryPrice === null) continue;
+      totalRiskAmount += Math.abs(p.entryPrice - p.stopLoss) * p.units;
+      riskKnownCount++;
+    }
+    const riskIsPartial = riskKnownCount < positions.length;
+
     let html = `
       <div class="stat-row"><span class="label">Solde (réel)</span><span>${fmt(data.balance)}</span></div>
       <div class="stat-row"><span class="label">Équité (estimée)</span><span>${fmt(data.equityEstimate)}${data.floatingPnlIsPartial ? ' <span class="meta">(partielle — prix manquant pour au moins une position)</span>' : ''}</span></div>
       <div class="stat-row"><span class="label">Marge utilisée (réelle)</span><span>${fmt(data.marginUsedReal)}</span></div>
       <div class="stat-row"><span class="label">P&amp;L flottant (estimé)</span><span class="journal-pnl ${pnlClass}">${pnl >= 0 ? '+' : ''}${fmt(pnl)}</span></div>
+      ${positions.length > 0 ? `<div class="stat-row"><span class="label">Exposition totale (risque réel si tout touche le stop)</span><span>${fmt(totalRiskAmount)}${riskIsPartial ? ` <span class="meta">(${riskKnownCount}/${positions.length} positions — stop inconnu pour le reste)</span>` : ''}</span></div>` : ''}
     `;
 
     if (data.positions && data.positions.length > 0) {

@@ -2902,3 +2902,37 @@ Esdras : "pour le journal, ne le mets pas dans la première page, donne-lui un o
 `npm test` : 483/483.
 
 **Fichiers** : `public/journal.html` (nouveau), `public/index.html`, `public/chart.html`, `public/accounts.html`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/supabaseTradeLog.js`, `test/supabaseTradeLog.test.js`.
+
+## Playwright en devDependency locale, pour la vérification visuelle — 2026-09-15
+
+Esdras a demandé s'il existait autre chose que Playwright pour vérifier le rendu visuellement (a mentionné le skill "run"), puis "pourquoi pas installer chromium-cli ?". Vérifié : `chromium-cli` n'est pas disponible dans cet environnement (ni paquet npm — 404 — ni binaire installable, pas de code source accessible pour le construire) — signalé honnêtement plutôt que de faire semblant. Le skill "run" lui-même recommande, dans ce cas précis, de retomber sur un script Playwright brut — exactement ce que ce projet fait déjà ponctuellement depuis un script `/tmp`.
+
+**Ajouté `playwright` en `devDependency`** (`package.json`) pour éviter de reconstruire le script ad hoc à chaque fois — Chromium est déjà pré-installé dans cet environnement (`/opt/pw-browsers`), lancé via `executablePath` plutôt que de le retélécharger.
+
+**Piège évité avant qu'il ne morde en production** : le build de Render (`npm install`, sans `--production`, cache désactivé — donc à CHAQUE déploiement) aurait installé `playwright` et déclenché son téléchargement Chromium (~300 Mo) sur chaque déploiement. Corrigé en ajoutant `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` comme variable d'environnement Render (pas seulement en local) — redéploiement vérifié rapide et sain après coup.
+
+Aucun changement de comportement applicatif — outillage de dev uniquement.
+
+**Fichiers** : `package.json`.
+
+## Calendrier, statistiques horaires, exposition totale, santé de la connexion, PWA complet — 2026-09-15
+
+Esdras, pendant que je terminais l'ajout de Playwright : a demandé mon avis honnête sur le dashboard ("Comment tu trouves Mon site? Parfait? Ou il peux être ameliorer"), puis a validé une liste d'idées en écartant explicitement la protection par mot de passe pour l'instant ("Laisse le mode passe mais prends calendrier, statistique, exposition total, indicateur de sante, et puis IL DOIs être installable sur mon tel").
+
+**Calendrier de performance** (`journal.html`, `renderCalendar()`) — heatmap style "contributions GitHub", 14 semaines glissantes, semaines commençant le lundi, groupé par JOUR CALENDRIER LOCAL (pas UTC — un trade clôturé à 23h locale ne doit pas apparaître le lendemain). Intensité de couleur proportionnelle à |R| du jour par rapport au maximum de la fenêtre, vert/rouge selon le signe. Aucune nouvelle donnée : dérivé de `equityCurve` (déjà récupéré par `/trade-log`) via `deriveTradeR()` (le R par trade = delta entre `cumulativeR` consécutifs).
+
+**Statistiques par heure et jour de la semaine** (`renderTimeStats()`) — deux tableaux côte à côte (empilés sous 760px), barres horizontales par heure locale de sortie (0h-23h) et par jour de la semaine (lundi en premier), chaque tableau mis à l'échelle indépendamment. Même source de données que le calendrier, aucun nouvel appel réseau.
+
+**Exposition totale** (`index.html`, `refreshAccount()`) — somme de `|entryPrice - stopLoss| × units` sur toutes les positions réellement ouvertes chez le courtier : le risque réel si TOUS les stops étaient touchés simultanément, distinct de la marge utilisée (mécanique de levier, pas une perte). N'affiche la ligne que s'il y a des positions ouvertes ; signale "(N/M positions — stop inconnu pour le reste)" si le courtier ne renvoie pas de stop pour certaines — jamais deviné.
+
+**Indicateur de santé de connexion** (`index.html`, 5e tuile du bandeau principal) — basé sur l'âge de la bougie la plus fraîche tous symboles confondus (BTCUSD en M1 suffit à garder ça réactif tant que la connexion est réellement vivante) : 🟢 <2min, 🟡 <10min, 🔴 au-delà. Se met à jour toutes les 5s sur sa propre horloge (`setInterval`), pas seulement quand une nouvelle donnée SSE arrive — sinon un flux qui se fige silencieusement afficherait quand même un chiffre figé qui a l'air normal au premier coup d'œil.
+
+**PWA** : déjà entièrement en place (`manifest.json`, `sw.js`, icônes) sur les 3 autres pages — `accounts.html` avait le lien manifest mais pas l'enregistrement du service worker (Chrome/Android exige un service worker enregistré avant même de proposer "Ajouter à l'écran d'accueil"), corrigé.
+
+**Bug trouvé et corrigé pendant la vérification visuelle** (pas juste en lisant le code) : capture Playwright avec des données de trade simulées réparties sur plusieurs jours/heures a révélé un âge négatif affiché par l'indicateur de santé en mode démo (l'horloge simulée du mode démo peut avancer devant l'horloge réelle) — `connectionHealth()` plafonne maintenant l'âge à 0 (`Math.max(0, ageMs)`), défensif aussi contre un léger décalage d'horloge client/serveur en production.
+
+**Vérifié visuellement** : serveur local en mode démo, captures Playwright avec `equityCurve` simulée réaliste (20 trades sur 90 jours, heures/jours variés) pour le calendrier et les statistiques, et `/api/account` simulé avec 2 positions (une avec stop connu, une sans) pour l'exposition totale — tout s'affiche et se calcule correctement, aucune erreur console.
+
+`npm test` : 483/483 (inchangé — aucun changement de logique métier backend).
+
+**Fichiers** : `public/journal.html`, `public/index.html`, `public/accounts.html`.
