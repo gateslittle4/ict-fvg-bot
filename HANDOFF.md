@@ -3066,3 +3066,19 @@ Esdras, en creusant le point ci-dessus : "peux tu retire les notification fvg du
 `npm test` : 492/492 (inchangé — filtre purement côté client, aucune logique backend touchée).
 
 **Fichiers** : `public/chart.html`.
+
+## Correction du filtre FVG : ne jamais cacher une zone encore "watching" — 2026-09-15
+
+Esdras, immédiatement après le filtre minuit ci-dessus : "d'abord est-ce que ma stratégie fonctionnait sur les fvg avant 12hr am du jour présent? il faut qu'on le sache pour ne pas retirer ceux-là" — la bonne question à poser avant de faire confiance à un filtre.
+
+**Vérifié sur les vraies données de production** (pas une supposition) : sur les 21 trades réels, **4 ont leur entrée dans les ~50 premières minutes après minuit UTC** (00:11, 00:20, 00:30, 00:32) — largement dans la plage où la zone FVG sous-jacente a pu se former AVANT minuit (BTCUSD expire après 50 bougies M1 = 50 min). Le filtre par date seule (`formedAt >= minuit`) livré une heure plus tôt était donc un vrai risque, pas théorique : il aurait pu cacher exactement une zone que la stratégie a réellement tradée.
+
+**Corrigé** (`public/chart.html`, `renderOverlays()`) : chaque zone porte déjà un `status` calculé côté serveur (`chartOverlays.js`, rejoue le vrai moteur) — `watching` (toujours potentiellement vivante), ou `validated`/`expired`/`stale` (histoire terminée). Le filtre par date ne s'applique plus qu'aux 3 états terminaux ; une zone encore `watching` s'affiche toujours, quelle que soit sa date de formation — aucun risque de cacher un signal que la stratégie pourrait encore prendre.
+
+**Vérifié visuellement** : Playwright avec 6 zones simulées (watching/expired/stale/validated d'hier + 2 d'aujourd'hui) — exactement 3 conservées (la `watching` d'hier + les 2 d'aujourd'hui), les 3 terminales d'hier filtrées. Aucune erreur console.
+
+**Trouvé en lisant le code pendant la vérification, pas encore corrigé** : `chartOverlays.js`'s `FVG_MAX_AGE_MS` est câblé en dur sur M15 (15 min × 50 bougies = 12.5h) pour reclasser une zone `watching` trop vieille en `stale` — mais BTCUSD trade réellement en M1 (durée de vie réelle 50 min, pas 12.5h). Cet endpoint (`/api/overlays`, uniquement le chart) peut donc laisser une zone BTCUSD étiquetée `watching` jusqu'à 12.5h après sa vraie expiration en trading réel, avant de la requalifier `stale` — sans risque pour le trading lui-même (le moteur live utilise sa propre logique, pas ce recalcul), mais peut réintroduire un peu d'encombrement visuel pour BTCUSD spécifiquement. Pas corrigé aujourd'hui, signalé pour une prochaine session si ça vaut le coup.
+
+`npm test` : 519/519 (inchangé — filtre côté client uniquement).
+
+**Fichiers** : `public/chart.html`.

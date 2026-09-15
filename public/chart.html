@@ -417,20 +417,27 @@ function renderOverlays(overlays, decimals) {
   const barTimesSec = lastCandles.map((c) => Math.floor(c.time / 1000));
   const lastBarSec = barTimesSec[barTimesSec.length - 1] ?? null;
 
-  // Zones formées aujourd'hui uniquement (2026-09-15, Esdras: "le chart est
-  // plein de fvg" - la plupart de l'encombrement venait de zones formées
-  // les jours précédents, toujours techniquement dans la fenêtre de
-  // péremption de la stratégie (config.js's fvg.maxAgeCandles - jusqu'à 50
-  // bougies, ~12.5h sur les symboles M15) mais visuellement inutiles des
-  // jours plus tard. Minuit LOCAL, même convention que le calendrier de
-  // journal.html. FILTRE D'AFFICHAGE UNIQUEMENT - la logique de péremption
-  // réelle du moteur (config.js) n'est pas touchée : une zone formée juste
-  // avant minuit peut rester réellement actionnable et ne s'affichera
-  // simplement plus ici.
+  // Zones formées aujourd'hui uniquement, SAUF celles encore 'watching'
+  // (2026-09-15, Esdras: "le chart est plein de fvg" puis, correction
+  // critique après vérification : "est-ce que ma stratégie fonctionnait
+  // sur les fvg avant 12hr am du jour présent? il faut qu'on le sache pour
+  // ne pas retirer ceux-là") - vérifié sur les vraies données de
+  // production : 4 des 21 trades réels ont leur entrée dans les ~50
+  // premières minutes après minuit UTC, donc leur zone a pu se former
+  // AVANT minuit. Un filtre par date seule aurait pu cacher exactement une
+  // zone encore réellement tradable. Chaque zone a un `status` calculé
+  // côté serveur (chartOverlays.js) qui reflète l'état réel du moteur :
+  // 'watching' = toujours potentiellement vivante (jamais cachée, quelle
+  // que soit sa date) ; 'validated'/'expired'/'stale' = son histoire est
+  // déjà terminée, donc sans risque de cacher un signal encore possible -
+  // seules celles-là sont filtrées par date (minuit LOCAL, même
+  // convention que le calendrier de journal.html). Ceci reste un FILTRE
+  // D'AFFICHAGE - la logique de péremption réelle du moteur n'est pas
+  // touchée.
   const todayStartMs = new Date().setHours(0, 0, 0, 0);
 
   const zones = (overlays.zones || [])
-    .filter((z) => z.formedAt >= todayStartMs)
+    .filter((z) => z.status === 'watching' || z.formedAt >= todayStartMs)
     .map((z) => {
       const startTime = snapToBar(z.formedAt, barTimesSec);
       if (startTime === null) return null; // formed entirely before the loaded window
