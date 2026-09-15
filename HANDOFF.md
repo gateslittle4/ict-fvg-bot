@@ -3197,6 +3197,20 @@ Esdras, en suite directe : "regarde LA semaine d'avant alors, regarde sur les 30
 
 **Fichiers** : `scripts/replayLastWeekOnRealData.js`.
 
+## Suite : ~7 mois réels via la route admin (le vrai chiffre demandé) — 2026-09-15
+
+Esdras a remarqué à juste titre l'incohérence ("comment t'as pu faire le test pour les 7 derniers mois alors [que la route plafonne à 5000 bougies]?") entre l'analyse pluriannuelle (CSV déjà sur disque, construits via de multiples appels admin dans des sessions passées) et le plafond de la route dashboard `/candles`. Elle a ensuite fourni elle-même le token `ADMIN_EXPORT_TOKEN` (existant sur Render, jamais connu de cette session) après une clarification explicite (donner le token existant = zéro redémarrage du bot, vs. en créer un nouveau via l'API Render = redémarrage du service, refusé par précaution — voir la question posée avant d'agir).
+
+**`scripts/replayLastWeekOnRealData.js` généralisé** pour accepter en entrée soit les JSON de `/candles` (plafond ~2,5 mois), soit des CSV `time,open,high,low,close` de `/admin/export-candles?days=245&token=...` (cTrader accepte jusqu'à 245 jours/~35 semaines PAR requête, une seule requête a suffi ici) — même format que `loadCandlesFromCsv()` lit déjà pour les CSV historiques, aucune duplication. Ajouté aussi : un taux de gain par source (W/L, %) sur chaque fenêtre, pas seulement le total.
+
+**Récupéré : 2026-02-10 → 2026-09-15 (~218 jours réels, ~7 mois pile)**. Le token n'a jamais touché le repo (vérifié par recherche avant de committer) ni aucun fichier committé — utilisé uniquement en argument de requête `curl` directe, données sauvegardées dans le scratchpad de session, jamais dans le projet.
+
+**Résultat (218 jours, tous mécanismes/symboles réels confondus)** : 145 trades, 44W/101L (30,3%), **totalR = +54R** (≈ **+16,2% du compte** sur ~7 mois au risque actuel de 0,3%/trade) — un échantillon nettement plus solide et clairement positif.
+
+**Ça corrige la lecture inquiète des notes précédentes sur FVG** : sur ce plus grand échantillon, FVG est à **12 gagnants sur 44 (27%)** — pas 1/11 (9%) comme la fenêtre de 30 jours seule le suggérait. À un RR de 4-5, le seuil mécanique de rentabilité est ~17-20% : 27% est donc confortablement positif, pas un edge cassé. Le passage à vide récent (0/9 sur les 30 derniers jours) était bien une vraie série de malchance à l'intérieur d'un échantillon plus large sain, pas le signe d'un problème structurel — exactement l'hypothèse "pas encore assez de trades pour juger" déjà posée dans la note précédente, maintenant confirmée par plus de données réelles plutôt que par une supposition. Détail par source : NWOG 8/16 (50%), Weekly Sweep 9/29 (31%), Judas Swing 6/20 (30%), Divergence 9/36 (25%, tout juste au seuil mécanique de son RR3 — celui à surveiller en priorité si un signal futur se dégrade encore).
+
+**Fichiers** : `scripts/replayLastWeekOnRealData.js`.
+
 ## Suite : 3 derniers mois (plafond réel trouvé) — 2026-09-15
 
 Esdras : "regards alors 3 mois precedent". Plafond technique trouvé et signalé honnêtement plutôt qu'ignoré : `GET /api/accounts/:id/candles` clampe sa réponse à 5000 bougies M15 maximum (`server.js`), donc la fenêtre la plus ancienne accessible par cette route est ~77 jours (1er juillet → 15 septembre), pas tout à fait 3 mois calendaires pleins. Aller plus loin demanderait la route admin `/admin/export-candles` (gated `ADMIN_EXPORT_TOKEN`, pas dispo dans ce sandbox) ou d'attendre plus d'historique réel — délibérément PAS de redémarrage de la connexion broker en prod juste pour ce chiffre (ça couperait le bot en train de trader).
