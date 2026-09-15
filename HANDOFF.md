@@ -3233,6 +3233,18 @@ Nouveau script `scripts/checkChallengeSurvivalOnRealTrades.js` — réutilise le
 
 **Fichiers** : `scripts/checkChallengeSurvivalOnRealTrades.js` (nouveau).
 
+## Suite : y a-t-il déjà eu une série aussi mauvaise avant ? — 2026-09-15
+
+Esdras : "Est-ce qu'il y a eu dans le passé une série perdante autant?"
+
+Ajouté au même script un vrai calcul de drawdown peak-to-trough (pas seulement des semaines consécutives - la profondeur réelle en % du solde, au risque challenge 0.5%/trade, compounding) sur les 15 épisodes trouvés dans la fenêtre de 7 mois complète.
+
+**Réponse : non, c'est même le PIRE.** La série récente (pic le 13 août à 13938$ → creux le 14 septembre à 12798$) est un drawdown de **-8,2%, le plus profond des 15 épisodes de toute la fenêtre de 7 mois.** Le deuxième plus profond est l'épisode de février-mars (-5,9%, pic 18 fév → creux 11 mars) — c'est exactement celui-là qui avait fait casser le plancher de FundingPips Instant (5%) le 5 mars. Tous les autres épisodes restent sous -3,5%.
+
+**Nuance importante, à ne pas généraliser à tort** : la série récente n'a rien cassé chez FTMO/FundingPips Phase1/Flex (planchers à 10-12%) uniquement parce qu'elle est partie d'un pic bien plus haut (+39% de coussin construit depuis février) — mais en profondeur pure (-8,2%), c'est la pire séquence jamais vue sur ce combo, et elle ne laisse plus que ~1,8 point de marge avant un plancher à 10%. Si un futur épisode de profondeur comparable arrivait avec MOINS de coussin accumulé au moment où il commence, le résultat serait différent - à garder en tête, pas une garantie que "le coussin protège toujours".
+
+**Fichiers** : `scripts/checkChallengeSurvivalOnRealTrades.js`.
+
 ## Suite : 3 derniers mois (plafond réel trouvé) — 2026-09-15
 
 Esdras : "regards alors 3 mois precedent". Plafond technique trouvé et signalé honnêtement plutôt qu'ignoré : `GET /api/accounts/:id/candles` clampe sa réponse à 5000 bougies M15 maximum (`server.js`), donc la fenêtre la plus ancienne accessible par cette route est ~77 jours (1er juillet → 15 septembre), pas tout à fait 3 mois calendaires pleins. Aller plus loin demanderait la route admin `/admin/export-candles` (gated `ADMIN_EXPORT_TOKEN`, pas dispo dans ce sandbox) ou d'attendre plus d'historique réel — délibérément PAS de redémarrage de la connexion broker en prod juste pour ce chiffre (ça couperait le bot en train de trader).

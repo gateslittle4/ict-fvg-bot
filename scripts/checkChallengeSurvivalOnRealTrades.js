@@ -176,6 +176,41 @@ async function main() {
     const floorPct = 100 * (1 - program.maxDrawdownPct / 100);
     console.log(`  ${program.label}: solde au 17 août ≈ ${balanceAtZoomStart?.toFixed(2)} (${(100 * (balanceAtZoomStart / STARTING_BALANCE - 1)).toFixed(1)}%), plus bas atteint pendant la série ≈ ${worstBalance.toFixed(2)} (${(100 * (worstBalance / STARTING_BALANCE - 1)).toFixed(1)}%) le ${worstDate ? new Date(worstDate).toISOString().slice(0, 10) : '—'}, plancher du programme à ${floorPct.toFixed(1)}% du solde initial${breachedInZoom ? ' -> PLANCHER CASSÉ PENDANT CETTE SÉRIE' : ' -> plancher jamais cassé pendant cette série'}`);
   }
+
+  // Esdras : "Est-ce qu'il y a eu dans le passé une série perdante autant ?"
+  // Repère chaque épisode de drawdown peak-to-trough (pas juste des semaines
+  // consécutives cette fois - la vraie profondeur en % du solde, au risque
+  // challenge 0.5%/trade compounding) sur toute la fenêtre de 7 mois, pour
+  // comparer objectivement la série récente à tout ce qui a précédé.
+  console.log('\n=== Tous les épisodes de drawdown peak-to-trough (risque challenge 0.5%/trade, compounding) ===');
+  let balance = STARTING_BALANCE;
+  let peak = STARTING_BALANCE;
+  let peakTime = decided[0].entryTime;
+  const episodes = []; // { peakTime, peakBalance, troughTime, troughBalance, depthPct }
+  let current = null;
+  for (const t of decided) {
+    const riskAmount = balance * (CHALLENGE_RISK_PCT / 100);
+    balance += riskAmount * t.rMultiple;
+    if (balance >= peak) {
+      if (current) episodes.push(current);
+      current = null;
+      peak = balance;
+      peakTime = t.exitTime;
+    } else {
+      if (!current) current = { peakTime, peakBalance: peak, troughTime: t.exitTime, troughBalance: balance };
+      if (balance < current.troughBalance) {
+        current.troughTime = t.exitTime;
+        current.troughBalance = balance;
+      }
+    }
+  }
+  if (current) episodes.push(current);
+  for (const e of episodes) e.depthPct = 100 * (1 - e.troughBalance / e.peakBalance);
+  episodes.sort((a, b) => b.depthPct - a.depthPct);
+  console.log(`${episodes.length} épisodes de drawdown trouvés sur toute la fenêtre. Les 5 plus profonds :`);
+  for (const e of episodes.slice(0, 5)) {
+    console.log(`  -${e.depthPct.toFixed(1)}% : pic le ${new Date(e.peakTime).toISOString().slice(0, 10)} (${e.peakBalance.toFixed(2)}) -> creux le ${new Date(e.troughTime).toISOString().slice(0, 10)} (${e.troughBalance.toFixed(2)})`);
+  }
 }
 
 main();
