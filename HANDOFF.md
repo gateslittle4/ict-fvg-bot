@@ -2731,3 +2731,27 @@ Suite de toute la recherche GER40 de la journée : Esdras a demandé ma recomman
 `npm test` : 465/465 (461 + 4 nouveaux).
 
 **Fichiers** : `src/liveStrategyEngine.js`, `src/config.js`, `src/accountRuntime.js`, `src/engines/lotCalculator.js`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`, `src/dataSources/dealPairing.js`, `public/index.html`, `test/liveStrategyEngine.test.js`.
+
+## Simulation combinée des 5 stratégies live sur 7 mois — un vrai problème détecté (clustering du garde-fou quotidien) — 2026-09-15
+
+Esdras : "donne moi une overview de la performance pendant les 7 derniers mois si tous les strategy fonctionnaient en meme temps... je veux detecter sil y aurait un probleme". Rejoué la VRAIE config actuelle (FVG US100/US500/XAUUSD, Divergence, NWOG achat-seul, Judas Swing, Weekly Sweep GER40) sur 2025-05-31→2025-12-31 (les 7 derniers mois de données réelles disponibles), avec un VRAI `GuardrailEngine(CONFIG.guardrails)` partagé (maxTradesPerDay 20, cooldown 30min, perte quotidienne max 2%) — pas le garde-fou permissif que `forwardTest.js` utilise d'habitude. Méthode en 2 passes pour rester rapide : passe 1 = `warmUp()` efficace avec garde-fou permissif (netting correct par symbole, calcul rapide) ; passe 2 = rejeu chronologique des trades candidats à travers un VRAI garde-fou pour voir ce qu'il aurait réellement bloqué.
+
+**Résultat global** : 179 trades autorisés (27 bloqués par le garde-fou), solde 10 000$→17 537$ (+75.4%), drawdown max 4.92%.
+
+| Source | Trades | Espérance (R) | P&L |
+|---|---|---|---|
+| FVG | 76 | +80.00R | +5450$ |
+| Judas Swing | 43 | +9.02R | +446$ |
+| Weekly Sweep | 25 | +5.94R | +460$ |
+| Divergence | 27 | +4.56R | +310$ |
+| NWOG (achat seul) | 8 | +15.47R | +871$ |
+
+**Le vrai problème trouvé, comme demandé** : le **29 décembre 2025**, 3 stratégies indépendantes (Weekly Sweep, Judas Swing, FVG) ont perdu LE MÊME JOUR — perte réalisée -416$, qui atteint exactement le plafond de perte quotidienne de 2%. C'est le pire jour de toute la période. Aucun backtest par mécanisme individuel ne peut jamais montrer ça — ça n'existe que quand on combine vraiment plusieurs stratégies sur le même compte, exactement ce qu'Esdras voulait détecter.
+
+**Deuxième constat structurel, plus subtil** : les 27 trades bloqués par le garde-fou le sont TOUS pour la même raison — `cooldown_active` (les 30 minutes de pause après n'importe quelle perte). Ce cooldown est PARTAGÉ sur tout le compte, pas par stratégie/symbole : une perte sur EURUSD (Judas Swing) peut donc bloquer un signal valide sur GER40 (Weekly Sweep) 10 minutes plus tard, alors que les deux mécanismes n'ont techniquement rien à voir. Avec seulement FVG+Divergence (2 sources étroitement liées), ce partage avait du sens ; avec 5 mécanismes vraiment indépendants, ça commence à couper des opportunités sans rapport. **Pas corrigé unilatéralement — décision à prendre avec Esdras** : garder tel quel (filet de sécurité conservateur) ou scoper le cooldown par symbole/source.
+
+**Bonne nouvelle en passant** : le nombre de trades/jour ne s'approche jamais du plafond actuel de 20 (max observé : 4/jour, un seul jour sur 114 a dépassé 3) — le plafond de 3 vers lequel il était prévu de revenir ("REVERT to 3... pas meant to stay loose long-term") n'aurait presque aucun effet à cette fréquence combinée.
+
+**Réserves à garder en tête** : une seule fenêtre historique (comme partout dans ce projet), risque composé à 0.5%/trade (valeur réelle actuelle du compte démo), jamais observé en conditions réelles avec les 5 mécanismes tournant vraiment ensemble avant cette simulation.
+
+`npm test` : 465/465 (inchangé — script de vérification ad hoc, non committé).
