@@ -94,6 +94,79 @@ function finalizeBucket(b) {
 }
 
 /**
+ * Raw individual rows (not aggregated) for a recent window - added
+ * 2026-09-15 at Esdras's explicit request ("toute information nécessaire
+ * pour un vrai journal, le nombre de RRR etc") so the real per-trade
+ * journal (cTraderDataSource.js's getTradeHistory, driven by the broker's
+ * own deal history for the chart context) can be enriched with the R-
+ * multiple this table already stores - cTrader's own deal history has NO
+ * concept of "risk amount" once a position is closed, so r_multiple can
+ * only ever come from here (computed at close time, when the real
+ * riskAmount was still known - see cTraderDataSource.js's
+ * openPositionInfoByPositionId). Matched to a broker deal by the caller
+ * (symbol + closest exit_time within a tolerance) - see
+ * enrichTradesWithRMultiple() below for that join, kept pure/testable
+ * separately from this live query.
+ */
+export async function fetchRecentTradeRows(client, { days = 7 } = {}) {
+  if (!client) return [];
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await client
+    .from(TABLE)
+    .select('symbol, source, direction, outcome, r_multiple, entry_price, entry_time, exit_time')
+    .gte('exit_time', since)
+    .order('exit_time', { ascending: false });
+  if (error) return [];
+  return (data || []).map((row) => ({
+    symbol: row.symbol,
+    source: row.source,
+    direction: row.direction,
+    outcome: row.outcome,
+    rMultiple: row.r_multiple ?? null,
+    entryPrice: row.entry_price,
+    entryTime: new Date(row.entry_time).getTime(),
+    exitTime: new Date(row.exit_time).getTime(),
+  }));
+}
+
+/**
+ * Pure join: attaches `rMultiple` (and, ONLY when the broker deal's own
+ * source came back unknown, the durable row's source as a fallback - never
+ * overriding a real order-label match) from the durable journal onto each
+ * broker-sourced trade (cTraderDataSource.js's getTradeHistory output),
+ * matched by symbol + closest exit_time within `toleranceMs`. Best-effort,
+ * same discipline as dealPairing.js's own matching: on this broker, two
+ * trades on the same symbol rarely close within seconds of each other, but
+ * never guaranteed-unique - a trade with no close match simply keeps
+ * rMultiple: null rather than guessing. Exported separately from the live
+ * query above so this join logic is unit-testable without a real Supabase
+ * connection.
+ * @param {Array} brokerTrades - getTradeHistory()'s trade objects (symbol, exitTime, ...)
+ * @param {Array} durableRows - fetchRecentTradeRows()'s output
+ * @param {number} [toleranceMs] - default 30s: durable rows use Date.now() at
+ *   close-handling time, broker deals use the broker's own executionTimestamp -
+ *   a few seconds of processing latency apart, never more on this broker.
+ */
+export function enrichTradesWithRMultiple(brokerTrades, durableRows, toleranceMs = 30000) {
+  const used = new Set(); // each durable row matched to at most one broker trade
+  return brokerTrades.map((trade) => {
+    let best = null;
+    let bestDiff = Infinity;
+    durableRows.forEach((row, i) => {
+      if (used.has(i) || row.symbol !== trade.symbol) return;
+      const diff = Math.abs(row.exitTime - trade.exitTime);
+      if (diff <= toleranceMs && diff < bestDiff) {
+        best = i;
+        bestDiff = diff;
+      }
+    });
+    if (best === null) return { ...trade, rMultiple: null };
+    used.add(best);
+    return { ...trade, rMultiple: durableRows[best].rMultiple };
+  });
+}
+
+/**
  * Per-symbol/per-strategy win/loss/timeout/R aggregation over a real,
  * durable window - unlike /api/recent-performance (recentPerformanceReport.js),
  * this reads whatever has actually been logged since persistence was turned

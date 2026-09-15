@@ -366,6 +366,7 @@
   <nav class="topnav">
     <a href="/" class="active">Dashboard</a>
     <a href="/chart.html">Graphique</a>
+    <a href="/journal.html">Journal</a>
     <a href="/accounts.html">Comptes</a>
   </nav>
 
@@ -434,43 +435,16 @@
 
   <div class="section-title">Journal &amp; performance (réel)</div>
 
-  <div class="card">
-    <h2>Performance globale (journal durable)</h2>
-    <div class="meta" style="margin-bottom:8px;">Vrai journal des trades résolus, persisté en base (survit aux redémarrages) — courbe d'équité, métriques et répartition par stratégie.</div>
-    <div id="overview-body">Chargement…</div>
-  </div>
-
-  <div class="card">
-    <h2>Journal durable par instrument</h2>
-    <div class="meta" style="margin-bottom:8px;">Même journal, détaillé par instrument.</div>
-    <div id="trade-log-summary">Chargement…</div>
-  </div>
-
-  <div class="card">
-    <h2 id="journal-heading">Journal de trading<button type="button" id="export-csv-btn" class="btn-ghost" title="Exporter les trades affichés (selon les filtres actifs) en CSV">⬇ CSV</button></h2>
-    <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader) — stop/cible non affichés, cTrader ne les garde pas après clôture.</div>
-    <!-- Filtres (2026-09, "un vrai site... filtres + export CSV du journal") -
-         symbole/stratégie filtrent CÔTÉ CLIENT sur les trades déjà reçus (pas
-         de round-trip courtier pour un simple filtre d'affichage) ; la
-         fenêtre en jours EST envoyée au serveur (?days=N sur
-         /api/trade-history) car c'est la borne réelle de la requête
-         ProtoOADealListReq - voir buildJournalFilterOptions()/refreshTradeHistory()
-         plus bas. Les options symbole/stratégie sont reconstruites à partir
-         des trades RÉELLEMENT reçus (pas une liste figée dans ce fichier) -
-         pas de liste à tenir manuellement à jour à chaque nouvelle stratégie
-         ou instrument. -->
-    <div class="journal-toolbar">
-      <select id="filter-days" class="filter-select" title="Fenêtre (limite du courtier: 7 jours max)">
-        <option value="7">7 jours</option>
-        <option value="3">3 jours</option>
-        <option value="1">24 h</option>
-      </select>
-      <select id="filter-symbol" class="filter-select"><option value="">Tous symboles</option></select>
-      <select id="filter-source" class="filter-select"><option value="">Toutes stratégies</option></select>
-    </div>
-    <div id="journal-summary" style="margin-bottom:10px;"></div>
-    <div id="journal-list"></div>
-  </div>
+  <!-- 2026-09-15 (Esdras: "pour le journal, ne le mets pas dans la première
+       page, donne-lui un onglet tout seul car il faut le graphe soit
+       grand") - moved to its own page (public/journal.html): performance
+       globale (journal durable), détail par instrument, ET le journal de
+       trading complet avec le graphique par trade (maintenant bien plus
+       grand, avec plusieurs bougies de contexte avant/après - voir ce
+       fichier et cTraderDataSource.js's chartMarginMs). Rien de tout ça
+       n'est calculé une seconde fois ici : le bandeau principal ci-dessus
+       garde son propre appel léger à /trade-log (voir refreshTradeLog plus
+       bas) juste pour ses 3 chiffres, sans reconstruire les cartes. -->
 
   <div class="card" id="order-log-card">
     <h2>Ordres envoyés (résultat réel)</h2>
@@ -613,14 +587,14 @@ const fmtDuration = (ms) => {
 const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
 // NWOG + Judas Swing (2026-09) - both live, auto-executed (see config.js's
 // `nwog`/`judasSwing` comments / HANDOFF.md), same standing as FVG/Divergence now.
-// Every caller except the trade journal (refreshTradeHistory) always has a
-// real `source` of exactly 'fvg'/'divergence'/'nwog'/'judaswing'
-// (LiveStrategyEngine's own signal shapes), so the fallback below never
-// fires for them. The journal's trades come from real broker deal history
-// instead, where the source is only known when the opening order carried a
-// recognizable label (see dealPairing.js's parseSourceFromLabel) - a
-// manually-placed or unlabeled trade must show as unknown, never be guessed
-// as "FVG".
+// Every caller on THIS page always has a real `source` of exactly
+// 'fvg'/'divergence'/'nwog'/'judaswing' (LiveStrategyEngine's own signal
+// shapes), so the fallback below never fires here. journal.html has its own
+// copy of this function for its own trades, which DO need the fallback:
+// those come from real broker deal history, where the source is only known
+// when the opening order carried a recognizable label (see dealPairing.js's
+// parseSourceFromLabel) - a manually-placed or unlabeled trade must show as
+// unknown, never be guessed as "FVG".
 const sourceLabel = (s) => {
   if (s.source === 'divergence') return 'Divergence';
   if (s.source === 'nwog') return 'NWOG';
@@ -877,69 +851,6 @@ function renderSignals(data) {
     : '<li class="signal-item meta">Aucun pour l\'instant…</li>';
 }
 
-// Builds a small candlestick chart (inline SVG, no library) for one closed
-// trade: candles for visual context, plus dashed lines + labels at the
-// actual entry/exit prices (verified, from the deal history) - deliberately
-// no stop/target line, see the journal card's own explanation for why.
-function renderTradeChart(trade, decimals) {
-  // H was 130 (2026-09-14: matches .journal-chart's new CSS height - see its
-  // own comment - so nothing here renders visually stretched/squashed).
-  const W = 600, H = 240, PAD_L = 46, PAD_R = 8, PAD_T = 10, PAD_B = 8;
-  const candles = trade.candles || [];
-  if (candles.length === 0) {
-    return '<div class="meta">Pas de données de graphique pour ce trade.</div>';
-  }
-
-  const prices = candles.flatMap((c) => [c.high, c.low]).concat([trade.entryPrice, trade.exitPrice]);
-  const minP = Math.min(...prices), maxP = Math.max(...prices);
-  const range = (maxP - minP) || 1;
-  const y = (p) => PAD_T + (1 - (p - minP) / range) * (H - PAD_T - PAD_B);
-
-  const plotW = W - PAD_L - PAD_R;
-  const slot = plotW / candles.length;
-  const x = (i) => PAD_L + i * slot + slot / 2;
-
-  const nearestIndex = (t) => {
-    let best = 0, bestDiff = Infinity;
-    candles.forEach((c, i) => { const d = Math.abs(c.time - t); if (d < bestDiff) { bestDiff = d; best = i; } });
-    return best;
-  };
-
-  const bodyWidth = Math.max(1, slot * 0.6);
-  const candleShapes = candles.map((c, i) => {
-    const up = c.close >= c.open;
-    const color = up ? 'var(--green)' : 'var(--red)';
-    const cx = x(i);
-    const bodyTop = y(Math.max(c.open, c.close));
-    const bodyBottom = y(Math.min(c.open, c.close));
-    return `
-      <line x1="${cx}" y1="${y(c.high)}" x2="${cx}" y2="${y(c.low)}" stroke="${color}" stroke-width="1" />
-      <rect x="${cx - bodyWidth / 2}" y="${bodyTop}" width="${bodyWidth}" height="${Math.max(1, bodyBottom - bodyTop)}" fill="${color}" />
-    `;
-  }).join('');
-
-  const entryX = x(nearestIndex(trade.entryTime));
-  const exitX = x(nearestIndex(trade.exitTime));
-  const entryY = y(trade.entryPrice);
-  const exitY = y(trade.exitPrice);
-  // Keep both labels inside the chart even when a price sits near the top/bottom edge:
-  // default entry-above/exit-below, but flip whichever one would clip off-canvas.
-  const entryLabelY = entryY - 3 < 8 ? entryY + 10 : entryY - 3;
-  const exitLabelY = exitY + 10 > H - 2 ? exitY - 3 : exitY + 10;
-
-  return `
-    <svg class="journal-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      ${candleShapes}
-      <line x1="${PAD_L}" y1="${entryY}" x2="${W - PAD_R}" y2="${entryY}" stroke="var(--blue)" stroke-width="1" stroke-dasharray="4,3" />
-      <text x="2" y="${entryLabelY}" fill="var(--blue)" font-size="10">Entrée ${fmt(trade.entryPrice, decimals)}</text>
-      <line x1="${PAD_L}" y1="${exitY}" x2="${W - PAD_R}" y2="${exitY}" stroke="var(--amber)" stroke-width="1" stroke-dasharray="4,3" />
-      <text x="2" y="${exitLabelY}" fill="var(--amber)" font-size="10">Sortie ${fmt(trade.exitPrice, decimals)}</text>
-      <circle cx="${entryX}" cy="${entryY}" r="3" fill="var(--blue)" />
-      <circle cx="${exitX}" cy="${exitY}" r="3" fill="var(--amber)" />
-    </svg>
-  `;
-}
-
 async function refreshRecentPerformance() {
   const summaryEl = document.getElementById('recent-perf-summary');
   const listEl = document.getElementById('recent-perf-list');
@@ -985,237 +896,33 @@ async function refreshRecentPerformance() {
   }
 }
 
-// Inline SVG line chart of cumulative R over time (no library, same
-// no-dependency convention as renderTradeChart's candlestick chart below).
-// A flat zero-baseline is drawn for reference since "above/below zero" is
-// the only threshold that actually matters for an equity curve.
-function renderEquityCurve(equityCurve) {
-  if (!equityCurve || equityCurve.length < 2) {
-    return '<div class="meta">Pas encore assez de trades clôturés pour tracer une courbe.</div>';
-  }
-  const W = 600, H = 140, PAD_L = 40, PAD_R = 10, PAD_T = 10, PAD_B = 10;
-  const values = equityCurve.map((p) => p.cumulativeR);
-  const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
-  const range = (maxR - minR) || 1;
-  const y = (v) => PAD_T + (1 - (v - minR) / range) * (H - PAD_T - PAD_B);
-  const plotW = W - PAD_L - PAD_R;
-  const x = (i) => PAD_L + (equityCurve.length === 1 ? 0 : (i / (equityCurve.length - 1)) * plotW);
-
-  const finalR = values[values.length - 1];
-  const color = finalR >= 0 ? 'var(--green)' : 'var(--red)';
-  const points = values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
-  const zeroY = y(0);
-
-  return `
-    <svg class="equity-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <line x1="${PAD_L}" y1="${zeroY}" x2="${W - PAD_R}" y2="${zeroY}" stroke="var(--panel-border-strong)" stroke-width="1" stroke-dasharray="4,3" />
-      <text x="2" y="${zeroY + 4}" fill="var(--muted)" font-size="10">0R</text>
-      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" />
-    </svg>
-  `;
-}
-
-function renderOverview(data) {
-  const el = document.getElementById('overview-body');
-  const overall = data.overall;
-  if (!overall || overall.totalSignals === 0) {
-    el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
-    heroState.totalR = null;
-    heroState.winRatePct = null;
-    heroState.totalTrades = 0;
-    renderHeroStrip();
-    return;
-  }
-  const netWin = overall.finalEquityR >= 0;
-  const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
-  const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);
-
-  heroState.totalR = overall.finalEquityR;
-  heroState.winRatePct = winRatePct;
-  heroState.totalTrades = overall.totalSignals;
-  renderHeroStrip();
-
-  const tiles = `
-    <div class="metric-tiles">
-      <div class="metric-tile"><div class="metric-label">Trades</div><div class="metric-value">${overall.totalSignals}</div></div>
-      <div class="metric-tile"><div class="metric-label">Taux de réussite</div><div class="metric-value">${winRatePct === null ? '—' : fmt(winRatePct, 0) + '%'}</div></div>
-      <div class="metric-tile"><div class="metric-label">Profit factor</div><div class="metric-value">${pf}</div></div>
-      <div class="metric-tile"><div class="metric-label">Espérance</div><div class="metric-value ${overall.expectancyR >= 0 ? 'win' : 'loss'}">${overall.expectancyR >= 0 ? '+' : ''}${fmt(overall.expectancyR)}R</div></div>
-      <div class="metric-tile"><div class="metric-label">Drawdown max</div><div class="metric-value loss">-${fmt(overall.maxDrawdownR)}R</div></div>
-      <div class="metric-tile"><div class="metric-label">Total en R</div><div class="metric-value ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(overall.finalEquityR)}R</div></div>
-    </div>
-  `;
-
-  const sources = Object.keys(data.bySource || {});
-  const strategyTable = sources.length === 0 ? '' : `
-    <table class="strategy-table">
-      <thead><tr><th>Stratégie</th><th>Trades</th><th>Taux</th><th>Total R</th></tr></thead>
-      <tbody>
-        ${sources.map((source) => {
-          const b = data.bySource[source];
-          const netWinS = b.totalR >= 0;
-          return `<tr>
-            <td style="font-family:inherit;">${sourceLabel({ source })}</td>
-            <td>${b.count}</td>
-            <td>${b.winRatePct === null ? '—' : fmt(b.winRatePct, 0) + '%'}</td>
-            <td class="journal-pnl ${netWinS ? 'win' : 'loss'}">${netWinS ? '+' : ''}${fmt(b.totalR)}R</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  `;
-
-  el.innerHTML = tiles + renderEquityCurve(data.equityCurve) + strategyTable;
-}
-
+// 2026-09-15: the full performance breakdown (equity curve, per-instrument
+// stats, strategy table) moved to its own page - see journal.html and the
+// HTML comment above where those 3 cards used to sit. This page keeps only
+// this slim fetch, purely to feed the hero strip's 3 durable-journal
+// numbers (totalR/winRatePct/totalTrades) - no DOM section left here to
+// render the rest into, so none of it is rebuilt on this page anymore.
 async function refreshTradeLog() {
-  const el = document.getElementById('trade-log-summary');
   try {
     const res = await fetch(acctUrl('/trade-log'));
     const data = await res.json();
-    renderOverview(data);
-    const symbols = Object.keys(data.bySymbol || {});
-    if (symbols.length === 0) {
-      el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
-      return;
+    const overall = data.overall;
+    if (!overall || overall.totalSignals === 0) {
+      heroState.totalR = null;
+      heroState.winRatePct = null;
+      heroState.totalTrades = 0;
+    } else {
+      heroState.totalR = overall.finalEquityR;
+      heroState.winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
+      heroState.totalTrades = overall.totalSignals;
     }
-    el.innerHTML = symbols.map((symbol) => {
-      const b = data.bySymbol[symbol];
-      const netWin = b.totalR >= 0;
-      return `
-        <div class="stat-row"><span class="label">${symbol}</span><span>${b.count} trade${b.count > 1 ? 's' : ''}</span></div>
-        <div class="stat-row"><span class="label">Taux de réussite</span><span>${b.winRatePct === null ? '—' : fmt(b.winRatePct, 0) + '%'} (${b.wins}G / ${b.losses}P${b.timeouts ? ' / ' + b.timeouts + ' exp.' : ''})</span></div>
-        <div class="stat-row" style="margin-bottom:10px;"><span class="label">Total en R</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(b.totalR)}R</span></div>
-      `;
-    }).join('');
+    renderHeroStrip();
   } catch (err) {
-    el.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
-    document.getElementById('overview-body').innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+    // Best-effort, same as every other hero-strip source - the tile just
+    // stays on whatever it last showed (or "—") rather than erroring loudly
+    // on a card that no longer exists on this page.
   }
 }
-
-// Unfiltered trades from the last fetch - the symbol/source filters below
-// re-render from this WITHOUT refetching (pure display filter, see the
-// card's own comment for why only `days` goes to the server).
-let allJournalTrades = [];
-
-async function refreshTradeHistory() {
-  const list = document.getElementById('journal-list');
-  const days = document.getElementById('filter-days').value;
-  try {
-    const res = await fetch(acctUrl(`/trade-history?days=${encodeURIComponent(days)}`));
-    const data = await res.json();
-    allJournalTrades = data.trades || [];
-    populateJournalFilterOptions(allJournalTrades);
-    if (allJournalTrades.length === 0) {
-      document.getElementById('journal-summary').innerHTML = '';
-      list.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur cette fenêtre.'}</div>`;
-      return;
-    }
-    renderJournalList();
-  } catch (err) {
-    list.innerHTML = `<div class="err">Erreur de chargement du journal: ${err.message}</div>`;
-  }
-}
-
-// Rebuilds the symbol/strategy <select> OPTIONS from the trades ACTUALLY
-// present in the current window - not a list hardcoded in this file, so a
-// newly-activated symbol or strategy (Judas Swing/EURUSD, NWOG before it...)
-// shows up here automatically instead of needing a matching update. Keeps
-// the current selection if it's still a valid choice.
-function populateJournalFilterOptions(trades) {
-  const symbolSel = document.getElementById('filter-symbol');
-  const sourceSel = document.getElementById('filter-source');
-  const rebuild = (sel, values, allLabel) => {
-    const prev = sel.value;
-    sel.innerHTML = `<option value="">${allLabel}</option>` +
-      values.map((v) => `<option value="${v}"${v === prev ? ' selected' : ''}>${v}</option>`).join('');
-  };
-  rebuild(symbolSel, [...new Set(trades.map((t) => t.symbol))].sort(), 'Tous symboles');
-  rebuild(sourceSel, [...new Set(trades.map((t) => sourceLabel(t)))].sort(), 'Toutes stratégies');
-}
-
-function filteredJournalTrades() {
-  const symbolFilter = document.getElementById('filter-symbol').value;
-  const sourceFilter = document.getElementById('filter-source').value;
-  return allJournalTrades.filter((t) =>
-    (!symbolFilter || t.symbol === symbolFilter) && (!sourceFilter || sourceLabel(t) === sourceFilter)
-  );
-}
-
-function renderJournalList() {
-  const list = document.getElementById('journal-list');
-  const summaryEl = document.getElementById('journal-summary');
-  const filtered = filteredJournalTrades();
-
-  if (filtered.length === 0) {
-    summaryEl.innerHTML = '';
-    list.innerHTML = '<div class="meta">Aucun trade ne correspond à ces filtres.</div>';
-    return;
-  }
-
-  const wins = filtered.filter((t) => t.pnl >= 0).length;
-  const netPnl = filtered.reduce((sum, t) => sum + t.pnl, 0);
-  const netWin = netPnl >= 0;
-  summaryEl.innerHTML = `
-    <div class="stat-row"><span class="label">Trades</span><span>${filtered.length}</span></div>
-    <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt((wins / filtered.length) * 100, 0)}% (${wins}/${filtered.length})</span></div>
-    <div class="stat-row"><span class="label">P&amp;L net</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(netPnl)}</span></div>
-  `;
-
-  list.innerHTML = filtered.map((t) => {
-    const d = priceDecimals(t.symbol);
-    const win = t.pnl >= 0;
-    return `
-      <div class="journal-item">
-        <div class="journal-head">
-          <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} <span class="meta">[${sourceLabel(t)}]</span> · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
-          <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
-        </div>
-        ${renderTradeChart(t, d)}
-      </div>
-    `;
-  }).join('');
-}
-
-// CSV of whatever's CURRENTLY DISPLAYED (i.e. respects the active filters) -
-// exporting "everything regardless of filters" would be a silent surprise
-// (the button next to a filtered view exporting unfiltered data).
-function exportJournalCsv() {
-  const filtered = filteredJournalTrades();
-  if (filtered.length === 0) return;
-
-  const escapeCsv = (v) => {
-    const s = String(v ?? '');
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const headers = ['symbole', 'direction', 'stratégie', 'entrée', 'sortie', 'prix_entrée', 'prix_sortie', 'pnl'];
-  const rows = filtered.map((t) => [
-    t.symbol,
-    t.direction === 'bullish' ? 'achat' : 'vente',
-    sourceLabel(t),
-    new Date(t.entryTime).toISOString(),
-    new Date(t.exitTime).toISOString(),
-    t.entryPrice,
-    t.exitPrice,
-    t.pnl,
-  ]);
-  const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `journal-trading-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-document.getElementById('filter-days').addEventListener('change', refreshTradeHistory);
-document.getElementById('filter-symbol').addEventListener('change', renderJournalList);
-document.getElementById('filter-source').addEventListener('change', renderJournalList);
-document.getElementById('export-csv-btn').addEventListener('click', exportJournalCsv);
 
 // Réglages - risque % (2026-09). Pre-fills the input ONCE per account switch
 // from the current /api/accounts/:id/status response (not re-synced on
@@ -1364,16 +1071,14 @@ function startDashboardForAccount(accountId) {
   prefillRiskInput();
   refreshStatus();
   refreshSignals();
-  refreshTradeHistory();
   refreshRecentPerformance();
   refreshTradeLog();
   refreshAccount();
   refreshOrderLog();
   liveStreamHandle = startLiveStream();
   dashboardPollIntervals = [
-    setInterval(refreshTradeHistory, 60000), // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
     setInterval(refreshRecentPerformance, 120000), // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
-    setInterval(refreshTradeLog, 60000), // grows one row per resolved trade, no meaningful reason to poll faster
+    setInterval(refreshTradeLog, 60000), // grows one row per resolved trade, no meaningful reason to poll faster - only feeds the hero strip now, see its own comment
     setInterval(refreshAccount, 30000), // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
     setInterval(refreshOrderLog, 30000), // in-memory log, grows only on a real order outcome - no need for a faster cadence than the account card next to it
   ];

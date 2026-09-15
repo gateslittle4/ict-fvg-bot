@@ -37,7 +37,7 @@ import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
-import { createTradeLogClient, logClosedTrade } from './supabaseTradeLog.js';
+import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple } from './supabaseTradeLog.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -572,7 +572,12 @@ export class CTraderDataSource {
       // other symbol (still M15) is completely unaffected.
       const symbolTimeframe = resolveSymbolTimeframe(symbolName);
       const period = PERIOD_BY_TIMEFRAME[symbolTimeframe] || 'M15';
-      const chartMarginMs = 12 * (TIMEFRAME_DURATION_MS[symbolTimeframe] || TIMEFRAME_DURATION_MS.M15);
+      // 30x, not 12x (2026-09-15, Esdras: "plusieurs bougies avant et après
+      // de façon à avoir une vue d'ensemble sur tout le trade") - the
+      // journal moved to its own dedicated page (no longer squeezed next to
+      // a dozen other cards), so the chart can afford real context on both
+      // sides instead of just enough to not look broken.
+      const chartMarginMs = 30 * (TIMEFRAME_DURATION_MS[symbolTimeframe] || TIMEFRAME_DURATION_MS.M15);
       let candles = [];
       try {
         const history = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
@@ -598,6 +603,27 @@ export class CTraderDataSource {
         );
       }
       enriched.push({ ...trade, symbol: symbolName, candles });
+    }
+
+    // R-multiple (2026-09-15, Esdras: "toute information nécessaire pour un
+    // vrai journal, le nombre de RRR etc") - cTrader's own deal history has
+    // no concept of "risk amount" once a position is closed (this endpoint
+    // deliberately shows no stop/target either, same reason - see the
+    // dashboard card's own explanation), so rMultiple can only come from
+    // the durable journal, which computed it at close time from the real
+    // riskAmount (see openPositionInfoByPositionId/_handleExecutionEvent).
+    // Best-effort join, matched by symbol + closest exit time - see
+    // enrichTradesWithRMultiple's own header for the full reasoning. Opt-in
+    // (same discipline as logClosedTrade itself): silently skipped when
+    // Supabase persistence isn't configured, every trade just keeps
+    // rMultiple: undefined rather than the endpoint failing.
+    if (this.tradeLogClient) {
+      try {
+        const durableRows = await fetchRecentTradeRows(this.tradeLogClient, { days: Math.min(days, 7) });
+        return enrichTradesWithRMultiple(enriched, durableRows);
+      } catch (err) {
+        console.warn('[cTrader] trade history: R-multiple enrichment skipped (durable journal query failed):', err.message);
+      }
     }
     return enriched;
   }

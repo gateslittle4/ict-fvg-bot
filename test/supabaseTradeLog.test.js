@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTradeLogClient, toTradeRow, logClosedTrade, fetchPerformanceBySymbol } from '../src/dataSources/supabaseTradeLog.js';
+import { createTradeLogClient, toTradeRow, logClosedTrade, fetchPerformanceBySymbol, enrichTradesWithRMultiple } from '../src/dataSources/supabaseTradeLog.js';
 
 const silentLog = { warn() {} };
 
@@ -212,4 +212,61 @@ test('fetchPerformanceBySymbol: passing days applies a gte filter on exit_time',
   await fetchPerformanceBySymbol(client, { days: 30 });
   assert.ok(capturedFilters.gte);
   assert.equal(capturedFilters.gte.col, 'exit_time');
+});
+
+// 2026-09-15 (Esdras: "toute information nécessaire pour un vrai journal,
+// le nombre de RRR etc") - cTrader's own deal history has no concept of
+// "risk amount" once a position is closed, so the real per-trade journal
+// (driven by that deal history, for its chart context) can only ever learn
+// its R-multiple by joining against the durable journal, which computed it
+// at close time. These tests cover that join in isolation.
+test('enrichTradesWithRMultiple: matches a broker trade to its durable row by symbol + close exit time, attaches rMultiple', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000, pnl: 50 }];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000500, rMultiple: 2.3 }]; // 500ms apart - real processing latency
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.rMultiple, 2.3);
+  assert.equal(enriched.symbol, 'US100'); // rest of the trade untouched
+  assert.equal(enriched.pnl, 50);
+});
+
+test('enrichTradesWithRMultiple: a durable row on a DIFFERENT symbol never matches, even at the exact same time', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'XAUUSD', exitTime: 1000000, rMultiple: 3 }];
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.rMultiple, null);
+});
+
+test('enrichTradesWithRMultiple: outside the tolerance window, no match - rMultiple stays null rather than guessing', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000000 + 60000, rMultiple: 3 }]; // 60s apart, default tolerance is 30s
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.rMultiple, null);
+});
+
+test('enrichTradesWithRMultiple: with several candidates on the same symbol, picks the CLOSEST one in time', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const durableRows = [
+    { symbol: 'US100', exitTime: 1000000 - 20000, rMultiple: 1 }, // 20s before
+    { symbol: 'US100', exitTime: 1000000 + 2000, rMultiple: 2.5 }, // 2s after - closest
+    { symbol: 'US100', exitTime: 1000000 + 25000, rMultiple: 3 }, // 25s after
+  ];
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.rMultiple, 2.5);
+});
+
+test('enrichTradesWithRMultiple: each durable row is used at most once - two broker trades never both claim the same durable row', () => {
+  const brokerTrades = [
+    { symbol: 'US100', exitTime: 1000000 },
+    { symbol: 'US100', exitTime: 1000100 }, // very close to the trade above
+  ];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000050, rMultiple: 4 }]; // only ONE durable row for TWO broker trades
+  const enriched = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  const matched = enriched.filter((t) => t.rMultiple !== null);
+  assert.equal(matched.length, 1, 'only one of the two broker trades should claim the single durable row');
+});
+
+test('enrichTradesWithRMultiple: an empty durable list leaves every trade with rMultiple: null, not a throw', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const enriched = enrichTradesWithRMultiple(brokerTrades, []);
+  assert.equal(enriched[0].rMultiple, null);
 });
