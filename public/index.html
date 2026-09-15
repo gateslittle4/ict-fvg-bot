@@ -279,6 +279,7 @@
   .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: var(--radius); font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px; font-family: var(--mono); }
   .pill.ok { background: rgba(47,212,128,0.12); color: var(--green); }
   .pill.blocked { background: rgba(255,92,95,0.12); color: var(--red); }
+  .pill.simulated { background: rgba(232,179,57,0.14); color: var(--amber); }
 
   /* ---------- Signal lists ---------- */
   .signal-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
@@ -1192,10 +1193,24 @@ function renderAccountOverview(accounts) {
   body.innerHTML = visible.map((a) => {
     const g = a.guardrail;
     const modeLabel = a.accountMode === 'live' ? 'LIVE' : 'CHALLENGE';
-    const connLabel = a.mode === 'live' ? '● connecté' : '○ démo/déconnecté';
+    // 2026-09-15 (Esdras, confuse par "cti-freetrial" affichant un pill OK
+    // vert et un solde qui bouge alors qu'elle ne se souvenait pas que ce
+    // compte fonctionnait réellement) - a.mode === 'demo' couvre 2 cas très
+    // différents que l'ancien pill ne distinguait pas : "pas de credentials
+    // configurés du tout" ET "credentials configurés mais la connexion
+    // réelle a échoué, repli silencieux sur mockDataSource.js" (le cas de
+    // cti-freetrial : login Match-Trader bloqué par un challenge Cloudflare
+    // - voir server.js's bootAccount). Dans les deux cas, TOUT ce que le
+    // compte affiche (prix, trades, solde qui bouge) est 100% simulé - un
+    // pill vert "OK" à côté donnait l'impression trompeuse d'un compte réel
+    // qui va bien. Le pill "SIMULÉ" prime maintenant sur "BLOQUÉ"/"OK".
+    const connLabel = a.mode === 'live' ? '● connecté' : '○ démo — données 100% simulées, pas de connexion réelle';
+    const statusPill = a.mode !== 'live'
+      ? '<span class="pill simulated">SIMULÉ</span>'
+      : (g.blocked ? '<span class="pill blocked">BLOQUÉ</span>' : '<span class="pill ok">OK</span>');
     return `
       <div class="account-overview-row${a.id === currentAccountId ? ' active' : ''}" data-account-id="${a.id}">
-        <div class="aor-top"><strong>${a.label}</strong> ${g.blocked ? '<span class="pill blocked">BLOQUÉ</span>' : '<span class="pill ok">OK</span>'}</div>
+        <div class="aor-top"><strong>${a.label}</strong> ${statusPill}</div>
         <div class="meta">${modeLabel}${a.programLabel ? ' · ' + a.programLabel : (a.propFirmProgramId ? ' · ' + a.propFirmProgramId : '')}</div>
         <div class="meta">${connLabel} · solde ${fmt(a.balance)}</div>
       </div>

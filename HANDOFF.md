@@ -3022,3 +3022,15 @@ Esdras : "comment peut-on prouver visuellement que le trade a respecté les proc
 **Vérifié visuellement** avec Playwright local (3 scénarios simulés : trade gagnant propre avec zone FVG visible et 6/6 critères ✔, trade avec l'anomalie réelle de gap-through flaggée ⚠, trade non-FVG avec dégradation gracieuse "Non applicable") — aucune erreur console, rendu correct dans les 3 cas.
 
 `npm test` : 519/519.
+
+## Le pill "OK" ne distinguait pas un compte simulé d'un compte réel — corrigé — 2026-09-15
+
+Esdras, en regardant la vue d'ensemble multi-comptes : "Regarde. Je ne me rappelle pas que le compte cti fonctionnait" — `cti-freetrial` affichait un pill vert "OK" et un solde qui bougeait (9905.89$), donnant l'impression trompeuse d'un compte réel actif.
+
+**Cause réelle, trouvée dans les logs Render** : le login Match-Trader de `cti-freetrial` échoue (`HTTP 403`, bloqué par un challenge Cloudflare du côté du courtier) — `server.js`'s `bootAccount()` bascule alors silencieusement sur `mockDataSource.js` (prix en marche aléatoire, trades simulés). Ce compte n'a jamais été réellement connecté ; tout ce qu'affiche la vue d'ensemble pour lui (prix, solde qui évolue) est 100% fictif — seul le bandeau "MODE DÉMO" en haut de page le signalait, pas la carte de la vue d'ensemble elle-même.
+
+**Corrigé** (`public/index.html`, `renderAccountOverview()`) : un compte en `mode !== 'live'` affiche maintenant un pill ambre **"SIMULÉ"** (prioritaire sur OK/BLOQUÉ) et le texte de connexion précise "données 100% simulées, pas de connexion réelle" au lieu du vague "démo/déconnecté" précédent — distingue enfin visuellement "compte réellement connecté" de "repli automatique sur données fictives".
+
+`npm test` : 519/519 (inchangé — changement d'affichage pur côté client). Vérifié visuellement (Playwright, `/api/accounts` simulé avec un compte live + un compte en repli démo).
+
+**Non corrigé, à surveiller séparément** : le login Match-Trader de CTI reste bloqué par Cloudflare — reste à investiguer si ça vaut la peine de retenter (peut-être un problème temporaire côté CTI, ou une politique anti-bot qui bloque structurellement les logins automatisés).
