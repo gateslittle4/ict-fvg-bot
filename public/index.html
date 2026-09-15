@@ -130,6 +130,28 @@
      belief, not yet matched to a real broker fill in orderOutcomeLog. */
   .ticker-signal { color: var(--amber); font-size: 10px; font-weight: 700; }
 
+  /* ---------- Hero strip (2026-09-15, Esdras: "rend mon site encore plus
+     impressionnant/professionnel") - the headline numbers (real equity,
+     today's real P&L, all-time journal performance) get ONE glanceable row
+     right under the ticker, before anything else - a real trading terminal
+     leads with "how is this actually doing", not three clicks/scrolls in.
+     Reuses .metric-tile's exact tile shape (same visual language as the
+     rest of the page) with a bigger value size and a top accent bar to read
+     as the primary strip, not a duplicate of the metrics further down (this
+     shows real/live figures - balance, today's P&L; the metrics card below
+     still owns the full historical breakdown/strategy table). Text/numbers
+     only, deliberately - no chart here (see the comment above the ticker
+     for why: Esdras keeps this page open at work and explicitly does not
+     want anything chart-shaped instantly readable as "trading" on it). */
+  .hero-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; margin: 0 0 14px; background: var(--panel-border); border: 1px solid var(--panel-border); border-top: 2px solid var(--blue); }
+  .hero-tile { background: var(--panel); padding: 11px 13px; }
+  .hero-tile .hero-label { color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; font-family: var(--mono); }
+  .hero-tile .hero-value { font-family: var(--mono); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+  .hero-tile .hero-value.win { color: var(--green); }
+  .hero-tile .hero-value.loss { color: var(--red); }
+  .hero-tile .hero-sub { font-size: 10px; color: var(--faint); font-family: var(--mono); margin-top: 3px; }
+  @media (max-width: 640px) { .hero-tile .hero-value { font-size: 19px; } }
+
   /* ---------- Layout ---------- */
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-bottom: 12px; background: var(--panel-border); border: 1px solid var(--panel-border); }
   .grid .card { margin-bottom: 0; border: none; }
@@ -359,6 +381,13 @@
 
   <div class="ticker" id="prices-body"><div class="ticker-cell"><span class="ticker-sym">Chargement…</span></div></div>
 
+  <!-- Bandeau principal (2026-09-15) - voir le commentaire CSS .hero-strip
+       pour le pourquoi. Rempli progressivement par renderHeroStrip(), au fil
+       de ce que /status, /account et /trade-log renvoient - jamais de
+       nombre inventé, chaque tuile reste "—" tant que sa source réelle n'a
+       pas encore répondu. -->
+  <div class="hero-strip" id="hero-strip"><div class="hero-tile"><div class="hero-label">Équité (réelle)</div><div class="hero-value">Chargement…</div></div></div>
+
   <!-- Le graphique N'EST PAS intégré ici (revenu en arrière le 2026-09,
        même session) - essayé un temps en <iframe> depuis chart.html, mais
        l'utilisatrice a explicitement demandé de le retirer de ce premier
@@ -535,6 +564,44 @@ tickClock();
 setInterval(tickClock, 1000);
 
 const previousPrices = {}; // symbol -> last seen lastPrice, for the ticker's up/down flash effect
+
+// Bandeau principal (2026-09-15) - voir .hero-strip dans le <style> pour le
+// pourquoi. renderStatus()/refreshAccount()/renderOverview() alimentent
+// chacun leur part de cet objet au fil de leurs propres réponses (des
+// endpoints distincts, jamais tous prêts en même temps) puis appellent
+// renderHeroStrip() - jamais de second fetch dédié, uniquement des données
+// déjà récupérées ailleurs sur cette page.
+const heroState = { balance: null, dailyPnl: null, dailyLossPct: null, blocked: null, equityEstimate: null, totalR: null, winRatePct: null, totalTrades: null };
+function renderHeroStrip() {
+  const el = document.getElementById('hero-strip');
+  if (!el) return;
+  const dailyClass = heroState.dailyPnl === null ? '' : heroState.dailyPnl > 0 ? 'win' : heroState.dailyPnl < 0 ? 'loss' : '';
+  const totalRClass = heroState.totalR === null ? '' : heroState.totalR >= 0 ? 'win' : 'loss';
+  const equity = heroState.equityEstimate !== null ? heroState.equityEstimate : heroState.balance;
+  el.innerHTML = `
+    <div class="hero-tile">
+      <div class="hero-label">Équité (réelle)</div>
+      <div class="hero-value">${fmt(equity)}</div>
+      <div class="hero-sub">${heroState.blocked === null ? '' : heroState.blocked ? '⛔ signaux bloqués' : '● signaux actifs'}</div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">P&amp;L du jour (réel)</div>
+      <div class="hero-value ${dailyClass}">${heroState.dailyPnl === null ? '—' : (heroState.dailyPnl >= 0 ? '+' : '') + fmt(heroState.dailyPnl)}</div>
+      <div class="hero-sub">${heroState.dailyLossPct === null ? '' : `${fmt(heroState.dailyLossPct)}% de perte`}</div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">Total (journal durable)</div>
+      <div class="hero-value ${totalRClass}">${heroState.totalR === null ? '—' : (heroState.totalR >= 0 ? '+' : '') + fmt(heroState.totalR) + 'R'}</div>
+      <div class="hero-sub">${heroState.totalTrades === null ? '' : `${heroState.totalTrades} trade${heroState.totalTrades > 1 ? 's' : ''} réels confirmés`}</div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">Taux de réussite</div>
+      <div class="hero-value">${heroState.winRatePct === null ? '—' : fmt(heroState.winRatePct, 0) + '%'}</div>
+      <div class="hero-sub">journal durable, tous instruments</div>
+    </div>
+  `;
+}
+
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 const fmtTime = (t) => t ? new Date(t).toLocaleTimeString('fr-FR') : '—';
 const fmtDuration = (ms) => {
@@ -598,6 +665,12 @@ function renderStatus(data) {
     <div class="stat-row"><span class="label">Solde</span><span>${fmt(data.balance)}</span></div>
     ${g.blocked ? `<div class="warn">Raisons: ${g.blockReasons.join(', ')}</div>` : ''}
   `;
+
+  heroState.balance = data.balance;
+  heroState.dailyPnl = g.dailyPnl;
+  heroState.dailyLossPct = g.dailyLossPct;
+  heroState.blocked = g.blocked;
+  renderHeroStrip();
 
   document.getElementById('prices-body').innerHTML = data.symbols.map((s) => {
     const prev = previousPrices[s.symbol];
@@ -670,6 +743,8 @@ async function refreshAccount() {
       bodyEl.innerHTML = `<div class="meta">${data.reason}</div>`;
       return;
     }
+    heroState.equityEstimate = data.equityEstimate;
+    renderHeroStrip();
     const pnl = data.floatingPnlEstimate || 0;
     const pnlClass = pnl > 0 ? 'win' : pnl < 0 ? 'loss' : '';
     // 'none' excluded too (2026-09-14, real bug): a symbol where NEITHER
@@ -945,11 +1020,20 @@ function renderOverview(data) {
   const overall = data.overall;
   if (!overall || overall.totalSignals === 0) {
     el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+    heroState.totalR = null;
+    heroState.winRatePct = null;
+    heroState.totalTrades = 0;
+    renderHeroStrip();
     return;
   }
   const netWin = overall.finalEquityR >= 0;
   const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
   const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);
+
+  heroState.totalR = overall.finalEquityR;
+  heroState.winRatePct = winRatePct;
+  heroState.totalTrades = overall.totalSignals;
+  renderHeroStrip();
 
   const tiles = `
     <div class="metric-tiles">
