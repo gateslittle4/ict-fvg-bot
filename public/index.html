@@ -290,6 +290,18 @@
   .pill.blocked { background: rgba(255,92,95,0.12); color: var(--red); }
   .pill.simulated { background: rgba(232,179,57,0.14); color: var(--amber); }
 
+  /* ---------- Progression du challenge (2026-09-15, Esdras) - une barre
+     entre le plancher de drawdown (gauche, toujours 0%) et la cible de
+     profit (droite, toujours 100%) ; le solde de départ se place quelque
+     part entre les deux selon leurs valeurs réelles - jamais supposé être
+     au milieu. ---------- */
+  .challenge-bar-wrap { position: relative; height: 22px; background: var(--bg-inset); border-radius: var(--radius); margin: 10px 0 6px; overflow: hidden; }
+  .challenge-bar-track { position: absolute; inset: 0; }
+  .challenge-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; background: rgba(76,158,255,0.35); transition: width 0.3s ease; }
+  .challenge-bar-fill.breached { background: rgba(255,92,95,0.45); }
+  .challenge-bar-marker { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); opacity: 0.5; }
+  .challenge-bar-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); font-family: var(--mono); }
+
   /* ---------- Signal lists ---------- */
   .signal-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
   .signal-item { padding: 7px 2px; border-bottom: 1px solid var(--panel-border); font-size: 12px; line-height: 1.5; font-family: var(--mono); }
@@ -447,6 +459,11 @@
       <div id="guardrail-body">—</div>
     </div>
 
+    <div class="card" id="challenge-progress-card">
+      <h2>Progression du challenge</h2>
+      <div id="challenge-progress-body">—</div>
+    </div>
+
     <div class="card" id="account-card">
       <h2>Compte réel (cTrader)</h2>
       <div class="meta" style="margin-bottom:8px;">Solde/marge réels ; équité et P&amp;L flottant estimés (dernier prix vu, pas un flux instantané).</div>
@@ -578,6 +595,47 @@ setInterval(tickClock, 1000);
 
 const previousPrices = {}; // symbol -> last seen lastPrice, for the ticker's up/down flash effect
 
+// Positions ouvertes, "temps réel" (2026-09-15, Esdras: "le prix actuel ne
+// bouge pas, le pnl ne bouge pas [...] l'équité ne bouge pas") - the full
+// broker reconciliation (/account, real ProtoOAReconcileReq) only runs
+// every 30s (a real broker round-trip, deliberately not hammered faster -
+// see its own setInterval comment), so a viewer staring at the table for
+// 10-15s genuinely saw nothing change. Fix: the SSE /stream push already
+// arrives every ~1s with each symbol's live lastPrice (folded on every real
+// tick, see cTraderDataSource.js) - recompute each position's
+// currentPrice/floating P&L/equity from THAT every second, client-side, no
+// extra broker round-trip. The 30s /account fetch stays the source of
+// truth for the position LIST itself (open/closed, stop/target, balance) -
+// this only refines what's already there between those fetches.
+let lastKnownPositions = [];
+let lastKnownBalance = null;
+
+// Mirrors accountReconciliation.js's enrichRealPosition() floating-P&L math
+// (same sign convention, same swap+commission handling) - kept in sync
+// deliberately, see that file's own header for the formula's reasoning.
+function recomputeFloatingPnl(position, currentPrice) {
+  if (currentPrice === null || currentPrice === undefined || position.entryPrice === null) {
+    return { currentPrice: position.currentPrice, netFloatingPnl: position.netFloatingPnl };
+  }
+  const directionSign = position.direction === 'bullish' ? 1 : -1;
+  const grossFloatingPnl = (currentPrice - position.entryPrice) * position.units * directionSign;
+  const netFloatingPnl = grossFloatingPnl + (position.swap || 0) + (position.commission || 0);
+  return { currentPrice, netFloatingPnl };
+}
+
+function recomputeLivePositions(symbolsData) {
+  if (lastKnownPositions.length === 0) return;
+  const priceBySymbol = {};
+  for (const s of symbolsData || []) priceBySymbol[s.symbol] = s.lastPrice;
+  const recomputed = lastKnownPositions.map((p) => ({ ...p, ...recomputeFloatingPnl(p, priceBySymbol[p.symbol]) }));
+  renderOpenPositions(recomputed);
+  if (lastKnownBalance !== null) {
+    const totalFloating = recomputed.reduce((sum, p) => sum + (p.netFloatingPnl || 0), 0);
+    heroState.equityEstimate = lastKnownBalance + totalFloating;
+    renderHeroStrip();
+  }
+}
+
 // Bandeau principal (2026-09-15) - voir .hero-strip dans le <style> pour le
 // pourquoi. renderStatus()/refreshAccount()/renderOverview() alimentent
 // chacun leur part de cet objet au fil de leurs propres réponses (des
@@ -682,6 +740,54 @@ async function refreshStatus() {
   renderStatus(await res.json());
 }
 
+// Progression du challenge (2026-09-15, Esdras: demande #1 de la liste
+// "données utiles mais noyées" - targetPct/targetBalance/maxDrawdownPct/
+// overallDrawdownFloor étaient déjà calculés par GuardrailEngine.getStatus()
+// et déjà envoyés dans /api/status, mais jamais affichés nulle part). Pour
+// le compte "default" actuel (pas un vrai challenge), targetPct/
+// maxDrawdownPct restent null - cette carte affiche alors honnêtement
+// "pas un compte de challenge" plutôt qu'une barre vide ou des zéros
+// trompeurs ; elle prend tout son sens une fois un vrai compte FTMO/CTI
+// configuré (voir config.js's per-account guardrails).
+function renderChallengeProgress(g, balance) {
+  const el = document.getElementById('challenge-progress-body');
+  if (!el) return;
+  if (g.targetPct == null && g.maxDrawdownPct == null) {
+    el.innerHTML = '<div class="meta">Pas un compte de challenge (aucune cible de profit ni plancher de drawdown configurés pour ce compte).</div>';
+    return;
+  }
+  const current = g.currentBalance ?? balance;
+  let html = '';
+  if (g.targetPct != null) {
+    const progressPct = (g.startingBalance != null && g.targetBalance != null && g.targetBalance !== g.startingBalance)
+      ? ((current - g.startingBalance) / (g.targetBalance - g.startingBalance)) * 100
+      : null;
+    html += `<div class="stat-row"><span class="label">Cible de profit</span><span>+${fmt(g.targetPct, 1)}% (${fmt(g.targetBalance)})</span></div>`;
+    if (g.targetReached) html += '<div class="stat-row"><span class="pill ok">OBJECTIF ATTEINT</span></div>';
+    else if (progressPct !== null) html += `<div class="stat-row"><span class="label">Progression vers la cible</span><span>${fmt(Math.max(0, progressPct), 0)}%</span></div>`;
+  }
+  if (g.maxDrawdownPct != null) {
+    const typeLabel = { static: 'statique', 'trailing-eod': 'glissant fin de journée', 'trailing-locks-at-start-balance': 'glissant, verrouillé au départ' }[g.maxDrawdownType] || g.maxDrawdownType || '—';
+    html += `<div class="stat-row"><span class="label">Plancher de drawdown</span><span>-${fmt(g.maxDrawdownPct, 1)}% (${fmt(g.overallDrawdownFloor)}, ${typeLabel})</span></div>`;
+    if (g.overallDrawdownBreached) html += '<div class="stat-row"><span class="pill blocked">PLANCHER CASSÉ</span></div>';
+    else if (g.overallDrawdownFloor != null) html += `<div class="stat-row"><span class="label">Distance au plancher</span><span>${fmt(current - g.overallDrawdownFloor)}</span></div>`;
+  }
+  // Barre visuelle seulement quand les 2 bornes (plancher + cible) sont connues.
+  if (g.overallDrawdownFloor != null && g.targetBalance != null && g.targetBalance > g.overallDrawdownFloor) {
+    const span = g.targetBalance - g.overallDrawdownFloor;
+    const fillPct = Math.max(0, Math.min(100, ((current - g.overallDrawdownFloor) / span) * 100));
+    const startMarkerPct = g.startingBalance != null ? Math.max(0, Math.min(100, ((g.startingBalance - g.overallDrawdownFloor) / span) * 100)) : null;
+    html += `
+      <div class="challenge-bar-wrap">
+        <div class="challenge-bar-fill${g.overallDrawdownBreached ? ' breached' : ''}" style="width:${fillPct}%;"></div>
+        ${startMarkerPct !== null ? `<div class="challenge-bar-marker" style="left:${startMarkerPct}%;" title="Solde de départ"></div>` : ''}
+      </div>
+      <div class="challenge-bar-labels"><span>Plancher ${fmt(g.overallDrawdownFloor)}</span><span>Cible ${fmt(g.targetBalance)}</span></div>
+    `;
+  }
+  el.innerHTML = html || '<div class="meta">Données de challenge incomplètes.</div>';
+}
+
 function renderStatus(data) {
   const banner = document.getElementById('banner');
   if (data.mode === 'demo') {
@@ -707,6 +813,8 @@ function renderStatus(data) {
     <div class="stat-row"><span class="label">Solde</span><span>${fmt(data.balance)}</span></div>
     ${g.blocked ? `<div class="warn">Raisons: ${g.blockReasons.join(', ')}</div>` : ''}
   `;
+  renderChallengeProgress(g, data.balance);
+  recomputeLivePositions(data.symbols);
 
   heroState.balance = data.balance;
   heroState.dailyPnl = g.dailyPnl;
@@ -784,6 +892,15 @@ function reconciliationExplanation(r) {
 // brokers") - real broker positions only (data.positions, from
 // accountReconciliation.js via /api/account), never LiveStrategyEngine's
 // own "believed" state - same table style as journal.html's strategy-table.
+// Volume réel (2026-09-15, bug trouvé en vérifiant sur le compte réel : une
+// position BTCUSD avec units=0.01 s'affichait "0" avec 0 décimale fixe,
+// pertinent pour un symbole en unités de 1+ mais pas pour un volume
+// centilot). Trim les zéros de fin plutôt qu'un nombre fixe de décimales.
+function fmtUnits(units) {
+  if (units === null || units === undefined || Number.isNaN(units)) return '—';
+  return String(Number(units.toFixed(4)));
+}
+
 function renderOpenPositions(positions) {
   const el = document.getElementById('open-positions-body');
   if (!el) return;
@@ -796,25 +913,56 @@ function renderOpenPositions(positions) {
     const pnlKnown = p.netFloatingPnl !== null && p.netFloatingPnl !== undefined;
     const pnlClass = !pnlKnown ? '' : p.netFloatingPnl >= 0 ? 'win' : 'loss';
     const openSince = p.openTimestamp ? fmtDuration(Date.now() - p.openTimestamp) : '—';
+    // volume = units * 100 reconstructs the broker's own centilot field
+    // exactly (accountReconciliation.js's enrichRealPosition divides by 100
+    // to get units in the first place - the round-trip is exact).
+    const rawVolume = Math.round(p.units * 100);
     return `
       <tr>
         <td><span class="dir-${p.direction}">${p.direction === 'bullish' ? '▲' : '▼'}</span> ${p.symbol}</td>
-        <td>${fmt(p.units, 0)}</td>
+        <td>${fmtUnits(p.units)}</td>
         <td>${fmt(p.entryPrice, d)}</td>
         <td>${fmt(p.currentPrice, d)}</td>
         <td>${fmt(p.stopLoss, d)}</td>
         <td>${fmt(p.takeProfit, d)}</td>
         <td class="pnl-cell journal-pnl ${pnlClass}">${pnlKnown ? (p.netFloatingPnl >= 0 ? '+' : '') + fmt(p.netFloatingPnl) : '—'}</td>
         <td class="meta">${openSince}</td>
+        <td><button type="button" class="btn-ghost" onclick="closePosition(${p.positionId}, ${rawVolume}, '${p.symbol}')">Fermer</button></td>
       </tr>
     `;
   }).join('');
   el.innerHTML = `
     <table class="strategy-table positions-table">
-      <thead><tr><th>Symbole</th><th>Volume</th><th>Entrée</th><th>Prix actuel</th><th>Stop</th><th>Cible</th><th class="pnl-cell">P&amp;L flottant</th><th>Ouverte depuis</th></tr></thead>
+      <thead><tr><th>Symbole</th><th>Volume</th><th>Entrée</th><th>Prix actuel</th><th>Stop</th><th>Cible</th><th class="pnl-cell">P&amp;L flottant</th><th>Ouverte depuis</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
+}
+
+// Fermer une position réelle (2026-09-15, Esdras: "on ne voit pas d'endroit
+// où fermer la position") - un vrai ordre de marché irréversible, donc une
+// confirmation explicite d'abord (même discipline que toute action risquée/
+// difficile à annuler). Rafraîchit la table + le compte juste après, succès
+// ou échec, pour que l'état affiché ne mente jamais.
+async function closePosition(positionId, volume, symbol) {
+  if (!confirm(`Fermer réellement la position ${symbol} (id ${positionId}) au marché ? Cette action est irréversible.`)) return;
+  try {
+    const res = await fetch(acctUrl(`/positions/${positionId}/close`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ volume }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`Échec de la fermeture: ${data.error || res.statusText}`);
+    } else {
+      alert(`Position fermée. P&L réalisé: ${fmt(data.closePnl)}`);
+    }
+  } catch (err) {
+    alert(`Erreur réseau lors de la fermeture: ${err.message}`);
+  } finally {
+    refreshAccount();
+  }
 }
 
 async function refreshAccount() {
@@ -864,6 +1012,8 @@ async function refreshAccount() {
       ${positions.length > 0 ? `<div class="stat-row"><span class="label">Exposition totale (risque réel si tout touche le stop)</span><span>${fmt(totalRiskAmount)}${riskIsPartial ? ` <span class="meta">(${riskKnownCount}/${positions.length} positions — stop inconnu pour le reste)</span>` : ''}</span></div>` : ''}
     `;
 
+    lastKnownPositions = positions;
+    lastKnownBalance = data.balance;
     renderOpenPositions(positions);
 
     if (mismatches.length > 0) {

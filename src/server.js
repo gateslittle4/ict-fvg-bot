@@ -272,6 +272,67 @@ const OVERLAY_CACHE_MS = 5 * 60 * 1000;
 const RECENT_PERFORMANCE_CACHE_MS = 15 * 60 * 1000;
 
 /**
+ * Shared core of a real position close (2026-09-15) - factored out of
+ * `/admin/close-position` so the dashboard's own "Fermer" button (see
+ * `/positions/:positionId/close` below) can send the exact same
+ * ProtoOAClosePositionReq + confirmation-wait logic, not a second
+ * reimplementation. Returns `{closed: true, closePnl}` or throws - callers
+ * decide their own response shape/status code around that.
+ * @param {object} ds - store.liveDataSource (must have a live `.connection`)
+ * @param {number} positionId
+ * @param {number} volume - broker units (centilots), e.g. BTCUSD's 1 == 0.01 lot
+ * @param {string} [logPrefix] - just for the console.error lines below
+ */
+async function closePositionOnBroker(ds, positionId, volume, logPrefix = 'close-position') {
+  const accountId = Number(ds.accountId);
+  const closeFillPromise = new Promise((resolve, reject) => {
+    let uuid;
+    const safeRemove = () => {
+      try {
+        if (uuid != null) ds.connection.removeEventListener(uuid);
+      } catch (removeErr) {
+        console.error(`[${logPrefix}] removeEventListener failed (non-fatal):`, removeErr);
+      }
+    };
+    const timer = setTimeout(() => {
+      safeRemove();
+      reject(new Error('timed out after 15000ms waiting for the close to confirm'));
+    }, 15000);
+    uuid = ds.connection.on('ProtoOAExecutionEvent', (event) => {
+      try {
+        const d = event.descriptor;
+        const pid = d.deal?.positionId ?? d.position?.positionId;
+        // String(...) both sides - protobuf serializes this field as a
+        // STRING, positionId here is a Number, so a bare !== can never
+        // match (2026-09-13, real bug found live via /admin/close-position).
+        if (String(pid) !== String(positionId)) return;
+        if (['ORDER_REJECTED', 'ORDER_CANCELLED', 'ORDER_EXPIRED'].includes(d.executionType)) {
+          clearTimeout(timer);
+          safeRemove();
+          reject(new Error(`close ${d.executionType.toLowerCase()} (errorCode=${d.errorCode ?? 'n/a'})`));
+          return;
+        }
+        if (d.executionType === 'ORDER_FILLED' && d.deal?.closePositionDetail) {
+          clearTimeout(timer);
+          safeRemove();
+          resolve(d);
+        }
+      } catch (predicateErr) {
+        clearTimeout(timer);
+        safeRemove();
+        reject(predicateErr);
+      }
+    });
+  });
+  console.error(`[${logPrefix}] closing positionId=${positionId} volume=${volume}...`);
+  await sendCommandWithTimeout(ds.connection, 'ProtoOAClosePositionReq', { ctidTraderAccountId: accountId, positionId, volume });
+  const closeFill = await closeFillPromise;
+  const closePnl = Number(closeFill.deal.closePositionDetail.grossProfit) / 100; // grossProfit is a string on this broker
+  console.error(`[${logPrefix}] closed, pnl=${closePnl}`);
+  return { closed: true, closePnl };
+}
+
+/**
  * Every route that reads/writes ONE account's state, mounted twice below:
  * once at the legacy flat `/api/*` paths (always the default account, for
  * the current dashboard - unaffected by this rollout until it's updated),
@@ -383,6 +444,37 @@ function createAccountRouter(getStore) {
       res.json(account);
     } catch (err) {
       res.status(502).json({ error: err.message });
+    }
+  });
+
+  // Close a real open position from the dashboard itself (2026-09-15,
+  // Esdras: "on ne voit pas d'endroit où fermer la position" - the only
+  // existing close route was /admin/close-position, gated behind
+  // ADMIN_EXPORT_TOKEN and meant for one-off diagnostics, not a normal
+  // dashboard button). Same underlying close (closePositionOnBroker) as
+  // that admin route, no separate reimplementation - just a plain
+  // account-scoped route (same auth model as every other account route
+  // here: none, single-user private dashboard) so the "Fermer" button can
+  // call it directly. `volume` is required explicitly, same reasoning as
+  // the admin route: a wrong PARTIAL volume would only partially close the
+  // position, so never inferred/guessed here.
+  router.post('/positions/:positionId/close', async (req, res) => {
+    const store = getStore(req);
+    const ds = store.liveDataSource;
+    if (!ds?.connection) {
+      return res.status(503).json({ error: 'not connected to a live broker' });
+    }
+    const positionId = Number(req.params.positionId);
+    const volume = Number(req.body?.volume);
+    if (!Number.isFinite(positionId) || !Number.isFinite(volume) || volume <= 0) {
+      return res.status(400).json({ error: 'positionId (URL) and volume (body, broker units e.g. centilots) are both required' });
+    }
+    const report = { positionId, volume };
+    try {
+      const result = await closePositionOnBroker(ds, positionId, volume, `close-position:${store.id}`);
+      res.json({ ...report, ...result });
+    } catch (err) {
+      res.status(502).json({ ...report, error: err.message });
     }
   });
 
@@ -1013,61 +1105,10 @@ function createAccountRouter(getStore) {
     if (!Number.isFinite(positionId) || !Number.isFinite(volume) || volume <= 0) {
       return res.status(400).json({ error: 'positionId and volume (broker units, e.g. centilots) are both required' });
     }
-    const accountId = Number(ds.accountId);
     const report = { positionId, volume };
     try {
-      const closeFillPromise = new Promise((resolve, reject) => {
-        let uuid;
-        const safeRemove = () => {
-          try {
-            if (uuid != null) ds.connection.removeEventListener(uuid);
-          } catch (removeErr) {
-            console.error('[admin/close-position] removeEventListener failed (non-fatal):', removeErr);
-          }
-        };
-        const timer = setTimeout(() => {
-          safeRemove();
-          reject(new Error('timed out after 15000ms waiting for the close to confirm'));
-        }, 15000);
-        uuid = ds.connection.on('ProtoOAExecutionEvent', (event) => {
-          try {
-            const d = event.descriptor;
-            const pid = d.deal?.positionId ?? d.position?.positionId;
-            // String(...) both sides (2026-09-13, real bug found live: this
-            // exact `pid !== positionId` timed out even though the close
-            // genuinely succeeded on the broker seconds later - protobuf
-            // serializes this field as a STRING, positionId here is a
-            // Number from req.query, so a bare !== can never match).
-            if (String(pid) !== String(positionId)) return;
-            if (['ORDER_REJECTED', 'ORDER_CANCELLED', 'ORDER_EXPIRED'].includes(d.executionType)) {
-              clearTimeout(timer);
-              safeRemove();
-              reject(new Error(`close ${d.executionType.toLowerCase()} (errorCode=${d.errorCode ?? 'n/a'})`));
-              return;
-            }
-            if (d.executionType === 'ORDER_FILLED' && d.deal?.closePositionDetail) {
-              clearTimeout(timer);
-              safeRemove();
-              resolve(d);
-            }
-          } catch (predicateErr) {
-            clearTimeout(timer);
-            safeRemove();
-            reject(predicateErr);
-          }
-        });
-      });
-      console.error(`[admin/close-position] closing positionId=${positionId} volume=${volume}...`);
-      await sendCommandWithTimeout(ds.connection, 'ProtoOAClosePositionReq', {
-        ctidTraderAccountId: accountId,
-        positionId,
-        volume,
-      });
-      const closeFill = await closeFillPromise;
-      report.closed = true;
-      report.closePnl = Number(closeFill.deal.closePositionDetail.grossProfit) / 100; // same fix as test-order-cycle above - grossProfit is a string on this broker
-      console.error(`[admin/close-position] closed, pnl=${report.closePnl}`);
-      res.json(report);
+      const result = await closePositionOnBroker(ds, positionId, volume, 'admin/close-position');
+      res.json({ ...report, ...result });
     } catch (err) {
       res.status(502).json({ ...report, error: err.message });
     }
