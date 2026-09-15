@@ -2864,3 +2864,17 @@ Suite directe de la simulation de cycle $10k/FundingPips Flex ("On prend 10k pou
 **Committé** : `scripts/runFundingPipsFlexFloatingLossCheck.js` (version propre du script de vérification ad hoc), rapports `data/backtest-input/fundingpips-flex-floating-loss-check-{test,7months}.md`, `src/propFirms/fundingPips.js` (note de vérification ajoutée, aucun chiffre de règle modifié — l'ambiguïté source reste documentée telle quelle).
 
 `npm test` : 477/477 (inchangé — travail d'analyse seulement, aucun changement de comportement en production).
+
+## Bandeau principal sur le dashboard (équité/P&L/journal) — 2026-09-15
+
+Esdras : "rend mon site encore plus important/impressionant/utile/professionel", pendant qu'elle réglait des questions cTrader/Match-Trader en parallèle. Le dashboard avait déjà toutes ces informations (solde/équité réels, performance du journal durable avec courbe d'équité) mais éparpillées dans des cartes plus bas dans la page — rien de synthétique visible sans défiler.
+
+**Ajouté** : `.hero-strip`, juste sous le ticker de prix — Équité (réelle), P&L du jour (réel), Total en R (journal durable, tout-temps), Taux de réussite. Chaque nombre réutilise une donnée DÉJÀ récupérée par la page (`/api/status`, `/api/account`, `/trade-log`) — aucun nouvel appel réseau, rien d'inventé. Chaque tuile reste "—" tant que sa propre source n'a pas encore répondu, même discipline que le reste de la page.
+
+**Volontairement du texte/chiffres seulement, pas de graphique** — voir le commentaire déjà existant au-dessus du ticker : Esdras ne veut rien qui ressemble immédiatement à "je suis en train de trader" (chandeliers surtout) sur la page qu'elle garde ouverte au travail. Un bandeau de chiffres ne se lit pas de la même façon.
+
+**Vérifié visuellement** (pas juste en lisant le code) : serveur local en mode démo + capture Playwright, desktop et mobile — réutilise exactement le langage visuel `.metric-tile` déjà en place (thème terminal sombre), juste une valeur plus grande et une barre d'accent bleue en haut pour se distinguer comme le bandeau principal.
+
+Aucun changement backend — `npm test` : 477/477 (inchangé).
+
+**Fichiers** : `public/index.html` uniquement.
