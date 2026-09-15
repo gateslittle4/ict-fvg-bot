@@ -3082,3 +3082,27 @@ Esdras, immédiatement après le filtre minuit ci-dessus : "d'abord est-ce que m
 `npm test` : 519/519 (inchangé — filtre côté client uniquement).
 
 **Fichiers** : `public/chart.html`.
+
+## Checklist en direct : "pourquoi pas encore de trade ?" — 2026-09-15
+
+Esdras, après avoir confirmé (avec les vraies données) que les zones "watching" sur les symboles M15 restent bien dans la même journée : "est-ce qu'on peut voir le checklist utilisé pour prendre un trade en live... il me montrerait ce qui est okay, ce qui ne l'est pas encore, comme ça je saurais pourquoi on a pas encore de trade".
+
+**Concept** : sur `chart.html`, une nouvelle carte "Pourquoi pas encore de trade ?" liste chaque zone FVG que le moteur surveille ACTUELLEMENT sur le symbole affiché, avec un ✔/✗/— par critère réel — biais haute unité de temps, structure de marché, fenêtre de session, sweep de liquidité — au lieu du seul ✓/✗ combiné que le moteur live calcule en interne. Le moteur live ne garde jamais la trace de QUEL filtre précis a fait échouer une zone — cette carte comble exactement ce trou.
+
+**Nouveau `src/backtest/liveFvgFilterStatus.js`, `evaluateLiveFilters()`** — même discipline que `tradeCompliance.js` (son voisin, pour un trade déjà CLOS) : réutilise les VRAIES fonctions de production (`buildHtfBiasSeries`/`makeBiasLookup`, `buildStructureBiasSeries`/`makeStructureBiasLookup`, `isInNySessionWindow`, `buildLiquiditySweepEvents`/`makeSweepLookup` — les mêmes lookups que `buildFilteredEngine()`/`buildMultiTouchFilterPredicate()` consomment réellement en live), jamais une réimplémentation séparée. Seule vraie différence avec `tradeCompliance.js` : évalue "maintenant" (mobile, se rafraîchit à chaque bougie) au lieu de "au moment de l'entrée" (figé, un trade déjà passé).
+
+**Piège de convention d'heure, débusqué avant qu'il ne morde** (le même genre de bug qui a déjà coûté cher plus tôt dans ce projet — voir le bug de garde-fou de day-key) : `store.strategyEngine.getHistory(symbol)` retourne l'historique du moteur déjà décalé en "heure moteur" (UTC réel − 5h, voir `_toEngineCandle()`), ET `isInNySessionWindow()` attend SPÉCIFIQUEMENT cette même convention. Mais les bougies H1 fraîchement récupérées du courtier pour le biais sont en UTC RÉEL, non décalées — un décalage de 5h resté silencieux aurait faussé le biais sans jamais planter. Corrigé en décalant les bougies H1 (`- FIXED_EST_TO_UTC_OFFSET_MS`) avant de les passer à `evaluateLiveFilters()`, pour qu'elles restent cohérentes avec `atTime` (dérivé du même historique moteur) — documenté en détail dans le commentaire de `getPendingZoneChecklists()`.
+
+**`cTraderDataSource.js`, `getPendingZoneChecklists(symbol)`** (nouvelle méthode) : réutilise `buildChartOverlays()` (déjà utilisé par `/api/overlays`) pour trouver les zones réellement encore `watching` (sa propre logique de requalification `stale` gère déjà le cas d'une zone qui a silencieusement dépassé sa vraie durée de vie), récupère l'historique H1 nécessaire pour le biais UNIQUEMENT quand le symbole en a besoin (`baseline` = aucun fetch), et construit la checklist par zone.
+
+**Nouvelle route `/api/pending-checklist?symbol=X`** (`server.js`), cachée 5 minutes comme `/overlays` (même raisonnement : les zones "watching" ne changent pas plus vite qu'une nouvelle bougie M15) — répond `{reason: 'not connected to a live broker'}` en mode démo, jamais une erreur.
+
+**Frontend (`chart.html`)** : nouvelle carte sous le graphique, fetch séparé et non bloquant de `loadChart()` (un aller-retour H1 plus lent chez le courtier ne doit jamais faire échouer ou ralentir le graphique de prix — try/catch entièrement autonome, même discipline que `startLiveTick()`).
+
+**12 nouveaux tests** (`test/liveFvgFilterStatus.test.js`) — reprennent exactement les mêmes fixtures que `htfBias.test.js`/`marketStructure.test.js`/`liquiditySweep.test.js`/`fvgMultiTouch.test.js` (y compris le test de convention d'heure fixe-EST-comme-UTC), élargies pour les vraies constantes de production (`STRUCTURE_LOOKBACK`/`SWEEP_LOOKBACK`/`SWEEP_WINDOW_CANDLES` de `gridRunner.js`) — chaque critère vérifié indépendamment, jamais court-circuité.
+
+**Vérifié visuellement** : serveur local + Playwright, `/api/pending-checklist` simulé avec 2 zones (une avec 2 critères en échec, une avec 1 seul) — rendu correct, ✔ vert / ✗ rouge / — gris, aucune erreur console ; confirmé aussi le repli gracieux réel en mode démo ("Pas connecté au courtier").
+
+`npm test` : 531/531.
+
+**Fichiers** : `src/backtest/liveFvgFilterStatus.js` (nouveau), `src/dataSources/tradeCompliance.js`, `src/dataSources/cTraderDataSource.js`, `src/server.js`, `public/chart.html`, `test/liveFvgFilterStatus.test.js` (nouveau).

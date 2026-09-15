@@ -286,6 +286,7 @@ const RECENT_PERFORMANCE_CACHE_MS = 15 * 60 * 1000;
 function createAccountRouter(getStore) {
   const router = express.Router();
   const overlayCache = new Map(); // `${accountId}:${symbol}` -> { builtAt, payload }
+  const pendingChecklistCache = new Map(); // `${accountId}:${symbol}` -> { builtAt, payload } - see .../pending-checklist below (needs a real H1 broker fetch, same cache discipline as overlayCache)
   const recentPerformanceCache = new Map(); // accountId -> { builtAt, report }
   const recentPerformanceInFlight = new Map(); // accountId -> Promise - at most ONE computation at a time per account
 
@@ -477,6 +478,40 @@ function createAccountRouter(getStore) {
       const { zones, signals } = buildChartOverlays(historyBySymbol, { symbol, timeOffsetMs });
       const payload = { symbol, zones, signals };
       overlayCache.set(cacheKey, { builtAt: Date.now(), payload });
+      res.json({ ...payload, cachedAt: Date.now() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // "Pourquoi on n'a pas encore de trade" (2026-09-15, Esdras, sur le chart)
+  // - for every zone the real engine currently still considers 'watching' on
+  // this symbol, a live pass/fail per filter criterion (bias/structure/
+  // session/sweep) - see cTraderDataSource.js's getPendingZoneChecklists()
+  // for the full reasoning and the time-convention care it takes. Needs a
+  // real H1 broker fetch for the bias item (only when the symbol's own
+  // variant isn't 'baseline'), so cached the same way/same TTL as .../overlays
+  // right above - watching zones don't change meaningfully faster than a new
+  // M15 candle anyway.
+  router.get('/pending-checklist', async (req, res) => {
+    const store = getStore(req);
+    const symbol = req.query.symbol;
+    if (!CONFIG.symbols.includes(symbol)) {
+      return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
+    }
+    if (store.mode !== 'live' || typeof store.liveDataSource?.getPendingZoneChecklists !== 'function') {
+      return res.json({ symbol, zones: [], reason: 'not connected to a live broker' });
+    }
+
+    const cacheKey = `${store.id}:${symbol}`;
+    const cached = pendingChecklistCache.get(cacheKey);
+    if (cached && Date.now() - cached.builtAt < OVERLAY_CACHE_MS) {
+      return res.json({ ...cached.payload, cachedAt: cached.builtAt });
+    }
+
+    try {
+      const payload = await store.liveDataSource.getPendingZoneChecklists(symbol);
+      pendingChecklistCache.set(cacheKey, { builtAt: Date.now(), payload });
       res.json({ ...payload, cachedAt: Date.now() });
     } catch (err) {
       res.status(500).json({ error: err.message });

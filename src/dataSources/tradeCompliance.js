@@ -159,7 +159,10 @@ export function reconstructRiskCheck({ pnlUsd, rMultiple, balanceAfter, expected
   return { actualRiskPct, expectedRiskPct, withinTolerance };
 }
 
-const BIAS_LABEL = { bullish: 'Haussier', bearish: 'Baissier', neutral: 'Neutre', unknown: 'Inconnu' };
+// Exported (2026-09-15) so liveFvgFilterStatus.js can label a bias value the
+// exact same way, for the live "why no trade yet" pending-zone checklist -
+// same vocabulary as this after-the-fact one, not a second copy that could drift.
+export const BIAS_LABEL = { bullish: 'Haussier', bearish: 'Baissier', neutral: 'Neutre', unknown: 'Inconnu' };
 
 /**
  * Builds the full per-trade compliance checklist (see HANDOFF.md "Preuve

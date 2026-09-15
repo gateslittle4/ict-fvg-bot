@@ -114,6 +114,25 @@
   .err { color: var(--red); font-size: 13px; margin-top: 8px; }
   .meta { color: var(--muted); font-size: 12px; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  /* ---------- "Pourquoi pas encore de trade" (2026-09-15, Esdras) - même
+     langage visuel que le "Critères respectés" de journal.html
+     (renderComplianceChecklist), copié ici (même convention que le reste de
+     cette page - pas de feuille de style partagée entre pages). ---------- */
+  .pending-zones { display: flex; flex-wrap: wrap; gap: 14px; }
+  .pending-zone {
+    flex: 1 1 280px; background: var(--panel-2); border: 1px solid var(--panel-border);
+    border-radius: 8px; padding: 10px 12px; font-family: var(--mono);
+  }
+  .pending-zone-title { font-size: 12px; margin-bottom: 8px; color: var(--text); }
+  .pending-zone-title .meta { display: block; font-size: 10.5px; margin-top: 2px; }
+  .check-row { display: flex; align-items: flex-start; gap: 7px; font-size: 11px; padding: 4px 0; border-bottom: 1px solid var(--panel-border); }
+  .check-row:last-child { border-bottom: none; }
+  .check-icon { flex-shrink: 0; width: 13px; text-align: center; color: var(--muted); }
+  .check-icon.ok { color: var(--green); }
+  .check-icon.pending { color: var(--red); }
+  .check-row .label { color: var(--text); }
+  .check-row .detail { color: var(--muted); display: block; font-size: 10px; margin-top: 1px; }
 </style>
 </head>
 <body>
@@ -182,6 +201,12 @@
     <div class="meta" id="overlay-counts" style="margin-top:8px;"></div>
     <div class="hint">Pince ou molette pour zoomer · glisse pour te déplacer · touche/survole une bougie pour voir son OHLC · bouton « ⌖ Prix actuel » pour recadrer sur le prix en cours.</div>
     <div id="chart-error" class="err"></div>
+  </div>
+
+  <div class="card">
+    <h1 style="font-size:14px; margin:0 0 4px;">Pourquoi pas encore de trade ?</h1>
+    <div class="subtitle" style="margin-bottom:10px;">Chaque zone FVG que le moteur surveille actuellement sur ce symbole, et où en est CHACUN des critères réels de la stratégie, en ce moment — pas juste le ✓/✗ combiné.</div>
+    <div id="pending-checklist-body"><div class="meta">Chargement…</div></div>
   </div>
 
 <script src="/vendor/lightweight-charts/lightweight-charts.standalone.production.js"></script>
@@ -481,6 +506,56 @@ function renderOverlays(overlays, decimals) {
   }
 }
 
+// "Pourquoi pas encore de trade" (2026-09-15, Esdras: "il me montrerait ce
+// qui est okay, ce qui ne l'est pas encore") - separate, un-awaited fetch
+// from loadChart()'s own (a slower real H1 broker round-trip for the bias
+// item shouldn't ever block or error out the price chart itself - see this
+// function's own try/catch, deliberately self-contained and silent on
+// failure, same discipline as startLiveTick() above).
+function renderPendingChecklist(data) {
+  const body = document.getElementById('pending-checklist-body');
+  if (!body) return;
+  if (data.reason) {
+    body.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — indisponible.' : data.reason}</div>`;
+    return;
+  }
+  if (!data.zones || data.zones.length === 0) {
+    body.innerHTML = '<div class="meta">Aucune zone FVG en attente de validation sur ce symbole en ce moment.</div>';
+    return;
+  }
+  const d = priceDecimals(currentSymbol);
+  body.innerHTML = `<div class="pending-zones">${data.zones.map((z) => {
+    const rows = (z.checklist || []).map((it) => {
+      const icon = !it.applicable ? '—' : (it.ok ? '✔' : '✗');
+      const iconClass = !it.applicable ? '' : (it.ok ? 'ok' : 'pending');
+      return `<div class="check-row"><span class="check-icon ${iconClass}">${icon}</span><span><span class="label">${it.label}</span><span class="detail">${it.detail}</span></span></div>`;
+    }).join('');
+    const arrowColor = z.direction === 'bullish' ? 'var(--green)' : 'var(--red)';
+    return `
+      <div class="pending-zone">
+        <div class="pending-zone-title">
+          <span style="color:${arrowColor}; font-weight:700;">${z.direction === 'bullish' ? '▲' : '▼'}</span>
+          Zone ${fmt(z.bottom, d)} – ${fmt(z.top, d)}
+          <span class="meta">Formée ${new Date(z.formedAt).toLocaleString('fr-FR')}</span>
+        </div>
+        ${rows}
+      </div>
+    `;
+  }).join('')}</div>`;
+}
+
+async function refreshPendingChecklist() {
+  const body = document.getElementById('pending-checklist-body');
+  if (!body) return;
+  try {
+    const res = await fetch(`/api/pending-checklist?symbol=${currentSymbol}`);
+    const data = await res.json();
+    renderPendingChecklist(data);
+  } catch (err) {
+    body.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  }
+}
+
 async function loadChart({ keepView = false } = {}) {
   const errEl = document.getElementById('chart-error');
   errEl.textContent = '';
@@ -514,6 +589,7 @@ async function loadChart({ keepView = false } = {}) {
     setPositionLines(openPosition, decimals);
 
     renderOverlays(overlaysData, decimals);
+    refreshPendingChecklist(); // not awaited - its own try/catch, must never block or fail the chart itself
 
     const last = lastCandles[lastCandles.length - 1];
     document.getElementById('last-price').textContent = last ? fmt(last.close, decimals) : '—';

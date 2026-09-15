@@ -39,6 +39,8 @@ import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
 import { buildFvgComplianceChecklist, requiredH1LookbackCandles } from './tradeCompliance.js';
+import { buildChartOverlays } from '../backtest/chartOverlays.js';
+import { evaluateLiveFilters } from '../backtest/liveFvgFilterStatus.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -687,6 +689,84 @@ export class CTraderDataSource {
       out.push({ ...trade, checklist: items, fvgZone: zone });
     }
     return out;
+  }
+
+  /**
+   * "Pourquoi on n'a pas encore de trade" (2026-09-15, Esdras: "je verrais
+   * ce qui est okay, ce qui ne l'est pas encore") - for every zone the real
+   * engine currently considers 'watching' on this symbol, evaluates each of
+   * the 4 real filter criteria (bias/structure/session/sweep) RIGHT NOW,
+   * one by one - the live engine only ever computes their combined AND, so
+   * this is the only way to see WHICH ONE is still missing. Reuses
+   * buildChartOverlays() (chartOverlays.js) to find the genuinely still-
+   * watching zones (its own 'stale' reclassification already handles a zone
+   * that's silently outlived its real lifetime - see that file's own
+   * comment), and evaluateLiveFilters() (liveFvgFilterStatus.js) for the
+   * per-criterion check, both already-real production logic, nothing
+   * reimplemented here.
+   *
+   * Time convention, easy to get backwards (see liveFvgFilterStatus.js's
+   * own header): `candles` here is store.strategyEngine's OWN retained
+   * history, already in ENGINE time (real UTC - 5h, see _toEngineCandle()) -
+   * so `atTime` (this symbol's freshest candle) is engine time too, and the
+   * freshly-fetched H1 candles below are shifted the SAME way before use,
+   * so the bias lookup stays self-consistent with atTime. tradeCompliance.js's
+   * OWN bias check (for a closed trade) doesn't need this shift - it compares
+   * two real-UTC values against each other - but that trick doesn't apply
+   * here since atTime is forced into engine time by where it comes from.
+   */
+  async getPendingZoneChecklists(symbol) {
+    const store = this.account;
+    const cfg = CONFIG.fvg.perSymbol[symbol];
+    if (!cfg) return { symbol, zones: [], reason: 'not an FVG-strategy symbol' };
+
+    const historyBySymbol = {};
+    for (const s of CONFIG.symbols) historyBySymbol[s] = store.strategyEngine.getHistory(s);
+    const candles = historyBySymbol[symbol];
+    if (!candles || candles.length === 0) return { symbol, zones: [], reason: 'no candle history yet' };
+
+    const { zones } = buildChartOverlays(historyBySymbol, { symbol });
+    const watching = zones.filter((z) => z.status === 'watching');
+    if (watching.length === 0) return { symbol, zones: [] };
+
+    const atTime = candles[candles.length - 1].time;
+
+    let h1Candles = null;
+    const lookback = requiredH1LookbackCandles(cfg.variant);
+    if (lookback > 0) {
+      try {
+        const symbolId = this.symbolIdByName.get(symbol);
+        const nowRealUtc = Date.now();
+        const res = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
+          ctidTraderAccountId: Number(this.accountId),
+          fromTimestamp: nowRealUtc - lookback * TIMEFRAME_DURATION_MS.H1,
+          toTimestamp: nowRealUtc,
+          symbolId,
+          period: 'H1',
+        });
+        h1Candles = (res.trendbar || [])
+          .map((bar) => this._trendbarToCandle(bar))
+          .sort((a, b) => a.time - b.time)
+          .map((bar) => ({ ...bar, time: bar.time - FIXED_EST_TO_UTC_OFFSET_MS })); // real UTC -> engine time, matching atTime
+      } catch (err) {
+        console.warn(
+          `[cTrader] pending zone checklist: HTF bias H1 fetch failed for ${symbol} (bias item will read "non vérifiable"):`,
+          err.message || JSON.stringify(err)
+        );
+      }
+    }
+
+    return {
+      symbol,
+      zones: watching.map((z) => ({
+        id: z.id,
+        direction: z.direction,
+        top: z.top,
+        bottom: z.bottom,
+        formedAt: z.formedAt,
+        checklist: evaluateLiveFilters({ candles, h1Candles, cfg, direction: z.direction, atTime }),
+      })),
+    };
   }
 
   /**
