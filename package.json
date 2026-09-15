@@ -20,5 +20,8 @@
     "express": "^5.2.1",
     "lightweight-charts": "^5.2.1",
     "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }
