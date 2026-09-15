@@ -10,3 +10,4 @@
 | EURUSD | 26 | 26.9% | 0.43 | -0.23 | 5 | 0.0% | 0.00 | -0.82 | 4.5 | ❓ pas assez de trades |
 | GBPUSD | 18 | 33.3% | 0.29 | -0.20 | 8 | 37.5% | 1.19 | 0.06 | 4 | ❓ pas assez de trades |
 | USDJPY | 39 | 33.3% | 1.00 | 0.00 | 9 | 33.3% | 1.10 | 0.04 | 8 | ❓ pas assez de trades |
+| USDCAD | 53 | 28.3% | 1.19 | 0.06 | 9 | 11.1% | 0.02 | -0.57 | 7 | ❓ pas assez de trades |

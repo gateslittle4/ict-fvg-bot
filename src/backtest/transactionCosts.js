@@ -20,6 +20,13 @@ export const DEFAULT_SPREADS = {
   EURUSD: 0.00010, // ~1.0 pip round-turn — typical standard-account retail/prop spread
   GBPUSD: 0.00015, // ~1.5 pips — GBP pairs typically run a bit wider than EURUSD
   USDJPY: 0.012, // ~1.2 pips (1 pip = 0.01 for this pair) — INDICATIVE, verify against FundingPips cTrader spec
+  // 2026-09-15, Esdras uploaded real HistData USDCAD M1 (2010-2018,
+  // 2020-2025) to research a genuinely new pair - same indicative-spread
+  // convention as every other pair here, not yet confirmed against a real
+  // broker spec. ~1.5 pips, matching GBPUSD's convention (a major pair, not
+  // exotic - similar liquidity profile to EURUSD/GBPUSD, not USDJPY's
+  // different pip scale).
+  USDCAD: 0.00015, // ~1.5 pips — INDICATIVE, never confirmed against a real broker spec
   US100: 1.0, // 1.0 point — INDICATIVE, verify against FundingPips cTrader spec
   US500: 0.4, // 0.4 point — INDICATIVE, verify against FundingPips cTrader spec
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec

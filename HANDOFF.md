@@ -2515,3 +2515,37 @@ Esdras, après une journée calme sans signal validé sur les 4 stratégies déj
 `npm test` : 459/459.
 
 **Fichiers** : `src/backtest/starPatterns.js` (nouveau), `test/starPatterns.test.js` (nouveau), `scripts/runStarPatternsStrategyAnalysis.js` (nouveau), `data/backtest-input/star-patterns-strategy-analysis.md` (nouveau, rapport complet).
+
+## USDCAD — 7e instrument, données réelles fournies par Esdras, 13 mécanismes déjà testés étendus — 2026-09-15
+
+Esdras a demandé "autre strategy exploitable" après le rejet des patterns étoile, puis a fourni directement les vraies données HistData.com M1 USDCAD (2010-2018, 2020-2025 — 2019 manquant) sous forme de fichiers .zip officiels, plutôt que d'inventer une 26e idée de mécanisme (risque de comparaisons multiples déjà signalé). Converti en M15 via `scripts/convertHistData.js` déjà existant (5 387 922 bougies M1 → 369 937 bougies M15) : `data/backtest-input/USDCAD.csv`. Spread indicatif ajouté (`transactionCosts.js`) : 0.00015 (~1.5 pips, convention GBPUSD — paire majeure, jamais confirmé contre un vrai spread courtier, même réserve que partout ailleurs).
+
+**Méthode : même discipline que l'extension USDJPY/GBPUSD (2026-09-11/12)** — aucun nouveau réglage, seulement l'ajout de `'USDCAD'` aux tableaux `SYMBOLS` déjà existants de 13 scripts qui utilisent une définition mécanique FIXE (pas de réglage par instrument) : Judas Swing, NWOG, NDOG, Breaker Block, Asian Range Breakout, Asian Range Fade, Weekly Liquidity Sweep, MACD Trend, DMI Trend, RSI Divergence classique, Gap Continuation, Unicorn Model, Star Patterns (+ Doji Star). Paramètres de chaque mécanisme déjà fixés AVANT de voir un seul résultat USDCAD — aucun nouveau code de stratégie écrit pour cette paire spécifiquement.
+
+**Résultat (espérance R, train 2019-2023 / test 2024-2025)** :
+
+| Mécanisme | Train | Test | Verdict |
+|---|---|---|---|
+| Asian Range Breakout | -0.17 | -0.15 | ❌ |
+| Asian Range Fade | -0.25 | -0.36 | ❌ |
+| Breaker Block | -0.14 | -0.43 | ❌ |
+| DMI Trend | 0.06 (n=53) | -0.57 (n=9) | ❓ pas assez de trades |
+| Gap Continuation (quotidien) | -0.10 | -1.24 (n=1) | ❓ pas assez de trades |
+| Gap Continuation (hebdo) | -0.44 | -0.70 | ❌ |
+| Judas Swing | -0.21 | -0.17 | ❌ |
+| MACD Trend | -0.08 | -0.28 | ❌ |
+| NDOG | -0.13 | — (n=0) | ❓ pas assez de trades |
+| NWOG | -0.09 | +0.12 (n=48) | ⚠️ affaibli |
+| RSI Divergence classique | -0.02 (n=60) | -0.43 (n=13) | ❓ pas assez de trades |
+| Star | -0.24 | -0.16 | ❌ |
+| Doji Star | -0.23 | -0.05 | ❌ |
+| Unicorn Model | -0.10 | -0.22 | ❌ |
+| Weekly Liquidity Sweep | -0.08 | +0.01 (n=64) | ⚠️ affaibli |
+
+**13 mécanismes testés, aucun edge net** — rejeté franchement sur la majorité, les deux seules exceptions (NWOG, Weekly Liquidity Sweep) sont "affaiblies" avec la même marge minuscule déjà vue sur d'autres paires (train légèrement négatif, test à peine positif sur un petit échantillon) — même signature "bruit" déjà traitée comme telle partout ailleurs dans ce document, pas un edge. **Conclusion cohérente avec GBPUSD (déjà abandonné après 11 mécanismes) : USDCAD ne montre pas non plus d'edge exploitable avec cet ensemble de mécanismes déjà validés ailleurs.**
+
+**Volontairement PAS testé dans cette session** : le combo FVG filtré réellement en production (celui qui marche sur US100/US500/XAUUSD) n'a PAS été étendu à USDCAD — contrairement aux 13 mécanismes ci-dessus (une seule définition mécanique fixe partout), le combo FVG est spécifiquement RÉGLÉ par instrument (quel biais H4/H1/EMA, quelle fenêtre de session) et cette configuration a elle-même demandé une vraie recherche pour chaque instrument existant. L'appliquer à USDCAD sans ce même travail de découverte reviendrait à choisir une config au hasard — le genre de raccourci que ce projet évite. Piste réellement ouverte pour une session future si Esdras veut aller plus loin sur USDCAD spécifiquement, mais un chantier séparé, pas une extension à une ligne de code.
+
+`npm test` : 459/459 (inchangé — aucun test ne couvre ces scripts d'analyse ad hoc, convention déjà établie).
+
+**Fichiers** : `data/backtest-input/USDCAD.csv` (nouveau, converti depuis les fichiers HistData fournis par Esdras), `src/backtest/transactionCosts.js` (+`USDCAD`), 13 scripts `scripts/run*StrategyAnalysis.js` (SYMBOLS étendu), 13 rapports `data/backtest-input/*-strategy-analysis.md` régénérés (ligne USDCAD ajoutée, résultats des 6 autres instruments inchangés).

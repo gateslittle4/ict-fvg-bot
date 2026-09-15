@@ -14,6 +14,7 @@ Version la plus large - n'importe quel petit corps compte comme "étoile".
 | EURUSD | 1689 | 24.9% | 0.82 | -0.15 | 622 | 23.0% | 0.73 | -0.24 | ❌ ne tient pas |
 | GBPUSD | 1344 | 26.0% | 0.87 | -0.11 | 527 | 26.0% | 0.84 | -0.14 | ❌ ne tient pas |
 | USDJPY | 2212 | 25.4% | 0.84 | -0.14 | 624 | 24.6% | 0.84 | -0.13 | ❌ ne tient pas |
+| USDCAD | 3443 | 23.0% | 0.73 | -0.24 | 495 | 26.1% | 0.82 | -0.16 | ❌ ne tient pas |
 
 ## Variante 2 : Doji Star (bougie 2 doit AUSSI être un vrai doji - corps ≤ 10% de sa propre amplitude)
 
@@ -27,3 +28,4 @@ Version plus stricte - filtre la variante 1 pour ne garder que les vrais doji co
 | EURUSD | 1183 | 23.8% | 0.77 | -0.20 | 435 | 22.1% | 0.69 | -0.29 | ❌ ne tient pas |
 | GBPUSD | 916 | 24.9% | 0.82 | -0.16 | 358 | 25.1% | 0.80 | -0.18 | ❌ ne tient pas |
 | USDJPY | 1532 | 25.1% | 0.82 | -0.16 | 429 | 21.5% | 0.70 | -0.26 | ❌ ne tient pas |
+| USDCAD | 2360 | 23.6% | 0.75 | -0.23 | 336 | 28.9% | 0.94 | -0.05 | ❌ ne tient pas |

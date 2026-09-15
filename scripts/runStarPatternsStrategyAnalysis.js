@@ -24,7 +24,7 @@ import { runStarPatternsBacktest } from '../src/backtest/starPatterns.js';
 const TRAIN_CUTOFF = new Date('2024-01-01T00:00:00Z').getTime();
 const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
 const MIN_TRADES_FOR_VERDICT = 10;
-const SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY'];
+const SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCAD'];
 
 function withCosts(trades, symbol) {
   const spread = DEFAULT_SPREADS[symbol] ?? 0;

@@ -12,6 +12,7 @@
 | EURUSD | 230 | 29.6% | 1.00 | -0.00 | 2 | 50.0% | 2.18 | 0.77 | ❓ pas assez de trades |
 | GBPUSD | 188 | 23.9% | 0.75 | -0.23 | 1 | 100.0% | ∞ | 2.72 | ❓ pas assez de trades |
 | USDJPY | 312 | 29.8% | 1.04 | 0.03 | 4 | 0.0% | 0.00 | -1.14 | ❓ pas assez de trades |
+| USDCAD | 178 | 27.5% | 0.89 | -0.10 | 1 | 0.0% | 0.00 | -1.24 | ❓ pas assez de trades |
 
 ## Échelle : Hebdomadaire (20-100h)
 
@@ -23,3 +24,4 @@
 | EURUSD | 97 | 18.6% | 0.53 | -0.46 | 22 | 18.2% | 0.51 | -0.50 | ❌ ne tient pas |
 | GBPUSD | 76 | 21.1% | 0.63 | -0.35 | 16 | 0.0% | 0.00 | -1.24 | ❌ ne tient pas |
 | USDJPY | 125 | 25.6% | 0.80 | -0.18 | 38 | 28.9% | 0.98 | -0.02 | ❌ ne tient pas |
+| USDCAD | 140 | 19.3% | 0.55 | -0.44 | 24 | 12.5% | 0.33 | -0.70 | ❌ ne tient pas |
