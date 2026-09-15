@@ -3330,3 +3330,31 @@ Deux questions distinctes, traitées séparément dans le nouveau `scripts/check
 `npm test` : 531/531 (inchangé — script d'analyse seul).
 
 **Fichiers** : `scripts/checkMonthlySeasonalityAndChallengeStart.js` (nouveau).
+
+## Même simulation, mais pour 2026 (vraies données) — 2026-09-15
+
+Esdras, après avoir vérifié la méthodologie du script précédent : "Fais la meme simulation pour lannee 2026". Esdras a fourni directement le `ADMIN_EXPORT_TOKEN` (même discipline de sécurité que la session précédente pour le rejeu de 7 mois — voir HANDOFF.md "Suite : ~7 mois réels via la route admin" : token utilisé uniquement en paramètre de requête `curl` direct, jamais écrit dans un fichier du projet ni commité — vérifié par recherche avant de committer, aucune trace trouvée).
+
+**Récupéré via `/admin/export-candles?days=245&token=...`** : 2026-02-10 → 2026-09-15 (plafond réel du courtier par requête, ~245 jours — pas tout à fait janvier, voir plus bas).
+
+**Nouveau `scripts/checkChallengeStart2026OnRealData.js`** — même logique EXACTE que `checkMonthlySeasonalityAndChallengeStart.js` (FTMO 1-Step référence, risque challenge 0.5%/trade compounding, fenêtre de 90 jours, même `GuardrailEngine`), mais appliquée à UNE SEULE année réelle (2026) au lieu de 7 années de backtest. Prend un dossier de CSV en argument (jamais le token lui-même), même convention que les scripts jumeaux de rejeu réel.
+
+**Résultat, mois par mois** :
+
+| Mois de départ | Couverture | Plancher cassé | Cible atteinte |
+|---|---|---|---|
+| janvier / février | pas de données réelles avant le 10 février | non simulable | — |
+| mars | complète (90j) | non | oui, en 46j |
+| avril | complète (90j) | non | oui, en **15j** (le plus rapide) |
+| mai | complète (90j) | non | oui, en 73j (le plus lent) |
+| juin | complète (90j) | non | oui, en 49j |
+| juillet | tronquée (77j/90j réels) | non | oui, en 24j — atteint avant même la troncature |
+| août | tronquée (46j/90j réels) | non | pas encore (trop tôt pour savoir, pas un échec) |
+| septembre | tronquée (15j/90j réels) | non | pas encore (idem) |
+| octobre → décembre | pas encore arrivé | — | — |
+
+**Aucun mois testé n'a cassé le plancher en 2026, cohérent avec le résultat 2019-2025.** Avril est le départ le plus rapide observé cette année (15 jours jusqu'à la cible) ; mai le plus lent (73 jours) mais toujours sans casser. Août et septembre sont honnêtement rapportés "pas encore" plutôt que "échoué" — la fenêtre de 90 jours n'a simplement pas eu le temps de s'écouler.
+
+`npm test` : 531/531 (inchangé — script d'analyse seul, aucune donnée 2026 committée dans le repo, uniquement dans le scratchpad de session).
+
+**Fichiers** : `scripts/checkChallengeStart2026OnRealData.js` (nouveau).
