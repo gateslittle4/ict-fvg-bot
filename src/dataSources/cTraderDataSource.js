@@ -1510,6 +1510,12 @@ export class CTraderDataSource {
             entryPrice: info.entryPrice,
             entryTime: info.entryTime,
             exitTime: Date.now(),
+            // Real broker $ (pnl, computed above from grossProfit) and the
+            // real resulting balance (store.setBalance already applied it
+            // just above) - Esdras's calendar request needs actual dollars/
+            // %, not just R-multiples.
+            pnlUsd: pnl,
+            balanceAfter: store.balance,
           });
           // 2026-09-14 (found live, monitoring BTCUSD right after the
           // null-orderId fix): the engine's own belief (openPositions) was

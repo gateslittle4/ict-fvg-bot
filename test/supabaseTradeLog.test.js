@@ -74,6 +74,24 @@ test('toTradeRow: a timeout with no rMultiple becomes null, not undefined or NaN
   assert.equal(row.r_multiple, null);
 });
 
+test('toTradeRow: carries pnlUsd/balanceAfter through as pnl_usd/balance_after (Esdras: "calendrier... chiffre brut et %")', () => {
+  const row = toTradeRow({
+    symbol: 'US500', source: 'fvg', direction: 'bearish', outcome: 'loss', rMultiple: -1,
+    entryPrice: 6850.5, entryTime: 1, exitTime: 2, pnlUsd: -49.5, balanceAfter: 9950.5,
+  });
+  assert.equal(row.pnl_usd, -49.5);
+  assert.equal(row.balance_after, 9950.5);
+});
+
+test('toTradeRow: pnlUsd/balanceAfter default to null when omitted (a row logged before those columns existed)', () => {
+  const row = toTradeRow({
+    symbol: 'US500', source: 'fvg', direction: 'bearish', outcome: 'loss', rMultiple: -1,
+    entryPrice: 6850.5, entryTime: 1, exitTime: 2,
+  });
+  assert.equal(row.pnl_usd, null);
+  assert.equal(row.balance_after, null);
+});
+
 test('logClosedTrade: no-op when client is null (persistence disabled)', async () => {
   await logClosedTrade(null, { symbol: 'US100' }, { log: silentLog });
   // no throw is the assertion
@@ -200,6 +218,36 @@ test('fetchPerformanceBySymbol: equityCurve carries entryTime alongside time/cum
   const { equityCurve } = await fetchPerformanceBySymbol(client);
   assert.equal(equityCurve[0].entryTime, '2026-09-01T08:30:00Z');
   assert.equal(equityCurve[0].time, '2026-09-01T09:00:00Z');
+});
+
+// 2026-09-15 (Esdras: "calendrier des jours du mois... chiffre brut et %") -
+// the calendar needs real $ figures, not just R-multiples.
+test('fetchPerformanceBySymbol: equityCurve carries pnlUsd/balanceAfter when the DB has them', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z', pnl_usd: 247.5, balance_after: 10247.5 },
+      ],
+      error: null,
+    },
+  });
+  const { equityCurve } = await fetchPerformanceBySymbol(client);
+  assert.equal(equityCurve[0].pnlUsd, 247.5);
+  assert.equal(equityCurve[0].balanceAfter, 10247.5);
+});
+
+test('fetchPerformanceBySymbol: equityCurve.pnlUsd/balanceAfter default to null on rows logged before those columns existed', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z' },
+      ],
+      error: null,
+    },
+  });
+  const { equityCurve } = await fetchPerformanceBySymbol(client);
+  assert.equal(equityCurve[0].pnlUsd, null);
+  assert.equal(equityCurve[0].balanceAfter, null);
 });
 
 test('fetchPerformanceBySymbol: a query error surfaces as a reason rather than throwing or silently returning empty', async () => {

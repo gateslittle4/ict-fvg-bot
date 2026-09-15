@@ -7,8 +7,9 @@
 <!-- PWA (2026-09, at the user's request: "entrer direct sans passer par
      Chrome") - installable on iOS/Android home screen, opens without browser
      chrome (address bar/tabs). See public/manifest.json + sw.js. -->
+<script src="/theme.js"></script>
 <link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#0b0f14" />
+<meta name="theme-color" content="#0b0f14" data-dark="#0b0f14" data-light="#f6f7f9" />
 <link rel="icon" href="/icons/icon-192.png" type="image/png" />
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -42,6 +43,24 @@
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
     --radius: 3px;
+  }
+  /* Light theme (2026-09-15, Esdras: "j'aimerais avoir la couleur blanche
+     aussi du site") - same tokens, light values, toggled via theme.js
+     setting data-theme="light" on <html>. */
+  :root[data-theme="light"] {
+    --bg: #f6f7f9;
+    --bg-inset: #ececf0;
+    --panel: #ffffff;
+    --panel-2: #f1f2f5;
+    --panel-border: #dcdfe4;
+    --panel-border-strong: #c3c8d1;
+    --text: #14181f;
+    --muted: #4c5560;
+    --faint: #8a919c;
+    --green: #16915a;
+    --red: #d1383b;
+    --amber: #b3790f;
+    --blue: #2158d0;
   }
   * { box-sizing: border-box; }
   html { background: var(--bg); }
@@ -212,7 +231,7 @@
   .filter-select:focus { outline: none; border-color: var(--blue); }
 
   /* ---------- Nav tabs ---------- */
-  .topnav { display: flex; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--panel-border); }
+  .topnav { display: flex; align-items: center; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--panel-border); }
   .topnav a {
     color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600;
     padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px;
@@ -220,6 +239,8 @@
   }
   .topnav a:hover { color: var(--text); }
   .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+  .theme-toggle-btn:hover { border-color: var(--panel-border-strong); }
 
   /* ---------- Multi-account switcher + overview (2026-09, Phase 3 of the
      multi-account rollout - see HANDOFF.md "Multi-compte") - hidden
@@ -368,6 +389,7 @@
     <a href="/chart.html">Graphique</a>
     <a href="/journal.html">Journal</a>
     <a href="/accounts.html">Comptes</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
   </nav>
 
   <!-- Vue d'ensemble multi-comptes (2026-09, Phase 3 - voir HANDOFF.md

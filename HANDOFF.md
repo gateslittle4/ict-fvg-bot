@@ -2954,3 +2954,23 @@ Suite du "quoi encore ?" — Esdras a choisi 3 des idées proposées : "Stats pa
 `npm test` : 492/492.
 
 **Fichiers** : `public/journal.html`, `src/dataSources/supabaseTradeLog.js`, `src/dataSources/cTraderDataSource.js`, `test/supabaseTradeLog.test.js`.
+
+## Calendrier mensuel réel ($/%) + thème clair sur tout le site — 2026-09-15
+
+Deux demandes d'Esdras dans la foulée : "j'aimerais voir un calendrier des jours du mois avec les chiffres faits, soit gagnant ou perdant, genre le 📆 avec les chiffres totaux de chaque jour, si c'est perte ou gain, avec chiffre brut et %" puis "j'aimerais avoir la couleur blanche aussi du site, pas seulement noir".
+
+**Calendrier mensuel** (`public/journal.html`, nouvelle carte "📆 Calendrier mensuel", distincte de la heatmap GitHub-style existante) : une vraie grille de calendrier (7 colonnes Lun→Dim), un mois à la fois avec navigation ◀/▶ (désactivée sur le mois en cours), chaque jour affichant son gain/perte réel en $ ET en % du solde de CE jour-là (vert/rouge), plus le nombre de trades.
+
+Ceci a révélé que le journal durable (`bot_trade_events`) ne stockait QUE le R-multiple, jamais le $ réel ni le solde résultant — impossible de calculer un vrai % sans ça. Corrigé à la source (pas une approximation) :
+- Migration Supabase : 2 colonnes ajoutées à `bot_trade_events` (`pnl_usd`, `balance_after`), nullable (aucun backfill inventé sur les 21 lignes déjà enregistrées).
+- `logClosedTrade()`/`toTradeRow()` (`supabaseTradeLog.js`) acceptent et persistent `pnlUsd`/`balanceAfter`.
+- `cTraderDataSource.js` : le point d'appel réel (`_handleExecutionEvent`, après un ORDER_FILLED avec `closePositionDetail`) passe maintenant le vrai `pnl` du courtier et le vrai `store.balance` résultant — ces valeurs existaient déjà à cet endroit, juste jamais transmises jusqu'ici.
+- `fetchPerformanceBySymbol()` sélectionne et renvoie les 2 nouvelles colonnes dans `equityCurve`.
+- Le calendrier gère honnêtement les trades enregistrés AVANT cette migration (pnlUsd null) : bascule automatiquement en affichage R-only pour ces jours-là, jamais un $ inventé.
+- 6 nouveaux tests (`test/supabaseTradeLog.test.js`).
+
+**Thème clair** (`public/theme.js`, nouveau fichier partagé, chargé par les 4 pages) : bouton 🌙/☀️ dans chaque barre de navigation, bascule `data-theme="light"` sur `<html>`, persisté dans `localStorage` (`apexfvg-theme`) — le choix survit à la navigation entre pages et aux rechargements. Chaque page (`index.html`, `journal.html`, `accounts.html`, `chart.html`) reçoit un bloc `:root[data-theme="light"]` avec les mêmes noms de tokens que sa palette sombre existante (`--bg`, `--text`, `--green`, etc.) — aucune autre règle CSS n'a dû changer, tout référence déjà ces tokens. Le graphique en chandeliers (lightweight-charts, `chart.html`) reste volontairement sombre même en thème clair — convention courante des plateformes de trading (le panneau de prix reste sombre), seul le chrome de la page suit le thème.
+
+Vérifié visuellement avec Playwright local (calendrier avec données simulées incluant un jour pré-migration en repli R-only ; bascule de thème sur les 4 pages ; persistance confirmée en naviguant d'une page à l'autre) — aucune erreur console, rendu correct dans les 2 thèmes.
+
+`npm test` : 496/496.

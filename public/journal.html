@@ -4,9 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Apex FVG — Journal</title>
+<script src="/theme.js"></script>
 <!-- PWA - see public/index.html's own head for why (same manifest/scope covers this page too). -->
 <link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#05070a" />
+<meta name="theme-color" content="#05070a" data-dark="#05070a" data-light="#f6f7f9" />
 <link rel="icon" href="/icons/icon-192.png" type="image/png" />
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -41,6 +42,25 @@
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
     --radius: 3px;
   }
+  /* Light theme (2026-09-15, Esdras: "j'aimerais avoir la couleur blanche
+     aussi du site") - same tokens, light values, toggled via theme.js
+     setting data-theme="light" on <html>. Every rule below already only
+     references these tokens, so no other CSS needs to change. */
+  :root[data-theme="light"] {
+    --bg: #f6f7f9;
+    --bg-inset: #ececf0;
+    --panel: #ffffff;
+    --panel-2: #f1f2f5;
+    --panel-border: #dcdfe4;
+    --panel-border-strong: #c3c8d1;
+    --text: #14181f;
+    --muted: #4c5560;
+    --faint: #8a919c;
+    --green: #16915a;
+    --red: #d1383b;
+    --amber: #b3790f;
+    --blue: #2158d0;
+  }
   * { box-sizing: border-box; }
   html { background: var(--bg); }
   body {
@@ -59,7 +79,9 @@
   .subtitle { color: var(--faint); font-size: 10.5px; margin-bottom: 14px; font-family: var(--mono); letter-spacing: 0.2px; }
   a { color: var(--blue); }
 
-  .topnav { display: flex; gap: 4px; margin: 14px 0 0; border-bottom: 1px solid var(--panel-border); }
+  .topnav { display: flex; align-items: center; gap: 4px; margin: 14px 0 0; border-bottom: 1px solid var(--panel-border); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+  .theme-toggle-btn:hover { border-color: var(--panel-border-strong); }
   .topnav a {
     color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600;
     padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px;
@@ -172,6 +194,43 @@
   .calendar-legend .calendar-cell { width: 11px; height: 11px; }
   .calendar-months { display: flex; gap: 3px; font-size: 9.5px; color: var(--faint); font-family: var(--mono); margin-bottom: 4px; width: max-content; }
 
+  /* ---------- Calendrier mensuel (2026-09-15, Esdras: "un calendrier des
+     jours du mois... genre le 📆 avec les chiffres totaux de chaque jour,
+     gain ou perte, chiffre brut et %") - a real wall-calendar grid, one
+     month at a time, distinct from the GitHub-heatmap above. ---------- */
+  .month-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .month-cal-nav { display: flex; align-items: center; gap: 8px; }
+  .month-cal-nav button {
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius);
+    color: var(--text); font-family: var(--mono); font-size: 12px; padding: 4px 10px; cursor: pointer;
+  }
+  .month-cal-nav button:hover { border-color: var(--panel-border-strong); }
+  .month-cal-nav button:disabled { opacity: 0.35; cursor: default; }
+  .month-cal-title { font-family: var(--mono); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.3px; min-width: 150px; text-align: center; }
+  .month-cal-summary { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+  .month-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .month-cal-dow { font-family: var(--mono); font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.4px; text-align: center; padding-bottom: 2px; }
+  .month-cal-day {
+    aspect-ratio: 1 / 0.82; border-radius: var(--radius); border: 1px solid var(--panel-border);
+    background: var(--bg-inset); padding: 5px 6px; display: flex; flex-direction: column; gap: 2px;
+    font-family: var(--mono); overflow: hidden;
+  }
+  .month-cal-day.empty { visibility: hidden; }
+  .month-cal-day.win { background: rgba(47,212,128,0.16); border-color: rgba(47,212,128,0.4); }
+  .month-cal-day.loss { background: rgba(255,92,95,0.16); border-color: rgba(255,92,95,0.4); }
+  .month-cal-day.today { border-color: var(--blue); border-width: 2px; }
+  .month-cal-daynum { font-size: 10.5px; color: var(--faint); }
+  .month-cal-day.win .month-cal-daynum, .month-cal-day.loss .month-cal-daynum { color: var(--muted); }
+  .month-cal-pnl { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .month-cal-day.win .month-cal-pnl { color: var(--green); }
+  .month-cal-day.loss .month-cal-pnl { color: var(--red); }
+  .month-cal-pct { font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .month-cal-count { font-size: 9px; color: var(--faint); margin-top: auto; }
+  @media (max-width: 560px) {
+    .month-cal-pnl { font-size: 10px; }
+    .month-cal-pct, .month-cal-count { display: none; }
+  }
+
   /* ---------- Statistiques heure/jour (2026-09-15) - simple horizontal bar
      rows, same "text/numbers over decorative charts" discipline as the rest
      of the project - the bar itself is just a background-width gradient,
@@ -212,6 +271,7 @@
     <a href="/chart.html">Graphique</a>
     <a href="/journal.html" class="active">Journal</a>
     <a href="/accounts.html">Comptes</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
   </nav>
   <h1>Journal de trading</h1>
   <div class="subtitle">Historique réel confirmé par le courtier — performance durable, détail par instrument, et chaque trade avec son contexte de marché complet.</div>
@@ -232,6 +292,12 @@
     <h2>Calendrier de performance</h2>
     <div class="meta" style="margin-bottom:8px;">Un carré par jour où au moins un trade s'est clôturé — vert/rouge selon le R total du jour, intensité proportionnelle. Heure de sortie en heure locale de ton navigateur.</div>
     <div id="calendar-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>📆 Calendrier mensuel</h2>
+    <div class="meta" style="margin-bottom:8px;">Un mois à la fois, comme un vrai calendrier — chaque jour où un trade s'est clôturé affiche son gain/perte en $ réel et en % du solde de ce jour-là. $/% réels non disponibles sur les trades enregistrés avant le 2026-09-15 (colonne ajoutée ce jour-là) — affichés en R uniquement pour ces jours-là.</div>
+    <div id="month-calendar-body">Chargement…</div>
   </div>
 
   <div class="card">
@@ -425,6 +491,127 @@ function renderCalendar(equityCurve) {
   `;
 }
 
+// Calendrier mensuel (2026-09-15, Esdras: "un calendrier des jours du mois...
+// genre le 📆 avec les chiffres totaux de chaque jour, gain ou perte, chiffre
+// brut et %") - a real wall-calendar grid, one month at a time, distinct from
+// the GitHub-heatmap above. Needs real $ (pnl_usd/balance_after, added to
+// bot_trade_events this same day) rather than just R, so it can show actual
+// dollars and the day's % of that day's STARTING balance - falls back to
+// showing R-only for any trade logged before those columns existed
+// (pnlUsdKnown: false), never a fabricated $ guess.
+const MONTH_CAL_STARTING_BALANCE_FALLBACK = 10000; // accountRuntime.js's own demo starting balance - only used for the very first trading day ever (no prior trade's balanceAfter to read).
+
+/**
+ * One pass over the (already chronological, oldest-first) equityCurve into
+ * per-LOCAL-calendar-day buckets: { r, count, pnlUsd, pnlUsdKnown,
+ * balanceBefore }. `balanceBefore` is the real balance right before this
+ * day's first trade (the previous day's last known balanceAfter, or null on
+ * the very first trading day) - needed to turn the day's $ into a %.
+ */
+function buildDailyBuckets(equityCurve) {
+  const byDay = new Map();
+  let prevBalance = null;
+  let prevCumulativeR = 0;
+  for (const t of equityCurve) {
+    const tradeR = t.cumulativeR - prevCumulativeR;
+    prevCumulativeR = t.cumulativeR;
+    const d = new Date(t.time);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (!byDay.has(key)) {
+      byDay.set(key, { r: 0, count: 0, pnlUsd: 0, pnlUsdKnown: true, balanceBefore: prevBalance });
+    }
+    const bucket = byDay.get(key);
+    bucket.count++;
+    bucket.r += tradeR;
+    if (t.pnlUsd == null) bucket.pnlUsdKnown = false;
+    else bucket.pnlUsd += t.pnlUsd;
+    if (t.balanceAfter != null) prevBalance = t.balanceAfter;
+  }
+  return byDay;
+}
+
+function monthCalIsCurrentMonth(year, month) {
+  const now = new Date();
+  return year === now.getFullYear() && month === now.getMonth();
+}
+
+function renderMonthCalendar(dailyBuckets, year, month) {
+  const firstOfMonth = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startDow = (firstOfMonth.getDay() + 6) % 7; // 0=Monday
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dowLabels = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push('<div class="month-cal-day empty"></div>');
+
+  let monthPnlUsd = 0, monthPnlKnown = true, monthR = 0, tradedDays = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(year, month, day);
+    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const bucket = dailyBuckets.get(key);
+    const isToday = date.getTime() === today.getTime();
+    if (!bucket) {
+      cells.push(`<div class="month-cal-day${isToday ? ' today' : ''}"><div class="month-cal-daynum">${day}</div></div>`);
+      continue;
+    }
+    tradedDays++;
+    const isWin = bucket.pnlUsdKnown ? bucket.pnlUsd >= 0 : bucket.r >= 0;
+    if (bucket.pnlUsdKnown) monthPnlUsd += bucket.pnlUsd;
+    else monthPnlKnown = false;
+    monthR += bucket.r;
+    const balBefore = bucket.balanceBefore ?? MONTH_CAL_STARTING_BALANCE_FALLBACK;
+    const pctStr = bucket.pnlUsdKnown ? `${bucket.pnlUsd >= 0 ? '+' : ''}${fmt((bucket.pnlUsd / balBefore) * 100)}%` : '';
+    const pnlStr = bucket.pnlUsdKnown
+      ? `${bucket.pnlUsd >= 0 ? '+' : ''}${fmt(bucket.pnlUsd)}$`
+      : `${bucket.r >= 0 ? '+' : ''}${fmt(bucket.r)}R`;
+    cells.push(`
+      <div class="month-cal-day ${isWin ? 'win' : 'loss'}${isToday ? ' today' : ''}" title="${date.toLocaleDateString('fr-FR')} — ${bucket.count} trade${bucket.count > 1 ? 's' : ''}">
+        <div class="month-cal-daynum">${day}</div>
+        <div class="month-cal-pnl">${pnlStr}</div>
+        ${pctStr ? `<div class="month-cal-pct">${pctStr}</div>` : ''}
+        <div class="month-cal-count">${bucket.count} trade${bucket.count > 1 ? 's' : ''}</div>
+      </div>
+    `);
+  }
+  const totalCells = startDow + daysInMonth;
+  const trailing = (7 - (totalCells % 7)) % 7;
+  for (let i = 0; i < trailing; i++) cells.push('<div class="month-cal-day empty"></div>');
+
+  const monthLabel = firstOfMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const summary = tradedDays === 0
+    ? 'Aucun trade ce mois-ci.'
+    : `${tradedDays} jour${tradedDays > 1 ? 's' : ''} tradé${tradedDays > 1 ? 's' : ''} — ${monthPnlKnown ? `${monthPnlUsd >= 0 ? '+' : ''}${fmt(monthPnlUsd)}$` : `${monthR >= 0 ? '+' : ''}${fmt(monthR)}R`}`;
+
+  return `
+    <div class="month-cal-head">
+      <div class="month-cal-nav">
+        <button onclick="changeMonthCalendar(-1)" title="Mois précédent">◀</button>
+        <div class="month-cal-title">${monthLabel}</div>
+        <button onclick="changeMonthCalendar(1)" title="Mois suivant" ${monthCalIsCurrentMonth(year, month) ? 'disabled' : ''}>▶</button>
+      </div>
+      <div class="month-cal-summary">${summary}</div>
+    </div>
+    <div class="month-cal-grid">
+      ${dowLabels.map((l) => `<div class="month-cal-dow">${l}</div>`).join('')}
+      ${cells.join('')}
+    </div>
+  `;
+}
+
+let monthCalDailyBuckets = new Map();
+let monthCalYear;
+let monthCalMonth; // 0-indexed, kept across data refreshes so navigating away from the current month survives a periodic reload
+
+function changeMonthCalendar(delta) {
+  monthCalMonth += delta;
+  if (monthCalMonth < 0) { monthCalMonth = 11; monthCalYear--; }
+  else if (monthCalMonth > 11) { monthCalMonth = 0; monthCalYear++; }
+  const el = document.getElementById('month-calendar-body');
+  if (el) el.innerHTML = renderMonthCalendar(monthCalDailyBuckets, monthCalYear, monthCalMonth);
+}
+
 // Statistiques par heure et jour de la semaine (2026-09-15) - same
 // deriveTradeR() source, bucketed by the LOCAL hour/weekday of each
 // trade's real exit time. Bars are relative to the biggest |R| bucket in
@@ -598,6 +785,7 @@ function renderRecoveryStats(equityCurve) {
 function renderOverview(data) {
   const el = document.getElementById('overview-body');
   const calendarEl = document.getElementById('calendar-body');
+  const monthCalEl = document.getElementById('month-calendar-body');
   const timeStatsEl = document.getElementById('time-stats-body');
   const sessionStatsEl = document.getElementById('session-stats-body');
   const recoveryEl = document.getElementById('recovery-body');
@@ -606,12 +794,22 @@ function renderOverview(data) {
     const emptyMsg = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
     el.innerHTML = emptyMsg;
     if (calendarEl) calendarEl.innerHTML = emptyMsg;
+    if (monthCalEl) monthCalEl.innerHTML = emptyMsg;
     if (timeStatsEl) timeStatsEl.innerHTML = emptyMsg;
     if (sessionStatsEl) sessionStatsEl.innerHTML = emptyMsg;
     if (recoveryEl) recoveryEl.innerHTML = emptyMsg;
     return;
   }
   if (calendarEl) calendarEl.innerHTML = renderCalendar(data.equityCurve);
+  if (monthCalEl) {
+    monthCalDailyBuckets = buildDailyBuckets(data.equityCurve);
+    if (monthCalYear === undefined) {
+      const now = new Date();
+      monthCalYear = now.getFullYear();
+      monthCalMonth = now.getMonth();
+    }
+    monthCalEl.innerHTML = renderMonthCalendar(monthCalDailyBuckets, monthCalYear, monthCalMonth);
+  }
   if (timeStatsEl) timeStatsEl.innerHTML = renderTimeStats(data.equityCurve);
   if (sessionStatsEl) sessionStatsEl.innerHTML = renderSessionStats(data.equityCurve);
   if (recoveryEl) recoveryEl.innerHTML = renderRecoveryStats(data.equityCurve);

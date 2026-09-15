@@ -50,7 +50,7 @@ export function createTradeLogClient({ url, serviceKey } = {}) {
  * event that opened it - same shape recentPerformanceReport.js already
  * builds) to the row shape bot_trade_events expects.
  */
-export function toTradeRow({ symbol, source, direction, outcome, rMultiple, entryPrice, entryTime, exitTime }) {
+export function toTradeRow({ symbol, source, direction, outcome, rMultiple, entryPrice, entryTime, exitTime, pnlUsd, balanceAfter }) {
   return {
     symbol,
     source,
@@ -60,6 +60,15 @@ export function toTradeRow({ symbol, source, direction, outcome, rMultiple, entr
     entry_price: entryPrice,
     entry_time: new Date(entryTime).toISOString(),
     exit_time: new Date(exitTime).toISOString(),
+    // pnl_usd/balance_after added 2026-09-15 (Esdras: "calendrier des jours
+    // du mois... chiffre brut et %") - the real broker $ P&L and the real
+    // resulting account balance, both already known at the call site
+    // (cTraderDataSource.js's _handleExecutionEvent computes `pnl` from the
+    // broker's own closePositionDetail.grossProfit before calling this).
+    // Optional/nullable: existing rows logged before this column existed
+    // simply have pnl_usd=null - never backfilled with a guess.
+    pnl_usd: pnlUsd ?? null,
+    balance_after: balanceAfter ?? null,
   };
 }
 
@@ -234,7 +243,7 @@ export function enrichTradesWithSlippage(brokerTrades, durableRows, toleranceMs 
  */
 export async function fetchPerformanceBySymbol(client, { days = null } = {}) {
   if (!client) return { bySymbol: {}, bySource: {}, overall: null, equityCurve: [], reason: 'not configured' };
-  let query = client.from(TABLE).select('symbol, source, outcome, r_multiple, entry_time, exit_time').order('exit_time', { ascending: false });
+  let query = client.from(TABLE).select('symbol, source, outcome, r_multiple, entry_time, exit_time, pnl_usd, balance_after').order('exit_time', { ascending: false });
   if (days != null) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     query = query.gte('exit_time', since);
@@ -265,8 +274,17 @@ export async function fetchPerformanceBySymbol(client, { days = null } = {}) {
   // during a specific session; the close can land hours later in a
   // completely different one) - so the journal page needs entry_time
   // alongside exit_time on every equityCurve point to bucket by it.
+  // pnlUsd/balanceAfter added 2026-09-15 (Esdras: "calendrier... chiffre
+  // brut et %") - null on any row logged before those columns existed
+  // (never backfilled with a guess), so callers must handle a null pnlUsd.
   const equityCurve = overall
-    ? chronological.map((row, i) => ({ time: row.exit_time, entryTime: row.entry_time, cumulativeR: overall.equityCurve[i] }))
+    ? chronological.map((row, i) => ({
+        time: row.exit_time,
+        entryTime: row.entry_time,
+        cumulativeR: overall.equityCurve[i],
+        pnlUsd: row.pnl_usd ?? null,
+        balanceAfter: row.balance_after ?? null,
+      }))
     : [];
 
   return { bySymbol, bySource, overall, equityCurve };
