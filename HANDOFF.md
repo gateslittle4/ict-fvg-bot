@@ -3120,3 +3120,16 @@ Immédiatement après le déploiement ci-dessus, vérifié contre la VRAIE produ
 `npm test` : 531/531 (inchangé — aucun test n'asserte la forme exacte de la requête broker, seulement son résultat déjà mocké).
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js`.
+
+## "Checklist pour trade" recentrée : une seule zone, active, formée aujourd'hui — 2026-09-15
+
+Esdras, sur la carte "Pourquoi pas encore de trade ?" ajoutée par l'autre session : "le pourquoi pas encore de trade n'est pas exactement ce que j'avais en tête. je voulais seulement avoir celui du plus recent trade, pas plusieurs, ensuite je ne voulais pas écrire pourquoi pas de trade mais uniquement Checklist pour trade et uniquement pour les fvg d'aujourd'hui et aussi fvg actif, et non ceux qui ont déjà été violé".
+
+**Corrigé** (`public/chart.html`, `renderPendingChecklist()`, affichage seulement — aucun changement de logique de trading) :
+- Titre renommé "Pourquoi pas encore de trade ?" → **"Checklist pour trade"**.
+- Le serveur (`getPendingZoneChecklists`) filtrait déjà sur `status === 'watching'` (jamais une zone déjà validée/expirée/périmée — le "déjà violé" d'Esdras était déjà couvert côté serveur).
+- 2 nouveaux filtres côté client, même convention "minuit local" que le filtre "aujourd'hui" du graphique lui-même (`renderOverlays`, ajouté plus tôt par l'autre session) : ne garde que les zones formées aujourd'hui, puis ne garde que **la plus récente** des zones restantes (une seule carte affichée, jamais plusieurs).
+
+Vérifié visuellement avec Playwright (3 zones simulées : une d'hier, une plus tôt aujourd'hui, une plus récente aujourd'hui — seule la 3e s'affiche), aucune erreur console.
+
+`npm test` : 531/531 (inchangé — filtre d'affichage pur côté client).

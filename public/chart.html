@@ -115,13 +115,15 @@
   .meta { color: var(--muted); font-size: 12px; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
 
-  /* ---------- "Pourquoi pas encore de trade" (2026-09-15, Esdras) - même
-     langage visuel que le "Critères respectés" de journal.html
+  /* ---------- "Checklist pour trade" (2026-09-15, Esdras) - même langage
+     visuel que le "Critères respectés" de journal.html
      (renderComplianceChecklist), copié ici (même convention que le reste de
-     cette page - pas de feuille de style partagée entre pages). ---------- */
+     cette page - pas de feuille de style partagée entre pages). Une seule
+     carte à la fois maintenant (la zone active la plus récente formée
+     aujourd'hui) - voir renderPendingChecklist. ---------- */
   .pending-zones { display: flex; flex-wrap: wrap; gap: 14px; }
   .pending-zone {
-    flex: 1 1 280px; background: var(--panel-2); border: 1px solid var(--panel-border);
+    flex: 1 1 280px; max-width: 420px; background: var(--panel-2); border: 1px solid var(--panel-border);
     border-radius: 8px; padding: 10px 12px; font-family: var(--mono);
   }
   .pending-zone-title { font-size: 12px; margin-bottom: 8px; color: var(--text); }
@@ -204,8 +206,8 @@
   </div>
 
   <div class="card">
-    <h1 style="font-size:14px; margin:0 0 4px;">Pourquoi pas encore de trade ?</h1>
-    <div class="subtitle" style="margin-bottom:10px;">Chaque zone FVG que le moteur surveille actuellement sur ce symbole, et où en est CHACUN des critères réels de la stratégie, en ce moment — pas juste le ✓/✗ combiné.</div>
+    <h1 style="font-size:14px; margin:0 0 4px;">Checklist pour trade</h1>
+    <div class="subtitle" style="margin-bottom:10px;">La zone FVG active la plus récente formée aujourd'hui sur ce symbole (encore "en surveillance", jamais une zone déjà validée/expirée), et où en est CHACUN des critères réels de la stratégie, en ce moment — pas juste le ✓/✗ combiné.</div>
     <div id="pending-checklist-body"><div class="meta">Chargement…</div></div>
   </div>
 
@@ -506,12 +508,22 @@ function renderOverlays(overlays, decimals) {
   }
 }
 
-// "Pourquoi pas encore de trade" (2026-09-15, Esdras: "il me montrerait ce
-// qui est okay, ce qui ne l'est pas encore") - separate, un-awaited fetch
+// "Checklist pour trade" (2026-09-15, Esdras: "il me montrerait ce qui est
+// okay, ce qui ne l'est pas encore" puis, en la voyant lister plusieurs
+// zones: "je voulais seulement avoir celui du plus recent trade, pas
+// plusieurs [...] et uniquement pour les fvg d'aujourd'hui et aussi fvg
+// actif, et non ceux qui ont deja ete viole") - separate, un-awaited fetch
 // from loadChart()'s own (a slower real H1 broker round-trip for the bias
 // item shouldn't ever block or error out the price chart itself - see this
 // function's own try/catch, deliberately self-contained and silent on
 // failure, same discipline as startLiveTick() above).
+//
+// The server (getPendingZoneChecklists) already restricts `data.zones` to
+// status === 'watching' (never a zone already validated/expired/stale -
+// "déjà violée" in Esdras's own words) - the 2 filters below are purely
+// display-side, same "local midnight" convention as renderOverlays()'s own
+// today-only filter just above, and same discipline (a real trading-logic
+// change would live in cTraderDataSource.js, not here).
 function renderPendingChecklist(data) {
   const body = document.getElementById('pending-checklist-body');
   if (!body) return;
@@ -519,12 +531,16 @@ function renderPendingChecklist(data) {
     body.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — indisponible.' : data.reason}</div>`;
     return;
   }
-  if (!data.zones || data.zones.length === 0) {
-    body.innerHTML = '<div class="meta">Aucune zone FVG en attente de validation sur ce symbole en ce moment.</div>';
+  const todayStartMs = new Date().setHours(0, 0, 0, 0);
+  const todaysZones = (data.zones || []).filter((z) => z.formedAt >= todayStartMs);
+  if (todaysZones.length === 0) {
+    body.innerHTML = '<div class="meta">Aucune zone FVG active aujourd\'hui sur ce symbole en ce moment.</div>';
     return;
   }
+  // Une seule carte : la zone active la plus récente (formée le plus tard aujourd'hui).
+  const mostRecent = todaysZones.reduce((latest, z) => (z.formedAt > latest.formedAt ? z : latest));
   const d = priceDecimals(currentSymbol);
-  body.innerHTML = `<div class="pending-zones">${data.zones.map((z) => {
+  body.innerHTML = `<div class="pending-zones">${[mostRecent].map((z) => {
     const rows = (z.checklist || []).map((it) => {
       const icon = !it.applicable ? '—' : (it.ok ? '✔' : '✗');
       const iconClass = !it.applicable ? '' : (it.ok ? 'ok' : 'pending');
