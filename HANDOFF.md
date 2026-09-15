@@ -2755,3 +2755,25 @@ Esdras : "donne moi une overview de la performance pendant les 7 derniers mois s
 **Réserves à garder en tête** : une seule fenêtre historique (comme partout dans ce projet), risque composé à 0.5%/trade (valeur réelle actuelle du compte démo), jamais observé en conditions réelles avec les 5 mécanismes tournant vraiment ensemble avant cette simulation.
 
 `npm test` : 465/465 (inchangé — script de vérification ad hoc, non committé).
+
+## Décembre-janvier "bizarre" — vérifié sur 7 années, ce n'était pas saisonnier — 2026-09-15
+
+Esdras a remarqué que le passage à vide de déc 2024-jan 2025 (-11.61% de drawdown) semblait suspect et a demandé de vérifier les autres années. Rejoué la simulation combinée des 5 stratégies sur TOUT l'historique commun aux 5 symboles (2019-01-02 → 2025-12-31, la seule fenêtre où US100/US500/XAUUSD/EURUSD/GER40 ont tous des données réelles) et isolé chaque fenêtre décembre→janvier :
+
+| Fenêtre | Trades | Espérance (R) | Drawdown de la fenêtre |
+|---|---|---|---|
+| Déc 2019 → Jan 2020 | 52 | +22.62R | 3.96% |
+| Déc 2020 → Jan 2021 | 66 | +42.69R | 6.35% |
+| Déc 2021 → Jan 2022 | 55 | +17.48R | 4.32% |
+| Déc 2022 → Jan 2023 | 56 | +23.64R | 4.28% |
+| Déc 2023 → Jan 2024 | 64 | **+52.30R** (meilleure) | 2.66% |
+| **Déc 2024 → Jan 2025** | 56 | **-8.40R** | **11.61%** |
+| Déc 2025 (partiel, pas de janvier 2026 dans les données) | 39 | -0.01R | 4.92% |
+
+**5 des 6 fenêtres complètes sont nettement positives** (2019-20, 2020-21, 2021-22, 2022-23, 2023-24) — décembre-janvier n'est pas structurellement mauvais. **Déc 2024→Jan 2025 est un vrai coup dur isolé, pas un motif récurrent.** La fenêtre de déc 2025 (partielle) montre aussi une faiblesse, mais c'est simplement le même cluster du 29 décembre déjà identifié, sans janvier suivant dans les données pour compenser.
+
+**Conclusion pour Esdras** : le drawdown de 11.61% était un vrai événement de marché (une mauvaise période sur plusieurs semaines qui peut arriver n'importe quand), pas un problème calendaire à éviter. Ça ne change rien à la recommandation précédente (un vrai plafond de drawdown global reste une bonne idée, peu importe quand ce genre de passage à vide frappe) — mais aucune règle "ne pas trader en décembre-janvier" n'est justifiée par les données.
+
+**Note méthodologique** : cette vérification utilise TOUTE la fenêtre 2019-2025 (train + test), contrairement au reste du projet qui exclut le train pour éviter le biais — c'était le bon choix ici puisque la question posée est purement calendaire/saisonnière (est-ce que ce mois est structurellement différent), pas une validation de la performance elle-même. Le solde final affiché par la simulation sur 7 ans (10 000$ → ~2.1M$, composé à 0.5%/trade sur 2278 trades) n'est PAS une prévision réaliste — c'est un artefact de la composition sans plafond de taille de position, retraits, ou split de profit prop firm ; ignoré ici, seule la comparaison RELATIVE entre fenêtres décembre-janvier compte.
+
+`npm test` : 465/465 (inchangé). Script de vérification ad hoc, non committé.
