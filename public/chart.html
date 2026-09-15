@@ -417,7 +417,20 @@ function renderOverlays(overlays, decimals) {
   const barTimesSec = lastCandles.map((c) => Math.floor(c.time / 1000));
   const lastBarSec = barTimesSec[barTimesSec.length - 1] ?? null;
 
+  // Zones formées aujourd'hui uniquement (2026-09-15, Esdras: "le chart est
+  // plein de fvg" - la plupart de l'encombrement venait de zones formées
+  // les jours précédents, toujours techniquement dans la fenêtre de
+  // péremption de la stratégie (config.js's fvg.maxAgeCandles - jusqu'à 50
+  // bougies, ~12.5h sur les symboles M15) mais visuellement inutiles des
+  // jours plus tard. Minuit LOCAL, même convention que le calendrier de
+  // journal.html. FILTRE D'AFFICHAGE UNIQUEMENT - la logique de péremption
+  // réelle du moteur (config.js) n'est pas touchée : une zone formée juste
+  // avant minuit peut rester réellement actionnable et ne s'affichera
+  // simplement plus ici.
+  const todayStartMs = new Date().setHours(0, 0, 0, 0);
+
   const zones = (overlays.zones || [])
+    .filter((z) => z.formedAt >= todayStartMs)
     .map((z) => {
       const startTime = snapToBar(z.formedAt, barTimesSec);
       if (startTime === null) return null; // formed entirely before the loaded window

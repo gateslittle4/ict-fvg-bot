@@ -3042,3 +3042,27 @@ Esdras : "on dirait que les nouveaux comptes suivent l'ancien système trade sem
 **Corrigé** (`src/server.js`, `bootAccount()`) : l'appel à `armAutoExecuteIfConfigured(account)` sort des 2 blocs `try` pour s'exécuter une seule fois, après les 3 branches (succès cTrader, succès Match-Trader, échec/pas d'identifiants → démo) — vraiment uniforme sur tout compte, comme documenté. Le mode démo/simulé (`mockDataSource.js`) ignore de toute façon ce drapeau (il simule toujours, peu importe) — ce correctif ne change donc aucun comportement simulé, seulement ce que le tableau de bord affiche pour ces comptes-là.
 
 `npm test` : 519/519 (inchangé — `bootAccount()` n'a pas de test dédié, changement vérifié manuellement en local avec `AUTO_EXECUTE_ALWAYS_ON=true`).
+
+## Investigation live : BTCUSD concentre tout le volume, US100 n'a jamais tradé — 2026-09-15
+
+Esdras : "Aucune trade jusqu'à présent?" puis "Regarde plutôt le US100, aucun trade maintenant?" — vérification en direct sur la production (pas en démo), via `/api/trade-log`, `/api/trade-history` et le nouvel endpoint `/api/signals`.
+
+**Constat réel** : 21 trades clôturés depuis le 13/09, **tous sur BTCUSD** (stratégie FVG), taux de réussite 9.5% (2G/19P), total -2.12R. La plupart de ces pertes sont minuscules (-0.36$ à -0.89$) sur des positions fermées quelques secondes à quelques minutes après l'ouverture — pas un stop-loss classique. US100/US500/XAUUSD/EURUSD/GER40 : **zéro trade**, y compris US100 spécifiquement vérifié.
+
+**Cause identifiée, pas un bug** : BTCUSD tourne en M1 (une bougie/minute) contre M15 pour les autres symboles — une zone FVG s'y forme et se valide potentiellement toutes les quelques minutes, contre une fois par 15 min ailleurs. `/api/signals` confirmait au moment de la vérification : 20 signaux "actionable" en attente, tous sur BTCUSD, tous bloqués par `netting` (une position BTCUSD est déjà réputée ouverte) — alors qu'US100 n'avait que 2 zones en simple surveillance (`watching`), formées récemment, pas encore validées (pas de retest+reclaim). Le déséquilibre de volume est donc structurel (le choix du M1 pour BTCUSD), pas une panne — mais combiné au taux de réussite de 9.5%, la pertinence de la stratégie FVG sur le bruit du M1 BTCUSD reste une question ouverte, pas encore creusée plus loin.
+
+Aucun changement de code pour cette partie — investigation seule.
+
+## Chart : les FVG ne montrent plus que la journée en cours — 2026-09-15
+
+Esdras, en creusant le point ci-dessus : "peux tu retire les notification fvg du charte les fvgs qui sont fait avant 12hr am de ce jour, je ne penses pas que notre stratégie tombe sur des fvg d'hier non?? car le chart est plein de fvg".
+
+**Clarification donnée avant de coder** : la péremption réelle des zones FVG côté stratégie (`config.js`'s `fvg.maxAgeCandles`, 50 bougies) n'est PAS calée sur minuit — sur un symbole M15 ça fait jusqu'à ~12.5h de fenêtre, donc une zone formée hier soir peut techniquement rester valide ce matin. La demande d'Esdras est traitée comme un filtre d'AFFICHAGE uniquement (le chart était effectivement encombré de vieilles zones), pas un changement de la logique de trading elle-même — pas touché.
+
+**`public/chart.html`, `renderOverlays()`** : les zones dont `formedAt` est avant minuit LOCAL du jour courant sont maintenant exclues avant d'être passées à `zonesPrimitive.setZones()` — même convention "minuit local" que le calendrier de `journal.html`. Le compteur "N zones FVG" en bas du graphique reflète déjà le total filtré, pas besoin de logique séparée.
+
+**Vérifié visuellement** : serveur local + Playwright avec `/api/overlays` simulé (2 zones d'hier, 2 d'aujourd'hui) — le compteur affiche bien "2 zones FVG" au lieu de 4, confirmé aussi par une lecture directe de l'état interne (`_zones.length`) du composant de rendu. Aucune erreur console.
+
+`npm test` : 492/492 (inchangé — filtre purement côté client, aucune logique backend touchée).
+
+**Fichiers** : `public/chart.html`.
