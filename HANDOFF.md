@@ -2974,3 +2974,19 @@ Ceci a révélé que le journal durable (`bot_trade_events`) ne stockait QUE le 
 Vérifié visuellement avec Playwright local (calendrier avec données simulées incluant un jour pré-migration en repli R-only ; bascule de thème sur les 4 pages ; persistance confirmée en naviguant d'une page à l'autre) — aucune erreur console, rendu correct dans les 2 thèmes.
 
 `npm test` : 496/496.
+
+## Rapport PDF exportable du journal — 2026-09-15
+
+Esdras : "Rapport PDF exportable du journal" — une des idées offertes plus tôt ("un rapport propre téléchargeable... pour le soumettre à un prop firm ou le garder comme preuve de performance"), pas retenue dans le lot précédent, demandée maintenant.
+
+**Bouton "⬇ PDF"** ajouté à côté du "⬇ CSV" existant sur la carte "Journal de trading" (`journal.html`) — même discipline que le CSV : respecte les filtres actifs (symbole/stratégie/fenêtre de jours), pas de surprise silencieuse d'export "tout" alors que l'écran affiche une vue filtrée.
+
+**Contenu du rapport** (une seule fonction, `exportJournalPdf()`, aucune donnée nouvelle — tout est déjà sur la page) : en-tête + date de génération, performance globale (métriques), courbe d'équité (vraie ligne vectorielle, pas une image), répartition par stratégie et par instrument, statistiques par session ICT, temps de récupération après un creux, qualité d'exécution, puis le détail des trades affichés (mêmes colonnes que le CSV). Pagine automatiquement sur plusieurs pages si le contenu déborde.
+
+**Choix technique** : `jsPDF` + `jsPDF-autotable` (nouvelle dépendance npm), vecteur natif — texte net et sélectionnable, pas une capture d'écran (`html2canvas` aurait rastérisé les graphiques et produit un fichier plus lourd et flou). Servi depuis notre propre origine (`/vendor/jspdf`, `/vendor/jspdf-autotable` dans `server.js`), pas un CDN — même raisonnement déjà documenté pour `lightweight-charts`. Vérifié `npm audit` : aucune nouvelle vulnérabilité introduite (les 4 signalées restent les mêmes dépendances transitives de `@reiryoku/ctrader-layer` déjà documentées).
+
+**Vérifié visuellement, pas juste en lisant le code** : serveur local en mode démo, Playwright a cliqué le vrai bouton, intercepté le téléchargement, puis rouvert le PDF généré dans Chromium pour le capturer en image — courbe d'équité verte correcte, toutes les tables présentes avec les bons chiffres (recoupés avec les cartes déjà vérifiées de la précédente session de travail), pagination sur 2 pages propre, aucune erreur console.
+
+`npm test` : 492/492 (inchangé — fonctionnalité 100% côté client).
+
+**Fichiers** : `public/journal.html`, `src/server.js`, `package.json`.

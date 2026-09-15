@@ -33,6 +33,12 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // `npm install` instead of being a copied-in vendored blob.
 app.use('/vendor/lightweight-charts', express.static(path.join(__dirname, '..', 'node_modules', 'lightweight-charts', 'dist')));
 
+// jsPDF/jsPDF-autotable (2026-09-15, Esdras: "rapport PDF exportable du
+// journal") - same reasoning as lightweight-charts above: served from our
+// own origin, from the npm dependency, not a CDN.
+app.use('/vendor/jspdf', express.static(path.join(__dirname, '..', 'node_modules', 'jspdf', 'dist')));
+app.use('/vendor/jspdf-autotable', express.static(path.join(__dirname, '..', 'node_modules', 'jspdf-autotable', 'dist')));
+
 const BOOTED_AT = Date.now();
 
 // LiveStrategyEngine runs on candle timestamps shifted -5h (see
