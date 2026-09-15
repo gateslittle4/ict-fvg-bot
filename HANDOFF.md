@@ -3374,3 +3374,31 @@ Esdras, après le rapport PDF investisseur : "est Il possible de mettre un IA da
 `npm test` : 531/531 (inchangé — aucun test n'existait pour le chat, qui appelle une vraie API externe payante ; vérifié manuellement via Playwright + un appel réel de bout en bout sans clé configurée, voir ci-dessus).
 
 **Fichiers** : `src/chatAssistant.js` (nouveau), `public/chat-widget.js` (nouveau), `src/server.js` (route `/chat`), `public/index.html`/`journal.html`/`chart.html`/`accounts.html` (balise `<script src="/chat-widget.js" defer>`), `package.json`/`package-lock.json` (dépendance `@anthropic-ai/sdk`).
+
+## Le chat récupère aussi les 7 années de backtest + bug trouvé sur le classement mensuel du PDF — 2026-09-15
+
+Esdras, juste après la mise en ligne du chat : "comment faire pour qu'il ai Les données des 7 annees?" — le chat ne voyait jusque-là que le journal durable Supabase (le vrai trading depuis que la persistance existe), pas le backtest 2019-2025 déjà utilisé dans le rapport PDF investisseur.
+
+**Solution retenue** : rejouer 7 ans de bougies à chaque message de chat serait beaucoup trop lent. Nouveau script `scripts/buildBacktestSummary.js` (même construction EXACTE du combo que `checkAugustSeasonalityAcrossYears.js`) qui rejoue le backtest UNE FOIS et écrit un résumé compact (`overall`, `byYear`, `byMonth`, `bySymbol`, `bySource`) dans `data/backtest-summary.json`, committé dans le repo et rechargé en mémoire par `chatAssistant.js` (`loadBacktestSummary()`, quelques ms au lieu de plusieurs secondes). À relancer manuellement si la stratégie/config change. Le contexte du chat contient maintenant deux sources bien distinguées dans le system prompt : `journal`/`recentTrades` (le vrai argent réel) et `backtest7Years` (la simulation historique 2019-2025) — jamais mélangées sans le dire.
+
+**⚠️ Bug trouvé en construisant ce script, affecte le PDF déjà envoyé à l'investisseur** : les CSV de `data/backtest-input/` couvrent en réalité **2010-2025** (16 ans), pas seulement 2019-2025 comme supposé partout dans cette session. `checkMonthlySeasonalityAndChallengeStart.js`'s `partA_monthlyBreakdown()` (le classement "quel mois est le plus fort/faible", utilisé dans le PDF page 3) rejouait TOUT l'historique disponible sans filtrer sur les 7 années annoncées — contrairement à `partB_bestStartMonth()` (la simulation de démarrage de challenge), qui, elle, boucle explicitement sur `YEARS=[2019..2025]` et n'est donc PAS affectée : ses résultats ("0/84 cassé", classement des mois pour démarrer) restent valides tels quels.
+
+Chiffres corrigés (2019-2025 strictement, 2606 trades décidés au lieu de 3086) :
+
+| | PDF envoyé (en fait 2010-2025) | Corrigé (2019-2025, 7 ans réels) |
+|---|---|---|
+| Total | +1719R | **+1564R** |
+| Février (pire mois) | +82R | +83R *(quasi inchangé)* |
+| Meilleur mois | **Octobre** +197R | **Juillet** +186R *(octobre tombe à +173R, 3e)* |
+| Janvier | +184R | +144R |
+| Avril | +159R | +126R |
+| Septembre | +168R | +146R |
+| Novembre | +168R | +143R |
+
+Le classement complet corrigé (pire → meilleur) : février (+83R) < décembre (+92R) < mars (+99R) < mai (+123R) < juin (+124R) < août (+125R) < avril (+126R) < novembre (+143R) < janvier (+144R) < septembre (+146R) < **octobre (+173R)** < **juillet (+186R, nouveau meilleur mois)**.
+
+**Impact concret sur le PDF déjà envoyé** : la page 3 (graphique en barres + les 4 tuiles "mois le plus faible/fort") affiche des chiffres tirés de 16 ans de données au lieu des 7 années annoncées dans le texte, et désigne octobre comme meilleur mois alors que c'est juillet sur la vraie fenêtre 2019-2025. La page 6 (recommandation de démarrage) n'est PAS affectée (simulation correctement bornée). Pas encore corrigé dans le PDF lui-même — à faire si Esdras veut renvoyer une version corrigée à l'investisseur.
+
+`npm test` : 531/531 (inchangé).
+
+**Fichiers** : `scripts/buildBacktestSummary.js` (nouveau), `data/backtest-summary.json` (nouveau, généré — 2019-2025 uniquement), `src/chatAssistant.js` (charge le résumé, system prompt distingue les deux sources de données).

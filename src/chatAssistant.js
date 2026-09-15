@@ -11,8 +11,14 @@
 // de calcul de risque critique fait par le modèle lui-même), et de très
 // loin le moins cher de la gamme Claude pour ce volume d'usage (un
 // dashboard privé, pas un chatbot public).
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Anthropic from '@anthropic-ai/sdk';
 import { fetchPerformanceBySymbol, fetchRecentTradeRows } from './dataSources/supabaseTradeLog.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BACKTEST_SUMMARY_PATH = path.join(__dirname, '..', 'data', 'backtest-summary.json');
 
 const MODEL = 'claude-haiku-4-5';
 const MAX_TURNS = 10; // 10 échanges (20 messages) gardés côté client et renvoyés à chaque appel - une conversation de chat n'a pas besoin de plus, et ça borne le coût/contexte
@@ -29,6 +35,23 @@ export function isChatConfigured() {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
+// Backtest 7 ans (2019-2025), précalculé une fois par scripts/buildBacktestSummary.js
+// et committé dans data/backtest-summary.json (2026-09-15, Esdras : "comment
+// faire pour qu'il ai Les données des 7 annees?"). Rejouer 7 années de
+// bougies à chaque message de chat serait beaucoup trop lent - lu depuis le
+// disque et gardé en mémoire pour le process entier, régénéré manuellement
+// via le script si la stratégie/config change un jour.
+let cachedBacktestSummary;
+function loadBacktestSummary() {
+  if (cachedBacktestSummary !== undefined) return cachedBacktestSummary;
+  try {
+    cachedBacktestSummary = JSON.parse(fs.readFileSync(BACKTEST_SUMMARY_PATH, 'utf8'));
+  } catch (err) {
+    cachedBacktestSummary = { reason: `not available (${err.code === 'ENOENT' ? 'fichier manquant' : err.message})` };
+  }
+  return cachedBacktestSummary;
+}
+
 // Écrit pour un lecteur non-trader (l'investisseur qu'Esdras a en tête) autant
 // que pour Esdras lui-même - explique les termes au lieu de les supposer
 // connus, et le ton reste celui du rapport PDF déjà envoyé (honnête sur les
@@ -40,6 +63,10 @@ Suppose que la personne n'a AUCUNE expérience en trading - ça peut être Esdra
 
 LA STRATÉGIE (pour contexte, si on te demande comment le bot fonctionne) :
 Le bot combine 5 mécanismes de trading automatisés basés sur des concepts ICT (Inner Circle Trader) : détection de Fair Value Gap (FVG), Divergence (retour à la moyenne statistique), NWOG (gap d'ouverture de semaine), Judas Swing, et Weekly Sweep. Chaque mécanisme a été validé séparément sur des données historiques avant d'être activé en argent réel. Le risque est limité par trade (jamais tout misé sur un seul coup) et par des garde-fous (perte quotidienne max, nombre de trades max par jour, plancher de drawdown).
+
+DEUX SOURCES DE DONNÉES DISTINCTES DANS LE CONTEXTE - ne jamais les mélanger dans une réponse sans préciser laquelle :
+- "journal"/"recentTrades" : le VRAI trading en argent réel depuis que le suivi a été mis en place. C'est la performance réelle du bot.
+- "backtest7Years" : une SIMULATION sur 7 années de données de marché historiques (2019-2025), rejouée avec le code exact de production, mais ce n'est PAS de l'argent réel - c'est "qu'est-ce que le bot aurait fait s'il avait tourné pendant ces 7 années". Utile pour parler de tendances saisonnières (quel mois est historiquement plus faible/fort) ou de résultats sur un grand échantillon, mais dis-le clairement quand tu t'appuies dessus : "sur la simulation historique 2019-2025..." plutôt que de laisser croire que c'est du réel.
 
 RÈGLES STRICTES :
 1. N'utilise QUE les données fournies ci-dessous dans le contexte. N'invente jamais un chiffre. Si la question demande quelque chose que les données ne permettent pas de calculer avec certitude (ex: une agrégation par jour de semaine sur peu de trades), fais le calcul à partir des "recentTrades" fournis si c'est raisonnable, mais dis clairement que c'est un calcul approximatif sur un échantillon limité si l'échantillon est petit (moins de 20 trades pour la question posée).
@@ -80,6 +107,10 @@ export async function buildChatContext(store) {
   // 90 jours : large fenêtre pour les questions ad hoc (jour de semaine,
   // session...), déjà bornée naturellement par le volume réel du bot.
   context.recentTrades = await fetchRecentTradeRows(tradeLogClient, { days: 90 });
+
+  // Backtest 2019-2025 (7 années) - données historiques rejouées, distinctes
+  // du journal réel ci-dessus. Voir loadBacktestSummary().
+  context.backtest7Years = loadBacktestSummary();
 
   return context;
 }
