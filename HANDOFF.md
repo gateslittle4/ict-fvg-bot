@@ -2815,3 +2815,29 @@ Suite directe de la découverte précédente (pyramidage jamais vérifié par le
 Exactement ce qu'annonçait la recherche : les 25 (puis 8) legs perdants pendant le cooldown disparaissent complètement, ne laissant que les legs rentables — meilleur résultat avec MOINS de trades.
 
 `npm test` : 472/472 (469 + 3 nouveaux).
+
+## Impact d'un blackout news "±10min" — committé comme vraie ressource réutilisable — 2026-09-15
+
+Suite aux 2 vérifications ad hoc de la conversation (79 puis 130 événements) : Esdras a confirmé vouloir garder ça dans le projet ("Oui" à la question de committer), après avoir précisé sa demande initiale ("les props firms ont l'habitude de dire Red News, donc je pense que c'est TOUS les red news").
+
+**Committé** (contrairement à la plupart des scripts de vérification ad hoc de cette session) :
+- `src/backtest/newsEvents.js` : 130 événements réels 2024-2025 (CPI, NFP, FOMC, PIB — estimation avancée seulement, PCE/Personal Income and Outlays, ventes au détail US, décisions BCE), sources publiques officielles (BLS, Fed, BEA, Census, BCE — chaque date vérifiée directement depuis le PDF/la page officielle de l'agence, pas un agrégateur tiers). Conversion DST-aware (heure réelle America/New_York ou Europe/Berlin → convention "EST fixe" du projet) via la technique standard de double-formatage, vérifiée sur des cas hiver ET été.
+- `scripts/runNewsBlackoutAnalysis.js` : rejoue le portefeuille combiné des 5 mécanismes (même méthode 2-passes que les scripts précédents), avec et sans un filtre "aucun trade dans les ±10 minutes autour de chaque événement".
+- `test/newsEvents.test.js` : 5 tests (nombre d'événements, cas hiver EST, cas été EDT/CEST, cas hiver CET).
+- 2 rapports générés : `data/backtest-input/news-blackout-analysis-test.md` (2024-2025) et `-7months.md`.
+
+**Résultat (130 événements, contre 79 dans la première passe)** :
+
+| | 2024-2025 (2 ans) | 7 derniers mois |
+|---|---|---|
+| Trades exclus | 13 / 736 | 1 / 208 |
+| Solde final sans/avec | 125 236$ → 114 026$ (-9%) | 21 789$ → 21 789$ (quasi inchangé) |
+| Drawdown max sans/avec | 10.38% → 10.92% | 5.07% → 5.07% (inchangé) |
+
+Impact réel mais modeste — les fenêtres de session des stratégies (ex: 8h-12h NY pour US100, 10h-11h pour US500) ne chevauchent qu'occasionnellement les horaires fixes des grosses news US (8h30 ET, 14h00 ET).
+
+**Réserves honnêtes documentées dans `newsEvents.js`** : le shutdown gouvernemental américain d'oct-nov 2025 a réellement perturbé/annulé certaines publications (PIB T3 2025 annulé, PCE oct/nov reportés à 2026) — traité en omettant ces dates plutôt qu'en inventant une date fausse. Liste volontairement PAS exhaustive : Ifo/ZEW allemands, PMI ISM, demandes de chômage hebdomadaires exclus (généralement "orange" pas "red" sur la plupart des calendriers).
+
+**Important : ce filtre n'est PAS câblé dans le moteur live** — c'est une analyse/recherche, pas encore un vrai garde-fou appliqué à `LiveStrategyEngine`. Si un vrai prop firm l'exige, il faudrait le coder en plus (décision séparée, pas encore prise).
+
+`npm test` : 477/477 (472 + 5 nouveaux).
