@@ -3133,3 +3133,13 @@ Esdras, sur la carte "Pourquoi pas encore de trade ?" ajoutée par l'autre sessi
 Vérifié visuellement avec Playwright (3 zones simulées : une d'hier, une plus tôt aujourd'hui, une plus récente aujourd'hui — seule la 3e s'affiche), aucune erreur console.
 
 `npm test` : 531/531 (inchangé — filtre d'affichage pur côté client).
+
+## Nouvelle section "Positions ouvertes (réelles, temps réel)" — 2026-09-15
+
+Esdras : "je veux voir un endroit en dessus de la partie garde-fou, compte réel qui me montre les positions réelles que je suis actuellement, pour que je puisse suivre la position en temps réel comme les brokers".
+
+Les données existaient déjà entièrement côté serveur (`accountReconciliation.js`, alimentées par `ProtoOAReconcileReq` — jamais une croyance du bot) et étaient même déjà envoyées au client (`/api/accounts/:id/account`'s `positions`), mais seulement affichées comme une petite liste à puces noyée DANS la carte "Compte réel", avec juste direction/entrée/marge/P&L.
+
+**Ajouté** (`public/index.html`) : une vraie table dédiée, style courtier, juste au-dessus de la section "État actuel" — Symbole, Volume, Entrée, Prix actuel, Stop, Cible, P&L flottant (coloré vert/rouge), Ouverte depuis — avec un point vert pulsant à côté du titre de section pour signaler le temps réel. La liste à puces redondante à l'intérieur de "Compte réel" est retirée (cette carte garde seulement ses agrégats : solde, équité, marge, P&L flottant total, exposition totale).
+
+`npm test` : 531/531 (inchangé — restructuration d'affichage pur côté client, aucune nouvelle donnée). Vérifié visuellement (Playwright, positions simulées, thèmes clair et sombre).

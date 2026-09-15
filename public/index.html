@@ -121,6 +121,15 @@
     50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(47,212,128,0); }
   }
 
+  /* ---------- Positions ouvertes, temps réel (2026-09-15, Esdras: "un
+     endroit au-dessus de la partie garde-fou, compte réel qui me montre les
+     positions réelles [...] comme les brokers") - même table de sources
+     réelles que le petit bloc déjà dans "Compte réel" (data.positions, voir
+     accountReconciliation.js), juste sa propre section dédiée, mise en
+     avant, plutôt qu'une liste à puces noyée dans une carte de stats. ---------- */
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse-dot 2s ease-in-out infinite; }
+  .positions-table td.pnl-cell, .positions-table th.pnl-cell { text-align: right; }
+
   /* ---------- Ticker (live prices, dense market-strip style) ---------- */
   .ticker {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px;
@@ -422,6 +431,13 @@
        part, jamais affichée par défaut). Ne pas le réintégrer ici sans
        redemander explicitement - discrétion au travail, pas une préférence
        esthétique. -->
+
+  <div class="section-title"><span class="live-dot"></span>Positions ouvertes (réelles, temps réel)</div>
+
+  <div class="card" id="open-positions-card">
+    <div class="meta" style="margin-bottom:8px;">Directement depuis le courtier (ProtoOAReconcileReq) — jamais une croyance du bot. P&amp;L flottant estimé au dernier prix vu (pas un flux tick-par-tick).</div>
+    <div id="open-positions-body"><div class="meta">Chargement…</div></div>
+  </div>
 
   <div class="section-title">État actuel</div>
 
@@ -762,13 +778,54 @@ function reconciliationExplanation(r) {
   return '⚠ statut inconnu';
 }
 
+// Positions ouvertes, temps réel (2026-09-15, Esdras: "un endroit au-dessus
+// de la partie garde-fou, compte réel qui me montre les positions réelles
+// [...] pour que je puisse suivre la position en temps réel comme les
+// brokers") - real broker positions only (data.positions, from
+// accountReconciliation.js via /api/account), never LiveStrategyEngine's
+// own "believed" state - same table style as journal.html's strategy-table.
+function renderOpenPositions(positions) {
+  const el = document.getElementById('open-positions-body');
+  if (!el) return;
+  if (!positions || positions.length === 0) {
+    el.innerHTML = '<div class="meta">Aucune position réellement ouverte chez le courtier en ce moment.</div>';
+    return;
+  }
+  const rows = positions.map((p) => {
+    const d = priceDecimals(p.symbol);
+    const pnlKnown = p.netFloatingPnl !== null && p.netFloatingPnl !== undefined;
+    const pnlClass = !pnlKnown ? '' : p.netFloatingPnl >= 0 ? 'win' : 'loss';
+    const openSince = p.openTimestamp ? fmtDuration(Date.now() - p.openTimestamp) : '—';
+    return `
+      <tr>
+        <td><span class="dir-${p.direction}">${p.direction === 'bullish' ? '▲' : '▼'}</span> ${p.symbol}</td>
+        <td>${fmt(p.units, 0)}</td>
+        <td>${fmt(p.entryPrice, d)}</td>
+        <td>${fmt(p.currentPrice, d)}</td>
+        <td>${fmt(p.stopLoss, d)}</td>
+        <td>${fmt(p.takeProfit, d)}</td>
+        <td class="pnl-cell journal-pnl ${pnlClass}">${pnlKnown ? (p.netFloatingPnl >= 0 ? '+' : '') + fmt(p.netFloatingPnl) : '—'}</td>
+        <td class="meta">${openSince}</td>
+      </tr>
+    `;
+  }).join('');
+  el.innerHTML = `
+    <table class="strategy-table positions-table">
+      <thead><tr><th>Symbole</th><th>Volume</th><th>Entrée</th><th>Prix actuel</th><th>Stop</th><th>Cible</th><th class="pnl-cell">P&amp;L flottant</th><th>Ouverte depuis</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
 async function refreshAccount() {
   const bodyEl = document.getElementById('account-body');
+  const openPositionsEl = document.getElementById('open-positions-body');
   try {
     const res = await fetch(acctUrl('/account'));
     const data = await res.json();
     if (data.reason) {
       bodyEl.innerHTML = `<div class="meta">${data.reason}</div>`;
+      if (openPositionsEl) openPositionsEl.innerHTML = `<div class="meta">${data.reason}</div>`;
       return;
     }
     heroState.equityEstimate = data.equityEstimate;
@@ -807,18 +864,7 @@ async function refreshAccount() {
       ${positions.length > 0 ? `<div class="stat-row"><span class="label">Exposition totale (risque réel si tout touche le stop)</span><span>${fmt(totalRiskAmount)}${riskIsPartial ? ` <span class="meta">(${riskKnownCount}/${positions.length} positions — stop inconnu pour le reste)</span>` : ''}</span></div>` : ''}
     `;
 
-    if (data.positions && data.positions.length > 0) {
-      html += '<div class="meta" style="margin-top:8px;">Positions réellement ouvertes chez le courtier :</div><ul class="signal-list">';
-      html += data.positions.map((p) => `
-        <li class="signal-item">
-          <span class="dir-${p.direction}">${p.direction === 'bullish' ? '▲' : '▼'}</span> ${p.symbol}
-          <span class="meta">entrée ${fmt(p.entryPrice, priceDecimals(p.symbol))} · marge ${fmt(p.usedMargin)}</span>
-          <span class="journal-pnl ${p.netFloatingPnl === null ? '' : p.netFloatingPnl >= 0 ? 'win' : 'loss'}">${p.netFloatingPnl === null ? '—' : (p.netFloatingPnl >= 0 ? '+' : '') + fmt(p.netFloatingPnl)}</span>
-        </li>`).join('');
-      html += '</ul>';
-    } else {
-      html += '<div class="meta" style="margin-top:8px;">Aucune position réellement ouverte chez le courtier en ce moment.</div>';
-    }
+    renderOpenPositions(positions);
 
     if (mismatches.length > 0) {
       html += mismatches.map((r) => `<div class="mismatch-alert"><strong>Écart bot/courtier</strong>${reconciliationExplanation(r)}</div>`).join('');
@@ -827,6 +873,7 @@ async function refreshAccount() {
     bodyEl.innerHTML = html;
   } catch (err) {
     bodyEl.innerHTML = `<div class="err">Erreur de chargement du compte: ${err.message}</div>`;
+    if (openPositionsEl) openPositionsEl.innerHTML = `<div class="err">Erreur de chargement: ${err.message}</div>`;
   }
 }
 
