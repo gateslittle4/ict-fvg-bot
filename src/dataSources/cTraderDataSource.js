@@ -669,12 +669,21 @@ export class CTraderDataSource {
         const lookback = requiredH1LookbackCandles(cfg.variant);
         if (lookback > 0) {
           try {
+            // count is REQUIRED alongside fromTimestamp/toTimestamp (2026-09-15,
+            // found live via getPendingZoneChecklists()'s own verification below -
+            // this exact call, missing count, was silently capped to the
+            // broker's own small default and came back too short to seed an
+            // EMA200, degrading every bias reading to 'unknown' without ever
+            // throwing - see _subscribeLiveCandles()'s own comment: "count alone
+            // is not enough" for a from/to-only request to be REJECTED, but the
+            // reverse - from/to without count - was never verified until now).
             const history = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
               ctidTraderAccountId: Number(accountId),
               fromTimestamp: trade.entryTime - lookback * TIMEFRAME_DURATION_MS.H1,
               toTimestamp: trade.entryTime,
               symbolId: trade.symbolId,
               period: 'H1',
+              count: lookback,
             });
             h1Candles = (history.trendbar || []).map((bar) => this._trendbarToCandle(bar)).sort((a, b) => a.time - b.time);
           } catch (err) {
@@ -737,12 +746,19 @@ export class CTraderDataSource {
       try {
         const symbolId = this.symbolIdByName.get(symbol);
         const nowRealUtc = Date.now();
+        // count REQUIRED alongside fromTimestamp/toTimestamp - see
+        // _attachComplianceChecklists()'s own comment on this same mistake,
+        // found live via this exact endpoint: omitted, the broker silently
+        // caps the response far short of `lookback`, too little history to
+        // seed the EMA, and every bias reading below degrades to 'unknown'
+        // without ever throwing (so the catch below never caught it either).
         const res = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
           ctidTraderAccountId: Number(this.accountId),
           fromTimestamp: nowRealUtc - lookback * TIMEFRAME_DURATION_MS.H1,
           toTimestamp: nowRealUtc,
           symbolId,
           period: 'H1',
+          count: lookback,
         });
         h1Candles = (res.trendbar || [])
           .map((bar) => this._trendbarToCandle(bar))

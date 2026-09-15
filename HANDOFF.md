@@ -3106,3 +3106,17 @@ Esdras, après avoir confirmé (avec les vraies données) que les zones "watchin
 `npm test` : 531/531.
 
 **Fichiers** : `src/backtest/liveFvgFilterStatus.js` (nouveau), `src/dataSources/tradeCompliance.js`, `src/dataSources/cTraderDataSource.js`, `src/server.js`, `public/chart.html`, `test/liveFvgFilterStatus.test.js` (nouveau).
+
+## Bug réel trouvé en vérifiant la checklist en direct sur la production : biais toujours "Inconnu" — corrigé — 2026-09-15
+
+Immédiatement après le déploiement ci-dessus, vérifié contre la VRAIE production (pas juste le mode démo local) : `curl /api/pending-checklist?symbol=US100` répondait correctement (13 zones réelles, structure/session/sweep tous cohérents), mais le critère **biais** affichait "Inconnu" sur les 13 zones sans exception — jamais Haussier ni Baissier.
+
+**Cause réelle trouvée** : l'appel `ProtoOAGetTrendbarsReq` pour récupérer l'historique H1 nécessaire au biais (dans `getPendingZoneChecklists()`, et dans `_attachComplianceChecklists()` — la checklist de conformité déjà en production pour les trades clos, exactement le même bug) ne passait PAS le paramètre `count`, seulement `fromTimestamp`/`toTimestamp`. Le commentaire de `_subscribeLiveCandles()` (le warm-up principal) documentait déjà l'inverse — qu'une requête avec `count` seul, sans `fromTimestamp`/`toTimestamp`, est REJETÉE par le courtier — mais l'autre sens (from/to sans `count`) n'avait jamais été vérifié : le courtier l'accepte silencieusement mais plafonne la réponse à un nombre de bougies bien inférieur à ce qui est nécessaire pour amorcer un EMA200 (H4/EMA200 a besoin de ~840 bougies H1, soit ~35 jours) — jamais une erreur, jamais un throw, juste un historique trop court, silencieusement.
+
+**Pourquoi ce bug n'avait jamais été vu avant** : `_attachComplianceChecklists()` (checklist pour un trade CLOS) n'a jamais eu l'occasion de s'exécuter sur un vrai trade FVG avec biais configuré — zéro trade réel sur US100/US500/XAUUSD à ce jour (voir l'investigation live plus haut). La toute nouvelle checklist EN DIRECT de ce soir est le premier code à avoir réellement exercé ce chemin contre la production — et donc le premier à révéler le bug.
+
+**Corrigé** : `count: lookback` ajouté aux deux appels (même valeur déjà calculée pour `fromTimestamp`, `requiredH1LookbackCandles(cfg.variant)`).
+
+`npm test` : 531/531 (inchangé — aucun test n'asserte la forme exacte de la requête broker, seulement son résultat déjà mocké).
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`.
