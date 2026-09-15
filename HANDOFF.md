@@ -2607,3 +2607,21 @@ Esdras, invitée à choisir entre (a) creuser la validation statistique, (b) con
 **Conclusion finale sur GER40 (cette session) : un seul candidat vraiment crédible — Weekly Liquidity Sweep.** NWOG passe le verdict formel et le contrôle achat/vente, mais pas le contrôle de concentration temporelle — à ne plus présenter comme un second candidat sans creuser davantage (ou tout simplement le laisser de côté). Asian Range Breakout, Unicorn Model, Asian Range Fade restent rejetés (biais haussier). Breaker Block toujours en zone grise, non revérifié cette session. **Toujours rien recommandé pour du capital réel ni pour un déploiement démo** — Esdras a explicitement choisi de ne pas construire l'infra live tant que la recherche n'est pas plus solide.
 
 `npm test` : 459/459 (inchangé). Script de vérification ad hoc, non committé.
+
+## Weekly Liquidity Sweep sur US100/US500 (déjà en production live) — même contrôle appliqué, résultat très différent de GER40 — 2026-09-15
+
+Esdras a demandé si on pouvait "coder" Weekly Liquidity Sweep. Avant de répondre, relecture du tableau complet à 8 instruments (déjà généré, jamais entièrement exploité) : le mécanisme passe aussi le verdict formel "✅ tient" sur **US100** et **US500** — pas seulement GER40. Ces deux-là sont déjà les instruments en production live, déjà connectés au broker, spread déjà quelque chose de mesuré/utilisé ailleurs — donc a priori le chemin le plus rapide vers un vrai test si l'edge était réel là aussi. Mêmes contrôles que GER40 appliqués (répartition achat/vente, blocs de 2 ans, part de la meilleure année dans le profit net) :
+
+| | US100 | US500 | GER40 (rappel) |
+|---|---|---|---|
+| Répartition achat/vente | Vente 95% du profit (achat quasi nul) | Vente 118% du profit (achat légèrement négatif) | Vente 44%, achat 56% — équilibré |
+| Blocs de 2 ans nets positifs | **2/4** | **3/4** | 6/8 |
+| Meilleure année seule | 2023 : **62%** du profit net total | 2021 : **85%** du profit net total | 2014 : 22% du profit net total |
+
+**US100 et US500 sont écartés pour ce mécanisme.** Pas de piège de biais haussier cette fois (le profit vient presque entièrement des ventes, pas des achats — donc pas le même problème qu'Asian Range Breakout), mais un problème différent et tout aussi disqualifiant : une concentration temporelle extrême. Sur US500, retirer la seule année 2021 ferait presque disparaître tout le profit net (85% du total vient d'une seule année sur sept). Sur US100, 62% vient de la seule année 2023. C'est exactement le profil qui avait fait rejeter la fausse "réussite" d'USDJPY plus haut dans ce document — une fenêtre chanceuse, pas un edge répété. **Seul GER40 montre un profil vraiment distribué dans le temps (22% max sur une seule année, 6/8 blocs positifs).**
+
+**Réponse à la question d'Esdras** : non, pas encore prêt à coder pour du live/démo, et la réponse dépend de l'instrument visé :
+- **US100/US500** (déjà en prod) : NON — la fragilité temporelle découverte ici disqualifie le mécanisme sur ces deux instruments, même s'ils passent le test formel train/test.
+- **GER40** (le seul instrument robuste) : c'est un NOUVEL instrument, pas encore dans l'infra live. Avant de coder quoi que ce soit, il manque : (1) confirmation du vrai spread auprès du courtier (actuellement 1.0 point, pure estimation jamais vérifiée), (2) confirmation que le DAX/GER40 est bien disponible comme CFD tradable sur le compte cTrader utilisé, (3) un vrai module de stratégie dans `LiveStrategyEngine` (aujourd'hui seuls FVG et Divergence tournent en live — Weekly Liquidity Sweep n'existe qu'en script de backtest), (4) un test démo avant toute idée de capital réel.
+
+`npm test` : 459/459 (inchangé). Script de vérification ad hoc, non committé.
