@@ -262,7 +262,7 @@
   <div class="section-title">Chaque trade, en détail</div>
 
   <div class="card">
-    <h2 id="journal-heading">Journal de trading<button type="button" id="export-csv-btn" class="btn-ghost" title="Exporter les trades affichés (selon les filtres actifs) en CSV">⬇ CSV</button></h2>
+    <h2 id="journal-heading">Journal de trading<span style="display:flex; gap:8px;"><button type="button" id="export-csv-btn" class="btn-ghost" title="Exporter les trades affichés (selon les filtres actifs) en CSV">⬇ CSV</button><button type="button" id="export-pdf-btn" class="btn-ghost" title="Rapport PDF complet : performance globale, répartitions, et les trades affichés (selon les filtres actifs)">⬇ PDF</button></span></h2>
     <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader), stratégie utilisée, et R-multiple (quand le journal durable a pu le calculer — voir sa propre note plus bas) — stop/cible non affichés, cTrader ne les garde pas après clôture.</div>
     <!-- Filtres (2026-09, "un vrai site... filtres + export CSV du journal") -
          symbole/stratégie filtrent CÔTÉ CLIENT sur les trades déjà reçus (pas
@@ -287,6 +287,13 @@
     <div id="journal-list"></div>
   </div>
 
+<!-- jsPDF/jsPDF-autotable (2026-09-15, Esdras: "rapport PDF exportable du
+     journal") - served from our own origin, same reasoning as
+     lightweight-charts on chart.html (see server.js's own comment), not a
+     CDN. Order matters: autotable patches jsPDF's own prototype, so jsPDF
+     must already be a global by the time it loads. -->
+<script src="/vendor/jspdf/jspdf.umd.min.js"></script>
+<script src="/vendor/jspdf-autotable/jspdf.plugin.autotable.min.js"></script>
 <script>
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 const fmtTime = (t) => t ? new Date(t).toLocaleString('fr-FR') : '—';
@@ -652,11 +659,17 @@ function renderOverview(data) {
   el.innerHTML = tiles + renderEquityCurve(data.equityCurve) + strategyTable;
 }
 
+// Cached by refreshTradeLog() below, read by exportJournalPdf() - the PDF
+// report reuses whatever's already on screen (same data, same discipline
+// as every other card here) rather than issuing its own fetch.
+let latestTradeLogData = null;
+
 async function refreshTradeLog() {
   const el = document.getElementById('trade-log-summary');
   try {
     const res = await fetch('/api/trade-log');
     const data = await res.json();
+    latestTradeLogData = data;
     renderOverview(data);
     const symbols = Object.keys(data.bySymbol || {});
     if (symbols.length === 0) {
@@ -938,10 +951,261 @@ function exportJournalCsv() {
   URL.revokeObjectURL(url);
 }
 
+// Simple vector line chart of cumulative R, drawn directly with jsPDF's own
+// line primitive (no image, no SVG-to-canvas conversion) - same math as
+// renderEquityCurve()'s SVG version above, just mapped into PDF page
+// coordinates (mm) instead of an SVG viewBox.
+function drawEquityCurvePdf(doc, x, y, w, h, equityCurve) {
+  doc.setDrawColor(210);
+  doc.setLineWidth(0.2);
+  doc.rect(x, y, w, h);
+  if (!equityCurve || equityCurve.length < 2) {
+    doc.setFontSize(9);
+    doc.setTextColor(140);
+    doc.text('Pas encore assez de trades clôturés pour tracer une courbe.', x + 3, y + h / 2);
+    return;
+  }
+  const values = equityCurve.map((p) => p.cumulativeR);
+  const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
+  const range = (maxR - minR) || 1;
+  const padT = 3, padB = 3;
+  const plotH = h - padT - padB;
+  const py = (v) => y + padT + (1 - (v - minR) / range) * plotH;
+  const px = (i) => x + (equityCurve.length === 1 ? 0 : (i / (equityCurve.length - 1)) * w);
+
+  const zeroY = py(0);
+  doc.setDrawColor(210);
+  doc.setLineDashPattern([1, 1], 0);
+  doc.line(x, zeroY, x + w, zeroY);
+  doc.setLineDashPattern([], 0);
+  doc.setFontSize(7);
+  doc.setTextColor(140);
+  doc.text('0R', x + 1, zeroY - 1);
+
+  const finalR = values[values.length - 1];
+  if (finalR >= 0) doc.setDrawColor(47, 212, 128);
+  else doc.setDrawColor(255, 92, 95);
+  doc.setLineWidth(0.4);
+  for (let i = 1; i < values.length; i++) {
+    doc.line(px(i - 1), py(values[i - 1]), px(i), py(values[i]));
+  }
+}
+
+// Rapport PDF (2026-09-15, Esdras: "rapport PDF exportable du journal") - a
+// downloadable, presentable report built from the SAME data already on this
+// page (performance globale, répartitions, stats par session, temps de
+// récupération, qualité d'exécution, et le détail des trades filtrés) - no
+// second fetch, no new backend endpoint. Built as a native vector PDF
+// (jsPDF + jsPDF-autotable), not a screenshot (html2canvas etc.) - text
+// stays crisp/selectable/searchable and the file stays small. The trade
+// detail table respects the SAME active filters as the per-trade list/CSV
+// export right below it - same "no silent surprise" discipline.
+function exportJournalPdf() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const marginX = 15;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const contentW = pageW - marginX * 2;
+  let y = 18;
+
+  function ensureSpace(needed) {
+    if (y + needed > pageH - 15) {
+      doc.addPage();
+      y = 18;
+    }
+  }
+
+  function sectionTitle(text) {
+    ensureSpace(10);
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(20);
+    doc.text(text, marginX, y);
+    y += 5;
+    doc.setDrawColor(220);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, y, marginX + contentW, y);
+    y += 5;
+    doc.setFont(undefined, 'normal');
+  }
+
+  doc.setFontSize(16);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(20);
+  doc.text('Apex FVG — Journal de trading', marginX, y);
+  y += 7;
+  doc.setFontSize(9);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(120);
+  doc.text(`Rapport généré le ${new Date().toLocaleString('fr-FR')}`, marginX, y);
+  y += 10;
+
+  const data = latestTradeLogData;
+  const overall = data && data.overall;
+
+  sectionTitle('Performance globale (journal durable)');
+  if (!overall || overall.totalSignals === 0) {
+    doc.setFontSize(9);
+    doc.setTextColor(140);
+    doc.text('Aucun trade enregistré pour le moment.', marginX, y);
+    y += 8;
+  } else {
+    const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
+    const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);
+    doc.autoTable({
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 1.5 },
+      body: [
+        ['Trades', String(overall.totalSignals), 'Taux de réussite', winRatePct === null ? '—' : `${fmt(winRatePct, 0)}%`],
+        ['Profit factor', pf, 'Espérance', `${overall.expectancyR >= 0 ? '+' : ''}${fmt(overall.expectancyR)}R`],
+        ['Drawdown max', `-${fmt(overall.maxDrawdownR)}R`, 'Total en R', `${overall.finalEquityR >= 0 ? '+' : ''}${fmt(overall.finalEquityR)}R`],
+      ],
+    });
+    y = doc.lastAutoTable.finalY + 6;
+
+    ensureSpace(45);
+    drawEquityCurvePdf(doc, marginX, y, contentW, 38, data.equityCurve);
+    y += 38 + 8;
+
+    const sources = Object.keys(data.bySource || {});
+    if (sources.length > 0) {
+      sectionTitle('Répartition par stratégie');
+      doc.autoTable({
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['Stratégie', 'Trades', 'Taux', 'Total R']],
+        body: sources.map((s) => {
+          const b = data.bySource[s];
+          return [sourceLabel({ source: s }), String(b.count), b.winRatePct === null ? '—' : `${fmt(b.winRatePct, 0)}%`, `${b.totalR >= 0 ? '+' : ''}${fmt(b.totalR)}R`];
+        }),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [20, 26, 34] },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    const symbolsList = Object.keys(data.bySymbol || {});
+    if (symbolsList.length > 0) {
+      sectionTitle('Répartition par instrument');
+      doc.autoTable({
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['Instrument', 'Trades', 'Taux', 'Total R']],
+        body: symbolsList.map((s) => {
+          const b = data.bySymbol[s];
+          return [s, String(b.count), b.winRatePct === null ? '—' : `${fmt(b.winRatePct, 0)}%`, `${b.totalR >= 0 ? '+' : ''}${fmt(b.totalR)}R`];
+        }),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [20, 26, 34] },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    const sessionTrades = deriveTradeR(data.equityCurve).filter((t) => t.entryTime);
+    if (sessionTrades.length > 0) {
+      const buckets = SESSION_LABELS.map((label) => ({ r: 0, count: 0, wins: 0, label }));
+      for (const t of sessionTrades) {
+        const idx = sessionForHourUTC(new Date(t.entryTime).getUTCHours());
+        buckets[idx].r += t.r;
+        buckets[idx].count++;
+        if (t.r >= 0) buckets[idx].wins++;
+      }
+      const nonEmptySessions = buckets.filter((b) => b.count > 0);
+      if (nonEmptySessions.length > 0) {
+        sectionTitle("Statistiques par session de trading (heure UTC d'entrée)");
+        doc.autoTable({
+          startY: y,
+          margin: { left: marginX, right: marginX },
+          head: [['Session', 'Trades', 'Taux', 'Total R']],
+          body: nonEmptySessions.map((b) => [b.label, String(b.count), `${Math.round((b.wins / b.count) * 100)}%`, `${b.r >= 0 ? '+' : ''}${fmt(b.r)}R`]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [20, 26, 34] },
+        });
+        y = doc.lastAutoTable.finalY + 8;
+      }
+    }
+
+    const recovery = computeRecoveryStats(data.equityCurve);
+    if (recovery && (recovery.recoveries.length > 0 || recovery.current)) {
+      sectionTitle('Temps de récupération après un creux');
+      doc.setFontSize(9);
+      if (recovery.recoveries.length > 0) {
+        const avgDays = recovery.recoveries.reduce((s, r) => s + r.days, 0) / recovery.recoveries.length;
+        const maxDays = Math.max(...recovery.recoveries.map((r) => r.days));
+        doc.setTextColor(60);
+        doc.text(`Creux mesurés : ${recovery.recoveries.length}`, marginX, y); y += 5;
+        doc.text(`Récupération moyenne : ${fmt(avgDays, 1)} jours`, marginX, y); y += 5;
+        doc.text(`Récupération la plus longue : ${fmt(maxDays, 1)} jours`, marginX, y); y += 5;
+      }
+      if (recovery.current) {
+        doc.setTextColor(180, 130, 20);
+        doc.text(`En creux actuellement depuis ${fmt(recovery.current.days, 1)} jours (${recovery.current.trades} trades), -${fmt(recovery.current.drawdownR)}R sous le dernier sommet.`, marginX, y);
+        y += 5;
+      }
+      y += 3;
+    }
+  }
+
+  const withSlippage = (allJournalTrades || []).filter((t) => t.slippage !== null && t.slippage !== undefined && t.signalEntryPrice);
+  if (withSlippage.length > 0) {
+    const pctOf = (t) => (t.slippage / t.signalEntryPrice) * 100;
+    const bySymbolSlip = new Map();
+    for (const t of withSlippage) {
+      const b = bySymbolSlip.get(t.symbol) || { count: 0, totalPct: 0, favorable: 0 };
+      b.count++;
+      b.totalPct += pctOf(t);
+      if (t.slippage <= 0) b.favorable++;
+      bySymbolSlip.set(t.symbol, b);
+    }
+    sectionTitle("Qualité d'exécution (glissement à l'entrée)");
+    doc.autoTable({
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [['Instrument', 'Trades', 'Glissement moyen', '% rempli à prix égal/meilleur']],
+      body: [...bySymbolSlip.entries()].map(([symbol, b]) => [
+        symbol,
+        String(b.count),
+        `${(b.totalPct / b.count) >= 0 ? '+' : ''}${fmt(b.totalPct / b.count, 3)}%`,
+        `${Math.round((b.favorable / b.count) * 100)}%`,
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [20, 26, 34] },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  const filtered = filteredJournalTrades();
+  if (filtered.length > 0) {
+    sectionTitle(`Détail des trades (${filtered.length}, fenêtre et filtres actifs)`);
+    doc.autoTable({
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [['Symbole', 'Dir.', 'Stratégie', 'Entrée', 'Sortie', 'P&L', 'R']],
+      body: filtered.map((t) => [
+        t.symbol,
+        t.direction === 'bullish' ? 'Achat' : 'Vente',
+        sourceLabel(t),
+        fmtTime(t.entryTime),
+        fmtTime(t.exitTime),
+        `${t.pnl >= 0 ? '+' : ''}${fmt(t.pnl)}`,
+        t.rMultiple === null || t.rMultiple === undefined ? '—' : `${t.rMultiple >= 0 ? '+' : ''}${fmt(t.rMultiple, 1)}R`,
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [20, 26, 34] },
+    });
+  }
+
+  doc.save(`journal-trading-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
 document.getElementById('filter-days').addEventListener('change', refreshTradeHistory);
 document.getElementById('filter-symbol').addEventListener('change', renderJournalList);
 document.getElementById('filter-source').addEventListener('change', renderJournalList);
 document.getElementById('export-csv-btn').addEventListener('click', exportJournalCsv);
+document.getElementById('export-pdf-btn').addEventListener('click', exportJournalPdf);
 
 refreshTradeHistory();
 refreshTradeLog();
