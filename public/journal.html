@@ -186,6 +186,24 @@
   .time-stats-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
   @media (max-width: 760px) { .time-stats-cols { grid-template-columns: 1fr; } }
   .time-stats-cols h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); margin: 0 0 8px; font-family: var(--mono); font-weight: 700; }
+  /* Session labels ("Chevauchement Londres/NY") are longer than hour/weekday
+     ones - the fixed 78px .time-stat-label would clip them, so this
+     modifier widens just that one column instead of touching the shared rule. */
+  .time-stat-label-wide { width: 150px; }
+
+  /* ---------- Stats par session ICT (2026-09-15) ---------- */
+  .session-note { font-size: 10.5px; color: var(--faint); font-family: var(--mono); margin: -4px 0 8px; }
+
+  /* ---------- Temps de récupération après drawdown (2026-09-15) - reuses
+     index.html's own .mismatch-alert look for the "en creux actuellement"
+     callout (copied here, same convention as the rest of this page's own
+     CSS - see the top-of-file comment). ---------- */
+  .mismatch-alert {
+    margin-top: 10px; padding: 9px 11px; border-radius: var(--radius);
+    background: rgba(232,179,57,0.1); border: 1px solid rgba(232,179,57,0.35);
+    color: var(--amber); font-size: 11.5px; line-height: 1.5;
+  }
+  .mismatch-alert strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 11.5px; }
 </style>
 </head>
 <body>
@@ -220,6 +238,25 @@
     <h2>Statistiques par heure et jour de la semaine</h2>
     <div class="meta" style="margin-bottom:8px;">Même journal durable, réparti par heure de sortie et par jour de la semaine (heure locale) — pour repérer si le bot performe mieux à certains moments.</div>
     <div id="time-stats-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Statistiques par session de trading</h2>
+    <div class="meta" style="margin-bottom:2px;">Réparti par session au moment de l'ENTRÉE (pas de la sortie — un trade peut se clôturer des heures plus tard, dans une autre session) : c'est la session qui a produit le signal qui compte pour une stratégie ICT.</div>
+    <div class="session-note">Frontières standard du marché (heure UTC, pas heure locale) : Asie 00h–08h · Londres 08h–13h · Chevauchement Londres/NY 13h–16h · New York 16h–22h · Hors séance 22h–24h.</div>
+    <div id="session-stats-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Temps de récupération après un creux</h2>
+    <div class="meta" style="margin-bottom:8px;">Après chaque nouveau sommet de la courbe d'équité, combien de temps (trades et jours réels) il a fallu pour redépasser ce sommet — répond à "un passage dans le rouge, c'est normal ou pas".</div>
+    <div id="recovery-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Qualité d'exécution</h2>
+    <div class="meta" style="margin-bottom:8px;">Prix réellement rempli par le courtier comparé au prix que le signal visait au moment de l'ordre — positif = coût réel (rempli à un prix pire), négatif = favorable. Exprimé en % du prix visé pour pouvoir comparer des instruments à des échelles de prix différentes (XAUUSD vs US100). Limité à la même fenêtre que le journal détaillé ci-dessous (le prix de fill réel n'est pas conservé au-delà de ce que le courtier garde en historique de deals).</div>
+    <div id="execution-quality-body">Chargement…</div>
   </div>
 
   <div class="section-title">Chaque trade, en détail</div>
@@ -307,6 +344,7 @@ function deriveTradeR(equityCurve) {
   if (!equityCurve) return [];
   return equityCurve.map((p, i) => ({
     time: p.time,
+    entryTime: p.entryTime,
     r: i === 0 ? p.cumulativeR : p.cumulativeR - equityCurve[i - 1].cumulativeR,
   }));
 }
@@ -393,6 +431,29 @@ function renderCalendar(equityCurve) {
 // each table independently (hour vs weekday), not a shared scale - the
 // two tables answer different questions, forcing one scale on both would
 // just make whichever has fewer buckets look artificially flat.
+// Shared by renderTimeStats() and renderSessionStats() below (factored out
+// 2026-09-15 when session stats needed the exact same horizontal-bar
+// rendering with a different bucketing key - no point duplicating it).
+// `labelClass` lets a caller with longer bucket labels (session names) widen
+// just that column without touching the fixed-width default.
+function renderTimeStatRows(buckets, labelClass = 'time-stat-label') {
+  const nonEmpty = buckets.filter((b) => b.count > 0);
+  if (nonEmpty.length === 0) return '<div class="meta">Aucune donnée.</div>';
+  const maxAbsR = Math.max(0.01, ...nonEmpty.map((b) => Math.abs(b.r)));
+  return nonEmpty.map((b) => {
+    const win = b.r >= 0;
+    const widthPct = Math.max(4, Math.round((Math.abs(b.r) / maxAbsR) * 100));
+    const winRatePct = Math.round((b.wins / b.count) * 100);
+    return `
+      <div class="time-stat-row">
+        <span class="${labelClass}">${b.label}</span>
+        <span class="time-stat-bar-wrap"><span class="time-stat-bar ${win ? 'win' : 'loss'}" style="width:${widthPct}%;"></span></span>
+        <span class="time-stat-value journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(b.r)}R <span class="meta">(${b.count}, ${winRatePct}%)</span></span>
+      </div>
+    `;
+  }).join('');
+}
+
 function renderTimeStats(equityCurve) {
   const trades = deriveTradeR(equityCurve);
   if (trades.length === 0) {
@@ -410,24 +471,6 @@ function renderTimeStats(equityCurve) {
     return buckets.map((b, i) => ({ ...b, label: labels[i] }));
   }
 
-  function renderRows(buckets) {
-    const nonEmpty = buckets.filter((b) => b.count > 0);
-    if (nonEmpty.length === 0) return '<div class="meta">Aucune donnée.</div>';
-    const maxAbsR = Math.max(0.01, ...nonEmpty.map((b) => Math.abs(b.r)));
-    return nonEmpty.map((b) => {
-      const win = b.r >= 0;
-      const widthPct = Math.max(4, Math.round((Math.abs(b.r) / maxAbsR) * 100));
-      const winRatePct = Math.round((b.wins / b.count) * 100);
-      return `
-        <div class="time-stat-row">
-          <span class="time-stat-label">${b.label}</span>
-          <span class="time-stat-bar-wrap"><span class="time-stat-bar ${win ? 'win' : 'loss'}" style="width:${widthPct}%;"></span></span>
-          <span class="time-stat-value journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(b.r)}R <span class="meta">(${b.count}, ${winRatePct}%)</span></span>
-        </div>
-      `;
-    }).join('');
-  }
-
   const hourLabels = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}h`);
   const hourBuckets = bucketBy((d) => d.getHours(), hourLabels);
 
@@ -438,30 +481,140 @@ function renderTimeStats(equityCurve) {
     <div class="time-stats-cols">
       <div>
         <h3>Par heure de sortie (locale)</h3>
-        ${renderRows(hourBuckets)}
+        ${renderTimeStatRows(hourBuckets)}
       </div>
       <div>
         <h3>Par jour de la semaine</h3>
-        ${renderRows(dowBuckets)}
+        ${renderTimeStatRows(dowBuckets)}
       </div>
     </div>
   `;
+}
+
+// Sessions de trading ICT (2026-09-15, Esdras: "stats par session") -
+// bucketed by the UTC hour of each trade's ENTRY (not exit - see the card's
+// own explanation in the HTML above: an ICT setup sweeps liquidity during a
+// specific session at ENTRY, the close can land hours later in a different
+// one). Standard forex session hours in UTC, not configurable and not tied
+// to the viewer's own timezone (unlike renderTimeStats' local-hour buckets,
+// which deliberately answer a different question - "when does MY day look
+// good" vs "which market session does this edge come from").
+const SESSION_LABELS = ['Asie', 'Londres', 'Chevauchement Londres/NY', 'New York', 'Hors séance'];
+function sessionForHourUTC(h) {
+  if (h < 8) return 0; // Asie
+  if (h < 13) return 1; // Londres
+  if (h < 16) return 2; // Chevauchement
+  if (h < 22) return 3; // New York
+  return 4; // Hors séance
+}
+function renderSessionStats(equityCurve) {
+  const trades = deriveTradeR(equityCurve).filter((t) => t.entryTime);
+  if (trades.length === 0) {
+    return '<div class="meta">Pas encore de trade clôturé avec une heure d\'entrée connue.</div>';
+  }
+  const buckets = SESSION_LABELS.map((label) => ({ r: 0, count: 0, wins: 0, label }));
+  for (const t of trades) {
+    const idx = sessionForHourUTC(new Date(t.entryTime).getUTCHours());
+    buckets[idx].r += t.r;
+    buckets[idx].count++;
+    if (t.r >= 0) buckets[idx].wins++;
+  }
+  return renderTimeStatRows(buckets, 'time-stat-label time-stat-label-wide');
+}
+
+// Temps de récupération après un creux (drawdown) (2026-09-15, Esdras:
+// "temps de recuperation") - purement dérivé de la même equityCurve
+// (aucune nouvelle donnée, aucun nouvel appel réseau). Pour chaque nouveau
+// sommet de la courbe, mesure combien de temps (en trades ET en jours
+// calendaires réels, pas en nombre de bougies) il a fallu pour le
+// redépasser après en être descendu - répond concrètement à "cette série
+// de pertes actuelle, c'est dans la norme ou pas".
+function computeRecoveryStats(equityCurve) {
+  if (!equityCurve || equityCurve.length < 2) return null;
+  let peak = equityCurve[0].cumulativeR;
+  let peakTime = equityCurve[0].time;
+  let peakIdx = 0;
+  let inDrawdown = false;
+  const recoveries = [];
+  for (let i = 1; i < equityCurve.length; i++) {
+    const v = equityCurve[i].cumulativeR;
+    if (v >= peak) {
+      if (inDrawdown) {
+        const worst = Math.min(...equityCurve.slice(peakIdx, i + 1).map((p) => p.cumulativeR));
+        recoveries.push({
+          drawdownR: peak - worst,
+          trades: i - peakIdx,
+          days: (new Date(equityCurve[i].time) - new Date(peakTime)) / 86400000,
+        });
+        inDrawdown = false;
+      }
+      peak = v;
+      peakTime = equityCurve[i].time;
+      peakIdx = i;
+    } else {
+      inDrawdown = true;
+    }
+  }
+  const current = inDrawdown
+    ? {
+        drawdownR: peak - Math.min(...equityCurve.slice(peakIdx).map((p) => p.cumulativeR)),
+        trades: equityCurve.length - 1 - peakIdx,
+        days: (new Date(equityCurve[equityCurve.length - 1].time) - new Date(peakTime)) / 86400000,
+      }
+    : null;
+  return { recoveries, current };
+}
+
+function renderRecoveryStats(equityCurve) {
+  const stats = computeRecoveryStats(equityCurve);
+  if (!stats || (stats.recoveries.length === 0 && !stats.current)) {
+    return '<div class="meta">Pas encore assez de trades clôturés, ou aucun creux à mesurer (la courbe n\'a fait que monter jusqu\'ici).</div>';
+  }
+  const { recoveries, current } = stats;
+  let html = '';
+  if (recoveries.length > 0) {
+    const avgDays = recoveries.reduce((s, r) => s + r.days, 0) / recoveries.length;
+    const maxDays = Math.max(...recoveries.map((r) => r.days));
+    const avgTrades = recoveries.reduce((s, r) => s + r.trades, 0) / recoveries.length;
+    html += `
+      <div class="stat-row"><span class="label">Creux mesurés</span><span>${recoveries.length}</span></div>
+      <div class="stat-row"><span class="label">Récupération moyenne</span><span>${fmt(avgDays, 1)} jour${avgDays >= 2 ? 's' : ''} (${fmt(avgTrades, 1)} trades)</span></div>
+      <div class="stat-row"><span class="label">Récupération la plus longue</span><span>${fmt(maxDays, 1)} jour${maxDays >= 2 ? 's' : ''}</span></div>
+    `;
+  }
+  if (current) {
+    html += `
+      <div class="mismatch-alert">
+        <strong>En creux actuellement</strong>
+        Depuis ${fmt(current.days, 1)} jour${current.days >= 2 ? 's' : ''} (${current.trades} trade${current.trades > 1 ? 's' : ''}), -${fmt(current.drawdownR)}R sous le dernier sommet — pas encore reconquis.
+      </div>
+    `;
+  } else if (recoveries.length > 0) {
+    html += '<div class="meta" style="margin-top:8px;">Actuellement à un nouveau sommet — aucun creux en cours.</div>';
+  }
+  return html;
 }
 
 function renderOverview(data) {
   const el = document.getElementById('overview-body');
   const calendarEl = document.getElementById('calendar-body');
   const timeStatsEl = document.getElementById('time-stats-body');
+  const sessionStatsEl = document.getElementById('session-stats-body');
+  const recoveryEl = document.getElementById('recovery-body');
   const overall = data.overall;
   if (!overall || overall.totalSignals === 0) {
     const emptyMsg = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
     el.innerHTML = emptyMsg;
     if (calendarEl) calendarEl.innerHTML = emptyMsg;
     if (timeStatsEl) timeStatsEl.innerHTML = emptyMsg;
+    if (sessionStatsEl) sessionStatsEl.innerHTML = emptyMsg;
+    if (recoveryEl) recoveryEl.innerHTML = emptyMsg;
     return;
   }
   if (calendarEl) calendarEl.innerHTML = renderCalendar(data.equityCurve);
   if (timeStatsEl) timeStatsEl.innerHTML = renderTimeStats(data.equityCurve);
+  if (sessionStatsEl) sessionStatsEl.innerHTML = renderSessionStats(data.equityCurve);
+  if (recoveryEl) recoveryEl.innerHTML = renderRecoveryStats(data.equityCurve);
   const netWin = overall.finalEquityR >= 0;
   const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
   const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);
@@ -595,8 +748,54 @@ function renderTradeChart(trade, decimals) {
 // card's own comment for why only `days` goes to the server).
 let allJournalTrades = [];
 
+// Qualité d'exécution (glissement à l'entrée) (2026-09-15, Esdras: "qualité
+// d'exécution") - compares the price the broker ACTUALLY filled (a fact,
+// dealPairing.js's opening.executionPrice) to the price the SIGNAL was
+// targeting at order-submission time (the durable journal's own entryPrice
+// - see enrichTradesWithSlippage's header). Positive = the broker filled at
+// a WORSE price than the signal wanted (a real cost); negative = better
+// (favorable). Shown as a % of the signal's own price, not raw price units,
+// specifically so XAUUSD (~2500) and US100 (~19500) can sit in the same
+// table without one dwarfing the other. ALWAYS the unfiltered window (same
+// as "Journal durable par instrument" above) - a diagnostic overview, not
+// meant to follow the per-trade list's own symbol/strategy filters.
+function renderExecutionQuality(trades) {
+  const withSlippage = trades.filter((t) => t.slippage !== null && t.slippage !== undefined && t.signalEntryPrice);
+  if (withSlippage.length === 0) {
+    return '<div class="meta">Pas encore de trade avec un prix de signal connu sur cette fenêtre (persistance durable désactivée, ou trades trop anciens).</div>';
+  }
+  const pctOf = (t) => (t.slippage / t.signalEntryPrice) * 100;
+  const bySymbol = new Map();
+  for (const t of withSlippage) {
+    const b = bySymbol.get(t.symbol) || { count: 0, totalPct: 0, favorable: 0 };
+    b.count++;
+    b.totalPct += pctOf(t);
+    if (t.slippage <= 0) b.favorable++;
+    bySymbol.set(t.symbol, b);
+  }
+  const overallPct = withSlippage.reduce((s, t) => s + pctOf(t), 0) / withSlippage.length;
+  const rows = [...bySymbol.entries()].map(([symbol, b]) => {
+    const avgPct = b.totalPct / b.count;
+    const cost = avgPct > 0;
+    return `<tr>
+      <td style="font-family:inherit;">${symbol}</td>
+      <td>${b.count}</td>
+      <td class="journal-pnl ${cost ? 'loss' : 'win'}">${avgPct >= 0 ? '+' : ''}${fmt(avgPct, 3)}%</td>
+      <td>${Math.round((b.favorable / b.count) * 100)}%</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="stat-row"><span class="label">Glissement moyen à l'entrée (${withSlippage.length} trade${withSlippage.length > 1 ? 's' : ''})</span><span class="journal-pnl ${overallPct > 0 ? 'loss' : 'win'}">${overallPct >= 0 ? '+' : ''}${fmt(overallPct, 3)}%</span></div>
+    <table class="strategy-table" style="margin-top:8px;">
+      <thead><tr><th>Instrument</th><th>Trades</th><th>Glissement moyen</th><th>% rempli à prix égal/meilleur</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
 async function refreshTradeHistory() {
   const list = document.getElementById('journal-list');
+  const eqEl = document.getElementById('execution-quality-body');
   const days = document.getElementById('filter-days').value;
   try {
     const res = await fetch(`/api/trade-history?days=${encodeURIComponent(days)}`);
@@ -605,10 +804,13 @@ async function refreshTradeHistory() {
     populateJournalFilterOptions(allJournalTrades);
     if (allJournalTrades.length === 0) {
       document.getElementById('journal-summary').innerHTML = '';
-      list.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur cette fenêtre.'}</div>`;
+      const emptyMsg = data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur cette fenêtre.';
+      list.innerHTML = `<div class="meta">${emptyMsg}</div>`;
+      if (eqEl) eqEl.innerHTML = `<div class="meta">${emptyMsg}</div>`;
       return;
     }
     renderJournalList();
+    if (eqEl) eqEl.innerHTML = renderExecutionQuality(allJournalTrades);
   } catch (err) {
     list.innerHTML = `<div class="err">Erreur de chargement du journal: ${err.message}</div>`;
   }
@@ -672,6 +874,12 @@ function renderJournalList() {
     const win = t.pnl >= 0;
     const hasR = t.rMultiple !== null && t.rMultiple !== undefined;
     const rWin = hasR && t.rMultiple >= 0;
+    // Glissement (2026-09-15, Esdras: "qualité d'exécution") - see
+    // renderExecutionQuality's own header for the full reasoning. Only
+    // shown when known, same discipline as the R-multiple badge above -
+    // never a guessed "0" for a trade with no signal-price match.
+    const hasSlippage = t.slippage !== null && t.slippage !== undefined && t.signalEntryPrice;
+    const slippageCost = hasSlippage && t.slippage > 0;
     return `
       <div class="journal-item">
         <div class="journal-head">
@@ -686,6 +894,7 @@ function renderJournalList() {
           <span>Sortie ${fmtTime(t.exitTime)}</span>
           <span>Prix ${fmt(t.entryPrice, d)} → ${fmt(t.exitPrice, d)}</span>
           ${!hasR ? '<span title="Pas de correspondance dans le journal durable pour ce trade (persistance désactivée, ou trade trop ancien)">R-multiple indisponible</span>' : ''}
+          ${hasSlippage ? `<span title="Prix réellement rempli par le courtier (${fmt(t.entryPrice, d)}) vs prix visé par le signal (${fmt(t.signalEntryPrice, d)})" class="${slippageCost ? '' : 'win'}">Glissement ${t.slippage >= 0 ? '+' : ''}${fmt(t.slippage, d)}</span>` : ''}
         </div>
         ${renderTradeChart(t, d)}
       </div>
@@ -704,7 +913,7 @@ function exportJournalCsv() {
     const s = String(v ?? '');
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const headers = ['symbole', 'direction', 'stratégie', 'entrée', 'sortie', 'prix_entrée', 'prix_sortie', 'pnl', 'r_multiple'];
+  const headers = ['symbole', 'direction', 'stratégie', 'entrée', 'sortie', 'prix_entrée', 'prix_sortie', 'pnl', 'r_multiple', 'glissement_entrée'];
   const rows = filtered.map((t) => [
     t.symbol,
     t.direction === 'bullish' ? 'achat' : 'vente',
@@ -715,6 +924,7 @@ function exportJournalCsv() {
     t.exitPrice,
     t.pnl,
     t.rMultiple ?? '',
+    t.slippage ?? '',
   ]);
   const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

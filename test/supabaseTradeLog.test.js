@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTradeLogClient, toTradeRow, logClosedTrade, fetchPerformanceBySymbol, enrichTradesWithRMultiple } from '../src/dataSources/supabaseTradeLog.js';
+import { createTradeLogClient, toTradeRow, logClosedTrade, fetchPerformanceBySymbol, enrichTradesWithRMultiple, enrichTradesWithSlippage } from '../src/dataSources/supabaseTradeLog.js';
 
 const silentLog = { warn() {} };
 
@@ -185,6 +185,23 @@ test('fetchPerformanceBySymbol: overall/equityCurve reuse summarizeTrades() math
   assert.equal(equityCurve[2].cumulativeR, 7);
 });
 
+// 2026-09-15 (Esdras: "stats par session") - a trade's ICT session
+// (Asie/Londres/New York) is a property of when it was ENTERED, not when it
+// closed, so equityCurve must carry entry_time alongside exit_time/cumulativeR.
+test('fetchPerformanceBySymbol: equityCurve carries entryTime alongside time/cumulativeR, for session bucketing', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z' },
+      ],
+      error: null,
+    },
+  });
+  const { equityCurve } = await fetchPerformanceBySymbol(client);
+  assert.equal(equityCurve[0].entryTime, '2026-09-01T08:30:00Z');
+  assert.equal(equityCurve[0].time, '2026-09-01T09:00:00Z');
+});
+
 test('fetchPerformanceBySymbol: a query error surfaces as a reason rather than throwing or silently returning empty', async () => {
   const client = fakeClient({ selectResult: { data: null, error: { message: 'relation does not exist' } } });
   const { bySymbol, bySource, overall, equityCurve, reason } = await fetchPerformanceBySymbol(client);
@@ -269,4 +286,70 @@ test('enrichTradesWithRMultiple: an empty durable list leaves every trade with r
   const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
   const enriched = enrichTradesWithRMultiple(brokerTrades, []);
   assert.equal(enriched[0].rMultiple, null);
+});
+
+// 2026-09-15 (Esdras: "qualité d'exécution") - same join shape as
+// enrichTradesWithRMultiple, but comparing the durable journal's entryPrice
+// (what the SIGNAL targeted) to the broker trade's own entryPrice (the REAL
+// fill) to measure slippage. Positive slippage always means "cost" (a worse
+// fill), negative always means "favorable" - regardless of direction.
+test('enrichTradesWithSlippage: a bullish trade filled WORSE (higher) than the signal price is a positive (cost) slippage', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19510, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', entryPrice: 19500, exitTime: 1000500 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.signalEntryPrice, 19500);
+  assert.equal(enriched.slippage, 10);
+});
+
+test('enrichTradesWithSlippage: a bullish trade filled BETTER (lower) than the signal price is a negative (favorable) slippage', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19490, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', entryPrice: 19500, exitTime: 1000500 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.slippage, -10);
+});
+
+test('enrichTradesWithSlippage: a bearish (sell) trade filled WORSE (lower) than the signal price is a positive (cost) slippage - sign flips vs bullish', () => {
+  const brokerTrades = [{ symbol: 'XAUUSD', direction: 'bearish', entryPrice: 2495, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'XAUUSD', entryPrice: 2500, exitTime: 1000500 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.slippage, 5); // sold 5 lower than intended = cost
+});
+
+test('enrichTradesWithSlippage: a bearish trade filled BETTER (higher) than the signal price is a negative (favorable) slippage', () => {
+  const brokerTrades = [{ symbol: 'XAUUSD', direction: 'bearish', entryPrice: 2505, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'XAUUSD', entryPrice: 2500, exitTime: 1000500 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.slippage, -5);
+});
+
+test('enrichTradesWithSlippage: a durable row on a different symbol never matches, slippage stays null', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19500, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'XAUUSD', entryPrice: 2500, exitTime: 1000000 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.signalEntryPrice, null);
+  assert.equal(enriched.slippage, null);
+});
+
+test('enrichTradesWithSlippage: outside the tolerance window, no match - slippage stays null rather than guessing', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19510, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', entryPrice: 19500, exitTime: 1000000 + 60000 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.slippage, null);
+});
+
+test('enrichTradesWithSlippage: each durable row is used at most once', () => {
+  const brokerTrades = [
+    { symbol: 'US100', direction: 'bullish', entryPrice: 19510, exitTime: 1000000 },
+    { symbol: 'US100', direction: 'bullish', entryPrice: 19520, exitTime: 1000100 },
+  ];
+  const durableRows = [{ symbol: 'US100', entryPrice: 19500, exitTime: 1000050 }];
+  const enriched = enrichTradesWithSlippage(brokerTrades, durableRows);
+  const matched = enriched.filter((t) => t.slippage !== null);
+  assert.equal(matched.length, 1, 'only one of the two broker trades should claim the single durable row');
+});
+
+test('enrichTradesWithSlippage: an empty durable list leaves every trade with slippage: null, not a throw', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19510, exitTime: 1000000 }];
+  const enriched = enrichTradesWithSlippage(brokerTrades, []);
+  assert.equal(enriched[0].slippage, null);
 });

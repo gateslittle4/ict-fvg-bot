@@ -167,6 +167,55 @@ export function enrichTradesWithRMultiple(brokerTrades, durableRows, toleranceMs
 }
 
 /**
+ * Pure join, same matching logic as enrichTradesWithRMultiple (its own
+ * independent pass, not chained off that function's result - keeps each
+ * concern separately testable): attaches `signalEntryPrice` and `slippage`
+ * to each broker trade (2026-09-15, Esdras: "qualité d'exécution"). The
+ * durable journal's own `entryPrice` is the price the SIGNAL targeted at
+ * order-submission time (see cTraderDataSource.js's
+ * openPositionInfoByPositionId/_handleExecutionEvent - `info.entryPrice`
+ * comes straight from `signal.entryPrice`, never a broker fill); the
+ * broker trade's `entryPrice` (dealPairing.js's `opening.executionPrice`)
+ * is the REAL price the broker actually filled at. Neither is invented -
+ * both already existed for other reasons, this just compares them.
+ *
+ * `slippage` is signed so positive always means "cost" (a worse fill than
+ * the signal wanted) regardless of direction: for a bullish (buy) trade a
+ * HIGHER real fill than intended is a cost; for a bearish (sell) trade a
+ * LOWER real fill than intended is a cost - see the sign flip below.
+ * Expressed in raw price units (NOT comparable across symbols with
+ * different price scales - callers wanting a cross-symbol view should
+ * normalize by signalEntryPrice themselves, e.g. slippage/signalEntryPrice).
+ *
+ * @param {Array} brokerTrades - getTradeHistory()'s trade objects (symbol, direction, entryPrice, exitTime, ...)
+ * @param {Array} durableRows - fetchRecentTradeRows()'s output
+ * @param {number} [toleranceMs] - default 30s, same reasoning as enrichTradesWithRMultiple
+ */
+export function enrichTradesWithSlippage(brokerTrades, durableRows, toleranceMs = 30000) {
+  const used = new Set();
+  return brokerTrades.map((trade) => {
+    let best = null;
+    let bestDiff = Infinity;
+    durableRows.forEach((row, i) => {
+      if (used.has(i) || row.symbol !== trade.symbol) return;
+      const diff = Math.abs(row.exitTime - trade.exitTime);
+      if (diff <= toleranceMs && diff < bestDiff) {
+        best = i;
+        bestDiff = diff;
+      }
+    });
+    const signalEntryPrice = best === null ? null : durableRows[best].entryPrice;
+    if (signalEntryPrice == null || trade.entryPrice == null) {
+      return { ...trade, signalEntryPrice: null, slippage: null };
+    }
+    used.add(best);
+    const rawDiff = trade.entryPrice - signalEntryPrice;
+    const slippage = trade.direction === 'bearish' ? -rawDiff : rawDiff;
+    return { ...trade, signalEntryPrice, slippage };
+  });
+}
+
+/**
  * Per-symbol/per-strategy win/loss/timeout/R aggregation over a real,
  * durable window - unlike /api/recent-performance (recentPerformanceReport.js),
  * this reads whatever has actually been logged since persistence was turned
@@ -185,7 +234,7 @@ export function enrichTradesWithRMultiple(brokerTrades, durableRows, toleranceMs
  */
 export async function fetchPerformanceBySymbol(client, { days = null } = {}) {
   if (!client) return { bySymbol: {}, bySource: {}, overall: null, equityCurve: [], reason: 'not configured' };
-  let query = client.from(TABLE).select('symbol, source, outcome, r_multiple, exit_time').order('exit_time', { ascending: false });
+  let query = client.from(TABLE).select('symbol, source, outcome, r_multiple, entry_time, exit_time').order('exit_time', { ascending: false });
   if (days != null) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     query = query.gte('exit_time', since);
@@ -210,8 +259,14 @@ export async function fetchPerformanceBySymbol(client, { days = null } = {}) {
   const overall = chronological.length > 0
     ? summarizeTrades(chronological.map((row) => ({ outcome: row.outcome, rMultiple: row.r_multiple ?? 0 })))
     : null;
+  // entryTime added 2026-09-15 (Esdras: "stats par session") - a trade's
+  // TRADING SESSION (Asie/Londres/New York) is a property of when it was
+  // ENTERED, not when it happened to close (an ICT setup swept liquidity
+  // during a specific session; the close can land hours later in a
+  // completely different one) - so the journal page needs entry_time
+  // alongside exit_time on every equityCurve point to bucket by it.
   const equityCurve = overall
-    ? chronological.map((row, i) => ({ time: row.exit_time, cumulativeR: overall.equityCurve[i] }))
+    ? chronological.map((row, i) => ({ time: row.exit_time, entryTime: row.entry_time, cumulativeR: overall.equityCurve[i] }))
     : [];
 
   return { bySymbol, bySource, overall, equityCurve };

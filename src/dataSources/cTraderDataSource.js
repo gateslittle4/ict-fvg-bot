@@ -37,7 +37,7 @@ import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
-import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple } from './supabaseTradeLog.js';
+import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -613,16 +613,24 @@ export class CTraderDataSource {
     // the durable journal, which computed it at close time from the real
     // riskAmount (see openPositionInfoByPositionId/_handleExecutionEvent).
     // Best-effort join, matched by symbol + closest exit time - see
-    // enrichTradesWithRMultiple's own header for the full reasoning. Opt-in
-    // (same discipline as logClosedTrade itself): silently skipped when
-    // Supabase persistence isn't configured, every trade just keeps
-    // rMultiple: undefined rather than the endpoint failing.
+    // enrichTradesWithRMultiple's own header for the full reasoning.
+    //
+    // slippage (2026-09-15, Esdras: "qualité d'exécution") - same join,
+    // this time comparing the durable journal's entryPrice (what the
+    // SIGNAL targeted) against this endpoint's own entryPrice (the REAL
+    // broker fill, opening.executionPrice from dealPairing.js) - see
+    // enrichTradesWithSlippage's own header. Reuses the SAME durableRows
+    // fetch, not a second round-trip.
+    //
+    // Both opt-in (same discipline as logClosedTrade itself): silently
+    // skipped when Supabase persistence isn't configured, every trade just
+    // keeps rMultiple/slippage: undefined rather than the endpoint failing.
     if (this.tradeLogClient) {
       try {
         const durableRows = await fetchRecentTradeRows(this.tradeLogClient, { days: Math.min(days, 7) });
-        return enrichTradesWithRMultiple(enriched, durableRows);
+        return enrichTradesWithSlippage(enrichTradesWithRMultiple(enriched, durableRows), durableRows);
       } catch (err) {
-        console.warn('[cTrader] trade history: R-multiple enrichment skipped (durable journal query failed):', err.message);
+        console.warn('[cTrader] trade history: R-multiple/slippage enrichment skipped (durable journal query failed):', err.message);
       }
     }
     return enriched;

@@ -2936,3 +2936,21 @@ Esdras, pendant que je terminais l'ajout de Playwright : a demandé mon avis hon
 `npm test` : 483/483 (inchangé — aucun changement de logique métier backend).
 
 **Fichiers** : `public/journal.html`, `public/index.html`, `public/accounts.html`.
+
+## Stats par session ICT, qualité d'exécution, temps de récupération après drawdown — 2026-09-15
+
+Suite du "quoi encore ?" — Esdras a choisi 3 des idées proposées : "Stats par session et qualité d'exécution, les deux, temps de recuperation".
+
+**Statistiques par session de trading** (`journal.html`, `renderSessionStats()`) — Asie/Londres/Chevauchement Londres-NY/New York/Hors séance, frontières standard du marché en UTC (pas la timezone du navigateur — une stratégie ICT est définie par rapport à des sessions de marché fixes, pas par rapport à où Esdras se trouve). Bucketé sur l'heure d'ENTRÉE, pas de sortie : un trade peut sweeper la liquidité de Londres puis ne se clôturer que des heures plus tard en session New York — c'est la session au moment du signal qui a de la valeur diagnostique, pas celle de la clôture. Ça a demandé d'exposer `entry_time` dans `equityCurve` côté serveur (`fetchPerformanceBySymbol`, `supabaseTradeLog.js`) — jusqu'ici seul `exit_time` en sortait, suffisant pour le calendrier/stats horaires déjà en place mais pas pour ça.
+
+**Qualité d'exécution** (`journal.html`, `renderExecutionQuality()`, nouvelle carte + badge par trade dans le journal détaillé) — compare le prix RÉELLEMENT rempli par le courtier (`dealPairing.js`'s `opening.executionPrice`, un fait) au prix que le SIGNAL visait au moment de l'ordre (le journal durable stocke déjà ce prix-là, voir `openPositionInfoByPositionId`/`_handleExecutionEvent` dans `cTraderDataSource.js`) — aucune des deux valeurs n'a été ajoutée pour l'occasion, seulement rapprochées. Nouveau `enrichTradesWithSlippage()` (`supabaseTradeLog.js`) — même jointure symbole + heure de sortie la plus proche que `enrichTradesWithRMultiple`, mais indépendante (pas chaînée dessus, pour rester testable séparément) ; `slippage` est signé pour que positif = coût réel dans tous les cas (le signe s'inverse entre achat et vente — voir le commentaire de la fonction). Affiché en % du prix visé (pas en unités de prix brutes) pour pouvoir comparer XAUUSD et US100 sur la même échelle dans une seule table. **Limite honnête, documentée dans l'UI plutôt que cachée** : le vrai prix de fill n'est conservé nulle part au-delà de ce que `ProtoOADealListReq` couvre (jusqu'à 7 jours/20 trades) — pas de reconstruction possible sur une fenêtre plus large sans changer le schéma de la table durable, non fait ici (portée volontairement limitée à ce qui était déjà disponible, sans migration).
+
+**Temps de récupération après un creux** (`journal.html`, `computeRecoveryStats()`/`renderRecoveryStats()`) — entièrement dérivé de la même `equityCurve` (aucune nouvelle donnée, aucun nouvel appel réseau) : pour chaque nouveau sommet de la courbe, mesure combien de trades ET combien de jours réels il a fallu pour le redépasser après en être descendu. Affiche aussi l'état courant ("en creux depuis N jours, pas encore reconquis") si la courbe n'a pas encore refait un nouveau sommet — répond concrètement à "cette série de pertes, c'est normal ou pas".
+
+**11 nouveaux tests** (`test/supabaseTradeLog.test.js`) pour `enrichTradesWithSlippage` (signe selon la direction, tolérance, un match par ligne durable max, etc.) et pour le nouveau champ `entryTime` dans `equityCurve`.
+
+**Vérifié visuellement** : serveur local + captures Playwright avec `equityCurve`/`trade-history` simulées (drawdown suivi d'une récupération, trades répartis sur les 5 sessions, glissements positifs et négatifs sur 2 instruments) — les 3 nouvelles cartes et le badge de glissement par trade s'affichent et se calculent correctement (vérifié les chiffres à la main), aucune erreur console.
+
+`npm test` : 492/492.
+
+**Fichiers** : `public/journal.html`, `src/dataSources/supabaseTradeLog.js`, `src/dataSources/cTraderDataSource.js`, `test/supabaseTradeLog.test.js`.
