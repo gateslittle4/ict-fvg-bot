@@ -19,6 +19,7 @@ import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, 
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
 import { getPropFirmProgram } from './propFirms/index.js';
+import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus } from './chatAssistant.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -718,6 +719,33 @@ function createAccountRouter(getStore) {
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Assistant IA du dashboard (2026-09-15, Esdras - voir chatAssistant.js
+  // pour le contexte complet). Même modèle "sans état" que le reste de cette
+  // API : le client renvoie tout l'historique de la conversation à chaque
+  // question, rien n'est gardé en mémoire côté serveur entre deux appels.
+  // Pas d'auth séparée - même modèle que chaque autre route de ce routeur
+  // ("dashboard privé single-user", voir /positions/:id/close ci-dessus) :
+  // quiconque a l'URL du dashboard peut déjà voir ces données brutes via les
+  // autres routes, ce chat ne les explique qu'en langage clair.
+  router.post('/chat', async (req, res) => {
+    const store = getStore(req);
+    if (!isChatConfigured()) {
+      return res.status(503).json({ error: "L'assistant IA n'est pas configuré sur ce serveur (ANTHROPIC_API_KEY manquant)." });
+    }
+    const message = typeof req.body?.message === 'string' ? req.body.message : '';
+    if (!message.trim()) {
+      return res.status(400).json({ error: 'message requis' });
+    }
+    try {
+      const context = await buildChatContext(store);
+      const reply = await answerChatQuestion({ message, history: req.body?.history, context });
+      res.json({ reply });
+    } catch (err) {
+      const { status, message: errMessage } = chatErrorStatus(err);
+      res.status(status).json({ error: errMessage });
     }
   });
 
