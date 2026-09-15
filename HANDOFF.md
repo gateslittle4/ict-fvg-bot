@@ -3211,6 +3211,14 @@ Esdras a remarqué à juste titre l'incohérence ("comment t'as pu faire le test
 
 **Fichiers** : `scripts/replayLastWeekOnRealData.js`.
 
+## Suite : combien de semaines perdantes, et la plus longue série — 2026-09-15
+
+Esdras : "Combien de semaine de losing strike on a?" Ajouté un regroupement par semaine calendaire (lundi→dimanche UTC, même convention que les fenêtres précédentes) sur les mêmes 145 trades du rejeu réel de 7 mois, avec totalR par semaine et la plus longue série de semaines perdantes CONSÉCUTIVES (une semaine sans trade n'est ni gagnante ni perdante, ne casse pas une série).
+
+**Résultat (31 semaines avec au moins un trade, 2026-02-16 → 2026-09-14)** : **11 semaines perdantes sur 31 (35%)**. **Plus longue série consécutive : 4 semaines perdantes d'affilée**, du 17 août au 7 septembre 2026 — exactement la période qui a motivé toutes les questions de cette conversation. C'est la pire série de toute la fenêtre de 7 mois disponible ; le reste du temps, aucune série perdante ne dépasse 1 semaine isolée. Contrepoint utile : la semaine du 13 avril a fait à elle seule +27R, un rappel que la distribution est très asymétrique (peu de grosses semaines gagnantes portent l'essentiel du +54R total).
+
+**Fichiers** : `scripts/replayLastWeekOnRealData.js`.
+
 ## Suite : 3 derniers mois (plafond réel trouvé) — 2026-09-15
 
 Esdras : "regards alors 3 mois precedent". Plafond technique trouvé et signalé honnêtement plutôt qu'ignoré : `GET /api/accounts/:id/candles` clampe sa réponse à 5000 bougies M15 maximum (`server.js`), donc la fenêtre la plus ancienne accessible par cette route est ~77 jours (1er juillet → 15 septembre), pas tout à fait 3 mois calendaires pleins. Aller plus loin demanderait la route admin `/admin/export-candles` (gated `ADMIN_EXPORT_TOKEN`, pas dispo dans ce sandbox) ou d'attendre plus d'historique réel — délibérément PAS de redémarrage de la connexion broker en prod juste pour ce chiffre (ça couperait le bot en train de trader).

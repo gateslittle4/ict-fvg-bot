@@ -173,6 +173,44 @@ async function main() {
   // sandbox), soit d'attendre que plus d'historique réel s'accumule - pas de
   // redémarrage de la connexion broker en prod juste pour ce chiffre.
   summarize(`Fenêtre réelle complète disponible (~${Math.round((latestCandleTime - Math.min(...REAL_SYMBOLS.map((s) => historyBySymbol[s][0].time))) / 86400000)} jours calendaires, plafonnée par l'API à 5000 bougies M15 - PAS tout à fait 3 mois pleins)`, trades);
+
+  // Esdras : "Combien de semaine de losing strike on a?" - regroupe chaque
+  // trade dans sa semaine calendaire (lundi->dimanche, UTC, même convention
+  // que les fenêtres "semaine dernière"/"semaine d'avant" ci-dessus), calcule
+  // le totalR par semaine, puis compte les semaines perdantes ET la plus
+  // longue série de semaines perdantes CONSÉCUTIVES (pas juste le total).
+  // Une semaine sans aucun trade est ignorée (ni gagnante ni perdante), pas
+  // comptée comme une rupture de série ni comme une semaine perdante.
+  function mondayOf(ms) {
+    const d = new Date(ms);
+    const day = d.getUTCDay(); // 0=dimanche..6=samedi
+    const diffToMonday = (day + 6) % 7; // lundi=0
+    const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - diffToMonday));
+    return monday.getTime();
+  }
+  const byWeek = new Map(); // mondayMs -> totalR
+  for (const t of trades) {
+    const wk = mondayOf(t.entryTime);
+    byWeek.set(wk, (byWeek.get(wk) || 0) + (t.rMultiple || 0));
+  }
+  const weeks = [...byWeek.entries()].sort((a, b) => a[0] - b[0]);
+  console.log(`\n=== Détail par semaine calendaire (${weeks.length} semaines avec au moins un trade) ===`);
+  let losingWeeks = 0;
+  let currentStreak = 0;
+  let longestStreak = 0;
+  let longestStreakEnd = null;
+  for (const [mondayMs, totalR] of weeks) {
+    const isLosing = totalR < 0;
+    if (isLosing) losingWeeks++;
+    currentStreak = isLosing ? currentStreak + 1 : 0;
+    if (currentStreak > longestStreak) {
+      longestStreak = currentStreak;
+      longestStreakEnd = mondayMs;
+    }
+    console.log(`  semaine du ${new Date(mondayMs).toISOString().slice(0, 10)} : ${totalR >= 0 ? '+' : ''}${totalR.toFixed(2)}R${isLosing ? '  <- perdante' : ''}`);
+  }
+  console.log(`\nSemaines perdantes (totalR < 0) : ${losingWeeks} / ${weeks.length}`);
+  console.log(`Plus longue série de semaines perdantes CONSÉCUTIVES : ${longestStreak}${longestStreak > 0 ? ` (se termine la semaine du ${new Date(longestStreakEnd - (longestStreak - 1) * 7 * 86400000).toISOString().slice(0, 10)} -> ${new Date(longestStreakEnd).toISOString().slice(0, 10)})` : ''}`);
 }
 
 main();
