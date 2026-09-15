@@ -2996,3 +2996,29 @@ Esdras : "Rapport PDF exportable du journal" — une des idées offertes plus t�
 Esdras : "Tu peux retirer l'ancien calendrier que j'avais vu avec les petits carrés. Je l'aimais pas de toute façon." — la heatmap GitHub-contributions-style (`renderCalendar()`, carte "Calendrier de performance") est retirée de `public/journal.html` (CSS, HTML, fonction JS, câblage dans `renderOverview`) ; le calendrier mensuel réel ($/%) prend sa place. `deriveTradeR()` conservé (encore utilisé par les stats heure/jour et session).
 
 `npm test` : 496/496 (inchangé — retrait HTML/CSS/JS pur côté client).
+
+## Preuve visuelle de conformité par trade — 2026-09-15
+
+Esdras : "comment peut-on prouver visuellement que le trade a respecté les procédures dans le journal?" — après un mockup approuvé, puis "donne tout, pour l'avoir dès le départ" (inclure le biais H4/EMA200 dès le début, pas seulement les critères les moins coûteux).
+
+**Concept** : chaque trade du journal affiche maintenant, à côté de son graphique, une checklist "Critères respectés" (✔/⚠/—) ET la zone FVG surlignée directement sur le graphique — pas une décoration, une vraie reconstruction basée sur le code de production réel.
+
+**Nouveau module `src/dataSources/tradeCompliance.js`** — réutilise les VRAIES fonctions de production (jamais une réimplémentation séparée qui pourrait diverger) :
+- `reconstructFvgZone()` : rejoue un `FvgEngine` simple sur les bougies de contexte déjà récupérées pour le graphique du trade (aucun nouvel appel réseau), retrouve la zone exacte + la bougie de validation.
+- `isGapThroughFill()` : détecte EXACTEMENT le bug réel trouvé plus tôt cette session (2025-12-29 US100 — la bougie d'entrée traverse toute la zone sans la retoucher, fill optimiste) — flaggé comme anomalie plutôt que caché.
+- `reconstructStopDistance()` : réutilise `computeStop()` (backtestEngine.js) tel quel, même mode (fvg-edge/swing) que la config réelle du symbole.
+- `computeHtfBiasAtEntry()` / `requiredH1LookbackCandles()` : réutilise `buildHtfBiasSeries`/`makeBiasLookup` (htfBias.js), sur un NOUVEL historique H1 récupéré spécifiquement pour ce calcul (courbe H1→H4 par ré-échantillonnage si le symbole utilise une variante H4 — mathématiquement identique à ré-échantillonner depuis M15, aucune perte de précision, juste beaucoup moins de bougies à récupérer : ~800 H1 au lieu de ~3200 M15 pour un EMA200 sur H4).
+- `reconstructRiskCheck()` : le risque réellement pris est reconstruit sans nouvelle colonne — `riskAmount = |pnl_usd / r_multiple|` (les deux déjà en base), comparé au réglage actuel de risque du compte.
+- Périmètre honnête : la reconstruction riche (zone/stop/biais) ne couvre que la source **FVG** — Divergence/NWOG/Judas Swing/Weekly Sweep ont chacune leur propre définition de "signal valide", pas encore construite (visible dans l'UI : "Non applicable", jamais un ✔ inventé). Le critère "risque" reste universel (fonctionne pour toute source avec une correspondance dans le journal durable).
+
+**Câblé dans `cTraderDataSource.js`** (`getTradeHistory()` → nouvelle méthode `_attachComplianceChecklists()`, après l'enrichissement R-multiple/slippage existant) : pour chaque trade FVG, récupère en plus l'historique H1 nécessaire (un nouvel appel `ProtoOAGetTrendbarsReq` par trade, uniquement quand la variante configurée n'est pas 'baseline') puis construit la checklist. Une panne réseau sur cet appel dégrade en "non vérifiable" pour l'item biais seul, jamais un blocage de tout le journal.
+
+**`journal.html`** : `renderTradeChart()` dessine la zone FVG en bande semi-transparente sur toute la largeur visible (le serveur ne transmet que les bornes de prix {top,bottom}, pas l'index de formation — un choix délibéré pour rester simple). Nouvelle `renderComplianceChecklist()` combine les items serveur avec 2 items calculés côté client sans données supplémentaires : Session (réutilise exactement les frontières UTC déjà utilisées par "Statistiques par session") et Garde-fou (trivialement vrai — un signal bloqué ne devient jamais un vrai trade).
+
+**Colonnes Supabase ajoutées** à `bot_trade_events` côté requête (`pnl_usd`, `balance_after` — déjà créées plus tôt aujourd'hui pour le calendrier mensuel, juste jamais sélectionnées par `fetchRecentTradeRows()` avant maintenant) — nécessaires pour le critère "risque appliqué".
+
+**23 nouveaux tests** (`test/tradeCompliance.test.js` : reconstruction de zone bullish/bearish, gap-through-fill, les 2 modes de stop, biais EMA réel, risque dans/hors tolérance, orchestration complète y compris les 2 cas de dégradation gracieuse ; `test/supabaseTradeLog.test.js` : pnlUsd/balanceAfter à travers `fetchRecentTradeRows`/`enrichTradesWithRMultiple`).
+
+**Vérifié visuellement** avec Playwright local (3 scénarios simulés : trade gagnant propre avec zone FVG visible et 6/6 critères ✔, trade avec l'anomalie réelle de gap-through flaggée ⚠, trade non-FVG avec dégradation gracieuse "Non applicable") — aucune erreur console, rendu correct dans les 3 cas.
+
+`npm test` : 519/519.

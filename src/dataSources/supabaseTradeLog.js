@@ -122,7 +122,7 @@ export async function fetchRecentTradeRows(client, { days = 7 } = {}) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await client
     .from(TABLE)
-    .select('symbol, source, direction, outcome, r_multiple, entry_price, entry_time, exit_time')
+    .select('symbol, source, direction, outcome, r_multiple, entry_price, entry_time, exit_time, pnl_usd, balance_after')
     .gte('exit_time', since)
     .order('exit_time', { ascending: false });
   if (error) return [];
@@ -135,6 +135,12 @@ export async function fetchRecentTradeRows(client, { days = 7 } = {}) {
     entryPrice: row.entry_price,
     entryTime: new Date(row.entry_time).getTime(),
     exitTime: new Date(row.exit_time).getTime(),
+    // pnlUsd/balanceAfter added 2026-09-15 (Esdras: "preuve visuelle de
+    // conformité" - the risk-check item needs the REAL $ risked, not just
+    // the R-multiple) - null on any row logged before those columns
+    // existed, never backfilled with a guess.
+    pnlUsd: row.pnl_usd ?? null,
+    balanceAfter: row.balance_after ?? null,
   }));
 }
 
@@ -169,9 +175,9 @@ export function enrichTradesWithRMultiple(brokerTrades, durableRows, toleranceMs
         bestDiff = diff;
       }
     });
-    if (best === null) return { ...trade, rMultiple: null };
+    if (best === null) return { ...trade, rMultiple: null, pnlUsd: null, balanceAfter: null };
     used.add(best);
-    return { ...trade, rMultiple: durableRows[best].rMultiple };
+    return { ...trade, rMultiple: durableRows[best].rMultiple, pnlUsd: durableRows[best].pnlUsd, balanceAfter: durableRows[best].balanceAfter };
   });
 }
 

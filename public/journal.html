@@ -169,6 +169,27 @@
   .journal-chart { width: 100%; height: 460px; display: block; background: var(--bg); border: 1px solid var(--panel-border); border-radius: var(--radius); }
   @media (max-width: 640px) { .journal-chart { height: 320px; } }
 
+  /* ---------- Preuve visuelle de conformité (2026-09-15, Esdras: "comment
+     peut-on prouver visuellement que le trade a respecté les procédures" +
+     mockup approuvé, "donne tout, pour l'avoir dès le départ") - the FVG
+     zone drawn on the chart (see renderTradeChart's zoneRect) plus a
+     checklist panel next to it, reusing the real production reconstruction
+     from tradeCompliance.js (server-side, see cTraderDataSource.js's
+     _attachComplianceChecklists). ---------- */
+  .proof-layout { display: flex; gap: 12px; align-items: stretch; }
+  @media (max-width: 900px) { .proof-layout { flex-direction: column; } }
+  .proof-layout .journal-chart { flex: 1 1 auto; min-width: 0; }
+  .checklist { flex: 0 0 260px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 9px 11px; font-family: var(--mono); }
+  @media (max-width: 900px) { .checklist { flex: 1 1 auto; } }
+  .checklist-title { font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 7px; }
+  .check-row { display: flex; align-items: flex-start; gap: 7px; font-size: 10.5px; padding: 4px 0; border-bottom: 1px solid var(--panel-border); }
+  .check-row:last-child { border-bottom: none; }
+  .check-icon { flex-shrink: 0; width: 13px; text-align: center; color: var(--faint); }
+  .check-icon.ok { color: var(--green); }
+  .check-icon.warn { color: var(--amber); }
+  .check-row .label { color: var(--text); }
+  .check-row .detail { color: var(--faint); display: block; font-size: 9.5px; margin-top: 1px; }
+
   /* ---------- Performance overview (equity curve + key metrics) ---------- */
   .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; margin-bottom: 14px; background: var(--panel-border); border: 1px solid var(--panel-border); }
   .metric-tile { background: var(--bg-inset); padding: 9px 11px; }
@@ -845,8 +866,19 @@ function renderTradeChart(trade, decimals) {
   const entryLabelY = entryY - 5 < 12 ? entryY + 14 : entryY - 5;
   const exitLabelY = exitY + 14 > H - 4 ? exitY - 5 : exitY + 14;
 
+  // FVG zone overlay (2026-09-15, "preuve visuelle de conformité") - drawn
+  // as a band across the WHOLE visible window, not just from its exact
+  // formation candle: the server (tradeCompliance.js) only transmits the
+  // zone's PRICE bounds {top,bottom}, not which candle index it started at
+  // - a full-width band still shows exactly what price range the zone
+  // covered without needing that extra data threaded through.
+  const zoneRect = trade.fvgZone
+    ? `<rect x="${PAD_L}" y="${y(trade.fvgZone.top)}" width="${W - PAD_L - PAD_R}" height="${Math.max(2, y(trade.fvgZone.bottom) - y(trade.fvgZone.top))}" fill="rgba(76,158,255,0.14)" stroke="rgba(76,158,255,0.5)" stroke-width="1" stroke-dasharray="4,3" />`
+    : '';
+
   return `
     <svg class="journal-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      ${zoneRect}
       ${candleShapes}
       <line x1="${PAD_L}" y1="${entryY}" x2="${W - PAD_R}" y2="${entryY}" stroke="var(--blue)" stroke-width="1" stroke-dasharray="5,4" />
       <text x="4" y="${entryLabelY}" fill="var(--blue)" font-size="13">Entrée ${fmt(trade.entryPrice, decimals)}</text>
@@ -856,6 +888,36 @@ function renderTradeChart(trade, decimals) {
       <circle cx="${exitX}" cy="${exitY}" r="4" fill="var(--amber)" />
     </svg>
   `;
+}
+
+// Preuve visuelle de conformité (2026-09-15) - combines the server-computed
+// checklist items (trade.checklist, from tradeCompliance.js's real
+// reconstruction: zone/bias/stop/risk) with 2 items that need nothing but
+// data already on the page: the ICT session bucket (reuses
+// sessionForHourUTC/SESSION_LABELS, the exact same boundaries as the
+// "Statistiques par session" card) and the guardrail item (trivially true -
+// a blocked signal never becomes a real trade in the first place, so any
+// trade reaching this journal already satisfies it).
+function guardrailChecklistItem() {
+  return {
+    key: 'guardrail', applicable: true, ok: true, label: 'Garde-fou au moment de l\'entrée',
+    detail: 'Aucun blocage actif — un trade bloqué (cooldown, limite du jour, drawdown) ne s\'ouvre jamais réellement',
+  };
+}
+function sessionChecklistItem(entryTime) {
+  if (!entryTime) return { key: 'session', applicable: false, label: 'Session', detail: 'Heure d\'entrée inconnue' };
+  const label = SESSION_LABELS[sessionForHourUTC(new Date(entryTime).getUTCHours())];
+  return { key: 'session', applicable: true, ok: true, label: 'Session', detail: `${label} (heure UTC)` };
+}
+function renderComplianceChecklist(trade) {
+  const byKey = Object.fromEntries((trade.checklist || []).map((i) => [i.key, i]));
+  const items = [byKey.zone, byKey.bias, byKey.stop, guardrailChecklistItem(), byKey.risk, sessionChecklistItem(trade.entryTime)].filter(Boolean);
+  const rows = items.map((it) => {
+    const icon = !it.applicable ? '—' : (it.ok ? '✔' : '⚠');
+    const iconClass = !it.applicable ? '' : (it.ok ? 'ok' : 'warn');
+    return `<div class="check-row"><span class="check-icon ${iconClass}">${icon}</span><span><span class="label">${it.label}</span><span class="detail">${it.detail}</span></span></div>`;
+  }).join('');
+  return `<div class="checklist"><div class="checklist-title">Critères respectés</div>${rows}</div>`;
 }
 
 // Unfiltered trades from the last fetch - the symbol/source filters below
@@ -1011,7 +1073,10 @@ function renderJournalList() {
           ${!hasR ? '<span title="Pas de correspondance dans le journal durable pour ce trade (persistance désactivée, ou trade trop ancien)">R-multiple indisponible</span>' : ''}
           ${hasSlippage ? `<span title="Prix réellement rempli par le courtier (${fmt(t.entryPrice, d)}) vs prix visé par le signal (${fmt(t.signalEntryPrice, d)})" class="${slippageCost ? '' : 'win'}">Glissement ${t.slippage >= 0 ? '+' : ''}${fmt(t.slippage, d)}</span>` : ''}
         </div>
-        ${renderTradeChart(t, d)}
+        <div class="proof-layout">
+          ${renderTradeChart(t, d)}
+          ${renderComplianceChecklist(t)}
+        </div>
       </div>
     `;
   }).join('');

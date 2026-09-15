@@ -38,6 +38,7 @@ import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
+import { buildFvgComplianceChecklist, requiredH1LookbackCandles } from './tradeCompliance.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -625,15 +626,67 @@ export class CTraderDataSource {
     // Both opt-in (same discipline as logClosedTrade itself): silently
     // skipped when Supabase persistence isn't configured, every trade just
     // keeps rMultiple/slippage: undefined rather than the endpoint failing.
+    let withJournalData = enriched;
     if (this.tradeLogClient) {
       try {
         const durableRows = await fetchRecentTradeRows(this.tradeLogClient, { days: Math.min(days, 7) });
-        return enrichTradesWithSlippage(enrichTradesWithRMultiple(enriched, durableRows), durableRows);
+        withJournalData = enrichTradesWithSlippage(enrichTradesWithRMultiple(enriched, durableRows), durableRows);
       } catch (err) {
         console.warn('[cTrader] trade history: R-multiple/slippage enrichment skipped (durable journal query failed):', err.message);
       }
     }
-    return enriched;
+    return this._attachComplianceChecklists(withJournalData, accountId);
+  }
+
+  /**
+   * "Preuve visuelle de conformité" (2026-09-15, Esdras, after seeing a
+   * mockup: "donne tout, pour l'avoir dès le départ") - for each trade,
+   * reconstructs whether it actually followed the live strategy's own real
+   * procedure, reusing the SAME production functions (FvgEngine,
+   * computeStop, buildHtfBiasSeries) rather than a second implementation -
+   * see tradeCompliance.js's own header for the full reasoning and its
+   * honestly-scoped limits (only 'fvg'-source trades get the rich zone/
+   * stop/bias reconstruction; every trade gets the risk-% check, which
+   * needs only what's already in `trade` by this point).
+   *
+   * The HTF-bias item needs its OWN extra broker fetch (H1 candles far
+   * enough back to seed the configured EMA - requiredH1LookbackCandles) -
+   * unlike the chart-context candles above, this is NOT reused for
+   * anything else, so it's only fetched when a trade's symbol actually has
+   * a non-'baseline' bias variant configured. A failure here degrades to
+   * "non vérifiable" for that one item, never blocks the rest of the
+   * trade's history from loading.
+   */
+  async _attachComplianceChecklists(trades, accountId) {
+    const expectedRiskPct = this.account.strategyEngine?.riskPctPerTrade ?? null;
+    const out = [];
+    for (const trade of trades) {
+      const cfg = trade.source === 'fvg' ? CONFIG.fvg.perSymbol[trade.symbol] : null;
+      let h1Candles = null;
+      if (cfg) {
+        const lookback = requiredH1LookbackCandles(cfg.variant);
+        if (lookback > 0) {
+          try {
+            const history = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
+              ctidTraderAccountId: Number(accountId),
+              fromTimestamp: trade.entryTime - lookback * TIMEFRAME_DURATION_MS.H1,
+              toTimestamp: trade.entryTime,
+              symbolId: trade.symbolId,
+              period: 'H1',
+            });
+            h1Candles = (history.trendbar || []).map((bar) => this._trendbarToCandle(bar)).sort((a, b) => a.time - b.time);
+          } catch (err) {
+            console.warn(
+              `[cTrader] trade history: HTF bias fetch failed for ${trade.symbol} (checklist item will read "non vérifiable"):`,
+              err.message || JSON.stringify(err)
+            );
+          }
+        }
+      }
+      const { zone, items } = buildFvgComplianceChecklist({ trade, candles: trade.candles || [], cfg, h1Candles, expectedRiskPct });
+      out.push({ ...trade, checklist: items, fvgZone: zone });
+    }
+    return out;
   }
 
   /**

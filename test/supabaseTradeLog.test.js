@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTradeLogClient, toTradeRow, logClosedTrade, fetchPerformanceBySymbol, enrichTradesWithRMultiple, enrichTradesWithSlippage } from '../src/dataSources/supabaseTradeLog.js';
+import { createTradeLogClient, toTradeRow, logClosedTrade, fetchPerformanceBySymbol, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from '../src/dataSources/supabaseTradeLog.js';
 
 const silentLog = { warn() {} };
 
@@ -334,6 +334,48 @@ test('enrichTradesWithRMultiple: an empty durable list leaves every trade with r
   const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
   const enriched = enrichTradesWithRMultiple(brokerTrades, []);
   assert.equal(enriched[0].rMultiple, null);
+});
+
+// 2026-09-15 (Esdras: "preuve visuelle de conformité") - the compliance
+// checklist's risk-check item needs the real $ pnl and balance, joined the
+// same way as rMultiple already was.
+test('enrichTradesWithRMultiple: also attaches pnlUsd/balanceAfter from the matched durable row', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000500, rMultiple: 2.3, pnlUsd: 115, balanceAfter: 10115 }];
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.pnlUsd, 115);
+  assert.equal(enriched.balanceAfter, 10115);
+});
+
+test('enrichTradesWithRMultiple: no match leaves pnlUsd/balanceAfter null, not undefined or a throw', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const enriched = enrichTradesWithRMultiple(brokerTrades, []);
+  assert.equal(enriched[0].pnlUsd, null);
+  assert.equal(enriched[0].balanceAfter, null);
+});
+
+test('fetchRecentTradeRows: maps pnl_usd/balance_after to pnlUsd/balanceAfter', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [{ symbol: 'US100', source: 'fvg', direction: 'bullish', outcome: 'win', r_multiple: 5, entry_price: 19500, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z', pnl_usd: 247.5, balance_after: 10247.5 }],
+      error: null,
+    },
+  });
+  const [row] = await fetchRecentTradeRows(client);
+  assert.equal(row.pnlUsd, 247.5);
+  assert.equal(row.balanceAfter, 10247.5);
+});
+
+test('fetchRecentTradeRows: pnl_usd/balance_after default to null on rows logged before those columns existed', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [{ symbol: 'US100', source: 'fvg', direction: 'bullish', outcome: 'win', r_multiple: 5, entry_price: 19500, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z' }],
+      error: null,
+    },
+  });
+  const [row] = await fetchRecentTradeRows(client);
+  assert.equal(row.pnlUsd, null);
+  assert.equal(row.balanceAfter, null);
 });
 
 // 2026-09-15 (Esdras: "qualité d'exécution") - same join shape as
