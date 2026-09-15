@@ -2682,3 +2682,16 @@ En creusant pourquoi le rapport NWOG montrait déjà "✅ tient" sur US100/US500
 **Aucune action prise sur le live sans confirmation d'Esdras** — elle a été informée directement dans la conversation avec les chiffres bruts, décision lui appartenant explicitement (dans l'esprit de la même discipline "jamais changer le compte réel sans son accord conscient" déjà appliquée quand NWOG est passé en live la première fois).
 
 `npm test` : 459/459 (inchangé). Script de vérification ad hoc, non committé.
+
+## NWOG passé en "achat seulement" sur US100 — décision d'Esdras, codée — 2026-09-15
+
+Suite directe de la section précédente : Esdras informée que le côté vente de NWOG/US100 ne rapporte quasiment rien (-1.70R net sur 177 trades depuis 2019, 26.6% de réussite) pendant que l'achat porte tout le résultat (+87.43R sur 155 trades, 40.6% de réussite). Elle a répondu "on a plus de chance de reussir a lachat que la vente" et demandé combien de perte on retire en coupant la vente — réponse honnête donnée : très peu en absolu (-1.70R sur ~7 ans, quasiment nul), le vrai bénéfice est de retirer 53% des trades (177/332) qui n'ajoutaient aucune valeur, pas de récupérer une grosse perte.
+
+**Codé** (pas juste discuté) : nouvelle option `longOnly` sur la config NWOG.
+- `src/liveStrategyEngine.js` (`_processNwogCandidate`) : quand `cfg.longOnly` est vrai et que le candidat est baissier (`bearish`), le signal est immédiatement marqué `blockedReason: 'direction-filtered'` (même convention que tous les autres blocages existants — netting, spread-too-tight, guardrail) au lieu de passer par `_blockReason()`. Le signal reste VISIBLE/journalisé (transparence, comme tout signal bloqué), mais n'ouvre jamais de vraie position et n'atteint jamais l'auto-exécution (`!e.blockedReason` reste la condition qui déclenche un vrai ordre).
+- `src/config.js` (`CONFIG.nwog`) : `longOnly: true` ajouté, avec les chiffres justificatifs en commentaire.
+- 2 nouveaux tests dans `test/liveStrategyEngine.test.js` : un candidat baissier avec `longOnly: true` est bloqué (`direction-filtered`, aucune position réelle ouverte) ; un candidat haussier passe normalement (non affecté par le filtre).
+
+**Effet concret** : NWOG continue de fonctionner exactement pareil côté achat (mécanisme inchangé, pas retuné). Côté vente, les signaux sont toujours détectés et visibles sur le dashboard (utile si on veut un jour revenir en arrière ou juste observer), mais plus aucun ordre réel n'est envoyé au courtier pour cette direction.
+
+`npm test` : 461/461 (459 + 2 nouveaux).

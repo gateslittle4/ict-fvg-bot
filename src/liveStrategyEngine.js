@@ -743,7 +743,16 @@ export class LiveStrategyEngine {
       };
     }
 
-    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
+    // 2026-09-15: the long/short-direction-split check (built this same day
+    // for GER40 research) applied retroactively to NWOG on US100 - the
+    // symbol it's actually LIVE on - shows the sell side contributes ~0 net
+    // edge (177 trades, totalR -1.70R, essentially breakeven) while buy
+    // carries the entire result (155 trades, totalR +87.43R). At Esdras's
+    // explicit request ("on active achète seulement"), cfg.longOnly skips
+    // straight to a blocked signal for bearish candidates - still reported
+    // (informational, same convention as every other blockedReason here),
+    // never opens a real position or reaches auto-execute.
+    const blockedReason = cfg.longOnly && !bullish ? 'direction-filtered' : this._blockReason(symbol, distance, candle, guardrailNow);
 
     const signal = {
       type: 'validated',

@@ -621,6 +621,52 @@ test('LiveStrategyEngine: netting blocks a second NWOG signal while an earlier N
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
 
+// --- NWOG longOnly (2026-09-15) - Esdras's explicit call after seeing the
+// long/short-direction-split check: the sell side of live NWOG/US100 carries
+// ~0 net edge (-1.70R over 177 trades since 2019, essentially breakeven)
+// while buy carries the entire result - "on active achète seulement".
+
+const NWOG_CFG_LONG_ONLY = { ...NWOG_CFG, longOnly: true };
+
+test('LiveStrategyEngine (NWOG longOnly): a bearish gap-fill candidate is blocked with "direction-filtered", never opens a real position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, nwogConfig: NWOG_CFG_LONG_ONLY, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100); // prevClose = 100
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5); // gapped UP -> bearish bet
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5);
+
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'nwog');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
+  assert.equal(entryEvents[0].direction, 'bearish');
+  assert.equal(entryEvents[0].blockedReason, 'direction-filtered');
+  assert.equal(engine.getOpenPosition('TEST1'), null, 'no real position opened for the filtered-out sell side');
+});
+
+test('LiveStrategyEngine (NWOG longOnly): a bullish gap-fill candidate still fires and opens a real position normally', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, nwogConfig: NWOG_CFG_LONG_ONLY, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100); // prevClose = 100
+  const c3 = c(c2.time + GAP_HOURS, 95, 95.5, 94, 94.5); // gapped DOWN -> bullish bet, stopReference = low = 94
+  const c4 = c(c3.time + M15, 94.8, 95, 94.2, 94.5);
+
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'nwog');
+
+  assert.equal(entryEvents.length, 1);
+  assert.equal(entryEvents[0].direction, 'bullish');
+  assert.equal(entryEvents[0].suggestedSide, 'buy');
+  assert.equal(entryEvents[0].blockedReason, null);
+  assert.equal(engine.getOpenPosition('TEST1').source, 'nwog', 'the buy side is unaffected by longOnly and opens a real position as usual');
+});
+
 // --- Judas Swing (ICT London killzone, EURUSD - 2026-09, activated at the
 // user's explicit request) - same openPositions/netting/auto-execute shared
 // path as FVG/Divergence/NWOG above, no Judas-Swing-specific tracking.

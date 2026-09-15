@@ -267,10 +267,20 @@ export const CONFIG = {
   // special-cased position tracking left. A signal fires roughly weekly
   // (the weekend gap), so the practical exposure/monitoring burden is low
   // even though there is no manual review step before an order is placed.
+  //
+  // longOnly: true (2026-09-15) - the long/short-direction-split check
+  // built this same day for GER40 research, applied retroactively to this
+  // LIVE US100 mechanism: sell trades carry ~0 net edge (177 trades since
+  // 2019, totalR -1.70R, essentially breakeven) while buy carries the
+  // entire result (155 trades, totalR +87.43R, 40.6% WR). Esdras's explicit
+  // call ("on active achète seulement, car on a plus de chance de réussir à
+  // l'achat que la vente") - not a mechanism change, just stops taking the
+  // sell side that was never adding value. See HANDOFF.md for the numbers.
   nwog: {
     symbols: ['US100'],
     rrMultiple: 3, // same convention already validated in src/backtest/nwog.js - not re-tuned here
     maxHoldingM15Candles: 480,
+    longOnly: true,
   },
   // Judas Swing (ICT London killzone PDH/PDL sweep+reclaim) - LIVE,
   // auto-executed (2026-09), at the user's explicit request ("on active
