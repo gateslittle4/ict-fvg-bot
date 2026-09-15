@@ -3171,3 +3171,15 @@ Nouveau script `scripts/computeInterTradeGaps.js` — réutilise EXACTEMENT la m
 **Résultat (2019-2025, 1373 écarts sur 1374 trades)** : le plus long écart réel est de **18,8 jours** (2023-06-08 → 2023-06-26), suivi de 16,4j (2023-03-20 → 2023-04-05) et 13,5j (2023-06-26 → 2023-07-10) — 2023 concentre les plus longs silences. Moyenne 1,86 jour, médiane 0,91 jour, 33% des écarts dépassent 2 jours. Cohérent avec la réponse déjà donnée sur les moyennes annuelles (24-148 trades/an) : les écarts de plusieurs jours sont fréquents et normaux, mais 2 jours reste loin du record historique de ce combo (18,8 jours).
 
 **Fichiers** : `scripts/computeInterTradeGaps.js` (nouveau).
+
+## Combien de trades la semaine dernière si le bot avait déjà tourné — 2026-09-15
+
+Esdras : "j'aimerais voir combien de trade j'aurais fait la semaine dernière si le bot était déjà disponible".
+
+Les CSV de backtest s'arrêtent au 2025-12-31 (impossible de couvrir "la semaine dernière", 2026-09). Solution : le bot retient déjà ~2,5 mois de vraies bougies M15 par symbole en mémoire (`LiveStrategyEngine.getHistory`), exposées sans auth via `GET /api/accounts/default/candles?symbol=X&limit=5000` — récupérées en direct depuis la production (`https://ict-fvg-bot.onrender.com`, juillet 2026 → aujourd'hui), donc de VRAIES données courtier, pas une simulation.
+
+Nouveau script `scripts/replayLastWeekOnRealData.js` — construit un `LiveStrategyEngine` EXACTEMENT comme `accountRuntime.js` le fait en vrai (`fvgConfig`/`divergenceConfig`/`nwogConfig`/`judasSwingConfig`/`weeklySweepConfig`/`pyramidConfig` tous pris directement dans `CONFIG`, pas réimplémentés), puis rejoue ces vraies bougies avec `engine.warmUp()` (même mécanisme que `forwardTest.js`). BTCUSD exclu explicitement (smoke-test temporaire documenté, pas un mécanisme validé, nécessiterait ses propres bougies M1 natives). Pyramide supposée désactivée (`PYRAMID_ENABLED` non défini dans ce sandbox — question déjà ouverte de savoir si elle l'est réellement sur Render).
+
+**Résultat, semaine calendaire du lundi 7 au dimanche 13 septembre 2026** : **4 trades, 0 gagnant / 4 perdants, -4R** — 2× Divergence US500, 1× FVG US100, 1× NWOG US100. Repère secondaire (7 derniers jours glissants jusqu'à maintenant) : 3 trades (1W/2L, +1R), incluant le Weekly Sweep GER40 qui vient de gagner (+3R) le 15 septembre. Sur toute la fenêtre disponible (~2,5 mois, 39 trades au total, tous mécanismes/symboles réels confondus), rythme cohérent avec les moyennes déjà documentées (~3,5/semaine).
+
+**Fichiers** : `scripts/replayLastWeekOnRealData.js` (nouveau).
