@@ -3196,3 +3196,15 @@ Esdras, en suite directe : "regarde LA semaine d'avant alors, regarde sur les 30
 **Vérification statistique avant de crier au bug** : à un vrai taux de gain de 38%, la probabilité d'enchaîner 0 gagnant sur 9 trades FVG est d'environ 1,4% (calcul binomial (1-0.38)^9) — rare, mais pas du tout impossible sur un échantillon aussi petit. Pas assez d'éléments pour conclure à un bug ou un changement de régime avec seulement 9 trades — **à surveiller dans les semaines qui viennent** : si FVG continue nettement sous son taux de gain backtesté au-delà de ce mois, ce sera le signal à creuser (spread réel vs supposé dans les coûts, changement de régime de marché récent, etc.), pas avant.
 
 **Fichiers** : `scripts/replayLastWeekOnRealData.js`.
+
+## Suite : 3 derniers mois (plafond réel trouvé) — 2026-09-15
+
+Esdras : "regards alors 3 mois precedent". Plafond technique trouvé et signalé honnêtement plutôt qu'ignoré : `GET /api/accounts/:id/candles` clampe sa réponse à 5000 bougies M15 maximum (`server.js`), donc la fenêtre la plus ancienne accessible par cette route est ~77 jours (1er juillet → 15 septembre), pas tout à fait 3 mois calendaires pleins. Aller plus loin demanderait la route admin `/admin/export-candles` (gated `ADMIN_EXPORT_TOKEN`, pas dispo dans ce sandbox) ou d'attendre plus d'historique réel — délibérément PAS de redémarrage de la connexion broker en prod juste pour ce chiffre (ça couperait le bot en train de trader).
+
+**Résultat (77 jours, tous mécanismes/symboles réels confondus)** : 39 trades, 11W/28L (28% de réussite), **totalR = +7R** (≈ +2,1% du compte au risque actuel de 0,3%/trade) — donc net POSITIF sur la fenêtre complète, malgré les -12R des 30 derniers jours seuls (le début juillet a été nettement meilleur, compense).
+
+**Le signal FVG se confirme sur la fenêtre entière, pas juste les 30 derniers jours** : FVG est à **1 gagnant sur 11 trades (9%) depuis le tout premier jour de données disponibles**, très en dessous de son taux de gain backtesté validé (~38-41% pour US100 multi-touch). Les autres mécanismes sont globalement dans leurs clous : Divergence 3/9 (33%, conforme), Judas Swing 3/6 (50%, échantillon trop petit pour juger), NWOG 2/3, Weekly Sweep 2/10 (20%, sous son propre attendu mais c'est le mécanisme le plus récent et le moins validé - une seule coupure train/test, jamais observé en live avant cette semaine).
+
+Probabilité binomiale de ≤1 gagnant sur 11 essais à p=38% : ~4% — bas, mais pas suffisant pour conclure formellement à un bug ou un changement de régime avec seulement 11 trades. Reste la même recommandation que la note précédente : surveiller FVG spécifiquement dans les semaines à venir, et si la sous-performance persiste au-delà de ce format, creuser le spread réel vs supposé dans `transactionCosts.js`/`DEFAULT_SPREADS` en priorité (c'est le paramètre le plus susceptible d'être décalé de la réalité sans jamais planter).
+
+**Fichiers** : `scripts/replayLastWeekOnRealData.js`.

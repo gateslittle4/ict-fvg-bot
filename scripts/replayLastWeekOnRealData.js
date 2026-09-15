@@ -139,6 +139,18 @@ async function main() {
 
   const rolling30d = trades.filter((t) => t.entryTime >= latestCandleTime - 30 * 86400000);
   summarize('30 derniers jours glissants (jusqu\'à la donnée la plus récente)', rolling30d);
+
+  // Esdras, suite : "regarde 3 mois precedent". PLAFOND RÉEL À SIGNALER :
+  // GET /api/accounts/:id/candles clampe sa réponse à 5000 bougies max
+  // (server.js, `Math.min(Number(req.query.limit) || 300, 5000)`), quel que
+  // soit ce qu'on demande - donc la fenêtre la plus ancienne accessible par
+  // CETTE route est ~juillet 1er (voir le log des bougies chargées plus haut),
+  // pas tout à fait 3 mois calendaires pleins (~2 semaines de moins). Aller
+  // chercher plus loin nécessiterait soit la route admin
+  // /admin/export-candles (gated ADMIN_EXPORT_TOKEN, pas dispo dans ce
+  // sandbox), soit d'attendre que plus d'historique réel s'accumule - pas de
+  // redémarrage de la connexion broker en prod juste pour ce chiffre.
+  summarize(`Fenêtre réelle complète disponible (~${Math.round((latestCandleTime - Math.min(...REAL_SYMBOLS.map((s) => historyBySymbol[s][0].time))) / 86400000)} jours calendaires, plafonnée par l'API à 5000 bougies M15 - PAS tout à fait 3 mois pleins)`, trades);
 }
 
 main();
