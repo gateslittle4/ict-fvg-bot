@@ -11,3 +11,4 @@
 | GBPUSD | 18 | 33.3% | 0.29 | -0.20 | 8 | 37.5% | 1.19 | 0.06 | 4 | ❓ pas assez de trades |
 | USDJPY | 39 | 33.3% | 1.00 | 0.00 | 9 | 33.3% | 1.10 | 0.04 | 8 | ❓ pas assez de trades |
 | USDCAD | 53 | 28.3% | 1.19 | 0.06 | 9 | 11.1% | 0.02 | -0.57 | 7 | ❓ pas assez de trades |
+| GER40 | 35 | 22.9% | 1.21 | 0.08 | 5 | 20.0% | 0.46 | -0.27 | 5 | ❓ pas assez de trades |

@@ -2549,3 +2549,25 @@ Esdras a demandé "autre strategy exploitable" après le rejet des patterns éto
 `npm test` : 459/459 (inchangé — aucun test ne couvre ces scripts d'analyse ad hoc, convention déjà établie).
 
 **Fichiers** : `data/backtest-input/USDCAD.csv` (nouveau, converti depuis les fichiers HistData fournis par Esdras), `src/backtest/transactionCosts.js` (+`USDCAD`), 13 scripts `scripts/run*StrategyAnalysis.js` (SYMBOLS étendu), 13 rapports `data/backtest-input/*-strategy-analysis.md` régénérés (ligne USDCAD ajoutée, résultats des 6 autres instruments inchangés).
+
+## GER40 (DAX, 8e instrument) — premier signal vraiment prometteur depuis longtemps, mais 2 des 6 "tient" sont des pièges de biais haussier — 2026-09-15
+
+Suite directe du constat "aucune paire forex ne tient" (USDCAD inclus) : recommandation de changer de CATÉGORIE plutôt que de paire — les deux seuls edges réels de ce projet (FVG, Divergence) sont tous les deux sur des INDICES (US100/US500), aucune paire forex testée n'a jamais rien donné de solide. Esdras a fourni les vraies données HistData.com GRXEUR M1 (2010-2025, 16 ans complets) — le DAX allemand, l'indice le plus proche d'US100/US500 disponible sur HistData (pas de Dow Jones/US30 sur leur catalogue). Converti en M15 (3 525 775 bougies M1 → 243 849 bougies M15) : `data/backtest-input/GER40.csv`. Spread indicatif ajouté : 1.0 point (convention US100).
+
+**Mêmes 13 mécanismes déjà testés sur USDCAD (aucun nouveau réglage) étendus à GER40 — résultat spectaculairement différent de toutes les paires forex** : 6 mécanismes sur 13 passent la règle de verdict "✅ tient" (train ET test positifs, test ≥ 30% du train) — Asian Range Breakout, Asian Range Fade, Breaker Block, NWOG, Unicorn Model, Weekly Liquidity Sweep. Sur aucun autre instrument testé dans ce projet (US100/US500/XAUUSD/EURUSD/GBPUSD/USDJPY/USDCAD), plus d'1 ou 2 mécanismes n'avaient jamais passé cette barre en même temps.
+
+**Vérification immédiate avant de s'emballer (même réflexe que la fragilité USDJPY démasquée plus haut dans ce document)** : Asian Range Breakout ET Asian Range Fade — littéralement les deux sens OPPOSÉS du même setup — passent TOUS LES DEUX. Un signal d'alarme classique : si la continuation ET le retournement du même niveau sont "gagnants", c'est probablement le marché qui monte en général, pas le mécanisme qui capte un vrai edge. Vérifié directement (répartition achat/vente sur tout l'historique 2010-2025) :
+
+| Mécanisme | Achat (n / espérance) | Vente (n / espérance) | Verdict |
+|---|---|---|---|
+| Asian Range Breakout | 331 / **+0.29R** | 283 / **+0.01R** | ❌ **piège de biais haussier confirmé** — 96% du profit total vient des achats seuls |
+| Breaker Block | 686 / +0.13R | 705 / +0.04R | ⚠️ partiellement biaisé (78% du profit vient des achats), plus faible que ça en paraît |
+| Weekly Liquidity Sweep | 285 / +0.14R | 364 / **+0.19R** | ✅ **vraiment bidirectionnel** — la vente est même légèrement meilleure que l'achat |
+
+**Weekly Liquidity Sweep passe un 2e contrôle de robustesse** (même type de vérification qui avait démasqué la fragilité USDJPY) — répartition année par année sur tout l'historique (2010-2025, n=649 au total) : positif 12 années sur 16 (2010,11,12,14,17,18,19,20,24,25), négatif seulement 2021-2023 (3 années consécutives, -0.10 à -0.53R), reprise en 2024-2025. Pas concentré dans une seule fenêtre chanceuse comme l'était le faux "tient" d'USDJPY — un vrai profil de robustesse, pas une coïncidence.
+
+**Conclusion actuelle, prudente** : **Weekly Liquidity Sweep sur GER40 est le candidat le plus crédible trouvé depuis longtemps dans ce projet** — passe le verdict formel, bidirectionnel, robuste dans le temps. Asian Range Breakout est un vrai rejet malgré son "✅ tient" apparent (biais haussier démasqué). Breaker Block est à traiter avec méfiance (biaisé mais pas autant qu'Asian Range Breakout). NWOG, Unicorn Model et Asian Range Fade **n'ont PAS encore reçu le même contrôle de robustesse** — passent la règle formelle mais pas encore vérifiés en profondeur, à ne pas prendre pour argent comptant avant de le faire. **Rien recommandé pour du capital réel à ce stade** (même réserve épistémique que partout : un seul découpage train/test, jamais testé en direct) — mais Weekly Liquidity Sweep/GER40 mérite clairement une suite (forward-test démo, ou au minimum les mêmes contrôles de robustesse que ceux déjà faits pour le multi-contact US100).
+
+`npm test` : 459/459 (inchangé).
+
+**Fichiers** : `data/backtest-input/GER40.csv` (nouveau, converti depuis les fichiers HistData fournis par Esdras), `src/backtest/transactionCosts.js` (+`GER40`), 13 scripts `scripts/run*StrategyAnalysis.js` (SYMBOLS étendu), 13 rapports `data/backtest-input/*-strategy-analysis.md` régénérés (ligne GER40 ajoutée, résultats des 7 autres instruments inchangés). Vérifications de robustesse (répartition achat/vente, répartition annuelle) faites en scripts ad hoc, non committées (à refaire proprement si on va plus loin sur ce candidat).
