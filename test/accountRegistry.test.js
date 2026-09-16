@@ -42,3 +42,53 @@ test('buildEffectiveConfig: no propFirmProgramId means the account\'s own guardr
   const effective = buildEffectiveConfig({ id: 'test-plain', propFirmProgramId: null, guardrails, riskPctPerTrade: 0.3 });
   assert.deepEqual(effective.guardrails, guardrails);
 });
+
+// --- DISABLED_ACCOUNT_IDS -------------------------------------------------
+// 2026-09-16: added so an account can be taken out of service without
+// rewriting ACCOUNTS_JSON, which holds live broker credentials. First real
+// use was the cti-freetrial Match-Trader account, whose login is answered by
+// a Cloudflare challenge on every boot so it never actually connects.
+// Exercised through a real CONFIG re-import per case (the filter runs at
+// module load), with the env var restored afterwards.
+async function accountIdsWith(disabledValue) {
+  const before = process.env.DISABLED_ACCOUNT_IDS;
+  const previousAccounts = process.env.ACCOUNTS_JSON;
+  process.env.ACCOUNTS_JSON = JSON.stringify([
+    { id: 'default', platform: 'mock' },
+    { id: 'cti-freetrial', platform: 'mock' },
+  ]);
+  if (disabledValue === undefined) delete process.env.DISABLED_ACCOUNT_IDS;
+  else process.env.DISABLED_ACCOUNT_IDS = disabledValue;
+  try {
+    // cache-bust so the module-level resolution re-runs against this env
+    const { CONFIG } = await import(`../src/config.js?disabled=${encodeURIComponent(String(disabledValue))}`);
+    return CONFIG.accounts.map((a) => a.id);
+  } finally {
+    if (before === undefined) delete process.env.DISABLED_ACCOUNT_IDS;
+    else process.env.DISABLED_ACCOUNT_IDS = before;
+    if (previousAccounts === undefined) delete process.env.ACCOUNTS_JSON;
+    else process.env.ACCOUNTS_JSON = previousAccounts;
+  }
+}
+
+test('DISABLED_ACCOUNT_IDS: unset keeps every account', async () => {
+  assert.deepEqual(await accountIdsWith(undefined), ['default', 'cti-freetrial']);
+});
+
+test('DISABLED_ACCOUNT_IDS: removes exactly the named account', async () => {
+  assert.deepEqual(await accountIdsWith('cti-freetrial'), ['default']);
+});
+
+test('DISABLED_ACCOUNT_IDS: tolerates spacing and empty entries', async () => {
+  assert.deepEqual(await accountIdsWith(' cti-freetrial , '), ['default']);
+});
+
+test('DISABLED_ACCOUNT_IDS: an unknown id is a harmless no-op, not an error', async () => {
+  assert.deepEqual(await accountIdsWith('does-not-exist'), ['default', 'cti-freetrial']);
+});
+
+// A bot with zero accounts boots into a state where nothing trades and every
+// dashboard route 404s - that reads as a crash, not a config choice.
+test('DISABLED_ACCOUNT_IDS: refuses to disable the last account, keeping all of them', async () => {
+  assert.deepEqual(await accountIdsWith('default,cti-freetrial'), ['default', 'cti-freetrial']);
+});

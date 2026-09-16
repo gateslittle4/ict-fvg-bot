@@ -653,4 +653,44 @@ function resolveAccounts() {
   ];
 }
 
-CONFIG.accounts = resolveAccounts();
+// DISABLED_ACCOUNT_IDS (2026-09-16): comma-separated account ids to skip at
+// boot, e.g. "cti-freetrial". Added because the only other way to stop
+// running an account was to edit it out of ACCOUNTS_JSON - which means
+// rewriting a variable that holds live broker credentials, losing them in
+// the process, just to pause an account temporarily. This is the reversible
+// version: delete the variable and the account comes back untouched.
+//
+// First use: the cti-freetrial Match-Trader account, which has never once
+// connected - its login is answered by a Cloudflare challenge (HTTP 403
+// "Just a moment...") on every single boot, so it silently falls back to
+// simulated demo mode and reports a balance that is not real. Esdras asked
+// to take it out "pour l'instant" while that gets sorted out.
+//
+// Deliberately refuses to disable the LAST remaining account: a bot with
+// zero accounts boots into a state where nothing trades and every dashboard
+// route 404s, which looks far more like a crash than a configuration choice.
+function applyDisabledAccounts(accounts) {
+  const raw = process.env.DISABLED_ACCOUNT_IDS;
+  if (!raw) return accounts;
+  const disabled = new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+  if (disabled.size === 0) return accounts;
+
+  const kept = accounts.filter((a) => !disabled.has(a.id));
+  if (kept.length === 0) {
+    console.error(
+      `[config] DISABLED_ACCOUNT_IDS (${raw}) would disable EVERY account - ignoring it and keeping all ${accounts.length}.`
+    );
+    return accounts;
+  }
+  for (const a of accounts) {
+    if (disabled.has(a.id)) console.log(`[config] account "${a.id}" disabled via DISABLED_ACCOUNT_IDS`);
+  }
+  return kept;
+}
+
+CONFIG.accounts = applyDisabledAccounts(resolveAccounts());
