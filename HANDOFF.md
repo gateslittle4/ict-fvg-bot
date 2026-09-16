@@ -3511,3 +3511,28 @@ Esdras, une fois connectée à internet pendant l'upload des fichiers ci-dessus 
 `npm test` : inchangé (aucun code de production touché).
 
 **Fichiers** : aucun commité — recherche uniquement, cette entrée HANDOFF.md documente les résultats pour la prochaine session qui ajoutera réellement `GBPUSD` à `config.js` une fois la firme choisie.
+
+## ⚠️ CORRECTIF IMPORTANT — comparaison des prop firms refaite avec l'historique étendu (2009-2025) : "FTMO 1-Step = 100%" était trop optimiste — 2026-09-16
+
+Suite directe des 3 extensions de données ci-dessus (US100/US500/XAUUSD maintenant 2009-2010 → 2025). Esdras, une fois les 3 symboles étendus : "on peut refaire les simulations pour avoir des données beaucoup plus complètes ?" — la comparaison des 6 programmes prop firm (voir entrée "Faisabilité des challenges prop firm" plus haut) a été relancée SANS filtrer sur 2019-2025, en utilisant l'historique complet disponible par symbole (US100/US500 depuis nov. 2010, XAUUSD depuis mars 2009, GER40 depuis nov. 2010, EURUSD reste le plus court à 2018 — donc les trades Judas Swing/EURUSD ne démarrent qu'en 2018, mais FVG sur US100/US500/XAUUSD et Weekly Sweep sur GER40 tournent depuis 2009-2010). Résultat : **202 tentatives mensuelles au lieu de 84** (2.4x plus d'échantillons), fenêtre réelle 2009-03-15 → 2025-12-31, 4782 trades décidés (contre 2626 sur 2019-2025 seul).
+
+**Le changement le plus important : FTMO 1-Step, présenté dans l'entrée précédente comme "100% de réussite, aucun échec par drawdown en 7 ans", tombe à 83.66% (169/202) une fois testé sur 16+ ans — 33 échecs par drawdown trailing EOD jamais observés sur la fenêtre plus courte.** Ce n'était pas une erreur de calcul à l'époque — la fenêtre 2019-2025 n'avait simplement jamais connu les conditions de marché (2009-2018) qui font casser ce plancher. Tableau complet, ancien (84 tentatives) vs nouveau (202 tentatives) :
+
+| Programme | Ancien (2019-2025, n=84) | **Nouveau (2009-2025, n=202)** |
+|---|---|---|
+| FTMO 1-Step | 100% | **83.66%** (33 échecs drawdown) |
+| FTMO 2-Step | 98.8% | **85.64%** (28 échecs drawdown) |
+| FundingPips 2-Step Standard | 98.8% | **84.16%** (31 échecs drawdown) |
+| **FundingPips 1-Step Flex** | 98.8% | **95.05%** — devient le MEILLEUR (9 échecs drawdown seulement) |
+| GoatFundedTrader 1-Step | 92.9% | **80.2%** (40 échecs drawdown) |
+| CTI 1-Step | 80.95% | **61.88%** (77 échecs drawdown, baisse la plus nette) |
+
+**Aucun programme, dans les deux versions de l'analyse, n'a jamais échoué par perte QUOTIDIENNE** — uniquement par drawdown total/trailing. La stratégie ne "casse" jamais brutalement en une seule journée ; le risque réel est un enchaînement de pertes qui use le plancher de drawdown sur plusieurs semaines, davantage visible avec 16 ans de recul qu'avec 7.
+
+**Recommandation RÉVISÉE** : **FundingPips 1-Step Flex remplace FTMO 1-Step comme meilleur choix objectif** (95% de réussite historique sur la fenêtre la plus complète disponible, contre 83.66% pour FTMO 1-Step). Prix réels des comptes FundingPips 1-Step Flex pas encore vérifiés — à faire dans une prochaine session si Esdras veut avancer sur ce choix.
+
+**Leçon méthodologique explicite pour la suite** : une comparaison de prop firms sur seulement 7-8 ans (84 tentatives) peut donner une fausse impression de perfection sur certains programmes — préférer systématiquement la fenêtre la plus longue disponible par symbole pour ce type d'analyse, maintenant que US100/US500/XAUUSD/GER40 remontent tous à 2009-2010.
+
+`npm test` : inchangé (aucun code de production touché, script d'analyse de session uniquement, non commité).
+
+**Fichiers** : aucun commité — script de comparaison dans le scratchpad de session (même méthode que l'entrée "Faisabilité des challenges" précédente, juste sans le filtre d'années). Cette entrée HANDOFF.md est la source de vérité à jour ; l'entrée précédente reste dans l'historique pour comprendre comment la conclusion a évolué, mais ses chiffres de comparaison prop firm sont dépassés par celle-ci.
