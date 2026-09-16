@@ -3456,3 +3456,11 @@ Esdras a uploadé 9 fichiers HistData.com M1 (`NSXUSD`, un par année 2010-2018)
 **Pas encore fait** : le backtest 7 ans (`data/backtest-summary.json`, le rapport PDF investisseur, l'analyse de faisabilité des prop firms ci-dessus) reste délibérément borné à 2019-2025 partout - cette nouvelle donnée ouvre la possibilité d'un vrai backtest 15 ans si Esdras le demande, mais aucun résultat existant n'a été recalculé automatiquement (`buildBacktestSummary.js` filtre encore explicitement sur `YEARS=[2019..2025]`, à modifier manuellement si on veut élargir la fenêtre officiellement communiquée).
 
 **Fichiers** : `data/backtest-input/US100.csv` (étendu, 8.2 Mo → ~18 Mo).
+
+## US500 étendu à 15 ans d'historique (2010-2025) — 2026-09-16
+
+Même chantier que US100 ci-dessus, immédiatement après : Esdras a uploadé 9 fichiers HistData.com M1 `SPXUSD` (2010-2018). Même méthode exacte (`scripts/convertHistData.js`, M15, fusion avec les 156 795 bougies existantes 2019-2025) : 2 117 667 bougies M1 → 190 549 bougies M15 (2010-11-14 → 2018-12-31), fusionnées sans chevauchement ni doublon. **`US500.csv` couvre maintenant 2010-11-14 → 2025-12-31 (347 344 bougies)**, aligné avec US100.
+
+`npm test` : 531/531 (inchangé).
+
+**Fichiers** : `data/backtest-input/US500.csv` (étendu). Avec US100 (entrée précédente), il ne reste plus que XAUUSD (démarre 2018, pas 2010) parmi les 5 symboles réels avec un historique plus court que les autres, si Esdras veut continuer l'extension.
