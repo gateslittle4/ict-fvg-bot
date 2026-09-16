@@ -103,30 +103,23 @@ export const CONFIG = {
     riskPctPerTrade: resolveRiskPctPerTrade(),
   },
   guardrails: {
-    // ⚠️ STILL LOOSE ON PURPOSE, AND STILL PENDING A DECISION.
-    // Raised to 20 on 2026-09-14 (Esdras: "leve un peu le garde fou qui
-    // empeche Les nouveaux trades pour linstant. On doit verifier que Tous
-    // Les trades passent normalement") purely to watch a few more real
+    // ACCOUNT-WIDE cap, shared across every symbol AND every mechanism -
+    // not per-symbol. This is the project's core anti-overtrading /
+    // anti-revenge-trading guardrail.
+    //
+    // History: 2 originally (validated back when the bot ran FVG on 3
+    // symbols plus Divergence), bumped to 3 for the BTCUSD weekend test
+    // (2026-09-13), then to 20 (2026-09-14) purely to watch a few more real
     // trades flow through after the netting and guardrail-day-reset fixes
-    // landed. That verification is long done.
-    //
-    // It was never reverted, and the two reasons it was high are now both
-    // gone: the cap had been bumped 2 -> 3 for the BTCUSD weekend test, and
-    // BTCUSD itself was removed 2026-09-16. BTCUSD on M1 was generating
-    // essentially ALL the volume (21 of 21 real trades at one point), so
-    // without it the five validated mechanisms produce a few trades per
-    // WEEK, nowhere near 20 per day - meaning this cap no longer constrains
-    // anything, which defeats the anti-overtrading discipline that is the
-    // whole point of this project.
-    //
-    // Deliberately NOT changed while removing BTCUSD: this is an
-    // ACCOUNT-WIDE cap shared across every symbol and mechanism, so picking
-    // its new value is a real trading decision, not cleanup. The original 2
-    // was validated back when the bot ran FVG on 3 symbols plus Divergence;
-    // there are now 5 mechanisms across 5 symbols, so 2 may well be too
-    // tight. Decide the number deliberately rather than letting 20 stand by
-    // default.
-    maxTradesPerDay: 20,
+    // landed. That verification finished, but 20 was never reverted, and
+    // BTCUSD - which was generating essentially all the volume, 21 of 21
+    // real trades at one point - was removed 2026-09-16, leaving the cap
+    // constraining nothing at all.
+    // Set back to 3 on 2026-09-16, chosen deliberately by Esdras: the five
+    // validated mechanisms across five symbols make a few trades per WEEK,
+    // so 3/day leaves normal activity untouched while restoring a real
+    // ceiling on a bad day.
+    maxTradesPerDay: 3,
     cooldownMinutesAfterLoss: 30,
     dailyLossLimitPct: 2,
     dayBoundaryHourUTC: 0,
