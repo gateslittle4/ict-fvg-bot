@@ -3635,3 +3635,37 @@ Esdras a fourni `ADMIN_EXPORT_TOKEN` pour extraire les vraies bougies M15 depuis
 `npm test` : 531/531 (aucun fichier de production modifié).
 
 **Fichiers** : `scripts/testNewComboOnRealData7Months.js`, `data/real-data-2026-02-to-09/*.csv` + `README.md` (nouveaux, committés).
+
+## Candidat trouvé pour "augmenter les trades sans compromettre la qualité" : NWOG/GER40 (déjà validé, jamais déployé) — 2026-09-16
+
+Esdras : "je veux toujours améliorer mes trades ou un autre pair pour augmenter les trades sans compromettre la qualité." Plutôt que de rouvrir une recherche de zéro sur une nouvelle paire (USDJPY/USDCAD/GBPUSD déjà creusés à fond, voir sections précédentes - rendements décroissants), repris un candidat DÉJÀ validé et laissé de côté : **NWOG bidirectionnel sur GER40** (voir "GER40 — vrai spread confirmé... NWOG réhabilité", 2026-09-15) — déjà passé le verdict formel train/test, le contrôle achat/vente (59/41, pas un biais haussier caché) et la robustesse par blocs de 2 ans (6/8 positifs, aucune année >22% du profit). Non déployé jusqu'ici uniquement pour pouvoir attribuer clairement un futur problème/succès à Weekly Sweep/GER40 (seul mécanisme GER40 actuellement live) pendant sa période d'observation initiale — PAS pour un problème de qualité.
+
+**Contrainte technique découverte en creusant** : `CONFIG.nwog` n'a qu'UN SEUL flag `longOnly` partagé par tous les symboles de `nwog.symbols` (`liveStrategyEngine.js`/`_processNwogCandidate`). US100/NWOG est validé achat-seul, mais GER40/NWOG est validé BIDIRECTIONNEL (59/41) — les deux ne peuvent pas partager le même `nwogConfig` sans casser l'un des deux réglages. `scripts/testAddNwogGer40ToCombo.js` (nouveau) simule donc GER40/NWOG SÉPARÉMENT via `src/backtest/nwog.js` directement (bidirectionnel, comme validé), fusionné avec le reste du combo de production inchangé — même discipline que `dynamicLiquidityTarget.js` pour US100/FVG.
+
+**Résultat sur les 17 ans d'historique (2009/2010-2025)** :
+
+| | Combo production (sans NWOG/GER40) | Combo + NWOG/GER40 |
+|---|---|---|
+| Trades | 4824 | **5504** (+680, +14%) |
+| Taux de gain | 30.5% | **30.7%** (légèrement mieux, pas dégradé) |
+| Total R | +2255.00R | **+2447.00R** (+192.00R) |
+
+**Résultat sur la fenêtre réelle committée (2026-02-10 → 2026-09-16, broker cTrader réel)** :
+
+| | Combo production (sans NWOG/GER40) | Combo + NWOG/GER40 |
+|---|---|---|
+| Trades | 146 | **175** (+29, +20%) |
+| Taux de gain | 30.1% | **32.6%** (mieux) |
+| Total R | +53.00R | **+76.00R** (+23.00R, +43%) |
+
+**NWOG/GER40 seul sur cette fenêtre réelle : 29 trades, 44.8% de taux de gain, +23R** — encore mieux que sa moyenne historique (32.1%), échantillon petit (n=29) donc à ne pas surinterpréter, mais dans le bon sens, contrairement à la cible dynamique testée juste avant qui avait donné un résultat contraire entre historique et réel.
+
+**Chevauchement avec Weekly Sweep/GER40 (même symbole)** : seulement 64/680 trades historiques (9.4%) et 4/29 réels (13.8%) avaient une position Weekly Sweep ouverte au même moment — peu de compétition pour le même budget de garde-fou (`maxTradesPerDay`), les deux mécanismes restent largement indépendants dans le temps.
+
+**Conclusion : c'est le meilleur candidat "plus de trades sans perte de qualité" identifié dans ce projet à ce jour** — validé sur DEUX fenêtres indépendantes qui s'accordent (contrairement à la cible dynamique US100 où historique et réel se contredisaient), augmente le volume ET la qualité simultanément, chevauchement minimal avec le mécanisme GER40 déjà live.
+
+**Pas encore déployé** — nécessite un petit changement de code (`liveStrategyEngine.js` : `longOnly` par symbole au lieu d'un seul flag partagé sur `nwogConfig`, pour que US100 reste achat-seul et GER40 reste bidirectionnel dans la même config) avant de pouvoir l'activer proprement sans casser le réglage US100 existant. Décision d'implémenter ou non laissée à Esdras.
+
+`npm test` : 531/531 (aucun fichier de production modifié — recherche uniquement).
+
+**Fichiers** : `scripts/testAddNwogGer40ToCombo.js` (nouveau).
