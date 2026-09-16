@@ -3983,3 +3983,43 @@ Esdras a confirmé vouloir une **config séparée par prop firm** (déjà annonc
 `npm test` : inchangé (recherche uniquement, aucun code de production touché).
 
 **Fichiers** : aucun commité — scripts de simulation dans le scratchpad de session (mêmes patterns que les analyses de faisabilité prop firm précédentes). À recréer si besoin de retester après la mise en place des configs séparées par firme.
+
+## "Mon objectif now est de faire un retrait de 500$" — plan détaillé + chances réelles — 2026-09-16 (suite directe, même session)
+
+Esdras : "donne moi un plan detaille a faire pour lavoir et mes chances de le faie."
+
+**Choix de firme tranché ici, différent de la conclusion FundingPips 95.05% documentée juste au-dessus** : FundingPips 1-Step Flex a le meilleur taux de passage backtesté, mais sa plateforme est **MT5** (confirmé directement par Esdras : "c'est mt5") — **zéro ligne de code dans ce bot ne parle à MT5**. FTMO tourne sur **cTrader**, déjà câblé, déjà connecté et confirmé actif en production (`broker.name:"fpmarketssc"`). CTI est câblé (Match-Trader) mais bloqué depuis le 2026-09-14 par un vrai challenge anti-bot Cloudflare, jamais résolu. **FTMO 1-Step $25k est donc le seul chemin réellement déployable aujourd'hui**, pas nécessairement le meilleur sur le papier.
+
+**Nouvelle simulation** (`scripts/runFtmo25kFirstPayoutFullComboAnalysis.js`, nouveau, committé) — même méthode empirique que le script du 12 septembre (`runFtmo25kFirstPayoutByDateAnalysis.js` : acheter le challenge → le passer en rachetant immédiatement à chaque bust → passer live → accumuler du profit → devenir éligible au retrait à J14 de trading live + split 90%), mais reconstruite avec le **combo RÉEL de production d'aujourd'hui** (6 mécanismes : FVG multi-contact US100/US500 + FVG XAUUSD, Divergence, NWOG US100 achat-seul/GER40 bidirectionnel, Judas Swing EURUSD, Weekly Sweep GER40+US500, Breaker Block GER40 — le script du 12 septembre n'avait que 4 mécanismes et une combo plus courte) et l'historique CSV maintenant étendu à 15-17 ans. 293 points de départ testés (espacés de 21 jours plutôt que 30, plus de résolution). `maxTradesPerDay` forcé à 3 dans la simulation (pas la valeur 20 actuellement dans `CONFIG.guardrails`, explicitement temporaire/debug — voir son propre commentaire "REVERT to 3").
+
+**Résultat, combo actuel vs combo "prudent" (sans Weekly Sweep/US500 ni Breaker Block/GER40, comme testé plus haut pour FundingPips)** :
+
+| | Combo actuel | Combo prudent |
+|---|---|---|
+| Atteignent $500 (sur 293 points de départ) | **291 (99.3%)** | 290 (99.0%) |
+| Médiane | **79 jours** (~2.6 mois) | 96 jours |
+| Moyenne | 128 jours | 187 jours |
+| Rachats de challenge moyens avant le 1er retrait | 0.41 | 0.43 |
+
+**Contrairement à FundingPips (où retirer Weekly Sweep/US500 et Breaker Block/GER40 aidait), sur FTMO le combo ACTUEL (complet) est le plus rapide** — le volume de trades supplémentaire compense le risque de perte journalière plus élevé, parce qu'un bust ici ne coûte qu'un rachat (~$230, remboursé une fois financé) et quelques jours, pas un échec définitif. **Pas de retrait de mécanisme recommandé pour ce plan spécifique** — conclusion différente du prune FundingPips parce que la question posée est différente (vitesse vers un objectif fixe avec rachat gratuit, pas un taux de passage sec).
+
+**Seuils cumulés (combo actuel)** : 8% à 30j, 31% à 60j, 56% à 90j (3 mois), 70% à 120j, 82% à 180j (6 mois), 92% à 365j. **Autrement dit : quasi certain d'y arriver un jour (99.3% dans l'historique disponible), le plus probable est ~2 à 4 mois, avec une vraie chance (~1 sur 5) que ça prenne plus de 6 mois** si le marché est défavorable au démarrage.
+
+**Coût réel** : FTMO rembourse les frais de challenge une fois le compte financé — le rachat moyen (0.41) ne coûte donc en pratique que les tentatives RATÉES, soit environ $230 × 0.41 ≈ **$94 en moyenne**, pas $323 (le chiffre brut du script compte aussi l'achat final qui est remboursé — corrigé ici, pas dans le rapport généré).
+
+### Plan concret, étape par étape
+
+1. **Acheter le challenge FTMO 1-Step $25k sur ftmo.com** (~$205-265 selon promo active — vérifier le prix affiché en direct). Le compte $25k, pas $50k/$100k : le split 90% sur un compte plus gros va plus vite en $/jour, mais le risque en $ absolu (perte journalière 3%, plancher 10%) grandit proportionnellement — $25k reste le point d'entrée validé par toutes les simulations de cette session.
+2. **Récupérer les identifiants cTrader** fournis par FTMO pour ce nouveau compte (client ID/secret/token OAuth — même mécanique que le compte démo fpmarketssc actuel, voir `docs/CTRADER_SETUP.md`).
+3. **Ajouter le compte au bot** via `/accounts.html` (déjà construit, sauvegarde dans Supabase, pas besoin de redéployer) — plateforme cTrader, `propFirmProgramId: 'ftmo-1step'`. Le bot résout alors automatiquement les vraies règles FTMO (perte journalière 3%, plancher 10% trailing, cible 10%) dans son `GuardrailEngine` pour CE compte spécifiquement.
+4. **Vérifier `riskPctPerTrade` = 0.5% et `maxTradesPerDay` = 3** pour ce compte avant le premier trade réel (pas 20 — la valeur actuellement en prod pour le compte démo est une exception temporaire de debug, à ne jamais utiliser sur un compte à argent réel).
+5. **Laisser tourner sans interrompre** — le bot est semi-automatique (alerte + exécution auto déjà configurée pour la plupart des mécanismes) : le rôle d'Esdras est de surveiller, pas de trader manuellement à la place du bot.
+6. **En cas de bust** (perte journalière ou plancher touché) : racheter immédiatement un nouveau challenge $25k — c'est ce que la simulation modélise (rachat moyen 0.41 fois), attendre ne fait qu'allonger le calendrier sans réduire le risque.
+7. **Une fois le challenge passé** : remplacer l'entrée du compte par `propFirmProgramId: 'ftmo-1step-funded'`, passer `riskPctPerTrade` à 0.3% (déjà la convention `ACCOUNT_MODE=live` du reste du bot).
+8. **Demander le premier retrait dès l'éligibilité** (jour 14 de trading live, dès que le profit net ≥ $500) plutôt que d'attendre un montant plus rond — chaque jour de retard sur la demande est un jour de retard sur l'argent en main, sans bénéfice.
+
+**Limites honnêtes à connaître avant d'agir** : (a) chaque nouveau mécanisme de cette combo n'a qu'UN SEUL découpage train/test historique — aucun n'a encore un vrai historique live de plusieurs mois, seulement quelques jours pour les plus récents (Weekly Sweep, NWOG/GER40, Breaker Block) ; (b) la règle de plancher FTMO du compte financé est supposée identique au challenge (confirmée sur `ftmo.com` le 2026-09-12, pas une extrapolation) ; (c) le spread/les specs de lot restent des valeurs par défaut jamais vérifiées pour un VRAI compte FTMO (seulement pour le compte démo fpmarketssc actuel) — à confirmer dès la réception des identifiants avant de faire confiance à 100% au sizing des ordres ; (d) ce sont des probabilités empiriques sur 17 ans d'historique, pas une garantie sur les prochains mois précis.
+
+`npm test` : 534/534 (inchangé — nouveau script de recherche uniquement, aucun fichier `src/` touché).
+
+**Fichiers** : `scripts/runFtmo25kFirstPayoutFullComboAnalysis.js` (nouveau, committé), `data/backtest-input/ftmo-25k-first-payout-full-combo-analysis.md` (nouveau, committé).
