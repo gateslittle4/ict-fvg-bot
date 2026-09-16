@@ -669,26 +669,35 @@ function resolveAccounts() {
 // Deliberately refuses to disable the LAST remaining account: a bot with
 // zero accounts boots into a state where nothing trades and every dashboard
 // route 404s, which looks far more like a crash than a configuration choice.
-function applyDisabledAccounts(accounts) {
+// Exported because accounts come from TWO places and the variable has to
+// mean the same thing in both: CONFIG.accounts (env-derived, filtered just
+// below) and Supabase-stored dynamic accounts, which server.js registers at
+// boot long after this module loaded. Missing that second source is exactly
+// how the first attempt at disabling cti-freetrial silently did nothing -
+// it lives in Supabase, not in ACCOUNTS_JSON.
+export function isAccountDisabled(id) {
   const raw = process.env.DISABLED_ACCOUNT_IDS;
-  if (!raw) return accounts;
-  const disabled = new Set(
-    raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  );
-  if (disabled.size === 0) return accounts;
+  if (!raw) return false;
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(id);
+}
 
-  const kept = accounts.filter((a) => !disabled.has(a.id));
+function applyDisabledAccounts(accounts) {
+  if (!process.env.DISABLED_ACCOUNT_IDS) return accounts;
+
+  const kept = accounts.filter((a) => !isAccountDisabled(a.id));
   if (kept.length === 0) {
     console.error(
-      `[config] DISABLED_ACCOUNT_IDS (${raw}) would disable EVERY account - ignoring it and keeping all ${accounts.length}.`
+      `[config] DISABLED_ACCOUNT_IDS (${process.env.DISABLED_ACCOUNT_IDS}) would disable EVERY env-configured ` +
+        `account - ignoring it and keeping all ${accounts.length}.`
     );
     return accounts;
   }
   for (const a of accounts) {
-    if (disabled.has(a.id)) console.log(`[config] account "${a.id}" disabled via DISABLED_ACCOUNT_IDS`);
+    if (isAccountDisabled(a.id)) console.log(`[config] account "${a.id}" disabled via DISABLED_ACCOUNT_IDS`);
   }
   return kept;
 }

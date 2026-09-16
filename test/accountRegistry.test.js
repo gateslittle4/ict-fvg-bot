@@ -92,3 +92,28 @@ test('DISABLED_ACCOUNT_IDS: an unknown id is a harmless no-op, not an error', as
 test('DISABLED_ACCOUNT_IDS: refuses to disable the last account, keeping all of them', async () => {
   assert.deepEqual(await accountIdsWith('default,cti-freetrial'), ['default', 'cti-freetrial']);
 });
+
+// The Supabase path specifically: accounts can also arrive from
+// fetchDynamicAccounts() at boot, long after config.js loaded. The first
+// attempt at disabling cti-freetrial only filtered CONFIG.accounts and so
+// did nothing at all - the account lives in Supabase. isAccountDisabled() is
+// exported precisely so server.js's boot can apply the same rule there.
+test('isAccountDisabled: matches the ids listed in DISABLED_ACCOUNT_IDS', async () => {
+  const { isAccountDisabled } = await import('../src/config.js');
+  const before = process.env.DISABLED_ACCOUNT_IDS;
+  try {
+    process.env.DISABLED_ACCOUNT_IDS = 'cti-freetrial, other-one ';
+    assert.equal(isAccountDisabled('cti-freetrial'), true);
+    assert.equal(isAccountDisabled('other-one'), true);
+    assert.equal(isAccountDisabled('default'), false);
+
+    delete process.env.DISABLED_ACCOUNT_IDS;
+    assert.equal(isAccountDisabled('cti-freetrial'), false); // unset disables nothing
+
+    process.env.DISABLED_ACCOUNT_IDS = '';
+    assert.equal(isAccountDisabled('cti-freetrial'), false);
+  } finally {
+    if (before === undefined) delete process.env.DISABLED_ACCOUNT_IDS;
+    else process.env.DISABLED_ACCOUNT_IDS = before;
+  }
+});

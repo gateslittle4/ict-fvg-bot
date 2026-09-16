@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry } from './config.js';
+import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry, isAccountDisabled } from './config.js';
 import { getDefaultAccount, getAccount, listAccounts, registerAccount } from './accountRegistry.js';
 import { MAX_AUTO_EXECUTE_HOURS } from './accountRuntime.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
@@ -1312,7 +1312,21 @@ if (process.env.NODE_ENV !== 'test') {
     // static account. A Supabase hiccup here never blocks the static
     // accounts (fetchDynamicAccounts() returns [] and logs, never throws).
     const dynamicRawAccounts = await fetchDynamicAccounts();
-    const dynamicAccountConfigs = dynamicRawAccounts.map((raw, i) => normalizeAccountEntry(raw, CONFIG.accounts.length + i));
+    // DISABLED_ACCOUNT_IDS has to apply here too, not just to CONFIG.accounts
+    // (2026-09-16): a Supabase-stored account is otherwise unreachable by it,
+    // which is exactly how the first attempt to disable cti-freetrial did
+    // nothing at all - it lives in Supabase, not in ACCOUNTS_JSON. Filtering
+    // before registerAccount() means a disabled account is never built, never
+    // connects, and never appears on the dashboard. CONFIG.accounts always
+    // keeps at least one entry (see applyDisabledAccounts), so dropping every
+    // dynamic account here can never leave the bot with none.
+    const dynamicAccountConfigs = dynamicRawAccounts
+      .map((raw, i) => normalizeAccountEntry(raw, CONFIG.accounts.length + i))
+      .filter((accountConfig) => {
+        if (!isAccountDisabled(accountConfig.id)) return true;
+        console.log(`[boot] Supabase account "${accountConfig.id}" skipped via DISABLED_ACCOUNT_IDS`);
+        return false;
+      });
     for (const accountConfig of dynamicAccountConfigs) {
       registerAccount(accountConfig);
     }
