@@ -3934,3 +3934,52 @@ Trois pistes demandées ("les trois") après les deux rejets précédents : cibl
 `npm test` : 534/534 (config uniquement, aucun nouveau code).
 
 **Fichiers** : `src/config.js` (`nwog.rrMultiple`, `weeklySweep.rrMultiple`, `breakerBlock.rrMultiple` tous 3→5, commentaires complets ajoutés). Scripts de vérification restés en scratchpad de session, non commités.
+
+## Test FTMO sur les 7 derniers mois réels + recherche pour atteindre 95% de réussite — 2026-09-16
+
+Esdras : "tu as les 7 derniers mois, fais un test avec les contraintes FTMO pour atteindre le cycle de 10%, et statistiquement nos chances globales sur toutes les années." Puis, en voyant 80.69% : "on doit être au moins 95%." Puis : "y a-t-il un moyen d'améliorer ça?"
+
+### Résultat sur les 7 derniers mois de VRAIES données broker (2026-02-11 → 2026-09-16), combo actuel, FTMO 1-Step, cycles enchaînés (dès qu'un cycle finit, gagné ou perdu, le suivant recommence à zéro) :
+
+| Cycle | Résultat | Période | Trades | R final |
+|---|---|---|---|---|
+| 1 | ✅ Gagné | 11 fév → 25 mars | 55 | +21R |
+| 2 | ✅ Gagné | 26 mars → 14 avril | 25 | +37R |
+| 3 | ✅ Gagné | 15 avril → 29 avril | 19 | +21R |
+| 4 | ❌ **Perdu (drawdown trailing)** | 30 avril → 1 juillet | 102 | -1R |
+| 5 | ✅ Gagné | 2 juillet → 10 juillet | 14 | +20R |
+| 6 | ✅ Gagné | 12 juillet → 24 août | 54 | +20R |
+| 7 | ⏳ En cours (données épuisées) | 25 août → aujourd'hui | 33 | +9R |
+
+**5 cycles gagnés, 1 perdu, 1 en cours — 5/6 complétés = 83%, cohérent avec le taux global.**
+
+### Statistiques globales, tout l'historique disponible (2009-2025), 202 tentatives (1/mois), combo actuel complet :
+
+**FTMO 1-Step : 163/202 = 80.69%** (perte quotidienne : 8 échecs, drawdown trailing : 31 échecs) — légèrement EN DESSOUS des 83.66% mesurés avant les activations d'aujourd'hui (Weekly Sweep/US500 + cibles étendues), à cause de plus de trades simultanés qui augmentent le risque de cumuler des pertes le même jour.
+
+### Recherche pour atteindre ≥95% — deux pistes testées, une seule fonctionne
+
+**Piste 1, ÉCHEC : coupe-circuit de drawdown** (pause de trading si le drawdown depuis le sommet dépasse un seuil, reprise une fois redescendu). Testé à plusieurs seuils (pause -5% à -8%, reprise -2% à -4%) : élimine bien tous les échecs par drawdown (0 au lieu de 31), MAIS le taux global CHUTE (80.69%→53-71% selon le seuil) — parce que sauter des trades pendant la pause fait aussi rater les trades gagnants qui auraient permis de sortir du trou naturellement, et beaucoup de cycles n'ont plus le temps de finir (FTMO n'a pas de limite de temps en théorie, mais la fenêtre de données historiques, elle, en a une). Une version plus fine (réduire la taille de position plutôt que sauter complètement les trades) nécessiterait un vrai calcul en dollars au lieu du R pur — pas fait cette session, complexité trop grande pour un test rapide.
+
+**Piste 2, SUCCÈS : ce n'est pas FTMO qui peut atteindre 95%, c'est FundingPips 1-Step Flex.** Retrait progressif des mécanismes les plus récents, testé sur les DEUX firmes en parallèle :
+
+| Combo retiré | FTMO 1-Step | FundingPips 1-Step Flex |
+|---|---|---|
+| Combo actuel complet | 80.69% | 87.62% |
+| Sans Weekly Sweep/US500 | 84.16% | 90.59% |
+| **+ sans Breaker Block/GER40** | 86.14% | **95.05%** ✅ |
+| + sans NWOG/GER40 aussi | 86.63% | 96.53% |
+| + RR revenu à 1:3 sur ce qui reste | 85.15% | (non testé) |
+
+**FTMO plafonne structurellement autour de 85-87%** peu importe combien de mécanismes on retire — son plancher trailing de 10% (contre 12% statique pour FundingPips) est intrinsèquement plus dur à respecter pour cette famille de stratégies (ce n'est pas un problème de config qui se corrige, c'est la règle elle-même). **FundingPips 1-Step Flex, en revanche, atteint 95.05% en ne retirant que 2 mécanismes récents** (Weekly Sweep/US500 et Breaker Block/GER40) — sans toucher à NWOG/GER40, aux cibles étendues 1:5, ni à rien d'autre. C'est un sacrifice bien plus petit qu'un retour complet au combo minimal d'origine (celui qui avait donné 95.05% pour FundingPips il y a plusieurs entrées, mais qui sacrifiait aussi NWOG/GER40 et le multi-contact US500).
+
+### Décision et prochaine étape
+
+Esdras a confirmé vouloir une **config séparée par prop firm** (déjà annoncé plus tôt : "on fait une config séparée pour chaque prop firm après"). Cette entrée sert de référence pour cette config future :
+- **Config "FundingPips 1-Step Flex"** : combo actuel MOINS Weekly Sweep/US500 MOINS Breaker Block/GER40 → 95.05% de réussite historique.
+- **Config "FTMO 1-Step"** : n'a pas de version qui atteint 95% — le mieux trouvé est ~86-87% (sans Weekly Sweep/US500 ni Breaker Block). Si FTMO est vraiment voulu, il faut accepter ce plafond plus bas, ou chercher une piste non testée (réduction de risque en $ pendant un drawdown, pas juste un arrêt complet - piste 1 ci-dessus, jamais implémentée correctement).
+- **Pas encore fait** : la config séparée par firme elle-même (fichiers/structure `config.js` à décider) — cette session n'a fait QUE la recherche de quelle combinaison de mécanismes atteint quel taux, pas l'implémentation de la sélection de config par compte/firme.
+
+`npm test` : inchangé (recherche uniquement, aucun code de production touché).
+
+**Fichiers** : aucun commité — scripts de simulation dans le scratchpad de session (mêmes patterns que les analyses de faisabilité prop firm précédentes). À recréer si besoin de retester après la mise en place des configs séparées par firme.
