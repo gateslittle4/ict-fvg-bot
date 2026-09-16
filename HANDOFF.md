@@ -3537,6 +3537,62 @@ Suite directe des 3 extensions de données ci-dessus (US100/US500/XAUUSD mainten
 
 **Fichiers** : aucun commité — script de comparaison dans le scratchpad de session (même méthode que l'entrée "Faisabilité des challenges" précédente, juste sans le filtre d'années). Cette entrée HANDOFF.md est la source de vérité à jour ; l'entrée précédente reste dans l'historique pour comprendre comment la conclusion a évolué, mais ses chiffres de comparaison prop firm sont dépassés par celle-ci.
 
+## Recherche de nouveaux candidats de trade — NWOG/US500 rejeté après vérification, Judas Swing confirme EURUSD comme seul bon choix — 2026-09-16
+
+Après avoir compté les trades réels de la semaine (3 lundi-mercredi, 10 la semaine précédente, net ~0R), Esdras a demandé, en plaisantant à moitié ("On augmente encore les trades? 😅"), s'il fallait chercher plus de volume. Réponse : seulement via la même rigueur que d'habitude, pas en assouplissant les filtres existants. Deux candidats identifiés à partir des scopes déjà restreints dans `config.js` (NWOG scopé à US100+GER40 seulement, Judas Swing scopé à EURUSD seulement) : NWOG sur XAUUSD/US500, et Judas Swing sur les 7 autres symboles disponibles. Réutilisé `scripts/runNwogStrategyAnalysis.js` et `scripts/runJudasSwingStrategyAnalysis.js` (déjà existants, jamais relancés depuis l'extension des données 2009/2010→2025) — résultats régénérés dans `data/backtest-input/nwog-strategy-analysis.md` et `judas-swing-strategy-analysis.md`.
+
+**NWOG/XAUUSD** : rejeté net, train -0.15R / test -0.11R.
+
+**NWOG/US500** : semblait prometteur au premier passage (train 0.02R / test 0.34R, techniquement "tient" par la règle de verdict) — **rejeté après vérification de robustesse** (même traitement que GBPUSD/FVG plus haut) : train reste quasi plat sur 4 découpages différents (2021/2022/2023/2024, jamais au-dessus de 0.02R), et le détail année par année montre une instabilité violente (2017 : -16.56R, 2012 : -7.49R, contre 2025 : +28.77R) — le "signal positif" en test vient presque entièrement d'une seule année récente exceptionnelle (2025), pas d'un edge réel. Exactement le piège de surapprentissage que la vérification à plusieurs découpages est censée attraper.
+
+**Judas Swing sur les 7 autres symboles** : aucun candidat crédible trouvé. EURUSD (déjà en production) reste de loin le meilleur (train 0.03R / test 0.18R). US100 "passe" techniquement la règle de verdict mais avec un edge quasi nul (train 0.01R, à peine distinguable du bruit). GER40 s'effondre en test (0.11R→0.01R). USDJPY montre le même piège train-négatif/test-positif que NWOG/US500 (train -0.11R, test +0.23R — pas fiable sans vérification supplémentaire, non poussée plus loin faute de signal train positif pour commencer). GBPUSD (-0.24R test) et USDCAD (-0.17R test) rejetés nets.
+
+**Conclusion** : aucun nouveau mécanisme à ajouter cette fois. Les scopes actuels (NWOG US100+GER40, Judas Swing EURUSD seul) restent les bons choix — pas un résultat négatif au sens de "recherche ratée", mais la confirmation que la config déjà en production était déjà optimale parmi ce qui a été testé. Seul GBPUSD/FVG (entrée précédente, plancher statique uniquement) reste un candidat réel en attente, conditionnel au choix de prop firm.
+
+`npm test` : inchangé (aucun code de production touché, seulement régénération de 2 rapports d'analyse déjà existants avec l'historique étendu).
+
+**Fichiers** : `data/backtest-input/nwog-strategy-analysis.md` et `data/backtest-input/judas-swing-strategy-analysis.md` (régénérés avec l'historique étendu, chiffres légèrement différents des versions précédentes mais mêmes conclusions qualitatives).
+
+## Weekly Sweep testé sur les 7 autres symboles — US500 ressort comme candidat robuste (chevauchement PAS ENCORE vérifié) — 2026-09-16
+
+Suite directe de la recherche ci-dessus : Weekly Sweep (déjà LIVE sur GER40 seul, voir `config.js` `weeklySweep`) n'avait **jamais** été testé avec la même rigueur 8-symboles/train-test que NWOG/Judas Swing/Breaker Block — angle mort identifié et comblé. Nouveau script `scripts/runWeeklySweepStrategyAnalysis.js` (même gabarit exact que `runNwogStrategyAnalysis.js`/`runJudasSwingStrategyAnalysis.js`, réutilise `runWeeklySweepBacktest` de `src/backtest/weeklyLiquiditySweep.js` tel quel), résultat dans `data/backtest-input/weekly-sweep-strategy-analysis.md`.
+
+**US500 ressort nettement meilleur que tous les autres candidats testés aujourd'hui** — contrairement à NWOG/US500 (rejeté juste avant, train quasi plat + années violemment instables), celui-ci est robuste sur 4 découpages différents (2021/2022/2023/2024), jamais négatif, jamais de grand écart train/test :
+
+| Cutoff | Espérance train/test | Profit factor train/test |
+|---|---|---|
+| 2021-01-01 | 0.09 / 0.08 | 1.11 / 1.11 |
+| 2022-01-01 | 0.10 / 0.06 | 1.13 / 1.08 |
+| 2023-01-01 | 0.09 / 0.10 | 1.11 / 1.14 |
+| 2024-01-01 | 0.08 / 0.16 | 1.10 / 1.21 |
+
+Année par année (2011-2025) : **10 années positives sur 15**, pertes contenues (pire : -13.87R en 2016 — rien de comparable au -16.56R catastrophique isolé de NWOG/US500 en 2017). **716 trades sur la période complète, +63.30R cumulé.**
+
+Autres symboles testés dans le même passage, tous rejetés ou trop faibles : XAUUSD (train -0.10R/test -0.21R, rejeté net), GBPUSD (train -0.11R/test -0.16R, rejeté net), EURUSD/USDJPY/USDCAD (même piège train-négatif/test-positif suspect que NWOG/US500, pas creusé davantage faute de signal train positif pour commencer), US100 (train 0.17R/test 0.03R, s'affaiblit trop pour passer le seuil).
+
+**⚠️ PAS ENCORE FAIT avant de déployer** : vérifier le chevauchement avec FVG et Divergence, déjà actifs sur US500 (même vérification que Breaker Block/GER40 avant son activation : 7.7%/4.8% de chevauchement historique/réel, jugé assez bas). Weekly Sweep/US500 n'a pas encore ce calcul — c'est la prochaine étape avant toute activation dans `config.js`, pas encore faite cette session (question posée à Esdras, réponse pas encore reçue au moment de ce commit).
+
+`npm test` : inchangé (nouveau script d'analyse seul, aucun mécanisme activé).
+
+**Fichiers** : `scripts/runWeeklySweepStrategyAnalysis.js` (nouveau), `data/backtest-input/weekly-sweep-strategy-analysis.md` (nouveau, généré).
+
+## Weekly Sweep/US500 activé en production — vérification de chevauchement terminée, propre — 2026-09-16
+
+Suite immédiate de l'entrée précédente. Esdras a confirmé ("Oui") de faire la vérification de chevauchement puis d'activer si c'est propre.
+
+**Vérification faite** (`scripts/testAddWeeklySweepUs500.mjs`, scratch de session, non commité — même principe que `testAddNwogGer40ToCombo.js`/`testAddBreakerBlockGer40ToCombo.js` mais AJOUT RÉEL au moteur complet plutôt qu'un simple proxy calendaire, puisque `weeklySweepConfig` accepte directement une liste de symboles sans le contournement nécessaire pour NWOG/GER40 bidirectionnel) : combo de production complet rejoué avec et sans `US500` dans `weeklySweep.symbols`, sur les deux fenêtres (historique 2009/2010-2025 ET les 7 mois réels broker déjà committés) :
+
+| Fenêtre | Sans Weekly Sweep/US500 | Avec | Impact net |
+|---|---|---|---|
+| Historique complet | 7217 trades, +2964R | 7798 trades, +3087R | **+581 trades, +123R** |
+| Réel (7 mois broker) | 287 trades, +98R | 310 trades, +107R | **+23 trades, +9R** |
+
+**Chevauchement avec FVG/Divergence (déjà actifs sur US500)** : minime des deux côtés — FVG passe de 515→505 trades (-1.9%) sur l'historique et reste inchangé (11→11) sur la fenêtre réelle ; Divergence passe de 890→875 (-1.7%) puis 36→35 (-2.8%). Aucune dégradation notable de ce qui tournait déjà.
+
+**Activé** : `config.js` `weeklySweep.symbols` passe de `['GER40']` à `['GER40', 'US500']`. `npm test` : 534/534 (inchangé — pas de nouveau test unitaire nécessaire, `runWeeklySweepBacktest` déjà testé, c'est juste un changement de config).
+
+**Fichiers** : `src/config.js` (`weeklySweep.symbols` étendu, commentaire complet ajouté). Script de vérification (`testAddWeeklySweepUs500.mjs`) resté en scratch de session, non commité — à recréer si cette vérification doit être refaite pour un autre symbole/mécanisme (même pattern que les scripts `testAddXxxToCombo.js` déjà committés, pourrait valoir la peine de le committer aussi si ce genre de vérification devient fréquent).
+
 ## Politique durable : tous les tests incluent maintenant tout l'historique disponible — `buildBacktestSummary.js` mis à jour — 2026-09-16
 
 Esdras, décision explicite et durable : "Tous Les nvs tests doivent inclure Tous Les annees maintenant, decris la performance de ma strategy pendant toutes ces annees." Retire le filtre `YEARS=[2019..2025]` de `scripts/buildBacktestSummary.js` (le seul endroit qui bornait encore artificiellement à 7 ans après le correctif prop-firm de l'entrée précédente) — même discipline que ce correctif : chaque symbole garde son propre historique réel le plus long, aucune homogénéisation à une fenêtre commune. `data/backtest-summary.json` régénéré (alimente aussi le chat IA du dashboard, `src/chatAssistant.js` - vérifié qu'il lit le JSON sans supposer un champ `years` figé, aucun changement de code nécessaire là).
@@ -3825,3 +3881,181 @@ Esdras a envoyé une capture d'écran du dashboard réel (`ict-fvg-bot.onrender.
 **Corrigé** : les 4 fichiers ci-dessus + `test/dealPairing.test.js` (nouveau cas de test couvrant explicitement `auto-breakerblock-GER40`, + 2 cas `judaswing`/`weeklysweep` qui manquaient aussi à ce test bien qu'ils fonctionnent déjà correctement en production). Vérifié qu'aucun autre fichier (`chart.html`, `accounts.html`, `server.js`) n'a de liste figée de sources à mettre à jour — `chart.html` reste volontairement scopé à FVG/Divergence seulement (limite déjà existante avant cette session, pas une régression).
 
 `npm test` : 534/534 (même nombre, une assertion ajoutée à un test existant + le nouveau cas breakerblock). **Fichiers** : `public/index.html`, `public/journal.html`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`, `src/dataSources/dealPairing.js`, `test/dealPairing.test.js`.
+
+## Divergence GER40 rejetée (échoue le test de sanité) et pyramidage XAUUSD rejeté (sous-performe à risque égal) — 2026-09-16
+
+Suite de la recherche "autres idées pour augmenter la fréquence" : deux pistes supplémentaires demandées explicitement par Esdras ("1-2" : autre paire Divergence, pyramidage étendu à XAUUSD/GER40).
+
+**Divergence GER40/US100 et GER40/US500** : au premier passage, résultat spectaculaire — quasiment toutes les configs (lookback×seuil) passent le verdict train/test, espérance 0.03R à 0.32R. Mais corrélation H1 mesurée à seulement 0.197-0.222 (contre 0.935 pour US100/US500, 0.685 pour EURUSD/GBPUSD déjà rejeté) — signal d'alarme avant de conclure. **Test de sanité décisif** : la même méthode appliquée à GER40/EURUSD (corrélation 0.034, quasiment aucun lien) donne un résultat presque identique (8/9 configs passent). Conclusion : ce n'est PAS un vrai signal de divergence entre paires — c'est un edge générique de rachat de repli propre à GER40 lui-même (cohérent avec NWOG/Weekly Sweep/Breaker Block déjà validés dessus), habillé à tort en "stratégie de paires". **Rejeté tel que conçu** — un vrai edge GER40-seul existerait peut-être, mais ce serait un NOUVEAU mécanisme à concevoir et valider proprement (avec vérification de chevauchement contre les 3 mécanismes GER40 déjà actifs), pas une extension de Divergence.
+
+**Pyramidage sur XAUUSD** (seul candidat valide : le pyramidage ne s'applique qu'aux trades FVG dans le code — `_maybeRequestPyramid` vérifie `pyramidConfig.symbols.includes(symbol)` — et GER40 n'a pas de FVG live, seulement NWOG/Weekly Sweep/Breaker Block, donc "pyramider GER40" n'a pas de sens tel que le système est conçu). Piège méthodologique trouvé en cours de route : `warmUp()` (rejeu direct) ne résout JAMAIS une jambe de pyramide — ça demande une confirmation broker (`markPyramidOrderPlaced`/`markPyramidOrderFilled`) qui n'existe pas en simulation, contrairement à FVG/Divergence/NWOG/etc. résolus directement par l'événement `closed`. `portfolioSimulator.js` (déjà utilisé pour US100/US500) reste le bon outil.
+
+Résultat, comparaison à risque égal (0.25%/trade pyramidé = même pire cas $ que 0.5% sans pyramide, même principe que la comparaison US100/US500 d'origine) :
+
+| Année | Sans pyramide (0.5%) | Avec pyramide (0.25%, risque égal) |
+|---|---|---|
+| 2019 | +3.7% | +3.9% |
+| 2020 | +12.9% | +12.4% |
+| 2021 | -4.4% (WR 11.5%) | -3.3% (WR 14.9%) |
+| 2023 | +10.9% | +8.5% |
+| 2024 | +8.4% | +3.0% |
+| 2025 | +9.7% | +8.0% |
+| **Total cumulé (6 ans)** | **+41.2%** | **+32.5%** |
+
+Contrairement à US100/US500 (où pyramidage + risque réduit égalait quasiment le risque plein sans pyramide), ici le pyramidage **sous-performe nettement** à risque égal — sauf sur la seule vraie mauvaise année (2021, win rate sous 15%), où il atténue légèrement la perte sans l'effacer. XAUUSD a un vrai passage à vide cette année-là, et pyramider dedans amplifie le problème plus qu'il ne profite des bonnes années ailleurs. **Rejeté.**
+
+**Conclusion générale** : deux résultats négatifs, mais avec preuve rigoureuse (test de sanité pour Divergence, comparaison à risque égal pour le pyramidage) plutôt que des suppositions. Bilan de la session de recherche "augmenter la fréquence sans compromettre la qualité" : Weekly Sweep/US500 activé (seul vrai gain trouvé), NWOG/XAUUSD-US500 rejeté, Judas Swing confirmé EURUSD-seul, Divergence GER40 rejetée, Pyramidage XAUUSD rejeté.
+
+`npm test` : inchangé (aucun code de production touché, recherche uniquement).
+
+**Fichiers** : aucun commité — scripts d'exploration dans le scratchpad de session (mêmes patterns que `runDivergenceStrategyAnalysis.js`/`runDivergenceEurGbpStrategyAnalysis.js` pour la partie Divergence, `runPyramidIndependentAccountImpact.js` pour la partie pyramide — à recréer si besoin de refaire ces tests précis).
+
+## Cible étendue (1:3→1:5) activée sur NWOG, Weekly Sweep, Breaker Block — et USDJPY/FVG trouvé comme vrai candidat en attente — 2026-09-16
+
+Trois pistes demandées ("les trois") après les deux rejets précédents : cible étendue sur les mécanismes GER40 + Judas Swing/EURUSD + NWOG/US100, et FVG (le mécanisme principal, jamais testé) sur USDJPY/USDCAD.
+
+**Cible étendue — même méthode déjà utilisée pour FVG sur US100/US500/XAUUSD (voir "Cible étendue (1:4/1:5)" plus haut dans ce fichier), appliquée aux mécanismes non-FVG** :
+
+| Mécanisme | 1:3 (train/test) | 1:5 (train/test) | Décision |
+|---|---|---|---|
+| NWOG/GER40 | 0.14R / 0.53R | 0.21R / 0.92R | ✅ **Activé** |
+| NWOG/US100 | 0.25R / 1.06R | 0.37R / 1.48R | ✅ **Activé** (drawdown en BAISSE : 19.53R→14.54R train) |
+| Weekly Sweep/GER40 | 0.23R / 0.29R | 0.36R / 0.31R | ✅ **Activé** |
+| Weekly Sweep/US500 | 0.08R / 0.16R | 0.20R / 0.42R | ✅ **Activé** (vérifié séparément - `rrMultiple` est PARTAGÉ entre GER40 et US500 dans ce bloc de config, donc les deux symboles devaient être validés avant de toucher la valeur commune) |
+| Breaker Block/GER40 | 0.11R / 0.17R | 0.12R / 0.25R | ✅ **Activé** (gain le plus modeste des 3, mais net positif) |
+| Judas Swing/EURUSD | 0.03R / 0.18R | 0.02R / 0.45R | ❌ **PAS activé** — pas monotone (1:4 négatif en train), drawdown double (38R→82R) pour un gain d'espérance quasi nul en train |
+
+**Activé dans `config.js`** : `nwog.rrMultiple` 3→5 (US100+GER40), `weeklySweep.rrMultiple` 3→5 (GER40+US500), `breakerBlock.rrMultiple` 3→5 (GER40). `npm test` : 534/534.
+
+**FVG sur USDJPY/USDCAD** (réutilisé `scripts/runTrainTestValidation.js` tel quel, jamais lancé sur ces 2 symboles avec la grille complète 168 configs) :
+- **USDCAD** : rejeté net, tous les top-5 négatifs en test.
+- **USDJPY** : **candidat robuste trouvé** — `H1_EMA50 / fvg-edge / 1:3, structure ON, session ON` : train 0.10R/1012 trades, test 0.10R/378 trades (quasi identique, très stable). Vérifié sur 4 découpages différents (2021/2022/2023/2024, toujours positif des deux côtés) et **10 années sur 10 positives** (2016-2025), 1395 trades, +804.75R au total. **PAS activé** — contrairement aux extensions ci-dessus (juste un paramètre changé sur un mécanisme déjà en prod), ajouter USDJPY est un NOUVEAU symbole entier : il faudrait l'ajouter à `symbols`/`fvg.perSymbol` dans `config.js`, confirmer le vrai spread broker (`DEFAULT_SPREADS.USDJPY` est encore une estimation "INDICATIVE, verify against FundingPips cTrader spec", jamais confirmée par un screenshot broker comme EURUSD/GBPUSD/GER40/US100/US500 l'ont été), et connecter le symbole chez cTrader en production. Décision plus lourde, laissée en attente pour une session dédiée.
+
+`npm test` : 534/534 (config uniquement, aucun nouveau code).
+
+**Fichiers** : `src/config.js` (`nwog.rrMultiple`, `weeklySweep.rrMultiple`, `breakerBlock.rrMultiple` tous 3→5, commentaires complets ajoutés). Scripts de vérification restés en scratchpad de session, non commités.
+
+## Test FTMO sur les 7 derniers mois réels + recherche pour atteindre 95% de réussite — 2026-09-16
+
+Esdras : "tu as les 7 derniers mois, fais un test avec les contraintes FTMO pour atteindre le cycle de 10%, et statistiquement nos chances globales sur toutes les années." Puis, en voyant 80.69% : "on doit être au moins 95%." Puis : "y a-t-il un moyen d'améliorer ça?"
+
+### Résultat sur les 7 derniers mois de VRAIES données broker (2026-02-11 → 2026-09-16), combo actuel, FTMO 1-Step, cycles enchaînés (dès qu'un cycle finit, gagné ou perdu, le suivant recommence à zéro) :
+
+| Cycle | Résultat | Période | Trades | R final |
+|---|---|---|---|---|
+| 1 | ✅ Gagné | 11 fév → 25 mars | 55 | +21R |
+| 2 | ✅ Gagné | 26 mars → 14 avril | 25 | +37R |
+| 3 | ✅ Gagné | 15 avril → 29 avril | 19 | +21R |
+| 4 | ❌ **Perdu (drawdown trailing)** | 30 avril → 1 juillet | 102 | -1R |
+| 5 | ✅ Gagné | 2 juillet → 10 juillet | 14 | +20R |
+| 6 | ✅ Gagné | 12 juillet → 24 août | 54 | +20R |
+| 7 | ⏳ En cours (données épuisées) | 25 août → aujourd'hui | 33 | +9R |
+
+**5 cycles gagnés, 1 perdu, 1 en cours — 5/6 complétés = 83%, cohérent avec le taux global.**
+
+### Statistiques globales, tout l'historique disponible (2009-2025), 202 tentatives (1/mois), combo actuel complet :
+
+**FTMO 1-Step : 163/202 = 80.69%** (perte quotidienne : 8 échecs, drawdown trailing : 31 échecs) — légèrement EN DESSOUS des 83.66% mesurés avant les activations d'aujourd'hui (Weekly Sweep/US500 + cibles étendues), à cause de plus de trades simultanés qui augmentent le risque de cumuler des pertes le même jour.
+
+### Recherche pour atteindre ≥95% — deux pistes testées, une seule fonctionne
+
+**Piste 1, ÉCHEC : coupe-circuit de drawdown** (pause de trading si le drawdown depuis le sommet dépasse un seuil, reprise une fois redescendu). Testé à plusieurs seuils (pause -5% à -8%, reprise -2% à -4%) : élimine bien tous les échecs par drawdown (0 au lieu de 31), MAIS le taux global CHUTE (80.69%→53-71% selon le seuil) — parce que sauter des trades pendant la pause fait aussi rater les trades gagnants qui auraient permis de sortir du trou naturellement, et beaucoup de cycles n'ont plus le temps de finir (FTMO n'a pas de limite de temps en théorie, mais la fenêtre de données historiques, elle, en a une). Une version plus fine (réduire la taille de position plutôt que sauter complètement les trades) nécessiterait un vrai calcul en dollars au lieu du R pur — pas fait cette session, complexité trop grande pour un test rapide.
+
+**Piste 2, SUCCÈS : ce n'est pas FTMO qui peut atteindre 95%, c'est FundingPips 1-Step Flex.** Retrait progressif des mécanismes les plus récents, testé sur les DEUX firmes en parallèle :
+
+| Combo retiré | FTMO 1-Step | FundingPips 1-Step Flex |
+|---|---|---|
+| Combo actuel complet | 80.69% | 87.62% |
+| Sans Weekly Sweep/US500 | 84.16% | 90.59% |
+| **+ sans Breaker Block/GER40** | 86.14% | **95.05%** ✅ |
+| + sans NWOG/GER40 aussi | 86.63% | 96.53% |
+| + RR revenu à 1:3 sur ce qui reste | 85.15% | (non testé) |
+
+**FTMO plafonne structurellement autour de 85-87%** peu importe combien de mécanismes on retire — son plancher trailing de 10% (contre 12% statique pour FundingPips) est intrinsèquement plus dur à respecter pour cette famille de stratégies (ce n'est pas un problème de config qui se corrige, c'est la règle elle-même). **FundingPips 1-Step Flex, en revanche, atteint 95.05% en ne retirant que 2 mécanismes récents** (Weekly Sweep/US500 et Breaker Block/GER40) — sans toucher à NWOG/GER40, aux cibles étendues 1:5, ni à rien d'autre. C'est un sacrifice bien plus petit qu'un retour complet au combo minimal d'origine (celui qui avait donné 95.05% pour FundingPips il y a plusieurs entrées, mais qui sacrifiait aussi NWOG/GER40 et le multi-contact US500).
+
+### Décision et prochaine étape
+
+Esdras a confirmé vouloir une **config séparée par prop firm** (déjà annoncé plus tôt : "on fait une config séparée pour chaque prop firm après"). Cette entrée sert de référence pour cette config future :
+- **Config "FundingPips 1-Step Flex"** : combo actuel MOINS Weekly Sweep/US500 MOINS Breaker Block/GER40 → 95.05% de réussite historique.
+- **Config "FTMO 1-Step"** : n'a pas de version qui atteint 95% — le mieux trouvé est ~86-87% (sans Weekly Sweep/US500 ni Breaker Block). Si FTMO est vraiment voulu, il faut accepter ce plafond plus bas, ou chercher une piste non testée (réduction de risque en $ pendant un drawdown, pas juste un arrêt complet - piste 1 ci-dessus, jamais implémentée correctement).
+- **Pas encore fait** : la config séparée par firme elle-même (fichiers/structure `config.js` à décider) — cette session n'a fait QUE la recherche de quelle combinaison de mécanismes atteint quel taux, pas l'implémentation de la sélection de config par compte/firme.
+
+`npm test` : inchangé (recherche uniquement, aucun code de production touché).
+
+**Fichiers** : aucun commité — scripts de simulation dans le scratchpad de session (mêmes patterns que les analyses de faisabilité prop firm précédentes). À recréer si besoin de retester après la mise en place des configs séparées par firme.
+
+## "Mon objectif now est de faire un retrait de 500$" — plan détaillé + chances réelles — 2026-09-16 (suite directe, même session)
+
+Esdras : "donne moi un plan detaille a faire pour lavoir et mes chances de le faie."
+
+**Choix de firme tranché ici, différent de la conclusion FundingPips 95.05% documentée juste au-dessus** : FundingPips 1-Step Flex a le meilleur taux de passage backtesté, mais sa plateforme est **MT5** (confirmé directement par Esdras : "c'est mt5") — **zéro ligne de code dans ce bot ne parle à MT5**. FTMO tourne sur **cTrader**, déjà câblé, déjà connecté et confirmé actif en production (`broker.name:"fpmarketssc"`). CTI est câblé (Match-Trader) mais bloqué depuis le 2026-09-14 par un vrai challenge anti-bot Cloudflare, jamais résolu. **FTMO 1-Step $25k est donc le seul chemin réellement déployable aujourd'hui**, pas nécessairement le meilleur sur le papier.
+
+**Nouvelle simulation** (`scripts/runFtmo25kFirstPayoutFullComboAnalysis.js`, nouveau, committé) — même méthode empirique que le script du 12 septembre (`runFtmo25kFirstPayoutByDateAnalysis.js` : acheter le challenge → le passer en rachetant immédiatement à chaque bust → passer live → accumuler du profit → devenir éligible au retrait à J14 de trading live + split 90%), mais reconstruite avec le **combo RÉEL de production d'aujourd'hui** (6 mécanismes : FVG multi-contact US100/US500 + FVG XAUUSD, Divergence, NWOG US100 achat-seul/GER40 bidirectionnel, Judas Swing EURUSD, Weekly Sweep GER40+US500, Breaker Block GER40 — le script du 12 septembre n'avait que 4 mécanismes et une combo plus courte) et l'historique CSV maintenant étendu à 15-17 ans. 293 points de départ testés (espacés de 21 jours plutôt que 30, plus de résolution). `maxTradesPerDay` forcé à 3 dans la simulation (pas la valeur 20 actuellement dans `CONFIG.guardrails`, explicitement temporaire/debug — voir son propre commentaire "REVERT to 3").
+
+**Résultat, combo actuel vs combo "prudent" (sans Weekly Sweep/US500 ni Breaker Block/GER40, comme testé plus haut pour FundingPips)** :
+
+| | Combo actuel | Combo prudent |
+|---|---|---|
+| Atteignent $500 (sur 293 points de départ) | **291 (99.3%)** | 290 (99.0%) |
+| Médiane | **79 jours** (~2.6 mois) | 96 jours |
+| Moyenne | 128 jours | 187 jours |
+| Rachats de challenge moyens avant le 1er retrait | 0.41 | 0.43 |
+
+**Contrairement à FundingPips (où retirer Weekly Sweep/US500 et Breaker Block/GER40 aidait), sur FTMO le combo ACTUEL (complet) est le plus rapide** — le volume de trades supplémentaire compense le risque de perte journalière plus élevé, parce qu'un bust ici ne coûte qu'un rachat (~$230, remboursé une fois financé) et quelques jours, pas un échec définitif. **Pas de retrait de mécanisme recommandé pour ce plan spécifique** — conclusion différente du prune FundingPips parce que la question posée est différente (vitesse vers un objectif fixe avec rachat gratuit, pas un taux de passage sec).
+
+**Seuils cumulés (combo actuel)** : 8% à 30j, 31% à 60j, 56% à 90j (3 mois), 70% à 120j, 82% à 180j (6 mois), 92% à 365j. **Autrement dit : quasi certain d'y arriver un jour (99.3% dans l'historique disponible), le plus probable est ~2 à 4 mois, avec une vraie chance (~1 sur 5) que ça prenne plus de 6 mois** si le marché est défavorable au démarrage.
+
+**Coût réel** : FTMO rembourse les frais de challenge une fois le compte financé — le rachat moyen (0.41) ne coûte donc en pratique que les tentatives RATÉES, soit environ $230 × 0.41 ≈ **$94 en moyenne**, pas $323 (le chiffre brut du script compte aussi l'achat final qui est remboursé — corrigé ici, pas dans le rapport généré).
+
+### Plan concret, étape par étape
+
+1. **Acheter le challenge FTMO 1-Step $25k sur ftmo.com** (~$205-265 selon promo active — vérifier le prix affiché en direct). Le compte $25k, pas $50k/$100k : le split 90% sur un compte plus gros va plus vite en $/jour, mais le risque en $ absolu (perte journalière 3%, plancher 10%) grandit proportionnellement — $25k reste le point d'entrée validé par toutes les simulations de cette session.
+2. **Récupérer les identifiants cTrader** fournis par FTMO pour ce nouveau compte (client ID/secret/token OAuth — même mécanique que le compte démo fpmarketssc actuel, voir `docs/CTRADER_SETUP.md`).
+3. **Ajouter le compte au bot** via `/accounts.html` (déjà construit, sauvegarde dans Supabase, pas besoin de redéployer) — plateforme cTrader, `propFirmProgramId: 'ftmo-1step'`. Le bot résout alors automatiquement les vraies règles FTMO (perte journalière 3%, plancher 10% trailing, cible 10%) dans son `GuardrailEngine` pour CE compte spécifiquement.
+4. **Vérifier `riskPctPerTrade` = 0.5% et `maxTradesPerDay` = 3** pour ce compte avant le premier trade réel (pas 20 — la valeur actuellement en prod pour le compte démo est une exception temporaire de debug, à ne jamais utiliser sur un compte à argent réel).
+5. **Laisser tourner sans interrompre** — le bot est semi-automatique (alerte + exécution auto déjà configurée pour la plupart des mécanismes) : le rôle d'Esdras est de surveiller, pas de trader manuellement à la place du bot.
+6. **En cas de bust** (perte journalière ou plancher touché) : racheter immédiatement un nouveau challenge $25k — c'est ce que la simulation modélise (rachat moyen 0.41 fois), attendre ne fait qu'allonger le calendrier sans réduire le risque.
+7. **Une fois le challenge passé** : remplacer l'entrée du compte par `propFirmProgramId: 'ftmo-1step-funded'`, passer `riskPctPerTrade` à 0.3% (déjà la convention `ACCOUNT_MODE=live` du reste du bot).
+8. **Demander le premier retrait dès l'éligibilité** (jour 14 de trading live, dès que le profit net ≥ $500) plutôt que d'attendre un montant plus rond — chaque jour de retard sur la demande est un jour de retard sur l'argent en main, sans bénéfice.
+
+**Limites honnêtes à connaître avant d'agir** : (a) chaque nouveau mécanisme de cette combo n'a qu'UN SEUL découpage train/test historique — aucun n'a encore un vrai historique live de plusieurs mois, seulement quelques jours pour les plus récents (Weekly Sweep, NWOG/GER40, Breaker Block) ; (b) la règle de plancher FTMO du compte financé est supposée identique au challenge (confirmée sur `ftmo.com` le 2026-09-12, pas une extrapolation) ; (c) le spread/les specs de lot restent des valeurs par défaut jamais vérifiées pour un VRAI compte FTMO (seulement pour le compte démo fpmarketssc actuel) — à confirmer dès la réception des identifiants avant de faire confiance à 100% au sizing des ordres ; (d) ce sont des probabilités empiriques sur 17 ans d'historique, pas une garantie sur les prochains mois précis.
+
+`npm test` : 534/534 (inchangé — nouveau script de recherche uniquement, aucun fichier `src/` touché).
+
+**Fichiers** : `scripts/runFtmo25kFirstPayoutFullComboAnalysis.js` (nouveau, committé), `data/backtest-input/ftmo-25k-first-payout-full-combo-analysis.md` (nouveau, committé).
+
+## Tous les trades auto-exécutés passent maintenant par LIMIT order — 2026-09-16 (suite directe, même session)
+
+Esdras : "Pour passer le trade, ou Tous Les trades vont etre passe par limit order!"
+
+**Avant** : seul FVG utilisait un LIMIT order à son `entryPrice` (le prix du bord de la zone, déjà touché une fois avant que le signal ne se valide). Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block utilisaient un MARKET order — un écart d'exécution déjà documenté dans le code lui-même (le spot event porteur d'une bougie M15 close n'arrive qu'une fois la bougie fermée, donc le MARKET order part avec un prix déjà décalé de l'`entryPrice` original, potentiellement significatif après un gap week-end).
+
+**Changement** : `_handleAutoExecuteEntry()` (`cTraderDataSource.js` ET `matchTraderDataSource.js`, même discipline miroir qu'à chaque fois) envoie maintenant un LIMIT order à `entryPrice` pour TOUTES les sources, plus seulement FVG. Raisonnement clé : chaque backtest de ce projet suppose un remplissage exactement à `entryPrice`, jamais un prix dégradé par une poursuite de marché — un LIMIT order à ce même prix est donc **plus fidèle** au edge validé, pas moins. Le vrai compromis n'est pas la qualité du remplissage (un LIMIT ne peut jamais remplir à un prix pire que celui validé) mais le **taux** de remplissage : un signal dont le prix ne revient jamais à `entryPrice` avant expiration ne se remplit simplement pas, au lieu d'être forcé à un prix dégradé.
+
+**Deux fenêtres d'expiration distinctes**, pas une seule copiée partout :
+- **FVG** : garde sa fenêtre existante (`CONFIG.fvg.maxAgeCandles`, ~12.5h) — la zone reste un objet de retest valide longtemps, logique déjà établie et vérifiée (voir l'incident XAUUSD du 2026-09 qui avait motivé cet élargissement).
+- **Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block** : nouvelle fenêtre courte, **4 bougies** (`NON_FVG_LIMIT_EXPIRY_CANDLES`) — leur `entryPrice` est l'ouverture d'UNE bougie précise, pas une zone qui reste valide des heures ; si le prix n'y revient pas rapidement, le setup a déjà évolué. **Choix délibérément conservateur, pas backtesté par source** (aucun historique de taux de remplissage réel n'existe encore pour ce type d'ordre sur ces sources) — à revoir si `orderOutcomeLog` montre un vrai remplissage manqué, comme ça avait été le cas pour FVG avec son défaut initial de 4 bougies (élargi depuis à `maxAgeCandles`).
+
+**Non touché délibérément** : les ordres STOP du pyramidage (`_handlePyramidOrderRequested`) — un mécanisme différent (déclenche l'ajout de la 2e unité quand le prix a DÉJÀ avancé de `+1R`), un LIMIT order n'y aurait aucun sens (il faudrait que le prix REDESCENDE pour remplir, l'inverse du déclencheur voulu).
+
+**Limite honnête** : `matchTraderDataSource.js` reste non connecté en production (bloqué CTI/Cloudflare, FundingPips jamais câblé) — le changement y est fait par cohérence/parité de code, pas testé en conditions réelles. Côté Match-Trader, l'API documentée n'a pas de champ d'expiration confirmé (déjà noté avant ce changement pour FVG, maintenant pertinent pour toutes les sources) — un LIMIT order non rempli pourrait y rester ouvert indéfiniment si jamais ce chemin devient actif un jour.
+
+`npm test` : 534/534 (inchangé — aucun test unitaire n'existe sur cette logique, `cTraderDataSource.js`/`matchTraderDataSource.js` ne testent que leurs fonctions pures par convention établie, voir l'en-tête de leurs fichiers de test).
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`.
+
+## Revert immédiat : MARKET order pour tout sauf FVG — risque de timing news — 2026-09-16 (suite directe, même session, quelques minutes plus tard)
+
+Esdras, en relisant le changement ci-dessus : "Attend, tu viens pas de coder limit order la pour Tous Les trades? Cetait pas un ordre mais une question... Ca pourait jouer contre nous si Le prop firm ne veux pas trader 2- min avant et apres new." Sa remarque initiale ("tous Les trades vont etre passe par limit order!") avait été lue comme une instruction (point d'exclamation) alors que c'était une vraie question — bonne chose qu'elle ait recorrigé avant que ça n'aille plus loin.
+
+**Le vrai problème identifié, correct** : un ordre MARKET part à un instant que le bot choisit lui-même (quand le signal se valide) — un futur filtre anti-news pourrait donc simplement vérifier "y a-t-il une news maintenant?" avant l'envoi. Un ordre LIMIT reste posé dans le carnet jusqu'à son expiration (jusqu'à 1h pour les 5 sources non-FVG, jusqu'à ~12.5h pour FVG) — le **remplissage** se déclenche tout seul, côté serveur cTrader, dès que le prix touche le niveau, **sans aucun contrôle sur le moment exact**. Pire : une news majeure est justement le genre d'événement qui produit des mouvements de prix assez violents pour toucher un ordre en attente qui dormait loin du marché — donc un LIMIT order a statistiquement plus de chances de se remplir PENDANT une news qu'un MARKET n'a de chances d'être envoyé pendant une news.
+
+**Fait clé qui a tranché la décision** : **aucun filtre anti-news n'existe dans le bot en production aujourd'hui**, ni pour MARKET ni pour LIMIT (`src/backtest/newsEvents.js`/`runNewsBlackoutAnalysis.js` du 2026-09-15 sont une analyse backtest committée mais jamais câblée dans `LiveStrategyEngine`). Tant que ce filtre n'existe pas, la fenêtre d'exposition quasi nulle d'un MARKET order (l'instant de l'envoi) est plus sûre par défaut que la longue fenêtre d'attente d'un LIMIT order. Le compte FTMO réel n'existe pas non plus encore (toujours en phase démo/planification, voir la section "plan détaillé" juste au-dessus) — le temps de construire un vrai filtre existe avant que cette règle FTMO ne compte pour de vrai.
+
+**Décision, confirmée par Esdras après une explication du compromis exact (fidélité au prix backtesté vs contrôle du moment d'exécution)** : revert complet vers l'état d'avant — FVG reste en LIMIT (inchangé, le mécanisme le plus ancien et éprouvé, jamais concerné par ce risque puisqu'il l'a toujours utilisé), les 5 autres sources (Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block) reviennent à MARKET. **Clarifié explicitement à Esdras : ce choix ne touche AUCUNE ligne de la logique de stratégie elle-même** (détection de signal, stops, cibles, tout le travail de validation backtest) — uniquement la couche "comment on envoie l'ordre au courtier".
+
+**Pyramidage, question posée séparément** : confirmé qu'il reste en STOP order (jamais touché par aucun de ces deux changements) — un STOP se déclenche automatiquement quand le prix atteint/dépasse le niveau +1R (exactement le comportement voulu pour "ajoute une unité si ça continue à avancer"), alors qu'un LIMIT au même niveau ferait l'inverse (attendrait que le prix REDESCENDE) et qu'un MARKET demanderait une surveillance active moins fiable qu'un ordre géré côté broker.
+
+**Reste en attente, pas construit** : un vrai garde-fou live anti-news (surveiller un calendrier à venir, bloquer/annuler les ordres ±2min autour d'un événement majeur) — discussion explicitement reportée par Esdras ("On parle apres du news") à une prochaine étape de cette même session ou une suivante.
+
+`npm test` : 534/534 (inchangé). **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js` (revert des mêmes fichiers que l'entrée précédente).

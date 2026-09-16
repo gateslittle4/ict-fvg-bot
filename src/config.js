@@ -313,9 +313,19 @@ export const CONFIG = {
   // window (+29 trades, +23R, win rate improved) before being enabled here.
   // Overlap with Weekly Sweep on the same symbol is low (9-14% of the time),
   // so the two remain largely independent for guardrail/netting purposes.
+  // rrMultiple extended 3->5 (2026-09-16, same "does it help to let winners
+  // run further" question already answered for FVG on US100/US500/XAUUSD -
+  // see HANDOFF.md "cible étendue" entries): SAME signals/entries/stops on
+  // BOTH symbols sharing this config, only the target multiple changed.
+  // US100 (long-only): train exp 0.25R->0.37R, test 1.06R->1.48R, drawdown
+  // actually LOWER at 1:5 (19.53R->14.54R train). GER40 (bidirectional):
+  // train 0.14R->0.21R, test 0.53R->0.92R, drawdown stable (~26R train,
+  // ~9.5R test). Both monotonically improve through 1:7, but 1:5 was picked
+  // as the same conservative middle-ground already used for FVG rather than
+  // chasing the top of the curve.
   nwog: {
     symbols: ['US100', 'GER40'],
-    rrMultiple: 3, // same convention already validated in src/backtest/nwog.js - not re-tuned here
+    rrMultiple: 5,
     maxHoldingM15Candles: 480,
     longOnlySymbols: ['US100'],
   },
@@ -362,11 +372,35 @@ export const CONFIG = {
   // overlap (9-14% of the time), so attribution between the two remains
   // reasonably clear going forward.
   //
-  // Scoped to GER40 ONLY - never tested against US100/US500 in a way that
-  // survived the same robustness bar (see HANDOFF.md's GER40 sections).
+  // Scoped to GER40 + US500 - see HANDOFF.md's GER40 sections for GER40's
+  // own research thread. US500 UPDATE (2026-09-16): screened across all 8
+  // instruments with the same train/test rigor as NWOG/Judas Swing/Breaker
+  // Block (never done before for this mechanism - see
+  // data/backtest-input/weekly-sweep-strategy-analysis.md) - US500 is the
+  // only symbol besides GER40 that survives: positive AND stable across 4
+  // different train/test cutoffs (2021/2022/2023/2024, never negative,
+  // never a big train/test gap), 10 of 15 years positive, no single
+  // catastrophic year (worst -13.87R in 2016 - contrast with the
+  // same-day-rejected NWOG/US500 candidate's -16.56R single-year swing).
+  // Verified ADDITIVE at the full-combo level (not just in isolation) against the
+  // symbol's own FVG/Divergence mechanisms already live on it - both the
+  // 15-year backtest and the real 7-month broker window show low
+  // cannibalization (FVG net-unaffected to -2% trades, Divergence -2% to
+  // -4% trades) and a clearly positive net addition (+581 trades/+123R
+  // historical, +23 trades/+9R on the real window) - see
+  // scripts/testAddWeeklySweepUs500.mjs (session-scratch, not committed).
+  // XAUUSD/GBPUSD/EURUSD/USDJPY/USDCAD/US100 all rejected or too weak on
+  // this same screen.
+  // rrMultiple extended 3->5 (2026-09-16, same lever already applied to FVG
+  // and NWOG above). Checked on BOTH symbols before touching this shared
+  // value (rrMultiple applies to every symbol in this block, so a change
+  // here silently affects both) - GER40 train 0.23R->0.36R/test
+  // 0.29R->0.31R, US500 train 0.08R->0.20R/test 0.16R->0.42R, drawdown
+  // moved but stayed in the same ballpark on both (GER40 ~40R->38R train,
+  // US500 ~29R->39R train).
   weeklySweep: {
-    symbols: ['GER40'],
-    rrMultiple: 3, // same convention already validated in src/backtest/weeklyLiquiditySweep.js - not re-tuned here
+    symbols: ['GER40', 'US500'],
+    rrMultiple: 5,
     maxHoldingM15Candles: 480,
   },
   // Breaker Block (ICT failed Order Block, retested from the flipped side) -
@@ -399,9 +433,15 @@ export const CONFIG = {
   // Scoped to GER40 ONLY - the only instrument where this concept was ever
   // found this robust (see data/backtest-input/breaker-block-strategy-
   // analysis.md for the other 7 instruments tested, all rejected/weaker).
+  // rrMultiple extended 3->5 (2026-09-16, same lever as NWOG/Weekly Sweep
+  // above). Most modest gain of the three: train exp 0.11R->0.12R (barely
+  // moves), test 0.17R->0.25R - net positive but smaller than NWOG/Weekly
+  // Sweep's improvement on this same symbol. Kept at 1:5 for consistency
+  // with the other two GER40 mechanisms rather than leaving this one alone
+  // at 1:3.
   breakerBlock: {
     symbols: ['GER40'],
-    rrMultiple: 3, // same convention already validated in src/backtest/breakerBlock.js - not re-tuned here
+    rrMultiple: 5,
     maxHoldingM15Candles: 480,
   },
   // Pyramid add-on ("stops indépendants, sans breakeven" - see HANDOFF.md):

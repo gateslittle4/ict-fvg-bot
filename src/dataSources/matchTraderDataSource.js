@@ -689,6 +689,12 @@ export class MatchTraderDataSource {
       });
       const isFvg = signal.source === 'fvg';
       const side = signal.suggestedSide.toUpperCase();
+      // FVG-only LIMIT, MARKET elsewhere - mirrors cTraderDataSource.js's
+      // _handleAutoExecuteEntry (see its doc comment for the full
+      // rationale, including the "tried full-LIMIT, reverted same day"
+      // note - a resting LIMIT order's uncontrolled fill timing is a real
+      // risk against FTMO's "no trade within 2min of major news" EA rule,
+      // with no live news-blackout filter built yet).
       await this._submitOrder({
         symbol,
         orderType: isFvg ? 'LIMIT' : 'MARKET',

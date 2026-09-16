@@ -1446,20 +1446,33 @@ export class CTraderDataSource {
    *     short expiration so a stale unfilled limit doesn't linger forever
    *     if price never returns (same outcome as a human who never got
    *     filled - not a new gap, see the "believed netting" caveat above).
-   *   - Divergence AND NWOG: entryPrice IS candle.open of the very candle
-   *     whose spot event we're processing right now - a MARKET order is the
-   *     direct equivalent, not an approximation. For NWOG specifically
-   *     (2026-09, live auto-execute at the user's explicit request - see
-   *     HANDOFF.md) this is a genuine, KNOWN execution-quality gap worth
-   *     naming rather than hiding: the live spot event carrying a completed
-   *     trendbar only arrives once that M15 candle has CLOSED, so the
-   *     MARKET order is submitted with price already having moved away from
-   *     `entryPrice` (that candle's OPEN) by however much it drifted during
-   *     those 15 minutes - especially relevant right after a weekend gap,
-   *     when volatility is elevated. Same approximation Divergence has
-   *     always made; not new here, just newly worth calling out since NWOG
-   *     has no live execution history yet to confirm how much this matters
-   *     in practice.
+   *   - Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block: entryPrice
+   *     IS candle.open of the very candle whose spot event we're
+   *     processing right now - a MARKET order is the direct equivalent,
+   *     not an approximation. Known, accepted gap: the live spot event
+   *     carrying a completed trendbar only arrives once that M15 candle
+   *     has CLOSED, so the MARKET order is submitted with price already
+   *     having moved away from `entryPrice` by however much it drifted
+   *     during those 15 minutes - especially relevant right after a
+   *     weekend gap, when volatility is elevated.
+   *
+   * TRIED AND REVERTED (2026-09-16, same day): briefly switched every
+   * source to LIMIT at entryPrice ("tous les trades vont etre passe par
+   * limit order") for better backtest fidelity - reverted within the hour
+   * after Esdras identified a real risk this introduced: a resting LIMIT
+   * order's FILL moment is uncontrolled (it fires whenever price later
+   * touches the level, up to NON_FVG_LIMIT_EXPIRY_CANDLES away), unlike a
+   * MARKET order which fires at a moment the bot itself chooses. FTMO's
+   * own EA policy forbids trading within 2 minutes of major news - no live
+   * news-blackout filter exists in this bot yet (src/backtest/
+   * newsEvents.js/runNewsBlackoutAnalysis.js are backtest-only research,
+   * never wired into LiveStrategyEngine or here), so until one exists,
+   * MARKET's near-zero exposure window (the instant it's sent) is safer
+   * than LIMIT's long resting window, which is also disproportionately
+   * likely to get touched BY a news-driven price spike specifically. FVG
+   * stays LIMIT - the oldest, most-proven mechanism here, unaffected by
+   * this reasoning since it was never changed either way. See HANDOFF.md
+   * for the full back-and-forth.
    */
   async _handleAutoExecuteEntry(symbolName, symbolId, signal) {
     const store = this.account;
