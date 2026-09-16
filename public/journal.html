@@ -369,7 +369,9 @@
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 const fmtTime = (t) => t ? new Date(t).toLocaleString('fr-FR') : '—';
 // US indices and gold trade in whole-ish points (2dp is plenty); forex pairs need more precision.
-const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
+// GER40/BTCUSD added 2026-09-16 - both were falling into the 5-decimals
+// forex default (e.g. GER40's real 25445.05 would show as 25445.05000).
+const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD' || symbol === 'GER40' || symbol === 'BTCUSD') ? 2 : 5;
 // Same source-label vocabulary as index.html (kept as its own copy, not a
 // shared import, same convention chart.html/accounts.html already use for
 // their own small helper duplication rather than a build step).

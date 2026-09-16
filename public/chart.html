@@ -159,6 +159,13 @@
              here entirely, a real gap: no way to chart the one symbol a
              newly-activated live strategy actually trades. -->
         <button data-symbol="EURUSD">EURUSD</button>
+        <!-- GER40/BTCUSD added 2026-09-16 - same gap as EURUSD above: both
+             went live (NWOG, Breaker Block, Weekly Sweep on GER40; FVG on
+             BTCUSD) with no button here, so there was no way to chart either
+             symbol despite the bot actively trading them (found when Esdras
+             asked for GER40's chart after investigating a real 12s trade). -->
+        <button data-symbol="GER40">GER40</button>
+        <button data-symbol="BTCUSD">BTCUSD</button>
       </div>
       <span class="spacer"></span>
       <div class="group" id="timeframe-group">
@@ -214,7 +221,10 @@
 
 <script src="/vendor/lightweight-charts/lightweight-charts.standalone.production.js"></script>
 <script>
-const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
+// GER40/BTCUSD added 2026-09-16 - both were falling into the 5-decimals
+// forex default (e.g. GER40's real 25445.05 would show as 25445.05000),
+// found alongside the missing chart button above.
+const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD' || symbol === 'GER40' || symbol === 'BTCUSD') ? 2 : 5;
 const fmt = (n, d = 2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 
 let currentSymbol = 'US100';
