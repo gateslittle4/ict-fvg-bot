@@ -3553,3 +3553,28 @@ Esdras, décision explicite et durable : "Tous Les nvs tests doivent inclure Tou
 `npm test` : 531/531 (inchangé — fichier de données régénéré, aucun code de comportement production touché).
 
 **Fichiers** : `scripts/buildBacktestSummary.js` (filtre retiré), `data/backtest-summary.json` (régénéré, 17 ans au lieu de 7).
+
+## Cible dynamique "draw on liquidity" sur US100 — reprend la question ouverte, résultat prometteur — 2026-09-16
+
+Esdras : "Trop peu, on teste autre chose pour augmenter nos trades gagnant?" (suite au taux de gain ~30% global, section "Test avec GBPUSD" ci-dessus). Reprend directement la question ouverte jamais traitée (voir plus haut, section "Question ouverte d'Esdras... peut-on trouver un moyen de savoir AVANT si le marché va vraiment jusqu'à 1:4/1:5") : il avait déjà été vérifié empiriquement que 100% de la baisse de taux de gain à cible étendue (1:4/1:5) vient de trades DÉJÀ gagnants à 1:3 qui repartent jusqu'au stop d'origine avant d'atteindre la cible fixe plus loin — jamais de nouvelle perte directe.
+
+**Idée testée** : au lieu d'un multiple R fixe, la cible devient le prochain point de liquidité ICT ("draw on liquidity") encore intact — le swing high/low confirmé le plus proche au-delà de l'entrée, PAS ENCORE balayé par une bougie ultérieure — plafonné entre 1.5x et 6x la distance du stop, avec repli sur 1:3 fixe si aucun niveau valide n'existe dans cette fourchette.
+
+**Implémentation** (recherche uniquement, rien branché en production) : `src/backtest/dynamicLiquidityTarget.js` — `buildLiquidityTargetLookup()` fait un seul passage chronologique sur les bougies (comme `makeStructureBiasLookup()`), maintient l'ensemble des swing highs/lows confirmés et encore "intacts" (aucune bougie n'a encore dépassé leur niveau depuis leur formation), et répond à chaque entrée avec le niveau le plus proche dans la bonne direction. Mêmes entrées/stops que la production (`MultiTouchFvgEngine` + `buildMultiTouchFilterPredicate`, config US100 copiée telle quelle de `config.js`) — SEULE la cible change. `scripts/runDynamicLiquidityTargetAnalysis.js` compare les deux sur US100 (train < 2024, test >= 2024).
+
+**Résultat (US100, train/test)** :
+
+| | Fixe 1:5 (production) | Dynamique (liquidité) |
+|---|---|---|
+| Train : n / WR / R moyen / PF / DDmax | 969 / 31.4% / 0.77R / 2.01 / 32.77R | 1004 / **36.9%** / **0.88R** / **2.24** / **29.57R** |
+| Test : n / WR / R moyen / PF / DDmax | 229 / 36.7% / 1.11R / 2.61 / 11.07R | 235 / **38.7%** / **1.27R** / **2.91** / **10.03R** |
+
+Amélioration sur TOUS les indicateurs, sur TRAIN ET TEST à la fois (taux de gain, R moyen, profit factor, ET drawdown max qui baisse au lieu de monter — contrairement à la cible fixe étendue qui améliore l'espérance mais alourdit le drawdown). Une liquidité valide est trouvée pour 90-92% des trades (repli sur 1:3 fixe pour le reste), RR réellement utilisé en moyenne ~4.3-4.8 (proche du 1:5 actuel, mais adaptatif au lieu de fixe).
+
+**Vérification de robustesse année par année (2011-2025)** : la cible dynamique améliore le R moyen sur **12 années sur 15** (2011 et 2013 légèrement pires, 2018 quasi identique) — pas un artefact d'une seule fenêtre chanceuse.
+
+**Pas encore en production** — un seul découpage train/test (comme la cible étendue 1:4/1:5 à l'origine), jamais observé en live, et le mécanisme de "niveau intact" (jamais balayé depuis sa formation) reste une approximation raisonnable mais simplifiée du concept ICT complet (ne distingue pas encore les niveaux "premium/discount", ni la taille relative du pool de liquidité). Prochaine étape naturelle si Esdras veut avancer : le forward-tester (`forwardTest.js`) sur ce mode dynamique, puis une simulation de compte complète (guardrails réelles) avant d'envisager un déploiement réel.
+
+`npm test` : 531/531 (aucun fichier de production existant modifié — nouveau fichier `src/backtest/dynamicLiquidityTarget.js` uniquement, rien branché dans `config.js`/`liveStrategyEngine.js`).
+
+**Fichiers** : `src/backtest/dynamicLiquidityTarget.js` (nouveau), `scripts/runDynamicLiquidityTargetAnalysis.js` (nouveau).
