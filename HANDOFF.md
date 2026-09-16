@@ -3612,3 +3612,26 @@ Amélioration modeste mais cohérente au niveau du combo entier (dilué par les 
 `npm test` : 531/531 (aucun fichier de production modifié).
 
 **Fichiers** : `scripts/runDynamicLiquidityTargetAnalysis.js` (étendu à US500/XAUUSD), `scripts/testNewComboWithDynamicTarget.js` (nouveau).
+
+## Même test sur VRAIES données broker (7 mois réels, pas un proxy CSV) — résultat NÉGATIF, décision revue — 2026-09-16 (suite directe)
+
+Esdras a fourni `ADMIN_EXPORT_TOKEN` pour extraire les vraies bougies M15 depuis la production (`GET /api/admin/export-candles?symbol=X&days=245&token=...`, cTrader connecté en production, plafond réel de 245 jours/requête). Fenêtre obtenue : **2026-02-10 -> 2026-09-16, soit ~7 mois pile** — exactement la période demandée, mais cette fois du vrai trading réel/données broker réelles, pas les CSV historiques (qui s'arrêtent au 2025-12-31 et n'ont donc AUCUN chevauchement avec cette fenêtre).
+
+`scripts/testNewComboOnRealData7Months.js` (nouveau, même logique que `testNewComboWithDynamicTarget.js` mais pointé sur les vraies données) — résultat :
+
+| | Combo production (US100 fixe 1:5) | Combo nouveau (US100 dynamique) |
+|---|---|---|
+| Trades US100/FVG | 46 | 44 |
+| Total R (combo entier) | **+63.00R** | +47.73R |
+
+**Résultat INVERSE de ce qu'avait montré le proxy CSV (7 derniers mois de l'historique 2009-2025, qui donnait +205R → +213.89R, positif).** Sur les vraies données récentes, la cible dynamique fait PERDRE 15.27R au combo par rapport à la production actuelle — mois par mois, juillet 2026 est le plus parlant : production atteint la cible +10% en 23 jours (+20R), le nouveau système ne l'atteint JAMAIS ce mois-là (+15.73R seulement, 15 trades au lieu de 12).
+
+**Pourquoi ce n'est pas forcément contradictoire, mais reste un signal d'alerte sérieux** : la vérification année-par-année faite plus tôt (US100, 2011-2025) montrait déjà que la cible dynamique n'améliore PAS systématiquement chaque année individuelle — 12 années sur 15 positives, mais 2011/2013 nettement pires. Avec seulement 44-46 trades FVG sur cette fenêtre de 7 mois, une variance de cet ordre est statistiquement plausible, pas forcément un signe que le concept est cassé. MAIS c'est aussi le test le plus rigoureux possible : de vraies données que ni le concept ni son réglage (clamp [1.5,6], repli 1:3) n'ont jamais vues, sur la période la plus RÉCENTE, pas un backtest arrangé après coup.
+
+**Décision révisée : NE PAS déployer la cible dynamique en production pour l'instant.** Le backtest 17 ans reste positif et robuste (12/15 années), mais le seul test véritablement "en aveugle" disponible (ce fenêtre réelle récente) est négatif. Cohérent avec la mise en garde déjà répétée plusieurs fois dans ce document : un seul découpage/une seule fenêtre ne suffit jamais à valider un changement avant capital réel — ici on a maintenant DEUX fenêtres de test (2024-2025 CSV, positif ; 2026-02→09 réel, négatif) qui ne s'accordent pas, ce qui est justement le signal qu'il faut encore attendre avant de conclure, pas trancher dans un sens ou l'autre.
+
+**Fichiers réels NON committés** (par précaution — données de trading réelles temporaires, pas un artefact de recherche permanent comme les CSV historiques) : les 5 CSV exportés (`US100.csv`, etc.) restent uniquement dans le scratchpad de la session, jamais poussés au dépôt. Seul le script de test est committé.
+
+`npm test` : 531/531 (aucun fichier de production modifié).
+
+**Fichiers** : `scripts/testNewComboOnRealData7Months.js` (nouveau).
