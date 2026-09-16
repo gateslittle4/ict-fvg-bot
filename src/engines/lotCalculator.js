@@ -82,32 +82,39 @@ export const DEFAULT_SYMBOL_SPECS = {
     maxVolume: 50,
     verified: false,
   },
-  // TEMPORARY (2026-09-13) - see config.js's BTCUSD entries for the full
-  // context. Deliberately NOT a real risk-based spec like the ones above:
-  // BTCUSD's true contract spec (point size / value per point / lot
-  // convention) was never confirmed, and guessing one would stack a SECOND
-  // layer of made-up numbers on top of _submitOrder()'s own already-
-  // unverified `lots * lotSize * 100` volume conversion, on a real order.
-  // Instead min===step===max===1 forces calculateLotSize() to always
-  // return exactly 1 "lot" no matter the risk %/balance, and `rawVolume:
-  // true` tells _submitOrder() to send that 1 directly as the broker's
-  // `volume` field, bypassing the lots*lotSize*100 formula entirely - the
-  // SAME raw value (and same convention) ProtoOASymbolByIdReq's real
-  // minVolume returned for BTCUSD when /admin/test-order-cycle checked it
-  // live earlier today. Net effect: tonight the risk %/balance do NOT
-  // actually size BTCUSD's position - it always trades the broker's
-  // absolute minimum, on purpose, purely to test that a real order can
-  // flow through end to end. Remove alongside every other temporary
-  // BTCUSD entry.
+  // TEMPORARY, still (2026-09-16) - BTCUSD stays a connectivity/smoke-test
+  // symbol per config.js's own note ("on va supprimer BTC juste après" -
+  // still not done, see HANDOFF.md's "BTCUSD concentre tout le volume"
+  // entry: 9.5% win rate, -2.12R net over 21 real trades). This is a REAL
+  // risk-based spec now (requested explicitly to see it size properly
+  // before removal), not a guess like the placeholders above - derived from
+  // TWO real executed trades' own numbers, not invented:
+  //   trade 1: 33-point adverse move -> -$0.33 realized (positionId 41604229)
+  //   trade 2: 70-point adverse move -> -$0.70 realized (positionId 41603614)
+  // Both agree exactly: 1 raw broker volume unit moves $0.01 per $1 (per
+  // "point") of BTCUSD price change - so 1 raw unit = 0.01 BTC of exposure,
+  // matching the ProtoOASymbolByIdReq-confirmed minVolume=1 AND the
+  // `units: 0.01` seen on a real open position on the dashboard (see
+  // HANDOFF.md, fmtUnits() bug entry). `rawVolume: true` is unchanged - the
+  // broker's `volume` field IS this raw unit count directly, so
+  // calculateLotSize()'s `lots` output can be sent straight through
+  // _submitOrder() with no lotSize*100 conversion, same as before.
+  // maxVolume below is NOT broker-confirmed (that call was never made) -
+  // it's a deliberate safety ceiling, picked because M1's real observed
+  // stop distances run as tight as $6.60 (see HANDOFF.md), which without a
+  // cap would scale risk-based sizing into an oversized BTC notional on a
+  // small stop. 100 raw units (1.00 BTC, ~$75k notional at current prices)
+  // is a conservative multiple of the $10k demo balance - revisit before
+  // trusting this with a larger account.
   BTCUSD: {
     kind: 'crypto',
     rawVolume: true,
     pointSize: 1,
-    valuePerPointPerLot: 1,
-    minVolume: 1,
-    volumeStep: 1,
-    maxVolume: 1,
-    verified: false,
+    valuePerPointPerLot: 0.01, // measured from 2 real fills, not guessed - see comment above
+    minVolume: 1, // = 0.01 BTC, the broker's own confirmed real minimum
+    volumeStep: 1, // = 0.01 BTC increments, consistent with minVolume
+    maxVolume: 100, // = 1.00 BTC, safety ceiling only - never broker-confirmed
+    verified: false, // measured from real fills, but not from the broker's own published contract spec
   },
 };
 
