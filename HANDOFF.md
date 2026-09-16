@@ -3881,3 +3881,31 @@ Esdras a envoyé une capture d'écran du dashboard réel (`ict-fvg-bot.onrender.
 **Corrigé** : les 4 fichiers ci-dessus + `test/dealPairing.test.js` (nouveau cas de test couvrant explicitement `auto-breakerblock-GER40`, + 2 cas `judaswing`/`weeklysweep` qui manquaient aussi à ce test bien qu'ils fonctionnent déjà correctement en production). Vérifié qu'aucun autre fichier (`chart.html`, `accounts.html`, `server.js`) n'a de liste figée de sources à mettre à jour — `chart.html` reste volontairement scopé à FVG/Divergence seulement (limite déjà existante avant cette session, pas une régression).
 
 `npm test` : 534/534 (même nombre, une assertion ajoutée à un test existant + le nouveau cas breakerblock). **Fichiers** : `public/index.html`, `public/journal.html`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`, `src/dataSources/dealPairing.js`, `test/dealPairing.test.js`.
+
+## Divergence GER40 rejetée (échoue le test de sanité) et pyramidage XAUUSD rejeté (sous-performe à risque égal) — 2026-09-16
+
+Suite de la recherche "autres idées pour augmenter la fréquence" : deux pistes supplémentaires demandées explicitement par Esdras ("1-2" : autre paire Divergence, pyramidage étendu à XAUUSD/GER40).
+
+**Divergence GER40/US100 et GER40/US500** : au premier passage, résultat spectaculaire — quasiment toutes les configs (lookback×seuil) passent le verdict train/test, espérance 0.03R à 0.32R. Mais corrélation H1 mesurée à seulement 0.197-0.222 (contre 0.935 pour US100/US500, 0.685 pour EURUSD/GBPUSD déjà rejeté) — signal d'alarme avant de conclure. **Test de sanité décisif** : la même méthode appliquée à GER40/EURUSD (corrélation 0.034, quasiment aucun lien) donne un résultat presque identique (8/9 configs passent). Conclusion : ce n'est PAS un vrai signal de divergence entre paires — c'est un edge générique de rachat de repli propre à GER40 lui-même (cohérent avec NWOG/Weekly Sweep/Breaker Block déjà validés dessus), habillé à tort en "stratégie de paires". **Rejeté tel que conçu** — un vrai edge GER40-seul existerait peut-être, mais ce serait un NOUVEAU mécanisme à concevoir et valider proprement (avec vérification de chevauchement contre les 3 mécanismes GER40 déjà actifs), pas une extension de Divergence.
+
+**Pyramidage sur XAUUSD** (seul candidat valide : le pyramidage ne s'applique qu'aux trades FVG dans le code — `_maybeRequestPyramid` vérifie `pyramidConfig.symbols.includes(symbol)` — et GER40 n'a pas de FVG live, seulement NWOG/Weekly Sweep/Breaker Block, donc "pyramider GER40" n'a pas de sens tel que le système est conçu). Piège méthodologique trouvé en cours de route : `warmUp()` (rejeu direct) ne résout JAMAIS une jambe de pyramide — ça demande une confirmation broker (`markPyramidOrderPlaced`/`markPyramidOrderFilled`) qui n'existe pas en simulation, contrairement à FVG/Divergence/NWOG/etc. résolus directement par l'événement `closed`. `portfolioSimulator.js` (déjà utilisé pour US100/US500) reste le bon outil.
+
+Résultat, comparaison à risque égal (0.25%/trade pyramidé = même pire cas $ que 0.5% sans pyramide, même principe que la comparaison US100/US500 d'origine) :
+
+| Année | Sans pyramide (0.5%) | Avec pyramide (0.25%, risque égal) |
+|---|---|---|
+| 2019 | +3.7% | +3.9% |
+| 2020 | +12.9% | +12.4% |
+| 2021 | -4.4% (WR 11.5%) | -3.3% (WR 14.9%) |
+| 2023 | +10.9% | +8.5% |
+| 2024 | +8.4% | +3.0% |
+| 2025 | +9.7% | +8.0% |
+| **Total cumulé (6 ans)** | **+41.2%** | **+32.5%** |
+
+Contrairement à US100/US500 (où pyramidage + risque réduit égalait quasiment le risque plein sans pyramide), ici le pyramidage **sous-performe nettement** à risque égal — sauf sur la seule vraie mauvaise année (2021, win rate sous 15%), où il atténue légèrement la perte sans l'effacer. XAUUSD a un vrai passage à vide cette année-là, et pyramider dedans amplifie le problème plus qu'il ne profite des bonnes années ailleurs. **Rejeté.**
+
+**Conclusion générale** : deux résultats négatifs, mais avec preuve rigoureuse (test de sanité pour Divergence, comparaison à risque égal pour le pyramidage) plutôt que des suppositions. Bilan de la session de recherche "augmenter la fréquence sans compromettre la qualité" : Weekly Sweep/US500 activé (seul vrai gain trouvé), NWOG/XAUUSD-US500 rejeté, Judas Swing confirmé EURUSD-seul, Divergence GER40 rejetée, Pyramidage XAUUSD rejeté.
+
+`npm test` : inchangé (aucun code de production touché, recherche uniquement).
+
+**Fichiers** : aucun commité — scripts d'exploration dans le scratchpad de session (mêmes patterns que `runDivergenceStrategyAnalysis.js`/`runDivergenceEurGbpStrategyAnalysis.js` pour la partie Divergence, `runPyramidIndependentAccountImpact.js` pour la partie pyramide — à recréer si besoin de refaire ces tests précis).
