@@ -131,14 +131,15 @@ test('buildChartOverlays: a zone we never saw end is closed off at the engine ma
   // "no end observed" must NOT be read as "still live" - otherwise old zones
   // stretch to the right edge forever and bury the chart.
   //
-  // US500, not US100: since 2026-09 US100 runs MultiTouchFvgEngine
-  // (CONFIG.fvg.perSymbol.US100.multiTouch - see HANDOFF.md "multi-contact"),
-  // which always reports a REAL 'expired' event once a zone ages out
-  // (rejected touches no longer silently consume it) - so US100 now
-  // produces ZERO 'stale' zones, by design, and would make this assertion
-  // vacuous. US500 stays on the single-touch engine, so it still exhibits
-  // the silent-consumption case this test exists to cover.
-  const { zones } = buildChartOverlays(history(), { symbol: 'US500', maxZones: 5000 });
+  // XAUUSD, not US100/US500: since 2026-09 (US100) / 2026-09-16 (US500),
+  // both run MultiTouchFvgEngine (CONFIG.fvg.perSymbol.*.multiTouch - see
+  // HANDOFF.md "multi-contact"), which always reports a REAL 'expired'
+  // event once a zone ages out (rejected touches no longer silently consume
+  // it) - so neither produces 'stale' zones anymore, by design, which would
+  // make this assertion vacuous. XAUUSD stays on the single-touch engine,
+  // so it still exhibits the silent-consumption case this test exists to
+  // cover.
+  const { zones } = buildChartOverlays(history(), { symbol: 'XAUUSD', maxZones: 5000 });
   const stale = zones.filter((z) => z.status === 'stale');
   assert.ok(stale.length > 0, 'expected stale zones on a window this long');
 
@@ -162,9 +163,9 @@ test('buildChartOverlays: a zone young enough to still be live is left open-ende
 });
 
 test('buildChartOverlays: "stale" is kept distinct from a confirmed "expired"', () => {
-  // US500, not US100 - same reason as the test above (US100's multi-touch
-  // engine never produces a 'stale' zone).
-  const { zones } = buildChartOverlays(history(), { symbol: 'US500', maxZones: 5000 });
+  // XAUUSD, not US100/US500 - same reason as the test above (their
+  // multi-touch engines never produce a 'stale' zone).
+  const { zones } = buildChartOverlays(history(), { symbol: 'XAUUSD', maxZones: 5000 });
   const statuses = new Set(zones.map((z) => z.status));
   assert.ok(statuses.has('expired'), 'engine-confirmed expiries must still be reported as expired');
   assert.ok(statuses.has('stale'), 'inferred ends must be reported separately, not relabelled as expired');

@@ -36,7 +36,8 @@ const NEUTRAL_BAND_PCT = 0.1; // same value as gridRunner.js's NEUTRAL_BAND_PCT 
  * validation - the same derivation _processFvgEvent() does in
  * liveStrategyEngine.js, just replayed after the fact instead of live.
  *
- * KNOWN CAVEAT for multi-touch symbols (US100, cfg.multiTouch: true): the
+ * KNOWN CAVEAT for multi-touch symbols (US100 and, since 2026-09-16, US500 -
+ * any symbol with cfg.multiTouch: true): the
  * real production engine there is MultiTouchFvgEngine, which can keep a
  * zone alive across a contact that would make a plain FvgEngine destroy it.
  * This reconstruction uses a plain FvgEngine regardless - it will usually

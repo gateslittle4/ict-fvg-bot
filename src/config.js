@@ -182,6 +182,25 @@ export const CONFIG = {
         sessionEnabled: true,
         sessionWindow: SILVER_BULLET_WINDOW,
         liquiditySweepEnabled: true,
+        // 2026-09-16: "multi-contact" activé ici aussi (déjà en production
+        // sur US100 depuis longtemps, voir ce champ dans le bloc US100
+        // ci-dessus) - jamais testé avec la même rigueur sur US500 jusqu'à
+        // aujourd'hui (voir HANDOFF.md "FVG multi-contact sur US500/XAUUSD").
+        // Résultat sur 17 ans : contact unique 183 trades/31.8% de
+        // réussite/+147.61R → multi-contact 433 trades (+137%)/31.9% de
+        // réussite (inchangé)/+336.59R (plus du double) - le taux de gain ne
+        // bouge quasiment pas alors que le volume ET le R total augmentent
+        // fortement. Contrôles de robustesse les plus propres vus cette
+        // session : 8 blocs de 2 ans sur 8 positifs (aucun autre candidat de
+        // la session n'a fait mieux), achat/vente équilibré (58%/42%),
+        // concentration annuelle la plus faible (15%). Vérifié sur la
+        // fenêtre réelle récente (2026-02→09) aussi, mais l'échantillon y
+        // est minuscule des deux côtés (n=4 vs n=13) - pas assez pour
+        // trancher, contrairement au cas de la cible dynamique où le réel
+        // contredisait clairement l'historique. XAUUSD reste en contact
+        // unique - même test fait là-bas, robustesse correcte mais gain de R
+        // marginal (+4.7% seulement), pas activé.
+        multiTouch: true,
       },
       XAUUSD: {
         variant: 'H4_EMA20',

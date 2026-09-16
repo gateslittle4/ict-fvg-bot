@@ -3780,3 +3780,29 @@ US500 : le contact unique montre 75% de réussite sur seulement 4 trades (bruit 
 **Conclusion honnête** : US500 reste le candidat le plus solide de cette session sur la robustesse historique (8/8 blocs, quasi 17 ans de données, +128% de R), mais comme pour la cible dynamique, l'échantillon réel récent ne le confirme pas encore (trop petit, n=4 vs n=13, pour être concluant dans un sens ou l'autre - contrairement à la cible dynamique où le réel CONTREDISAIT clairement l'historique avec un échantillon plus solide). XAUUSD est plus faible sur toute la ligne (gain marginal historique + négatif réel) - je ne recommande pas de l'activer. **Décision sur US500 laissée à Esdras** : soit activer maintenant sur la force de la robustesse historique exceptionnelle, soit attendre plus de données réelles avant de trancher (même logique que la cible dynamique, qui reste en observation).
 
 `npm test` : 534/534 (aucun fichier de production modifié — recherche uniquement, seul `data/backtest-input/fvg-multi-touch-analysis.md` régénéré avec les données/config actuelles). **Fichiers** : `data/backtest-input/fvg-multi-touch-analysis.md` (régénéré).
+
+## FVG multi-contact ACTIVÉ sur US500, puis test final train/test/réel du combo complet — 2026-09-16 (suite directe, même session)
+
+Esdras : "Oui, active le multi-contact sur US500. Et on VA faire un test avec Tous ces strategy combine, train vs test vs ces 7 derniers mois avant de sarreter."
+
+**Activation** : `CONFIG.fvg.perSymbol.US500.multiTouch = true` (`src/config.js`) — AUCUN changement de code nécessaire, `_buildFvgEngine()` lisait déjà ce champ de façon générique (pas spécifique à US100). Deux effets de bord découverts et corrigés :
+- `src/dataSources/tradeCompliance.js` : commentaire de mise en garde ("KNOWN CAVEAT") mis à jour pour ne plus dire "US100 seulement" — le code lui-même était déjà générique, seul le commentaire mentait par omission.
+- `test/chartOverlays.test.js` : **2 tests cassés** — ils utilisaient délibérément US500 comme repère "toujours en contact unique" pour tester le comportement des zones "stale" (une zone jamais vue se fermer, avant les correctifs multi-contact). Maintenant que US500 est aussi multi-contact, ces deux tests devenaient invalides pour la même raison qu'ils testaient. Corrigés en utilisant **XAUUSD** à la place (le seul des 3 instruments FVG encore en contact unique). `npm test` : **534/534** (inchangé en nombre, 2 tests réécrits).
+
+`data/backtest-summary.json` régénéré (7173 trades décidés, +2964R, 30.4% de réussite — reflète maintenant les 3 mécanismes GER40 + le multi-contact US500).
+
+**Test final demandé : combo complet (TOUT ce qui a été ajouté cette session), train vs test vs 7 mois réels** — `scripts/testFullComboTrainTestReal.js` (nouveau), rejoue le combo directement depuis `CONFIG` (pas de config manuelle en dur, donc toujours à jour avec `config.js`) sur 3 fenêtres : historique < 2024-01-01 (train), historique >= 2024-01-01 (test, même découpage que partout ailleurs dans ce projet), et la fenêtre réelle déjà committée (`data/real-data-2026-02-to-09/`, 2026-02→09) :
+
+| Fenêtre | Trades | Taux de gain | R moyen | Total R |
+|---|---|---|---|---|
+| TRAIN | 6028 | 29.7% | 0.379 | +2271.00R |
+| TEST | 1164 | 34.0% | 0.577 | +666.00R |
+| **RÉEL (7 mois)** | 287 | 31.4% | 0.341 | +98.00R |
+
+**Cohérence rassurante** : le réel (31.4% / 0.341R) tombe ENTRE le train (29.7% / 0.379R) et le test (34.0% / 0.577R) sur le taux de gain, et reste solidement positif sur le R moyen même si un peu plus bas que les deux périodes historiques (0.341 contre 0.379/0.577) — pas de divergence massive ni de signe de rupture de régime, contrairement à ce qui avait été vu pour la cible dynamique US100 (où le réel contredisait franchement l'historique). Écart test→réel : -2.6 points de taux de gain, -0.236R d'espérance moyenne — dans l'ordre de grandeur attendu d'un échantillon de 287 trades contre 1164, pas un signal d'alarme.
+
+**Détail par mécanisme (réel, 7 mois)** : NWOG le plus fort (46.5% de réussite, +37R sur 43 trades — porte à la fois US100 achat-seul et GER40 bidirectionnel, cohérent avec son bon comportement historique) ; FVG plus faible que d'habitude (25.5% contre 33.7% en test — à surveiller, écho du signal déjà noté ailleurs dans ce document sur une fenêtre FVG antérieure plus dure) ; Breaker Block très proche de son propre chiffre train (30.0% pile) ; Divergence à l'équilibre (+0.00R, 25.0%). Rien d'alarmant pris dans son ensemble — le combo reste net positif sur les 3 fenêtres sans exception.
+
+**Session arrêtée ici, à la demande d'Esdras.** Résumé de tout ce qui a été ajouté aujourd'hui : NWOG/GER40 (bidirectionnel), Breaker Block/GER40 (nouveau mécanisme), FVG multi-contact/US500. GER40 trade maintenant avec 3 mécanismes, US500 est maintenant multi-contact comme US100. Cible dynamique de liquidité (US100) reste en observation, PAS déployée (résultat contradictoire train/réel). XAUUSD reste inchangé (single-touch, aucun nouveau mécanisme) - testé mais pas assez convaincant partout.
+
+`npm test` : 534/534. **Fichiers** : `src/config.js`, `src/dataSources/tradeCompliance.js`, `test/chartOverlays.test.js`, `data/backtest-summary.json`, `scripts/testFullComboTrainTestReal.js` (nouveau).
