@@ -778,11 +778,22 @@ export class LiveStrategyEngine {
     // symbol it's actually LIVE on - shows the sell side contributes ~0 net
     // edge (177 trades, totalR -1.70R, essentially breakeven) while buy
     // carries the entire result (155 trades, totalR +87.43R). At Esdras's
-    // explicit request ("on active achète seulement"), cfg.longOnly skips
-    // straight to a blocked signal for bearish candidates - still reported
-    // (informational, same convention as every other blockedReason here),
-    // never opens a real position or reaches auto-execute.
-    const blockedReason = cfg.longOnly && !bullish ? 'direction-filtered' : this._blockReason(symbol, distance, candle, guardrailNow);
+    // explicit request ("on active achète seulement"), a symbol listed in
+    // cfg.longOnlySymbols skips straight to a blocked signal for bearish
+    // candidates - still reported (informational, same convention as every
+    // other blockedReason here), never opens a real position or reaches
+    // auto-execute.
+    //
+    // 2026-09-16: was a single `cfg.longOnly` boolean applying to every
+    // symbol in `nwog.symbols` - broke the moment a SECOND NWOG symbol
+    // needed the OPPOSITE setting. GER40/NWOG was independently validated
+    // BIDIRECTIONAL (buy/sell split 59/41, no hidden long bias - see
+    // HANDOFF.md "GER40 — vrai spread confirmé... NWOG réhabilité"), unlike
+    // US100's genuine long-only edge above - forcing both through one flag
+    // would have wrongly restricted GER40 to buy-only (unvalidated) or
+    // wrongly reopened US100's known-breakeven sell side. `longOnlySymbols`
+    // (an array, default none) scopes the restriction per-symbol instead.
+    const blockedReason = cfg.longOnlySymbols?.includes(symbol) && !bullish ? 'direction-filtered' : this._blockReason(symbol, distance, candle, guardrailNow);
 
     const signal = {
       type: 'validated',

@@ -3669,3 +3669,31 @@ Esdras : "je veux toujours améliorer mes trades ou un autre pair pour augmenter
 `npm test` : 531/531 (aucun fichier de production modifié — recherche uniquement).
 
 **Fichiers** : `scripts/testAddNwogGer40ToCombo.js` (nouveau).
+
+## NWOG/GER40 DÉPLOYÉ EN PRODUCTION — 2026-09-16 (suite directe, même session)
+
+Esdras : "Oui, implémente le changement et active NWOG/GER40."
+
+**Changement de code** : `CONFIG.nwog.longOnly` (booléen unique, partagé par tous les symboles) remplacé par `CONFIG.nwog.longOnlySymbols` (tableau — les symboles listés restent achat-seul, tout symbole absent de la liste reste bidirectionnel). `liveStrategyEngine.js`/`_processNwogCandidate()` : `cfg.longOnly && !bullish` → `cfg.longOnlySymbols?.includes(symbol) && !bullish`. Changement mécanique, aucune autre logique touchée.
+
+**Config production** (`src/config.js`) :
+```
+nwog: {
+  symbols: ['US100', 'GER40'],
+  rrMultiple: 3,
+  maxHoldingM15Candles: 480,
+  longOnlySymbols: ['US100'],   // GER40 reste bidirectionnel (59/41 validé)
+},
+```
+
+**Tests** : `test/liveStrategyEngine.test.js` — les 2 tests `longOnly` existants adaptés à `longOnlySymbols`, + 1 nouveau test confirmant explicitement le nouveau comportement (un symbole ABSENT de `longOnlySymbols` reste bidirectionnel même quand un AUTRE symbole de la même config est restreint) — c'est la garantie qui manquait avant ce changement. `npm test` : **532/532** (531 + 1 nouveau).
+
+**Vérification end-to-end après le changement** (pas juste les tests unitaires — un script ad hoc, non committé, a rejoué le VRAI `CONFIG.nwog` via `LiveStrategyEngine` sur tout l'historique 17 ans) :
+- NWOG/US100 : 258 trades, **258 achats / 0 vente** (confirmé toujours achat-seul, comme avant ce changement)
+- NWOG/GER40 : 599 trades, **289 achats / 310 ventes** (confirmé bidirectionnel, bien équilibré), taux de gain 32.1%, **+169.00R**
+
+Le chiffre GER40 (599 trades net, +169R) est un peu plus bas que l'estimation isolée précédente (680 trades, +192R, `runNwogBacktest()` sans netting) — différence attendue et RASSURANTE : ce chiffre-ci passe par le VRAI netting de production (une seule position ouverte par symbole à la fois, en compétition avec Weekly Sweep/GER40 déjà live) plutôt qu'une simulation isolée. Reste une contribution nette solide même après ce netting réel.
+
+**Statut : EN PRODUCTION.** GER40 trade maintenant avec 2 mécanismes simultanés (Weekly Sweep + NWOG bidirectionnel), US100/NWOG inchangé (toujours achat-seul). À surveiller dans les prochaines semaines comme tout déploiement récent (Weekly Sweep/GER40 lui-même n'a que quelques jours de vie réelle à ce stade).
+
+`npm test` : 532/532. **Fichiers** : `src/config.js`, `src/liveStrategyEngine.js`, `test/liveStrategyEngine.test.js`.

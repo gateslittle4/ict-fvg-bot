@@ -621,12 +621,16 @@ test('LiveStrategyEngine: netting blocks a second NWOG signal while an earlier N
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
 
-// --- NWOG longOnly (2026-09-15) - Esdras's explicit call after seeing the
-// long/short-direction-split check: the sell side of live NWOG/US100 carries
-// ~0 net edge (-1.70R over 177 trades since 2019, essentially breakeven)
-// while buy carries the entire result - "on active achète seulement".
+// --- NWOG longOnlySymbols (2026-09-15, revised 2026-09-16) - Esdras's
+// explicit call after seeing the long/short-direction-split check: the sell
+// side of live NWOG/US100 carries ~0 net edge (-1.70R over 177 trades since
+// 2019, essentially breakeven) while buy carries the entire result - "on
+// active achète seulement". Was a single `longOnly` boolean applying to
+// every NWOG symbol; became a per-symbol `longOnlySymbols` array once GER40
+// was added as a second NWOG symbol with the OPPOSITE (bidirectional,
+// validated 59/41 buy/sell) setting.
 
-const NWOG_CFG_LONG_ONLY = { ...NWOG_CFG, longOnly: true };
+const NWOG_CFG_LONG_ONLY = { ...NWOG_CFG, longOnlySymbols: ['TEST1'] };
 
 test('LiveStrategyEngine (NWOG longOnly): a bearish gap-fill candidate is blocked with "direction-filtered", never opens a real position', () => {
   const guardrail = permissiveGuardrail();
@@ -665,6 +669,28 @@ test('LiveStrategyEngine (NWOG longOnly): a bullish gap-fill candidate still fir
   assert.equal(entryEvents[0].suggestedSide, 'buy');
   assert.equal(entryEvents[0].blockedReason, null);
   assert.equal(engine.getOpenPosition('TEST1').source, 'nwog', 'the buy side is unaffected by longOnly and opens a real position as usual');
+});
+
+test('LiveStrategyEngine (NWOG longOnlySymbols): a bearish candidate on a symbol NOT listed stays bidirectional (unaffected by another symbol\'s long-only restriction)', () => {
+  const guardrail = permissiveGuardrail();
+  // Same config shape actually deployed in production: US100 long-only,
+  // GER40 bidirectional, both sharing one nwogConfig object.
+  const cfg = { ...NWOG_CFG, symbols: ['TEST1', 'TEST2'], longOnlySymbols: ['TEST1'] };
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1', 'TEST2'], fvgConfig: {}, divergenceConfig: null, nwogConfig: cfg, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100); // prevClose = 100
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5); // gapped UP -> bearish bet
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5);
+
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST2', candle);
+  const entryEvents = engine.ingestCandle('TEST2', c4).filter((e) => e.source === 'nwog');
+
+  assert.equal(entryEvents.length, 1);
+  assert.equal(entryEvents[0].direction, 'bearish');
+  assert.equal(entryEvents[0].blockedReason, null, 'TEST2 is not in longOnlySymbols, so its sell side fires normally');
+  assert.equal(engine.getOpenPosition('TEST2').source, 'nwog');
 });
 
 // --- Judas Swing (ICT London killzone, EURUSD - 2026-09, activated at the

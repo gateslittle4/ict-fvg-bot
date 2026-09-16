@@ -265,8 +265,6 @@ export const CONFIG = {
   // 0.15R (n=224), test 0.34R (n=90, BETTER than train), and confirmed again
   // independently on the 2026 forward-test data (n=30, 0.28R - squarely
   // between train/test, ~10x FVG's own trade count on the same window).
-  // Scoped to US100 ONLY - the other 4 instruments were weaker/rejected on
-  // this same concept, see data/backtest-input/nwog-strategy-analysis.md.
   //
   // Wired into the SAME openPositions/netting/auto-execute path as FVG and
   // Divergence (liveStrategyEngine.js's _processNwogCandidate) - no
@@ -274,19 +272,33 @@ export const CONFIG = {
   // (the weekend gap), so the practical exposure/monitoring burden is low
   // even though there is no manual review step before an order is placed.
   //
-  // longOnly: true (2026-09-15) - the long/short-direction-split check
-  // built this same day for GER40 research, applied retroactively to this
-  // LIVE US100 mechanism: sell trades carry ~0 net edge (177 trades since
-  // 2019, totalR -1.70R, essentially breakeven) while buy carries the
+  // longOnlySymbols: ['US100'] (2026-09-15) - the long/short-direction-split
+  // check built this same day for GER40 research, applied retroactively to
+  // this LIVE US100 mechanism: sell trades carry ~0 net edge (177 trades
+  // since 2019, totalR -1.70R, essentially breakeven) while buy carries the
   // entire result (155 trades, totalR +87.43R, 40.6% WR). Esdras's explicit
   // call ("on active achète seulement, car on a plus de chance de réussir à
   // l'achat que la vente") - not a mechanism change, just stops taking the
   // sell side that was never adding value. See HANDOFF.md for the numbers.
+  //
+  // GER40 (2026-09-16) - added a SECOND NWOG symbol, deliberately NOT in
+  // longOnlySymbols: GER40/NWOG was independently validated BIDIRECTIONAL
+  // (buy/sell split 59/41 - no hidden long bias, unlike US100's genuine
+  // long-only edge above), passing the formal train/test verdict AND
+  // 2-year-block robustness (6/8 positive, no single year >22% of profit) -
+  // see HANDOFF.md "GER40 — vrai spread confirmé... NWOG réhabilité". Held
+  // back at first, deployed alongside Weekly Sweep/GER40 only for
+  // attribution during that mechanism's own initial observation window, not
+  // for a quality reason - confirmed additive on both the 17-year backtest
+  // (+680 trades, +192R, win rate unchanged) and a real 7-month broker
+  // window (+29 trades, +23R, win rate improved) before being enabled here.
+  // Overlap with Weekly Sweep on the same symbol is low (9-14% of the time),
+  // so the two remain largely independent for guardrail/netting purposes.
   nwog: {
-    symbols: ['US100'],
+    symbols: ['US100', 'GER40'],
     rrMultiple: 3, // same convention already validated in src/backtest/nwog.js - not re-tuned here
     maxHoldingM15Candles: 480,
-    longOnly: true,
+    longOnlySymbols: ['US100'],
   },
   // Judas Swing (ICT London killzone PDH/PDL sweep+reclaim) - LIVE,
   // auto-executed (2026-09), at the user's explicit request ("on active
@@ -325,7 +337,11 @@ export const CONFIG = {
   // NWOG was ALSO found credible on GER40 but deliberately NOT deployed
   // alongside this in the same step - Esdras chose to start with one
   // mechanism at a time so a future problem/success can be attributed to
-  // one signal, not two at once.
+  // one signal, not two at once. UPDATE (2026-09-16): that initial
+  // observation window is over and NWOG/GER40 tested additive (see the
+  // `nwog` block above) - now deployed alongside this, still low mutual
+  // overlap (9-14% of the time), so attribution between the two remains
+  // reasonably clear going forward.
   //
   // Scoped to GER40 ONLY - never tested against US100/US500 in a way that
   // survived the same robustness bar (see HANDOFF.md's GER40 sections).
