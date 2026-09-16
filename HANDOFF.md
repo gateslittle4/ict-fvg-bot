@@ -3697,3 +3697,33 @@ Le chiffre GER40 (599 trades net, +169R) est un peu plus bas que l'estimation is
 **Statut : EN PRODUCTION.** GER40 trade maintenant avec 2 mécanismes simultanés (Weekly Sweep + NWOG bidirectionnel), US100/NWOG inchangé (toujours achat-seul). À surveiller dans les prochaines semaines comme tout déploiement récent (Weekly Sweep/GER40 lui-même n'a que quelques jours de vie réelle à ce stade).
 
 `npm test` : 532/532. **Fichiers** : `src/config.js`, `src/liveStrategyEngine.js`, `test/liveStrategyEngine.test.js`.
+
+## Recherche d'un 3e candidat GER40 : Breaker Block réhabilité (spread correct + robustesse), résultat très positif — 2026-09-16
+
+Esdras : "Ensuite check encore d'autre combo ou strategy pour augmenter le nombre de trade." Plutôt qu'une nouvelle paire (rendements décroissants, voir sessions précédentes), repris **Breaker Block/GER40**, laissé en "zone grise" le 2026-09-15 (passait le verdict formel mais vérifié seulement avec le MAUVAIS spread, 1.0 au lieu du 0.5 confirmé depuis par Esdras, et jamais soumis au contrôle de robustesse par blocs de 2 ans qui avait réhabilité NWOG).
+
+**Re-vérifié avec le bon spread (0.5, déjà corrigé dans `transactionCosts.js` depuis le 2026-09-15) + mêmes contrôles que NWOG :**
+
+| Contrôle | Breaker Block/GER40 | Repère (NWOG/GER40) | Repère (Weekly Sweep/GER40) |
+|---|---|---|---|
+| Verdict formel train/test | ✅ tient (train 0.11R n=1250, test **0.17R** n=312 — test meilleur que train) | ✅ tient (0.20R) | ✅ tient (0.24R) |
+| Répartition achat/vente | 60% achat / 40% vente | 59%/41% | 32%/68% |
+| Blocs de 2 ans positifs | **7/8** (seul 2010-2011 négatif) | 6/8 | 6/8 |
+| Meilleure année seule | 34% (2024) | 22% | 16% |
+| Échantillon | **1562 trades** (16 ans) | ~940 | plus petit |
+
+Concentration de la meilleure année un peu plus élevée que les deux autres (34% contre 16-22%), mais RIEN à voir avec les 82-146% qui avaient fait rejeter Asian Range Breakout/Unicorn Model/Asian Range Fade — et l'échantillon est de loin le plus grand des 3 candidats GER40. **Rehabilité selon les mêmes critères qui ont déjà rehabilité NWOG.**
+
+**Test d'ajout au combo actuel (déjà FVG+Divergence+NWOG(US100 achat seul/GER40)+Judas Swing+Weekly Sweep(GER40))** — `scripts/testAddBreakerBlockGer40ToCombo.js` (nouveau) :
+
+| | 17 ans historique | Fenêtre réelle (2026-02→09) |
+|---|---|---|
+| Trades sans Breaker Block | 5377, WR 30.7%, +2414R | 172, WR 33.1%, +79R |
+| Trades AVEC Breaker Block | **6939** (+1562, +29%), WR 30.5%, +2607.11R | **277** (+105, **+61%**), WR 32.1%, +98.17R (+24%) |
+| Chevauchement avec Weekly Sweep/NWOG (même symbole) | 121/1562 (7.7%) | 5/105 (4.8%) |
+
+**Résultat net : le taux de gain du combo reste quasiment inchangé (variation de -0.2 à -1 point) alors que le volume de trades augmente massivement (+29% historique, +61% sur la fenêtre réelle) — exactement "augmenter les trades sans compromettre la qualité".** Chevauchement minimal avec les 2 autres mécanismes GER40 déjà live. Confirmé sur DEUX fenêtres indépendantes qui s'accordent (comme NWOG, contrairement à la cible dynamique US100).
+
+**Pas encore déployé — contrairement à NWOG/GER40, Breaker Block n'a AUCUN câblage dans `liveStrategyEngine.js`** (existe uniquement comme script de backtest, `src/backtest/breakerBlock.js`). Le déployer demanderait d'écrire un vrai module `_processBreakerBlockCandidate()` (même chemin `openPositions`/netting/auto-exécution que les autres), pas juste un changement de config — un chantier plus proche de l'ajout initial de Weekly Sweep/NWOG que du fix `longOnlySymbols` de tout à l'heure. Décision d'implémenter laissée à Esdras.
+
+`npm test` : 532/532 (aucun fichier de production modifié — recherche uniquement). **Fichiers** : `scripts/testAddBreakerBlockGer40ToCombo.js` (nouveau).
