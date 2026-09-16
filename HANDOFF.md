@@ -3463,4 +3463,14 @@ Même chantier que US100 ci-dessus, immédiatement après : Esdras a uploadé 9 
 
 `npm test` : 531/531 (inchangé).
 
-**Fichiers** : `data/backtest-input/US500.csv` (étendu). Avec US100 (entrée précédente), il ne reste plus que XAUUSD (démarre 2018, pas 2010) parmi les 5 symboles réels avec un historique plus court que les autres, si Esdras veut continuer l'extension.
+**Fichiers** : `data/backtest-input/US500.csv` (étendu).
+
+## XAUUSD étendu à 16+ ans d'historique (2009-2025) — 2026-09-16
+
+Troisième et dernier symbole de cette série (après US100/US500 ci-dessus) : Esdras a uploadé 9 fichiers HistData.com M1 `XAUUSD` (2009-2017, un an de plus que les deux précédents). Même méthode exacte : 3 093 575 bougies M1 → 210 229 bougies M15 (2009-03-15 → 2017-12-29), fusionnées avec les 162 431 bougies existantes (2018-2025) sans chevauchement ni doublon. **`XAUUSD.csv` couvre maintenant 2009-03-15 → 2025-12-31 (372 660 bougies)** — le plus long historique des 5 symboles réels.
+
+`npm test` : 531/531 (inchangé).
+
+**Bilan des 5 symboles réels après cette série de 3 extensions** : US100/US500 démarrent 2010-11-14, XAUUSD 2009-03-15, GER40 déjà à 2010 (session antérieure), seul EURUSD reste borné à 2018-01-01 (le plus court des 5) — à étendre si Esdras trouve/upload des fichiers HistData EURUSD M1 pré-2018.
+
+**Fichiers** : `data/backtest-input/XAUUSD.csv` (étendu).
