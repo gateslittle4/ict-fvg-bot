@@ -1436,38 +1436,43 @@ export class CTraderDataSource {
    * entry/stop/target this engine would otherwise only have alerted a human
    * with. Nothing is recomputed or "improved" here versus the manual path.
    *
-   * ALL sources use a LIMIT order at their own `entryPrice` (2026-09-16,
-   * Esdras explicit: "tous les trades vont etre passe par limit order").
-   * Previously only FVG did (see below); Divergence/NWOG/Judas
-   * Swing/Weekly Sweep/Breaker Block used MARKET, chasing whatever price
-   * had drifted to by the time the order reached the broker - see the note
-   * on execution-quality gap this replaces, kept below for context. A
-   * LIMIT order at the exact `entryPrice` these mechanisms were VALIDATED
-   * against (every backtest in this project assumes a fill AT that price,
-   * never a worse chased one) is actually MORE faithful to the backtested
-   * edge, not less - the tradeoff is fill rate, not fill quality: a signal
-   * whose price never returns to `entryPrice` within its expiration window
-   * simply doesn't fill (same as a human who never got a chance to click
-   * Buy/Sell at the intended level), rather than being forced through at a
-   * worse price. No signal source's backtest ever modeled a "chase" fill,
-   * so this can only ever remove trades taken at prices worse than
-   * validated, never change the profile of the ones that DO fill.
-   *
-   * Two expiration windows, per how long an `entryPrice` plausibly stays
-   * meaningful for that source:
-   *   - FVG: entryPrice is the gap's own edge, a level 'validated' only
-   *     fires once price has ALREADY touched once (fvgEngine.js) - the
-   *     zone itself stays a valid retest target for its full
-   *     CONFIG.fvg.maxAgeCandles lifetime (see FVG_LIMIT_EXPIRY_CANDLES
-   *     below), so the resting order gets that same long a window.
+   * Order type follows how each source actually defines its entry price
+   * (see liveStrategyEngine.js _detectFvgSignal/_detectDivergenceSignal/
+   * _processNwogCandidate):
+   *   - FVG: entryPrice is the gap's own edge, a level price has ALREADY
+   *     touched by the time 'validated' fires this candle - a LIMIT order
+   *     there is the faithful automation of "place a limit at this level
+   *     and see if it fills again", not a chase at a worse price. Given a
+   *     short expiration so a stale unfilled limit doesn't linger forever
+   *     if price never returns (same outcome as a human who never got
+   *     filled - not a new gap, see the "believed netting" caveat above).
    *   - Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block: entryPrice
-   *     IS candle.open of the specific M15 candle whose signal JUST fired -
-   *     there is no "zone" that stays valid for hours the way an FVG gap
-   *     does, so a short window (NON_FVG_LIMIT_EXPIRY_CANDLES below) is
-   *     used instead: if price hasn't returned to that exact bar's open
-   *     within a few candles, the setup has moved on and the order should
-   *     stop resting rather than fill at a price no longer representative
-   *     of the original signal.
+   *     IS candle.open of the very candle whose spot event we're
+   *     processing right now - a MARKET order is the direct equivalent,
+   *     not an approximation. Known, accepted gap: the live spot event
+   *     carrying a completed trendbar only arrives once that M15 candle
+   *     has CLOSED, so the MARKET order is submitted with price already
+   *     having moved away from `entryPrice` by however much it drifted
+   *     during those 15 minutes - especially relevant right after a
+   *     weekend gap, when volatility is elevated.
+   *
+   * TRIED AND REVERTED (2026-09-16, same day): briefly switched every
+   * source to LIMIT at entryPrice ("tous les trades vont etre passe par
+   * limit order") for better backtest fidelity - reverted within the hour
+   * after Esdras identified a real risk this introduced: a resting LIMIT
+   * order's FILL moment is uncontrolled (it fires whenever price later
+   * touches the level, up to NON_FVG_LIMIT_EXPIRY_CANDLES away), unlike a
+   * MARKET order which fires at a moment the bot itself chooses. FTMO's
+   * own EA policy forbids trading within 2 minutes of major news - no live
+   * news-blackout filter exists in this bot yet (src/backtest/
+   * newsEvents.js/runNewsBlackoutAnalysis.js are backtest-only research,
+   * never wired into LiveStrategyEngine or here), so until one exists,
+   * MARKET's near-zero exposure window (the instant it's sent) is safer
+   * than LIMIT's long resting window, which is also disproportionately
+   * likely to get touched BY a news-driven price spike specifically. FVG
+   * stays LIMIT - the oldest, most-proven mechanism here, unaffected by
+   * this reasoning since it was never changed either way. See HANDOFF.md
+   * for the full back-and-forth.
    */
   async _handleAutoExecuteEntry(symbolName, symbolId, signal) {
     const store = this.account;
@@ -1513,14 +1518,6 @@ export class CTraderDataSource {
       // - see HANDOFF.md), but it removes the dominant known cause of
       // missed fills without touching entry price, stop, or target.
       const FVG_LIMIT_EXPIRY_CANDLES = CONFIG.fvg.maxAgeCandles;
-      // Short window for every non-FVG source (2026-09-16) - see the doc
-      // comment above for why these entryPrices go stale much faster than
-      // an FVG zone. 4 candles chosen deliberately as a first, conservative
-      // default (not backtested per-source - no live fill-rate history
-      // exists yet for this order type on these sources) - revisit if
-      // orderOutcomeLog shows a real missed fill the way FVG's original
-      // 4-candle default once did (see HANDOFF.md).
-      const NON_FVG_LIMIT_EXPIRY_CANDLES = 4;
       // 2026-09-13: was a hardcoded `* 15 * 60 * 1000` (assumed every symbol
       // is on M15) - now resolves the SAME per-symbol timeframe
       // _subscribeLiveCandles() actually subscribed this symbol on, so
@@ -1531,16 +1528,16 @@ export class CTraderDataSource {
       // before - CANDLE_DURATION_MS only changes the constant multiplied in.
       const candleDurationMs = TIMEFRAME_DURATION_MS[resolveSymbolTimeframe(symbolName)] || TIMEFRAME_DURATION_MS.M15;
       const lastCandle = store.lastCandleBySymbol.get(symbolName);
-      const expiryCandles = isFvg ? FVG_LIMIT_EXPIRY_CANDLES : NON_FVG_LIMIT_EXPIRY_CANDLES;
-      const expirationTimestamp = lastCandle ? lastCandle.time + expiryCandles * candleDurationMs : undefined;
+      const expirationTimestamp =
+        isFvg && lastCandle ? lastCandle.time + FVG_LIMIT_EXPIRY_CANDLES * candleDurationMs : undefined;
 
       const brokerOrderId = await this._submitOrder({
         symbolId,
-        orderType: 'LIMIT',
+        orderType: isFvg ? 'LIMIT' : 'MARKET',
         tradeSide: signal.suggestedSide.toUpperCase(),
         lots: sizing.lots,
         symbolSpec: spec,
-        price: signal.entryPrice,
+        price: isFvg ? signal.entryPrice : undefined,
         stopLoss: signal.stopPrice,
         takeProfit: signal.targetPrice,
         // Source in the label so it's identifiable directly in cTrader's own
