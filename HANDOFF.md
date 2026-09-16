@@ -3909,3 +3909,28 @@ Contrairement à US100/US500 (où pyramidage + risque réduit égalait quasiment
 `npm test` : inchangé (aucun code de production touché, recherche uniquement).
 
 **Fichiers** : aucun commité — scripts d'exploration dans le scratchpad de session (mêmes patterns que `runDivergenceStrategyAnalysis.js`/`runDivergenceEurGbpStrategyAnalysis.js` pour la partie Divergence, `runPyramidIndependentAccountImpact.js` pour la partie pyramide — à recréer si besoin de refaire ces tests précis).
+
+## Cible étendue (1:3→1:5) activée sur NWOG, Weekly Sweep, Breaker Block — et USDJPY/FVG trouvé comme vrai candidat en attente — 2026-09-16
+
+Trois pistes demandées ("les trois") après les deux rejets précédents : cible étendue sur les mécanismes GER40 + Judas Swing/EURUSD + NWOG/US100, et FVG (le mécanisme principal, jamais testé) sur USDJPY/USDCAD.
+
+**Cible étendue — même méthode déjà utilisée pour FVG sur US100/US500/XAUUSD (voir "Cible étendue (1:4/1:5)" plus haut dans ce fichier), appliquée aux mécanismes non-FVG** :
+
+| Mécanisme | 1:3 (train/test) | 1:5 (train/test) | Décision |
+|---|---|---|---|
+| NWOG/GER40 | 0.14R / 0.53R | 0.21R / 0.92R | ✅ **Activé** |
+| NWOG/US100 | 0.25R / 1.06R | 0.37R / 1.48R | ✅ **Activé** (drawdown en BAISSE : 19.53R→14.54R train) |
+| Weekly Sweep/GER40 | 0.23R / 0.29R | 0.36R / 0.31R | ✅ **Activé** |
+| Weekly Sweep/US500 | 0.08R / 0.16R | 0.20R / 0.42R | ✅ **Activé** (vérifié séparément - `rrMultiple` est PARTAGÉ entre GER40 et US500 dans ce bloc de config, donc les deux symboles devaient être validés avant de toucher la valeur commune) |
+| Breaker Block/GER40 | 0.11R / 0.17R | 0.12R / 0.25R | ✅ **Activé** (gain le plus modeste des 3, mais net positif) |
+| Judas Swing/EURUSD | 0.03R / 0.18R | 0.02R / 0.45R | ❌ **PAS activé** — pas monotone (1:4 négatif en train), drawdown double (38R→82R) pour un gain d'espérance quasi nul en train |
+
+**Activé dans `config.js`** : `nwog.rrMultiple` 3→5 (US100+GER40), `weeklySweep.rrMultiple` 3→5 (GER40+US500), `breakerBlock.rrMultiple` 3→5 (GER40). `npm test` : 534/534.
+
+**FVG sur USDJPY/USDCAD** (réutilisé `scripts/runTrainTestValidation.js` tel quel, jamais lancé sur ces 2 symboles avec la grille complète 168 configs) :
+- **USDCAD** : rejeté net, tous les top-5 négatifs en test.
+- **USDJPY** : **candidat robuste trouvé** — `H1_EMA50 / fvg-edge / 1:3, structure ON, session ON` : train 0.10R/1012 trades, test 0.10R/378 trades (quasi identique, très stable). Vérifié sur 4 découpages différents (2021/2022/2023/2024, toujours positif des deux côtés) et **10 années sur 10 positives** (2016-2025), 1395 trades, +804.75R au total. **PAS activé** — contrairement aux extensions ci-dessus (juste un paramètre changé sur un mécanisme déjà en prod), ajouter USDJPY est un NOUVEAU symbole entier : il faudrait l'ajouter à `symbols`/`fvg.perSymbol` dans `config.js`, confirmer le vrai spread broker (`DEFAULT_SPREADS.USDJPY` est encore une estimation "INDICATIVE, verify against FundingPips cTrader spec", jamais confirmée par un screenshot broker comme EURUSD/GBPUSD/GER40/US100/US500 l'ont été), et connecter le symbole chez cTrader en production. Décision plus lourde, laissée en attente pour une session dédiée.
+
+`npm test` : 534/534 (config uniquement, aucun nouveau code).
+
+**Fichiers** : `src/config.js` (`nwog.rrMultiple`, `weeklySweep.rrMultiple`, `breakerBlock.rrMultiple` tous 3→5, commentaires complets ajoutés). Scripts de vérification restés en scratchpad de session, non commités.
