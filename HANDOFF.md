@@ -3578,3 +3578,37 @@ Amélioration sur TOUS les indicateurs, sur TRAIN ET TEST à la fois (taux de ga
 `npm test` : 531/531 (aucun fichier de production existant modifié — nouveau fichier `src/backtest/dynamicLiquidityTarget.js` uniquement, rien branché dans `config.js`/`liveStrategyEngine.js`).
 
 **Fichiers** : `src/backtest/dynamicLiquidityTarget.js` (nouveau), `scripts/runDynamicLiquidityTargetAnalysis.js` (nouveau).
+
+## Cible dynamique étendue à US500/XAUUSD, puis test du combo complet sur 7 mois — 2026-09-16 (suite directe)
+
+Esdras : "Teste aussi sur US500/XAUUSD, et fais le forward test aussi. Ensuite teste le nouveau système de combo pour les 7 derniers mois."
+
+**US500/XAUUSD : résultat NÉGATIF/mitigé — contrairement à US100.** `scripts/runDynamicLiquidityTargetAnalysis.js` étendu aux 3 symboles (même config production copiée de `config.js` pour chacun), résultat :
+
+| Symbole | Train (R moyen fixe → dynamique) | Test (R moyen fixe → dynamique) | RR moyen réellement utilisé |
+|---|---|---|---|
+| US100 | 0.77R → **0.88R** (+0.109R) | 1.11R → **1.27R** (+0.165R) | 4.25-4.79 (proche du 1:5 fixe) |
+| US500 | 0.71R → 0.50R (**-0.213R**) | 1.29R → 1.14R (**-0.146R**) | 3.84-4.06 |
+| XAUUSD | 0.17R → 0.05R (**-0.124R**) | 0.46R → 0.47R (quasi nul, +0.012R) | 2.23-2.24 (bien en dessous du 1:4 fixe) |
+
+**Explication** : le taux de gain monte bien sur les 3 symboles (logique, mécanique), mais sur US500/XAUUSD le RR réellement capturé par la liquidité la plus proche est systématiquement PLUS BAS que le multiple fixe actuel (surtout XAUUSD : ~2.2 contre 4 fixe) — plus de gains, mais chacun vaut moins, et le résultat net perd au change. Seul US100 a des pools de liquidité naturellement assez loin (H4/EMA200, tendance plus établie) pour que le compromis reste gagnant. **Conclusion honnête : la cible dynamique n'est PAS un principe universel qui améliore tout — elle est spécifiquement bonne sur US100, mauvaise/neutre ailleurs.** Ne pas généraliser à tous les symboles.
+
+**"Forward test"** : la méthodologie déjà utilisée (train < 2024-01-01 / test >= 2024-01-01, jamais retouchée après avoir vu le résultat) EST le forward-test au sens de ce projet (`src/backtest/forwardTest.js` fait exactly ça : "split historical candles at a cutoff date, replay strategy before/after, compare" — même principe, ici appliqué symbole par symbole plutôt qu'au combo complet). Aucune fenêtre supplémentaire nécessaire au-delà de ce qui précède.
+
+**Nouveau système de combo testé sur les 7 derniers mois** (`scripts/testNewComboWithDynamicTarget.js`) — **⚠️ précision importante : ce sandbox n'a AUCUNE connexion broker réelle (pas de credentials cTrader configurés ici)**, donc "les 7 derniers mois" signifie les 7 derniers mois CALENDAIRES de l'historique CSV disponible (2025-06-01 → 2025-12-31, le CSV s'arrêtant à cette date), PAS les 7 derniers mois de trading réel en production. Rejoue le combo complet (5 mécanismes) en gardant TOUT identique à la production SAUF US100/FVG, dont la cible passe de fixe 1:5 à dynamique (liquidité) — seul le mécanisme validé positif ci-dessus est modifié, US500/XAUUSD/EURUSD/GER40/Divergence/NWOG/Judas Swing/Weekly Sweep restent inchangés.
+
+**Résultat sur la fenêtre (juin-décembre 2025, 232-234 trades)** :
+
+| | Combo production (US100 fixe) | Combo nouveau (US100 dynamique) |
+|---|---|---|
+| Trades | 232 | 234 |
+| Taux de gain | 37.8% | 37.9% |
+| Total R | +205.00R | **+213.89R** (+8.89R, ~+4%) |
+
+Amélioration modeste mais cohérente au niveau du combo entier (dilué par les 4 autres mécanismes inchangés qui pèsent pour ~47R sur les ~205-213R totaux). Détail mois par mois (reset $10,000, cible +10%) : gains marginaux sur juin/juillet/août/septembre (ex. juillet : 18j→15j pour atteindre la cible, +20R→+22.76R), quasi identique en octobre, légèrement plus lent en novembre/décembre (28j au lieu de 23j en novembre) — pas d'amélioration uniforme mois par mois, mais positif sur l'ensemble de la fenêtre.
+
+**Statut** : toujours recherche uniquement, `config.js` non modifié. Si Esdras veut avancer vers la production : ne changer QUE `fvg.perSymbol.US100` (ajouter la logique de cible dynamique dans `liveStrategyEngine.js`/`_buildFvgEngine`, actuellement seulement dans `backtestEngine.js`/scripts de recherche), garder US500/XAUUSD sur leur cible fixe actuelle.
+
+`npm test` : 531/531 (aucun fichier de production modifié).
+
+**Fichiers** : `scripts/runDynamicLiquidityTargetAnalysis.js` (étendu à US500/XAUUSD), `scripts/testNewComboWithDynamicTarget.js` (nouveau).
