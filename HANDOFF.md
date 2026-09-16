@@ -3752,3 +3752,31 @@ Esdras : "Oui, implémente le mécanisme et active Breaker Block/GER40."
 **Statut : EN PRODUCTION.** GER40 trade maintenant avec 3 mécanismes simultanés (Weekly Sweep + NWOG bidirectionnel + Breaker Block bidirectionnel). US100/US500/XAUUSD/EURUSD inchangés. À surveiller de près dans les prochaines semaines — c'est le mécanisme le plus récent des 3 sur GER40 et celui qui ajoute le plus de volume de trades d'un coup.
 
 `npm test` : 534/534. **Fichiers** : `src/backtest/breakerBlock.js`, `src/liveStrategyEngine.js`, `src/config.js`, `src/accountRuntime.js`, `scripts/buildBacktestSummary.js`, `data/backtest-summary.json`, `test/liveStrategyEngine.test.js`.
+
+## Suite de la recherche : Breaker Block sur US100 rejeté (piège haussier), mais FVG multi-contact sur US500/XAUUSD — le meilleur candidat trouvé cette session — 2026-09-16 (autorisation explicite d'Esdras : "cherche encore plus de possibilité")
+
+**Piste 1, rejetée : Breaker Block étendu à US100.** Il passe aussi le verdict formel (train 0.03R, test 0.14R n=1566/313), mais les mêmes contrôles qui ont validé GER40 le démasquent : **91% du profit vient des achats** (9% seulement des ventes — piège de biais haussier classique, même signature qu'Asian Range Breakout), et **65% du profit net vient d'une seule année (2022)**, seulement 5/8 blocs de 2 ans positifs. US500/EURUSD encore plus faibles (R négatif net). **Ne généralise PAS depuis GER40** — confirme que GER40 est un cas vraiment particulier, pas une preuve que Breaker Block marche "partout".
+
+**Piste 2, très prometteuse : FVG multi-contact étendu à US500/XAUUSD.** Validé sur US100 depuis longtemps (déjà en production), mais JAMAIS testé avec la même rigueur sur US500/XAUUSD (`fvg.perSymbol.US100.multiTouch` comment: "US500/XAUUSD restent en single-touch, jamais validés avec la même rigueur"). Rapport `data/backtest-input/fvg-multi-touch-analysis.md` regénéré avec les données actuelles (historique 17 ans, spreads corrigés) :
+
+| Symbole | Contact unique (n / WR / R total) | Multi-contact (n / WR / R total) | Robustesse (achat/vente, blocs 2 ans) |
+|---|---|---|---|
+| **US500** | 183 / 31.8% / +147.61R | **433 / 31.9% / +336.59R** | 58%/42%, **8/8 blocs positifs**, meilleure année 15% |
+| XAUUSD | 564 / 24.5% / +117.16R | 1159 / 23.5% / +122.66R | 41%/59%, 7/9 blocs positifs, meilleure année 24% |
+
+**US500 est le meilleur candidat trouvé dans TOUTE cette session** : +137% de trades, taux de gain QUASI IDENTIQUE (31.8%→31.9%, pas de dégradation), R total qui **plus que double** (+147.61R → +336.59R), et le profil de robustesse le plus propre vu jusqu'ici — 8 blocs de 2 ans sur 8 positifs (aucun autre candidat, y compris NWOG/Weekly Sweep/Breaker Block sur GER40, n'a fait mieux que 7/8 ou 6/8), achat/vente bien équilibré, concentration annuelle la plus faible (15%, contre 16-34% pour les 3 candidats GER40).
+
+XAUUSD est plus faible : +105% de trades mais seulement +4.7% de R total (l'edge XAUUSD de base est déjà mince, doubler le volume double surtout le bruit autour d'un edge fin) — passe quand même les contrôles de robustesse, mais le gain est marginal.
+
+**⚠️ Vérification sur les données réelles (2026-02→09, leçon retenue après la cible dynamique US100 qui s'était contredite entre historique et réel) — résultat NUANCÉ, échantillons minuscules :**
+
+| Symbole | Contact unique réel | Multi-contact réel |
+|---|---|---|
+| US500 | n=4, WR 75%, +13.58R | n=13, WR 30.8%, +10.19R |
+| XAUUSD | n=10, WR 10%, -5.18R | n=34, WR 12.1%, -13.64R |
+
+US500 : le contact unique montre 75% de réussite sur seulement 4 trades (bruit statistique pur, très au-dessus du 32% attendu - pas un signal fiable), le multi-contact retombe à 30.8% sur 13 trades, proche de l'attendu historique (31.9%), mais avec MOINS de R total sur cette fenêtre précise (10.19R contre 13.58R) - échantillon bien trop petit pour trancher dans un sens ou l'autre. XAUUSD : les DEUX configs sont perdantes sur cette fenêtre réelle (le marché XAUUSD a globalement été difficile pour FVG récemment, pas spécifique au multi-contact), le multi-contact perd plus en absolu mais avec 3x plus de trades.
+
+**Conclusion honnête** : US500 reste le candidat le plus solide de cette session sur la robustesse historique (8/8 blocs, quasi 17 ans de données, +128% de R), mais comme pour la cible dynamique, l'échantillon réel récent ne le confirme pas encore (trop petit, n=4 vs n=13, pour être concluant dans un sens ou l'autre - contrairement à la cible dynamique où le réel CONTREDISAIT clairement l'historique avec un échantillon plus solide). XAUUSD est plus faible sur toute la ligne (gain marginal historique + négatif réel) - je ne recommande pas de l'activer. **Décision sur US500 laissée à Esdras** : soit activer maintenant sur la force de la robustesse historique exceptionnelle, soit attendre plus de données réelles avant de trancher (même logique que la cible dynamique, qui reste en observation).
+
+`npm test` : 534/534 (aucun fichier de production modifié — recherche uniquement, seul `data/backtest-input/fvg-multi-touch-analysis.md` régénéré avec les données/config actuelles). **Fichiers** : `data/backtest-input/fvg-multi-touch-analysis.md` (régénéré).
