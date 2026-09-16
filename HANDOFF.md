@@ -4059,3 +4059,60 @@ Esdras, en relisant le changement ci-dessus : "Attend, tu viens pas de coder lim
 **Reste en attente, pas construit** : un vrai garde-fou live anti-news (surveiller un calendrier à venir, bloquer/annuler les ordres ±2min autour d'un événement majeur) — discussion explicitement reportée par Esdras ("On parle apres du news") à une prochaine étape de cette même session ou une suivante.
 
 `npm test` : 534/534 (inchangé). **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js` (revert des mêmes fichiers que l'entrée précédente).
+
+## 🚨 Trois bugs réels trouvés en production — solde jamais lu, volume d'ordre 100 000× trop grand, BTCUSD retiré — 2026-09-16
+
+Session partie d'une question simple d'Esdras ("pourquoi les soldes sont différents cTrader vs le bot ?") qui a déroulé trois problèmes sérieux, dont un qui aurait pu détruire un compte réel.
+
+### 1. Le solde n'avait JAMAIS été lu depuis le courtier
+
+Esdras a comparé son app cTrader ($10 942,99) au dashboard ($9 972,06). Ce n'était pas un autre compte : `_loadBalance()` testait `typeof rawBalance === 'number'`, mais `ProtoOATrader.balance` est un **int64, que ce courtier sérialise en STRING** — le piège déjà documenté dans `dealPairing.js`. La condition était donc **toujours fausse**, `setBalance()` n'a jamais été appelé une seule fois, et le bot gardait le placeholder codé en dur `10000` de `accountRuntime.js`, en y soustrayant seulement les P&L qu'il voyait passer. Preuve arithmétique : `10000 − 27,94` (le seul trade clôturé de la session) `= 9972,06`, exactement l'affichage. **Le calcul de taille de position lit ce même solde** — chaque ordre était dimensionné sur un chiffre fictif.
+
+Corrigé par `parseBrokerMoney()` (helper pur exporté, gère string et number, renvoie `null` et jamais un `0` trompeur — `Number(null)` et `Number('')` valent tous deux `0` et sont "finis", piège attrapé par son propre test avant livraison). Le solde après clôture vient désormais du champ `balance` que le courtier renvoie lui-même dans `closePositionDetail`, au lieu d'une accumulation qui dérive sur les swaps, commissions, trades manuels et toute clôture survenue pendant un redémarrage. Ajout d'un **rafraîchissement toutes les 5 minutes** (vérifié dans les logs) pour rattraper dépôts/retraits.
+
+### 2. Le volume des ordres était jusqu'à 100 000× trop grand — LE bug dangereux
+
+`_submitOrder` calculait `lots * (symbolSpec.lotSize || 100000) * 100`, et **aucune spec de `lotCalculator.js` n'a jamais défini de `lotSize`** — donc tous les ordres utilisaient la constante forex codée en dur, multipliée par un ×100 supplémentaire que le `lotSize` de cTrader **contient déjà**.
+
+Mesuré contre les vraies réponses `ProtoOASymbolByIdReq` des 5 symboles :
+
+| Symbole | lotSize réel | Valeur utilisée | Erreur |
+|---|---|---|---|
+| US100 / US500 / GER40 | 100 | 10 000 000 | **100 000×** |
+| XAUUSD | 10 000 | 10 000 000 | **1 000×** |
+| EURUSD | 10 000 000 | 10 000 000 | juste, par pure coïncidence |
+
+Sur un ordre réel à 0,3 % de risque : US100/US500/GER40 envoyaient des volumes de 800 000 à 6 500 000 contre un `maxVolume` de 20 000 — **rejetés d'office**, ce qui explique qu'aucun de ces symboles n'aurait jamais pu trader. **XAUUSD est le cas dangereux** : son volume erroné (100 000) passe SOUS son `maxVolume` de 200 000, donc il aurait été **accepté** et aurait ouvert **10 lots d'or au lieu de 0,01** — environ 4,3 M$ de notionnel sur un compte de 10 900 $.
+
+Le bug a survécu parce que la formule est exactement juste pour le forex (EURUSD), et parce que le seul symbole qui ait jamais réellement tradé, BTCUSD, posait `rawVolume: true` pour contourner ce chemin entièrement.
+
+Corrigé par `buildSpecFromBrokerSymbol()` : les specs viennent maintenant du courtier au démarrage, `min/step/maxVolume` sont convertis des unités brutes vers des lots. **Le contre-test qui verrouille le modèle** : cinq symboles dont le `lotSize` va de 100 à 10 000 000 tombent tous sur exactement 0,01 lot minimum — le standard cTrader. `_submitOrder` utilise désormais `lots * lotSize` et **lève une exception plutôt que de deviner** si aucun `lotSize` confirmé n'est disponible : échouer bruyamment sur un ordre vaut mieux que d'en placer un mal dimensionné en silence.
+
+Effet secondaire utile : les vraies bornes remplacent les placeholders. Le minimum réel d'US100 est 0,01 lot, pas 0,1 — l'ancienne valeur arrondissait les petites positions vers le haut, jusqu'à 33 % au-dessus du risque voulu.
+
+**Reste approximatif, documenté** : le côté « valeur » (`pointSize`, `valuePerPointPerLot`) vient toujours des placeholders. Il se vérifie contre les lotSize confirmés pour US100/US500/XAUUSD/EURUSD, mais **GER40 reste faux d'environ 15 %** : son lot vaut 1 unité d'indice, donc sa valeur de 1 est en réalité 1 EUR, pas 1 USD, sur un compte en dollars. Les specs annoncent `volumeVerified`, jamais `verified`.
+
+### 3. BTCUSD retiré
+
+Entré le 2026-09-13 comme test de connectivité week-end ("on va supprimer BTC juste après"), resté trois jours. Il a largement payé sa place — c'est lui qui a révélé le bug du `orderId` null, celui du reset journalier du garde-fou, la faille des croyances périmées, et le bug de solde ci-dessus. Mais ce n'était pas une stratégie validée (FVG brut en M1, aucun filtre, aucun split train/test) et son bilan réel était de **9,5 % de réussite sur 21 trades, −2,12R**. Quand le vrai sizing au risque a remplacé sa taille minimale forcée, les mêmes trades perdants sont passés de quelques centimes à **20–28 $ pièce** — environ −66 $ en deux heures. Retiré à la demande explicite d'Esdras.
+
+Retirés : l'entrée `symbols`, `fvg.perSymbol.BTCUSD` (avec son override M1), `DEFAULT_SPREADS.BTCUSD`, la spec de lot, le bouton du graphique. **Gardés délibérément** : `priceDecimals('BTCUSD')` dans les trois dashboards (le journal affiche toujours ses trades historiques), les mesures de recherche en commentaire là où les valeurs vivaient (spread de 18 mesuré sur 34 ticks réels, spec de contrat dérivée de deux vrais fills), la branche `rawVolume` de `_submitOrder` (inerte pour tout symbole sans ce flag), et le défaut BTCUSD de `/admin/test-order-cycle` (il résout les symboles depuis la liste complète du courtier, pas `CONFIG.symbols`).
+
+Une position BTCUSD était ouverte au moment du retrait (0,39 BTC vendeuse), protégée par un stop et une cible **côté courtier** — elle se ferme sur son propre bracket, risque borné à ~21 $. Seul effet : son P&L flottant s'affiche vide, le bot ne recevant plus ses prix.
+
+### Divers
+
+- `guardrails.maxTradesPerDay` remis à **3** (choix d'Esdras). Il avait dérivé à 20 le 2026-09-14 pour observer quelques trades, jamais reverté ; sans BTCUSD — qui générait 21 des 21 trades réels — un plafond de 20 ne contraignait plus rien.
+- **Vrai trou de visibilité trouvé au passage** : GER40 et BTCUSD n'avaient **aucun bouton** dans le sélecteur de `chart.html` alors que le bot les tradait — impossible d'afficher leur graphique. Même oubli que celui déjà documenté pour EURUSD. Et `priceDecimals()` (dupliqué dans les 3 pages) les faisait tomber dans le défaut forex à 5 décimales.
+- Un trade GER40 de 12 secondes signalé par Esdras s'est avéré être **son propre clic manuel** (`source: null`, aucun log `_submitOrder` correspondant), pas le bot.
+- **Le compte `cti-freetrial` (Match-Trader) ne s'est jamais connecté** : HTTP 403 Cloudflare ("Just a moment...") à chaque démarrage, bascule systématique en mode démo simulé. Son solde affiché n'est pas réel. Non corrigé — contourner une protection anti-bot d'un courtier n'est pas une bonne idée ; probable expiration des identifiants du free trial. À trancher : réparer ou retirer le compte.
+
+### État réel vis-à-vis de la production
+
+**Toujours PAS prêt pour de l'argent réel**, malgré ces corrections. Ce qui bloque encore :
+
+1. **Zéro trade réel des 5 mécanismes validés.** Les 20 trades clôturés de l'historique sont tous du BTCUSD. FVG sur les vrais symboles, Divergence, NWOG, Judas Swing, Weekly Sweep, Breaker Block : aucun n'a jamais produit un seul trade réel. Tout ce qui les valide est du backtest. Et on sait maintenant pourquoi côté technique : leurs ordres auraient été rejetés (ou catastrophiques pour XAUUSD).
+2. **Le côté « valeur » des specs reste non vérifié**, GER40 en particulier (~15 % d'écart connu). La méthode pour le confirmer est établie et a fonctionné pour BTCUSD : comparer la distance en points d'un vrai fill à son P&L réalisé. Elle demande un vrai trade par symbole.
+3. Le compte tourne en **démo** (`isDemo: true`) — rien n'est en risque aujourd'hui, ce qui est la bonne place pour laisser tourner le forward-test.
+
+L'infrastructure, elle, est solide et vérifiée en live : connexion/reconnexion, warm-up, netting, garde-fous, reset journalier, nettoyage des croyances périmées, synchronisation du solde, et maintenant le dimensionnement des ordres. `npm test` : **549/549**.
