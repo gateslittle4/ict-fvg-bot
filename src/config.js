@@ -350,6 +350,41 @@ export const CONFIG = {
     rrMultiple: 3, // same convention already validated in src/backtest/weeklyLiquiditySweep.js - not re-tuned here
     maxHoldingM15Candles: 480,
   },
+  // Breaker Block (ICT failed Order Block, retested from the flipped side) -
+  // LIVE, auto-executed (2026-09-16), GER40. Left in a "zone grise" earlier
+  // this project (passed the formal train/test verdict but was only ever
+  // checked with the WRONG spread, 1.0, and never got the same 2-year-block
+  // robustness pass as NWOG/Weekly Sweep) - re-verified with the real 0.5
+  // spread (confirmed by Esdras's own cTrader screenshot, same value already
+  // used for weeklySweep/nwog above) and the SAME checks: 60% buy / 40%
+  // sell (balanced, not a hidden long-bias trap like Asian Range Breakout/
+  // Unicorn Model/Asian Range Fade), 7/8 two-year blocks positive (only
+  // 2010-2011 negative), best single year (2024) 34% of net profit (higher
+  // than NWOG's 22%/Weekly Sweep's 16%, but nowhere near the 82-146% that
+  // sank the rejected candidates), and by far the largest sample of the 3
+  // GER40 candidates (1562 trades over 16 years, +193.11R). Tested additive
+  // on top of the already-live Weekly Sweep + NWOG on this same symbol: 17-
+  // year backtest +1562 trades/+29% volume/+193R with win rate essentially
+  // unchanged (30.7%->30.5%), and a real 7-month broker window +105 trades/
+  // +61% volume/+19.17R with win rate essentially unchanged (33.1%->32.1%) -
+  // see HANDOFF.md "Recherche d'un 3e candidat GER40" and "Breaker Block
+  // implémenté et activé". Overlap with the other 2 GER40 mechanisms is low
+  // (7.7% historically, 4.8% real).
+  //
+  // Wired into the SAME openPositions/netting/auto-execute path as every
+  // other live source (liveStrategyEngine.js's
+  // _processBreakerBlockCandidate) - no special-cased position tracking. No
+  // direction filter (unlike US100/NWOG) - GER40/Breaker Block's edge is
+  // genuinely bidirectional, not a long-bias artifact.
+  //
+  // Scoped to GER40 ONLY - the only instrument where this concept was ever
+  // found this robust (see data/backtest-input/breaker-block-strategy-
+  // analysis.md for the other 7 instruments tested, all rejected/weaker).
+  breakerBlock: {
+    symbols: ['GER40'],
+    rrMultiple: 3, // same convention already validated in src/backtest/breakerBlock.js - not re-tuned here
+    maxHoldingM15Candles: 480,
+  },
   // Pyramid add-on ("stops indépendants, sans breakeven" - see HANDOFF.md):
   // once an FVG position on `symbols` has moved `addAtR` in its favor, place
   // a SECOND, fully independent unit (own entry/stop/target - the original

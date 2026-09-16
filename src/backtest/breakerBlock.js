@@ -84,7 +84,7 @@ export function detectBosEvents(candles, { lookback = SWING_LOOKBACK } = {}) {
 }
 
 /** Scans backward from a BOS index for the last opposite-colored candle - the Order Block. */
-function findOrderBlock(candles, bosIndex, direction, searchLookback) {
+export function findOrderBlock(candles, bosIndex, direction, searchLookback) {
   const wantBearishCandle = direction === 'bullish'; // bullish BOS -> look for the last DOWN candle
   const earliest = Math.max(0, bosIndex - searchLookback);
   for (let j = bosIndex - 1; j >= earliest; j--) {

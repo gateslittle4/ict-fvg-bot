@@ -3727,3 +3727,28 @@ Concentration de la meilleure année un peu plus élevée que les deux autres (3
 **Pas encore déployé — contrairement à NWOG/GER40, Breaker Block n'a AUCUN câblage dans `liveStrategyEngine.js`** (existe uniquement comme script de backtest, `src/backtest/breakerBlock.js`). Le déployer demanderait d'écrire un vrai module `_processBreakerBlockCandidate()` (même chemin `openPositions`/netting/auto-exécution que les autres), pas juste un changement de config — un chantier plus proche de l'ajout initial de Weekly Sweep/NWOG que du fix `longOnlySymbols` de tout à l'heure. Décision d'implémenter laissée à Esdras.
 
 `npm test` : 532/532 (aucun fichier de production modifié — recherche uniquement). **Fichiers** : `scripts/testAddBreakerBlockGer40ToCombo.js` (nouveau).
+
+## Breaker Block/GER40 IMPLÉMENTÉ ET ACTIVÉ EN PRODUCTION — 2026-09-16 (suite directe, même session)
+
+Esdras : "Oui, implémente le mécanisme et active Breaker Block/GER40."
+
+**Nouveau mécanisme live, premier écrit depuis Weekly Sweep** (contrairement à NWOG plus tôt, un simple changement de config ne suffisait pas ici) :
+
+- `src/backtest/breakerBlock.js` : `findOrderBlock()` exporté (était privé) pour être réutilisable ailleurs sans dupliquer la logique.
+- `src/liveStrategyEngine.js` : nouveau `breakerBlockConfig` (constructeur, opt-in uniquement comme `nwogConfig`/`judasSwingConfig`/`weeklySweepConfig` - les 3 moteurs backtest/rapport ne l'héritent pas silencieusement), dispatch dans `ingestCandle()`, et 3 nouvelles méthodes :
+  - `_computeBreakerBlockCandidates(candles)` : rejoue EXACTEMENT les étapes 3-5 (watchBreak → watchRetest → pendingEntry) de `runBreakerBlockBacktest()` - seule la moitié "gestion de trade" (étape 1, gérée par le netting partagé du moteur) est laissée de côté. Délibérément SANS garde `!open` (contrairement à l'original, qui suivait uniquement SA PROPRE position) - un détecteur pur, indépendant de toute position ouverte, exactement comme NWOG/Judas Swing/Weekly Sweep - c'est le netting partagé (`_blockReason`) qui décide si un candidat détecté peut réellement ouvrir une position.
+  - `_detectBreakerBlockSignal()` / `_processBreakerBlockCandidate()` : même forme que les 3 mécanismes existants, AUCUN filtre de direction (contrairement à NWOG/US100) - GER40/Breaker Block validé bidirectionnel.
+  - Câblé aussi dans `_warmUpOneSymbol()` (précalcul des candidats, même motif que NWOG/Judas Swing/Weekly Sweep).
+- `src/config.js` : nouveau bloc `breakerBlock: { symbols: ['GER40'], rrMultiple: 3, maxHoldingM15Candles: 480 }`.
+- `src/accountRuntime.js` : `breakerBlockConfig: config.breakerBlock` ajouté au SEUL vrai moteur live.
+- `scripts/buildBacktestSummary.js` : `breakerBlockConfig: CONFIG.breakerBlock` ajouté (sinon le résumé qui alimente le chat IA du dashboard aurait silencieusement ignoré ce nouveau mécanisme) — `data/backtest-summary.json` régénéré (6829 trades décidés, +2720R, 30.5% de réussite, contre 5462/+2447R/30.7% avant Breaker Block).
+
+**Tests** (`test/liveStrategyEngine.test.js`) : 2 nouveaux tests (entrée+netting), même fixture que `test/breakerBlock.test.js` mais RE-ESPACÉE — la fixture originale utilisait un `lookback` custom (2) pour `detectBosEvents`, trop serré pour le `SWING_LOOKBACK=5` réellement utilisé en production (la bougie du BOS, avec son haut artificiellement énorme, tombait DANS la fenêtre de confirmation du swing high à 5 candles d'écart, invalidant le point de swing avant même que le BOS puisse s'y référer). Fenêtre re-vérifiée directement contre `runBreakerBlockBacktest(candles, {})` (tous les paramètres par défaut) avant d'écrire le test. `npm test` : **534/534** (532 + 2 nouveaux).
+
+**Vérification bout-en-bout** (script ad hoc, non committé) — rejoué le VRAI `CONFIG.breakerBlock` via `LiveStrategyEngine` sur tout l'historique 17 ans :
+- Breaker Block/GER40 : 1518 trades, **734 achats / 784 ventes** (48%/52% — encore mieux équilibré que l'estimation isolée 60/40, une fois le netting réel avec Weekly Sweep/NWOG appliqué), taux de gain 30.3%, **+319.00R**
+- Combo complet (avec Breaker Block) : 6872 trades, taux de gain 30.5%, **+2720.00R**
+
+**Statut : EN PRODUCTION.** GER40 trade maintenant avec 3 mécanismes simultanés (Weekly Sweep + NWOG bidirectionnel + Breaker Block bidirectionnel). US100/US500/XAUUSD/EURUSD inchangés. À surveiller de près dans les prochaines semaines — c'est le mécanisme le plus récent des 3 sur GER40 et celui qui ajoute le plus de volume de trades d'un coup.
+
+`npm test` : 534/534. **Fichiers** : `src/backtest/breakerBlock.js`, `src/liveStrategyEngine.js`, `src/config.js`, `src/accountRuntime.js`, `scripts/buildBacktestSummary.js`, `data/backtest-summary.json`, `test/liveStrategyEngine.test.js`.

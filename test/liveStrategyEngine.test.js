@@ -1319,3 +1319,92 @@ test('clearBelievedPosition: a symbol with nothing believed open is a safe no-op
   assert.equal(engine.clearBelievedPosition('TEST1', 'anything'), false);
   assert.equal(engine.getOpenPosition('TEST1'), null);
 });
+
+// --- Breaker Block (ICT failed Order Block, retested from the flipped
+// side) - LIVE, auto-executed (2026-09-16, GER40 - rehabilitated with the
+// real 0.5 spread and the same robustness checks that validated NWOG, see
+// HANDOFF.md). Same openPositions/netting/auto-execute path as every other
+// live source above. Fixture is the SAME shape as test/breakerBlock.test.js
+// (a bullish BOS finds a bearish OB as its support zone [0.85, 1.02], price
+// breaks THROUGH it downward, flips to a bearish breaker, then retests the
+// breaker's mid (0.935) from below) but re-spaced for this engine's
+// PRODUCTION-DEFAULT detection params (breakerBlock.test.js's own fixture
+// uses a custom {lookback:2,...} - too tight a window for the real
+// SWING_LOOKBACK=5 default this engine actually uses: the BOS candle's own
+// huge high (2.2) would fall inside the swing-high-at-index-5 confirmation
+// window with lookback 5, invalidating it as a swing point before the BOS
+// could ever reference it. Re-verified directly against
+// runBreakerBlockBacktest(candles, {}) - i.e. every default, no overrides -
+// producing exactly one trade before writing this fixture into the test.
+
+const BREAKER_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+
+function breakerFixtureCandles() {
+  const candles = [];
+  for (let i = 0; i <= 4; i++) candles.push(c(i * 1000, 1, 1.05, 0.95, 1));
+  candles.push(c(5000, 1, 2.0, 0.95, 1)); // swing high spike
+  for (let i = 6; i <= 10; i++) candles.push(c(i * 1000, 1, 1.05, 0.95, 1)); // filler, keeps the lookback=5 confirmation window [0,10] clean
+  candles.push(c(11000, 1.0, 1.02, 0.85, 0.9)); // bearish OB candle
+  candles.push(c(12000, 1, 1.05, 0.95, 1.05)); // bullish filler, NOT the OB
+  candles.push(c(13000, 1, 2.2, 0.95, 2.1)); // bullish BOS candle
+  for (let i = 14; i <= 17; i++) candles.push(c(i * 1000, 1, 1.05, 0.95, 1));
+  candles.push(c(18000, 1, 1.05, 0.5, 0.6)); // breaks through zoneLow (0.85)
+  for (let i = 19; i <= 22; i++) candles.push(c(i * 1000, 0.6, 0.7, 0.55, 0.6));
+  candles.push(c(23000, 0.6, 0.94, 0.55, 0.7)); // retests the mid (0.935) from below
+  candles.push(c(24000, 0.93, 0.95, 0.9, 0.92)); // entry candle, open=0.93
+  // Deliberately stops here (no resolution candle) - these tests only cover
+  // entry/netting, same scope as the NWOG/Judas Swing/Weekly Sweep tests
+  // above; exit behavior (stop/target/timeout) is already covered by
+  // test/breakerBlock.test.js directly against runBreakerBlockBacktest().
+  return candles;
+}
+
+test('LiveStrategyEngine (Breaker Block): the retest-confirmation candle emits an actionable "validated" signal and opens a real position, same fixture already proven against runBreakerBlockBacktest()', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, breakerBlockConfig: BREAKER_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const candles = breakerFixtureCandles();
+  let entryEvents = [];
+  for (const candle of candles) {
+    entryEvents.push(...engine.ingestCandle('TEST1', candle).filter((e) => e.source === 'breakerblock'));
+  }
+
+  assert.equal(entryEvents.length, 1);
+  const e = entryEvents[0];
+  assert.equal(e.direction, 'bearish');
+  assert.equal(e.suggestedSide, 'sell');
+  assert.equal(e.entryPrice, 0.93);
+  assert.equal(e.stopPrice, 1.02);
+  assert.equal(e.blockedReason, null);
+
+  const open = engine.getOpenPosition('TEST1');
+  assert.ok(open, 'expected a real position to have opened');
+  assert.equal(open.source, 'breakerblock');
+  assert.equal(open.direction, 'bearish');
+});
+
+test('LiveStrategyEngine (Breaker Block): netting blocks the signal while an earlier position on the same symbol is still open', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, breakerBlockConfig: BREAKER_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  // Price range scaled to THIS fixture (0.5-2.2), unlike the NWOG netting
+  // test above (~100) - a stop/target sized for that other fixture's scale
+  // would instantly trigger against these candles' own prices instead of
+  // staying open throughout, as intended here.
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake-open', direction: 'bullish', entryIndex: 0, entryTime: -1,
+    entryPrice: 1, stopPrice: 0.1, targetPrice: 10, distance: 0.9, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const candles = breakerFixtureCandles();
+  let entryEvents = [];
+  for (const candle of candles) {
+    entryEvents.push(...engine.ingestCandle('TEST1', candle).filter((e) => e.source === 'breakerblock'));
+  }
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+});

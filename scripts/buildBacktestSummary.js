@@ -58,6 +58,7 @@ function replayAll() {
     nwogConfig: CONFIG.nwog,
     judasSwingConfig: CONFIG.judasSwing,
     weeklySweepConfig: CONFIG.weeklySweep,
+    breakerBlockConfig: CONFIG.breakerBlock,
     guardrail,
     riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
     spreads: DEFAULT_SPREADS,

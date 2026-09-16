@@ -132,6 +132,7 @@ import { computeAtrSeries } from './backtest/rsiDivergence.js';
 import { detectNwogEvents } from './backtest/nwog.js';
 import { detectJudasSwingEvents } from './backtest/judasSwing.js';
 import { detectWeeklySweepEvents } from './backtest/weeklyLiquiditySweep.js';
+import { detectBosEvents, findOrderBlock, OB_SEARCH_LOOKBACK, BREAKER_MAX_AGE_CANDLES } from './backtest/breakerBlock.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
@@ -173,6 +174,13 @@ export class LiveStrategyEngine {
     // HANDOFF.md). Not defaulted so the three backtest/report engines don't
     // silently start folding it in.
     weeklySweepConfig = null,
+    // Same opt-in-only pattern as nwogConfig/judasSwingConfig/
+    // weeklySweepConfig above (2026-09-16, GER40 - rehabilitated with the
+    // real 0.5 spread and the same 2-year-block/buy-sell robustness checks
+    // that validated NWOG - see HANDOFF.md "Breaker Block réhabilité"). Not
+    // defaulted so the three backtest/report engines don't silently start
+    // folding it in.
+    breakerBlockConfig = null,
     guardrail,
     riskPctPerTrade = CONFIG.risk.riskPctPerTrade,
     spreads = {},
@@ -185,6 +193,7 @@ export class LiveStrategyEngine {
     this.nwogConfig = nwogConfig || null;
     this.judasSwingConfig = judasSwingConfig || null;
     this.weeklySweepConfig = weeklySweepConfig || null;
+    this.breakerBlockConfig = breakerBlockConfig || null;
     this.guardrail = guardrail;
     this.riskPctPerTrade = riskPctPerTrade;
     this.spreads = spreads;
@@ -323,6 +332,10 @@ export class LiveStrategyEngine {
 
     if (this.weeklySweepConfig && this.weeklySweepConfig.symbols.includes(symbol)) {
       events.push(...this._detectWeeklySweepSignal(symbol, candle, guardrailNow));
+    }
+
+    if (this.breakerBlockConfig && this.breakerBlockConfig.symbols.includes(symbol)) {
+      events.push(...this._detectBreakerBlockSignal(symbol, candle, guardrailNow));
     }
 
     return events;
@@ -1038,6 +1051,177 @@ export class LiveStrategyEngine {
     return signal;
   }
 
+  /**
+   * Pure computation of every Breaker Block entry candidate implied by one
+   * symbol's full candle history - reuses detectBosEvents()/findOrderBlock()
+   * (src/backtest/breakerBlock.js) UNCHANGED for the structural detection
+   * (BOS -> Order Block -> break-through -> retest), replaying the SAME
+   * watchBreak/watchRetest/pendingEntry state machine as
+   * runBreakerBlockBacktest()'s own stages 3-5 - only the TRADE MANAGEMENT
+   * half of that function (its stage 1 "resolve an open position", and the
+   * position-opening side of its stage 2) is left out, because that's
+   * already handled by this engine's own shared openPositions/netting
+   * (_resolveOpenPosition/_blockReason), exactly like every other source
+   * here. Deliberately does NOT gate the state machine on "is a trade
+   * currently open" the way the standalone backtest does (that variable
+   * tracked ONLY Breaker Block's own position there, with nothing else
+   * competing for the symbol) - same reasoning as
+   * _computeNwogCandidates()/_computeJudasSwingCandidates() above: this
+   * function stays a pure, position-agnostic detector, and the shared
+   * netting layer is what actually decides whether a detected candidate
+   * gets to open a real position.
+   */
+  _computeBreakerBlockCandidates(candles) {
+    const bosEvents = detectBosEvents(candles);
+    const bosByIndex = new Map(bosEvents.map((e) => [e.index, e]));
+    const candidates = [];
+
+    let watchBreak = null; // { obDirection, zoneLow, zoneHigh, mid, bosIndex, expireIndex }
+    let watchRetest = null; // { breakerDirection, zoneLow, zoneHigh, mid, expireIndex }
+    let pendingEntry = null; // { direction, stopPrice, readyAtIndex }
+
+    for (let i = 0; i < candles.length; i++) {
+      const candle = candles[i];
+
+      if (pendingEntry && pendingEntry.readyAtIndex === i) {
+        candidates.push({ direction: pendingEntry.direction, entryTime: candle.time, stopReference: pendingEntry.stopPrice });
+        pendingEntry = null;
+      }
+
+      if (!pendingEntry && watchRetest) {
+        if (i > watchRetest.expireIndex) {
+          watchRetest = null;
+        } else {
+          const bullish = watchRetest.breakerDirection === 'bullish';
+          // Same retest-side convention as runBreakerBlockBacktest(): a
+          // bullish breaker (originally bearish OB, broken through upward)
+          // is now support, retested from ABOVE; a bearish breaker is now
+          // resistance, retested from BELOW.
+          const touched = bullish ? candle.low <= watchRetest.mid : candle.high >= watchRetest.mid;
+          if (touched) {
+            const stopPrice = bullish ? watchRetest.zoneLow : watchRetest.zoneHigh;
+            pendingEntry = { direction: watchRetest.breakerDirection, stopPrice, readyAtIndex: i + 1 };
+            watchRetest = null;
+          }
+        }
+      }
+
+      if (!pendingEntry && !watchRetest && watchBreak) {
+        if (i > watchBreak.expireIndex) {
+          watchBreak = null;
+        } else if (i > watchBreak.bosIndex) {
+          const obBullish = watchBreak.obDirection === 'bullish';
+          const brokenThrough = obBullish ? candle.low < watchBreak.zoneLow : candle.high > watchBreak.zoneHigh;
+          if (brokenThrough) {
+            watchRetest = {
+              breakerDirection: obBullish ? 'bearish' : 'bullish', // polarity flips
+              zoneLow: watchBreak.zoneLow,
+              zoneHigh: watchBreak.zoneHigh,
+              mid: watchBreak.mid,
+              expireIndex: i + BREAKER_MAX_AGE_CANDLES,
+            };
+            watchBreak = null;
+          }
+        }
+      }
+
+      if (!pendingEntry && !watchRetest && !watchBreak) {
+        const bos = bosByIndex.get(i);
+        if (bos) {
+          const zone = findOrderBlock(candles, i, bos.direction, OB_SEARCH_LOOKBACK);
+          if (zone) {
+            watchBreak = { obDirection: bos.direction, zoneLow: zone.low, zoneHigh: zone.high, mid: zone.mid, bosIndex: i, expireIndex: i + BREAKER_MAX_AGE_CANDLES };
+          }
+        }
+      }
+    }
+    return candidates;
+  }
+
+  _detectBreakerBlockSignal(symbol, candle, guardrailNow = candle.time) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeBreakerBlockCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processBreakerBlockCandidate(symbol, candle, candidate, guardrailNow)];
+  }
+
+  /**
+   * Shared tail of Breaker Block signal handling - same shape and same
+   * openPositions/netting/auto-execute participation as
+   * _processNwogCandidate()/_processJudasSwingCandidate()/
+   * _processWeeklySweepCandidate() above (2026-09-16, GER40 - rehabilitated
+   * with the real 0.5 spread and the same robustness checks that validated
+   * NWOG, see HANDOFF.md). No direction filter - GER40/Breaker Block was
+   * validated bidirectional (60% buy / 40% sell, not a hidden long-bias
+   * trap), unlike US100/NWOG's genuine long-only edge. Same validStopSide
+   * guard as every other source here (smtDivergence.js's lesson).
+   */
+  _processBreakerBlockCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
+    const cfg = this.breakerBlockConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // breakerBlock.js: "Entry trigger = a retest... at the open of the candle after"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `breakerblock-${symbol}-${candle.time}`;
+    const suggestedSide = bullish ? 'buy' : 'sell';
+
+    if (distance <= 0 || !validStopSide) {
+      return {
+        type: 'validated',
+        source: 'breakerblock',
+        symbol,
+        id,
+        direction: candidate.direction,
+        suggestedSide,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
+
+    const signal = {
+      type: 'validated',
+      source: 'breakerblock',
+      symbol,
+      id,
+      direction: candidate.direction,
+      suggestedSide,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'breakerblock',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
+  }
+
   // -------------------------------------------------------------------------
   // Bulk warm-up (2026-09): reconstructs this engine's state (history,
   // openPositions, pyramidPositions, formationIndexBySymbol) from a full
@@ -1133,6 +1317,15 @@ export class LiveStrategyEngine {
         ? this._computeWeeklySweepCandidates(candles)
         : null;
 
+    // Breaker Block candidates (2026-09-16, GER40 - see config.js's
+    // `breakerBlock` comment and HANDOFF.md). Same shape as NWOG/Judas
+    // Swing/Weekly Sweep's own precomputation above: only needs this
+    // symbol's own final history.
+    const breakerBlockCandidates =
+      this.breakerBlockConfig && this.breakerBlockConfig.symbols.includes(symbol)
+        ? this._computeBreakerBlockCandidates(candles)
+        : null;
+
     for (let i = 0; i < candles.length; i++) {
       const candle = candles[i];
       if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
@@ -1186,6 +1379,14 @@ export class LiveStrategyEngine {
         const candidate = weeklySweepCandidates.find((cd) => cd.entryTime === candle.time);
         if (candidate) {
           const signal = this._processWeeklySweepCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (breakerBlockCandidates) {
+        const candidate = breakerBlockCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processBreakerBlockCandidate(symbol, candle, candidate);
           if (onEvent) onEvent(signal, candle);
         }
       }

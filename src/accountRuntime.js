@@ -86,6 +86,9 @@ export class AccountRuntime {
       // LIVE, auto-executed (2026-09-15, GER40) - see config.js's
       // `weeklySweep` comment. Same opt-in-only pattern as nwogConfig above.
       weeklySweepConfig: config.weeklySweep,
+      // LIVE, auto-executed (2026-09-16, GER40) - see config.js's
+      // `breakerBlock` comment. Same opt-in-only pattern as nwogConfig above.
+      breakerBlockConfig: config.breakerBlock,
       guardrail: this.guardrail,
       riskPctPerTrade: config.risk.riskPctPerTrade,
       spreads,
