@@ -3444,3 +3444,15 @@ Aucun programme testé (HaitiForex compris) n'a jamais échoué par perte quotid
 `npm test` : inchangé (aucun code de production touché — uniquement des scripts d'analyse de session, non commités).
 
 **Fichiers** : aucun commité — scripts de simulation dans le scratchpad de session uniquement. À recréer ou committer en dur dans `scripts/` si cette analyse doit être répétée régulièrement (même pattern que `scripts/buildBacktestSummary.js`).
+
+## US100 étendu à 15 ans d'historique (2010-2025) — 2026-09-16
+
+Esdras a uploadé 9 fichiers HistData.com M1 (`NSXUSD`, un par année 2010-2018) — `data/backtest-input/US100.csv` ne couvrait jusque-là que 2019-2025 (156 715 bougies M15), le plus court historique des 5 symboles réels, alors qu'EURUSD/GBPUSD remontent déjà à 2018 et GER40/USDCAD à 2010.
+
+**Conversion** : réutilisé tel quel `scripts/convertHistData.js` (déjà utilisé pour USDCAD/GER40 - même convention horaire HistData "EST sans DST", parsée comme UTC brut pour rester cohérente avec elle-même et avec le resampling H1/H4 du bot, comme documenté dans ce script). 2 687 073 bougies M1 → 192 342 bougies M15 (2010-11-14 → 2018-12-31), fusionnées avec les 156 715 bougies existantes (2019-2025) : aucun chevauchement, aucun doublon retiré. **`US100.csv` couvre maintenant 2010-11-14 → 2025-12-31 (349 057 bougies)**, désormais aligné avec les autres symboles réels.
+
+`npm test` : 531/531 (inchangé - fichier de données seul, aucun code touché).
+
+**Pas encore fait** : le backtest 7 ans (`data/backtest-summary.json`, le rapport PDF investisseur, l'analyse de faisabilité des prop firms ci-dessus) reste délibérément borné à 2019-2025 partout - cette nouvelle donnée ouvre la possibilité d'un vrai backtest 15 ans si Esdras le demande, mais aucun résultat existant n'a été recalculé automatiquement (`buildBacktestSummary.js` filtre encore explicitement sur `YEARS=[2019..2025]`, à modifier manuellement si on veut élargir la fenêtre officiellement communiquée).
+
+**Fichiers** : `data/backtest-input/US100.csv` (étendu, 8.2 Mo → ~18 Mo).
