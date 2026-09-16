@@ -1,9 +1,19 @@
 {
-  "generatedAt": "2026-09-15T22:39:37.846Z",
+  "generatedAt": "2026-09-16T08:17:54.834Z",
   "coverage": {
-    "from": "2019-01-01",
+    "from": "2009-03-15",
     "to": "2025-12-31",
     "years": [
+      2009,
+      2010,
+      2011,
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
       2019,
       2020,
       2021,
@@ -11,24 +21,93 @@
       2023,
       2024,
       2025
-    ],
-    "rawDataAvailableFrom": "2010-11-15"
+    ]
   },
-  "note": "Backtest sur données historiques réelles de marché (2019-2025 uniquement, 7 années), rejoué avec le code EXACT de production (mêmes mécanismes, mêmes réglages). Performance passée, ne garantit pas les résultats futurs. BTCUSD exclu (smoke-test technique récent, pas un mécanisme validé sur cette période). Symboles inclus : US100, US500, XAUUSD, EURUSD, GER40.",
-  "decidedTradeCount": 2606,
+  "note": "Backtest sur l'historique réel complet disponible par symbole (2009-03-15 -> 2025-12-31, 17 années calendaires), rejoué avec le code EXACT de production (mêmes mécanismes, mêmes réglages). EURUSD (Judas Swing) démarre en 2018-01-01, plus tard que les autres symboles - pas d'homogénéisation artificielle à une fenêtre commune. Performance passée, ne garantit pas les résultats futurs. BTCUSD exclu (smoke-test technique récent, pas un mécanisme validé). Symboles inclus : US100, US500, XAUUSD, EURUSD, GER40.",
+  "decidedTradeCount": 4782,
   "overall": {
-    "count": 2626,
-    "wins": 853,
-    "losses": 1753,
-    "totalR": 1564,
-    "winRatePct": 32.7
+    "count": 4824,
+    "wins": 1458,
+    "losses": 3324,
+    "totalR": 2255,
+    "winRatePct": 30.5
   },
   "byYear": {
+    "2009": {
+      "count": 39,
+      "wins": 7,
+      "losses": 31,
+      "totalR": -3,
+      "winRatePct": 18.4
+    },
+    "2010": {
+      "count": 58,
+      "wins": 12,
+      "losses": 43,
+      "totalR": 1,
+      "winRatePct": 21.8
+    },
+    "2011": {
+      "count": 233,
+      "wins": 60,
+      "losses": 169,
+      "totalR": 35,
+      "winRatePct": 26.2
+    },
+    "2012": {
+      "count": 257,
+      "wins": 59,
+      "losses": 197,
+      "totalR": 26,
+      "winRatePct": 23
+    },
+    "2013": {
+      "count": 226,
+      "wins": 61,
+      "losses": 163,
+      "totalR": 62,
+      "winRatePct": 27.2
+    },
+    "2014": {
+      "count": 274,
+      "wins": 77,
+      "losses": 194,
+      "totalR": 90,
+      "winRatePct": 28.4
+    },
+    "2015": {
+      "count": 234,
+      "wins": 66,
+      "losses": 164,
+      "totalR": 99,
+      "winRatePct": 28.7
+    },
+    "2016": {
+      "count": 247,
+      "wins": 60,
+      "losses": 187,
+      "totalR": 44,
+      "winRatePct": 24.3
+    },
+    "2017": {
+      "count": 236,
+      "wins": 66,
+      "losses": 169,
+      "totalR": 77,
+      "winRatePct": 28.1
+    },
+    "2018": {
+      "count": 379,
+      "wins": 132,
+      "losses": 244,
+      "totalR": 247,
+      "winRatePct": 35.1
+    },
     "2019": {
-      "count": 338,
-      "wins": 113,
-      "losses": 223,
-      "totalR": 202,
+      "count": 353,
+      "wins": 118,
+      "losses": 233,
+      "totalR": 215,
       "winRatePct": 33.6
     },
     "2020": {
@@ -76,162 +155,162 @@
   },
   "byMonth": {
     "janvier": {
-      "count": 244,
-      "wins": 81,
-      "losses": 163,
-      "totalR": 144,
-      "winRatePct": 33.2
+      "count": 428,
+      "wins": 138,
+      "losses": 286,
+      "totalR": 225,
+      "winRatePct": 32.5
     },
     "février": {
-      "count": 193,
-      "wins": 56,
-      "losses": 132,
-      "totalR": 83,
-      "winRatePct": 29.8
+      "count": 376,
+      "wins": 105,
+      "losses": 263,
+      "totalR": 138,
+      "winRatePct": 28.5
     },
     "mars": {
-      "count": 215,
-      "wins": 64,
-      "losses": 150,
-      "totalR": 99,
-      "winRatePct": 29.9
+      "count": 401,
+      "wins": 109,
+      "losses": 288,
+      "totalR": 134,
+      "winRatePct": 27.5
     },
     "avril": {
-      "count": 210,
-      "wins": 68,
-      "losses": 140,
-      "totalR": 126,
-      "winRatePct": 32.7
+      "count": 366,
+      "wins": 111,
+      "losses": 251,
+      "totalR": 167,
+      "winRatePct": 30.7
     },
     "mai": {
-      "count": 214,
-      "wins": 69,
-      "losses": 144,
-      "totalR": 123,
-      "winRatePct": 32.4
+      "count": 410,
+      "wins": 118,
+      "losses": 291,
+      "totalR": 163,
+      "winRatePct": 28.9
     },
     "juin": {
-      "count": 223,
-      "wins": 71,
-      "losses": 152,
-      "totalR": 124,
-      "winRatePct": 31.8
+      "count": 387,
+      "wins": 104,
+      "losses": 282,
+      "totalR": 114,
+      "winRatePct": 26.9
     },
     "juillet": {
-      "count": 220,
-      "wins": 81,
-      "losses": 137,
-      "totalR": 186,
-      "winRatePct": 37.2
+      "count": 407,
+      "wins": 135,
+      "losses": 268,
+      "totalR": 251,
+      "winRatePct": 33.5
     },
     "août": {
-      "count": 202,
-      "wins": 66,
-      "losses": 133,
-      "totalR": 125,
-      "winRatePct": 33.2
+      "count": 402,
+      "wins": 122,
+      "losses": 276,
+      "totalR": 192,
+      "winRatePct": 30.7
     },
     "septembre": {
-      "count": 216,
-      "wins": 75,
-      "losses": 141,
-      "totalR": 146,
-      "winRatePct": 34.7
+      "count": 411,
+      "wins": 126,
+      "losses": 284,
+      "totalR": 192,
+      "winRatePct": 30.7
     },
     "octobre": {
-      "count": 229,
-      "wins": 81,
-      "losses": 146,
-      "totalR": 173,
-      "winRatePct": 35.7
+      "count": 400,
+      "wins": 142,
+      "losses": 255,
+      "totalR": 295,
+      "winRatePct": 35.8
     },
     "novembre": {
-      "count": 223,
-      "wins": 74,
-      "losses": 148,
-      "totalR": 143,
-      "winRatePct": 33.3
+      "count": 414,
+      "wins": 131,
+      "losses": 280,
+      "totalR": 225,
+      "winRatePct": 31.9
     },
     "décembre": {
-      "count": 237,
-      "wins": 67,
-      "losses": 167,
-      "totalR": 92,
-      "winRatePct": 28.6
+      "count": 422,
+      "wins": 117,
+      "losses": 300,
+      "totalR": 159,
+      "winRatePct": 28.1
     }
   },
   "bySymbol": {
-    "EURUSD": {
-      "count": 571,
-      "wins": 174,
-      "losses": 397,
-      "totalR": 125,
-      "winRatePct": 30.5
-    },
-    "GER40": {
-      "count": 321,
-      "wins": 95,
-      "losses": 225,
-      "totalR": 60,
-      "winRatePct": 29.7
-    },
     "XAUUSD": {
-      "count": 193,
-      "wins": 52,
-      "losses": 130,
-      "totalR": 78,
-      "winRatePct": 28.6
+      "count": 567,
+      "wins": 131,
+      "losses": 407,
+      "totalR": 117,
+      "winRatePct": 24.3
     },
     "US500": {
-      "count": 476,
-      "wins": 151,
-      "losses": 320,
-      "totalR": 199,
-      "winRatePct": 32.1
+      "count": 1060,
+      "wins": 322,
+      "losses": 731,
+      "totalR": 337,
+      "winRatePct": 30.6
+    },
+    "GER40": {
+      "count": 678,
+      "wins": 218,
+      "losses": 459,
+      "totalR": 195,
+      "winRatePct": 32.2
     },
     "US100": {
-      "count": 1065,
-      "wins": 381,
-      "losses": 681,
-      "totalR": 1102,
-      "winRatePct": 35.9
+      "count": 1851,
+      "wins": 581,
+      "losses": 1265,
+      "totalR": 1450,
+      "winRatePct": 31.5
+    },
+    "EURUSD": {
+      "count": 668,
+      "wins": 206,
+      "losses": 462,
+      "totalR": 156,
+      "winRatePct": 30.8
     }
   },
   "bySource": {
-    "judaswing": {
-      "count": 571,
-      "wins": 174,
-      "losses": 397,
-      "totalR": 125,
-      "winRatePct": 30.5
+    "fvg": {
+      "count": 2324,
+      "wins": 668,
+      "losses": 1619,
+      "totalR": 1590,
+      "winRatePct": 29.2
     },
     "weeklysweep": {
-      "count": 321,
-      "wins": 95,
-      "losses": 225,
-      "totalR": 60,
-      "winRatePct": 29.7
-    },
-    "fvg": {
-      "count": 1208,
-      "wins": 405,
-      "losses": 786,
-      "totalR": 1187,
-      "winRatePct": 34
-    },
-    "nwog": {
-      "count": 149,
-      "wins": 61,
-      "losses": 88,
-      "totalR": 95,
-      "winRatePct": 40.9
+      "count": 678,
+      "wins": 218,
+      "losses": 459,
+      "totalR": 195,
+      "winRatePct": 32.2
     },
     "divergence": {
-      "count": 377,
-      "wins": 118,
-      "losses": 257,
-      "totalR": 97,
-      "winRatePct": 31.5
+      "count": 896,
+      "wins": 271,
+      "losses": 621,
+      "totalR": 192,
+      "winRatePct": 30.4
+    },
+    "nwog": {
+      "count": 258,
+      "wins": 95,
+      "losses": 163,
+      "totalR": 122,
+      "winRatePct": 36.8
+    },
+    "judaswing": {
+      "count": 668,
+      "wins": 206,
+      "losses": 462,
+      "totalR": 156,
+      "winRatePct": 30.8
     }
   }
 }

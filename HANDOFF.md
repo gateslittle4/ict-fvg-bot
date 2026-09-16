@@ -3536,3 +3536,20 @@ Suite directe des 3 extensions de données ci-dessus (US100/US500/XAUUSD mainten
 `npm test` : inchangé (aucun code de production touché, script d'analyse de session uniquement, non commité).
 
 **Fichiers** : aucun commité — script de comparaison dans le scratchpad de session (même méthode que l'entrée "Faisabilité des challenges" précédente, juste sans le filtre d'années). Cette entrée HANDOFF.md est la source de vérité à jour ; l'entrée précédente reste dans l'historique pour comprendre comment la conclusion a évolué, mais ses chiffres de comparaison prop firm sont dépassés par celle-ci.
+
+## Politique durable : tous les tests incluent maintenant tout l'historique disponible — `buildBacktestSummary.js` mis à jour — 2026-09-16
+
+Esdras, décision explicite et durable : "Tous Les nvs tests doivent inclure Tous Les annees maintenant, decris la performance de ma strategy pendant toutes ces annees." Retire le filtre `YEARS=[2019..2025]` de `scripts/buildBacktestSummary.js` (le seul endroit qui bornait encore artificiellement à 7 ans après le correctif prop-firm de l'entrée précédente) — même discipline que ce correctif : chaque symbole garde son propre historique réel le plus long, aucune homogénéisation à une fenêtre commune. `data/backtest-summary.json` régénéré (alimente aussi le chat IA du dashboard, `src/chatAssistant.js` - vérifié qu'il lit le JSON sans supposer un champ `years` figé, aucun changement de code nécessaire là).
+
+**Nouvelle couverture : 2009-03-15 → 2025-12-31, 17 années calendaires** (US100/US500 depuis 2010-11-14, XAUUSD depuis 2009-03-15, GER40 depuis ~2010, EURUSD/Judas Swing reste le plus court à 2018-01-01 — pas d'homogénéisation, chaque mécanisme compte depuis que SES données existent réellement).
+
+**Performance de la stratégie sur ces 17 années, combo de production complet (FVG + Divergence + NWOG + Judas Swing + Weekly Sweep, BTCUSD exclu)** :
+
+- **4824 trades décidés, 30,5% de réussite, +2255R au total. Aucune année négative sur 17 ans** — le pire résultat annuel est encore +1R (2010), tout le reste est solidement positif.
+- **Tendance nette entre les deux ères** : 2009-2017 (avant EURUSD/Judas Swing, 3-4 mécanismes seulement) tourne à 18-28% de réussite et 1R à 99R par an ; 2018-2025 (les 5 mécanismes actuels réunis) tourne à 28-36% de réussite et 156R à 289R par an — nettement plus fort et plus régulier. Pas forcément un edge qui s'améliore avec le temps : 2018 est aussi l'année où Judas Swing/EURUSD entre dans les données ET où US100/US500 passent d'un historique HistData plus ancien à la source utilisée pour la validation d'origine — les deux ères ne sont pas directement comparables sans creuser plus, à garder en tête avant de conclure à une tendance.
+- **Par symbole** : US100 porte l'essentiel du résultat (+1450R sur 1851 trades, 31,5%) grâce à sa cible étendue 1:5 et son statut multi-touch. XAUUSD est le plus faible (24,3% de réussite, +117R sur 567 trades) — cohérent avec les réserves déjà documentées ailleurs sur cet instrument.
+- **Par mécanisme** : FVG contribue le plus en R absolu (+1590R) mais avec le taux de réussite le plus bas (29,2%, cohérent avec son RR 4-5) ; NWOG a le meilleur taux de réussite (36,8%) sur le plus petit échantillon (258 trades) ; Divergence/Judas Swing/Weekly Sweep se situent tous autour de 30-32%.
+
+`npm test` : 531/531 (inchangé — fichier de données régénéré, aucun code de comportement production touché).
+
+**Fichiers** : `scripts/buildBacktestSummary.js` (filtre retiré), `data/backtest-summary.json` (régénéré, 17 ans au lieu de 7).

@@ -36,7 +36,6 @@ import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
 const REAL_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
 const CSV_DIR = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-input');
 const OUT_PATH = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-summary.json');
-const YEARS = [2019, 2020, 2021, 2022, 2023, 2024, 2025];
 const MONTH_NAMES = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
 function replayAll() {
@@ -105,24 +104,24 @@ function finalize(bucket) {
 }
 
 function main() {
-  const { trades: allTrades, earliestTime, latestTime } = replayAll();
+  const { trades, earliestTime, latestTime } = replayAll();
 
-  // IMPORTANT (trouvé en construisant ce script, 2026-09-15) : les CSV de
-  // data/backtest-input/ couvrent en réalité 2010-2025, pas seulement
-  // 2019-2025 comme les scripts précédents de cette session (et donc le
-  // rapport PDF investisseur déjà envoyé) l'ont supposé/affiché. Le
-  // rejeu complet contient ~1719R au total contre ~1564R en ne comptant
-  // QUE 2019-2025 - la différence vient d'un historique 2010-2018 plus
-  // fin (moins de trades/an, probablement une période de marché/données
-  // différente). "Les données des 7 années" dans tout ce qu'on a discuté
-  // et envoyé désigne spécifiquement 2019-2025 - donc on filtre ici
-  // explicitement sur cette fenêtre pour rester cohérent avec ce qui a
-  // déjà été communiqué, plutôt que d'élargir silencieusement le
-  // périmètre. Voir HANDOFF.md pour le correctif signalé sur le calcul
-  // précédent (qui, lui, n'avait PAS ce filtre).
-  const windowStart = Date.UTC(YEARS[0], 0, 1);
-  const windowEnd = Date.UTC(YEARS[YEARS.length - 1] + 1, 0, 1);
-  const trades = allTrades.filter((t) => t.entryTime >= windowStart && t.entryTime < windowEnd);
+  // 2026-09-16 (Esdras, explicite : "Tous Les nvs tests doivent inclure
+  // Tous Les annees maintenant") - le filtre 2019-2025 qui existait ici
+  // avant (voir git log de ce fichier pour le raisonnement d'alors) est
+  // délibérément RETIRÉ. Chaque symbole a maintenant son propre historique
+  // réel le plus long possible (US100/US500 depuis 2010-11-14, XAUUSD
+  // depuis 2009-03-15, GER40 depuis ~2010, EURUSD reste le plus court à
+  // 2018-01-01 - donc Judas Swing/EURUSD ne démarre qu'en 2018 même si les
+  // autres mécanismes tournent depuis 2009-2010) - AUCUNE homogénéisation
+  // artificielle à une fenêtre commune, chaque bougie réellement disponible
+  // compte. Cohérent avec le correctif déjà appliqué à la comparaison prop
+  // firm (voir HANDOFF.md "CORRECTIF IMPORTANT") qui avait la même
+  // discipline pour la même raison : une fenêtre plus courte peut donner une
+  // fausse impression de robustesse en ratant des régimes de marché plus
+  // anciens.
+  const years = new Set(trades.map((t) => new Date(t.entryTime).getUTCFullYear()));
+  const yearsSorted = [...years].sort((a, b) => a - b);
   const decided = trades.filter((t) => t.outcome === 'win' || t.outcome === 'loss');
 
   const overall = emptyBucket();
@@ -155,16 +154,11 @@ function main() {
   const summary = {
     generatedAt: new Date().toISOString(),
     coverage: {
-      from: `${YEARS[0]}-01-01`,
+      from: new Date(earliestTime).toISOString().slice(0, 10),
       to: new Date(latestTime).toISOString().slice(0, 10),
-      years: YEARS,
-      // Les CSV source vont en réalité plus loin en arrière (jusqu'au
-      // earliestTime réel ci-dessous), mais tout ce résumé est
-      // délibérément borné à YEARS (2019-2025) - la fenêtre "7 années"
-      // déjà utilisée partout ailleurs (rapport PDF investisseur inclus).
-      rawDataAvailableFrom: new Date(earliestTime).toISOString().slice(0, 10),
+      years: yearsSorted,
     },
-    note: "Backtest sur données historiques réelles de marché (2019-2025 uniquement, 7 années), rejoué avec le code EXACT de production (mêmes mécanismes, mêmes réglages). Performance passée, ne garantit pas les résultats futurs. BTCUSD exclu (smoke-test technique récent, pas un mécanisme validé sur cette période). Symboles inclus : US100, US500, XAUUSD, EURUSD, GER40.",
+    note: `Backtest sur l'historique réel complet disponible par symbole (${new Date(earliestTime).toISOString().slice(0, 10)} -> ${new Date(latestTime).toISOString().slice(0, 10)}, ${yearsSorted.length} années calendaires), rejoué avec le code EXACT de production (mêmes mécanismes, mêmes réglages). EURUSD (Judas Swing) démarre en 2018-01-01, plus tard que les autres symboles - pas d'homogénéisation artificielle à une fenêtre commune. Performance passée, ne garantit pas les résultats futurs. BTCUSD exclu (smoke-test technique récent, pas un mécanisme validé). Symboles inclus : US100, US500, XAUUSD, EURUSD, GER40.`,
     decidedTradeCount: decided.length,
     overall,
     byYear,
