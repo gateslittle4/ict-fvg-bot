@@ -3474,3 +3474,40 @@ Troisième et dernier symbole de cette série (après US100/US500 ci-dessus) : E
 **Bilan des 5 symboles réels après cette série de 3 extensions** : US100/US500 démarrent 2010-11-14, XAUUSD 2009-03-15, GER40 déjà à 2010 (session antérieure), seul EURUSD reste borné à 2018-01-01 (le plus court des 5) — à étendre si Esdras trouve/upload des fichiers HistData EURUSD M1 pré-2018.
 
 **Fichiers** : `data/backtest-input/XAUUSD.csv` (étendu).
+
+## Recherche GBPUSD/USDCAD — GBPUSD retenu (conditionnel au type de plafond de perte de la prop firm), USDCAD rejeté — 2026-09-16
+
+Esdras, une fois connectée à internet pendant l'upload des fichiers ci-dessus : "tu ne profites pas pour me demander des pairs que tu penses seraient bien de les trader?" — plutôt que de demander de nouvelles données à l'aveugle, vérification de ce qui existait déjà et n'était pas exploité : `GBPUSD.csv` (2019-2025) et `USDCAD.csv` (2010-2025), jamais validés ni ajoutés au combo réel (5 symboles actuels : US100/US500/XAUUSD/EURUSD/GER40).
+
+**Méthode réutilisée telle quelle** (aucun nouveau code) : `scripts/runTrainTestValidation.js` (grille de 168 configs, cutoff 2024-01-01, coûts de transaction réels) — le même outil qui a validé les 5 symboles actuels à l'origine.
+
+**USDCAD : rejeté.** Aucune des 5 meilleures configs trouvées sur train (2010-2023) ne tient sur test (2024-2025) — toutes passent en R net négatif hors-échantillon (ex: +0.03R train → -0.10R test). Signe classique de surapprentissage, pas un edge réel.
+
+**GBPUSD : recherche en 3 étapes, edge confirmé mais avec une réserve importante.**
+
+1. **Grille standard (168 configs, session NY AM 8h-12h uniquement)** : un seul survivant, `H4_EMA20 / swing / structure OFF / session ON`, edge très mince (train 0.05R / test 0.04R, PF ~1.05-1.07) — jugé initialement trop faible pour être fiable.
+
+2. **Recherche de fenêtre de session étendue** (le grid standard ne teste QUE 8h-12h ON/OFF, jamais d'autre horaire — GBP étant une devise à forte activité Londres, testé au-delà de la session NY) : la fenêtre **7h-10h NY (chevauchement Londres-NY), avec le filtre de structure ICT réactivé (ON)**, ressort nettement meilleure : train 0.08R / test 0.09R, PF 1.11/1.13.
+
+3. **Vérification de robustesse** (3 découpages train/test différents : 2022/2023/2024, + année par année 2019-2025) : **positif sur les 3 découpages** (0.05R à 0.11R des deux côtés) et **6 années sur 7 positives** (seule 2023 légèrement négative, -0.03R, quasi breakeven) — un signal statistiquement bien plus crédible qu'à l'étape 1, pas du bruit.
+
+**Config retenue pour GBPUSD (si activé) :** `variant: 'H4_EMA20', stopMode: 'swing', rrMultiple: 3, structureEnabled: true, sessionEnabled: true, sessionWindow: {startHour: 7, endHour: 10}, liquiditySweepEnabled: false`.
+
+**Test au niveau compte complet** (`portfolioSimulator.js`, vraies guardrails du bot, $10,000, 2019-2025 continu — pas de reset annuel), à la demande explicite d'Esdras de tester risque réduit (0.3%) + pyramidage "stops indépendants" :
+
+| Scénario | Trades (pyramidés) | Win rate | Drawdown statique | Drawdown trailing | Solde final |
+|---|---|---|---|---|---|
+| Sans pyramide, 0.5%/trade | 650 | 27.3% | 3.9% | 16.1% | $12,230 (+22.3%) |
+| Sans pyramide, 0.3%/trade | 650 | 27.3% | 2.3% | 9.9% | $11,351 (+13.5%) |
+| **Pyramide, 0.3%/trade de base** | **1088 (447)** | **31.4%** | **4.5%** | **13.0%** | **$12,247 (+22.5%)** |
+| Pyramide, 0.5%/trade de base | 1088 (447) | 31.4% | 7.7% | 21.2% | $13,690 (+36.9%) |
+
+**Découverte importante en cours de route** : le drawdown en R brut (25-35R, calculé sans guardrails via `gridRunner.js`) surestimait largement le vrai risque — les guardrails réelles du bot (max trades/jour, cooldown après perte, limite de perte journalière) empêchent d'enchaîner les signaux pendant une séquence perdante. Le drawdown STATIQUE réel simulé au niveau compte (3.9%-4.5%) est très en dessous de cette estimation brute. Risque réduit (0.3%) + pyramidage rattrape quasiment exactement le rendement du risque plein sans pyramide (22.5% vs 22.3%), avec plus de trades et un meilleur win rate.
+
+**La réserve qui reste, et pourquoi la décision est CONDITIONNELLE** : drawdown **statique** (3.9-4.5%) très correct, mais drawdown **trailing** (13-16%) dépasse un plafond trailing de 10% (FTMO 1-Step, GoatFundedTrader). GBPUSD n'est donc viable QUE pour une prop firm à plafond **statique** (FTMO 2-Step, FundingPips — déjà identifiées comme les meilleures options dans l'analyse de faisabilité des challenges ci-dessus), pas pour une à plafond trailing.
+
+**Décision d'Esdras** : "on va l'ajouter dépendamment de quel challenge on prend" — GBPUSD sera ajouté à `config.js` (`fvg.perSymbol.GBPUSD`, config ci-dessus) UNE FOIS la prop firm choisie, seulement si celle-ci utilise un plafond de perte statique. Pas encore fait — aucun changement de code cette session, recherche uniquement (scripts de test jetables, non commités, mêmes outils déjà existants dans `scripts/`/`src/backtest/gridRunner.js`/`src/backtest/portfolioSimulator.js`, aucun nouveau fichier créé).
+
+`npm test` : inchangé (aucun code de production touché).
+
+**Fichiers** : aucun commité — recherche uniquement, cette entrée HANDOFF.md documente les résultats pour la prochaine session qui ajoutera réellement `GBPUSD` à `config.js` une fois la firme choisie.
