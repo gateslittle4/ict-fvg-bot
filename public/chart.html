@@ -159,13 +159,15 @@
              here entirely, a real gap: no way to chart the one symbol a
              newly-activated live strategy actually trades. -->
         <button data-symbol="EURUSD">EURUSD</button>
-        <!-- GER40/BTCUSD added 2026-09-16 - same gap as EURUSD above: both
-             went live (NWOG, Breaker Block, Weekly Sweep on GER40; FVG on
-             BTCUSD) with no button here, so there was no way to chart either
-             symbol despite the bot actively trading them (found when Esdras
-             asked for GER40's chart after investigating a real 12s trade). -->
+        <!-- GER40 added 2026-09-16 - same gap as EURUSD above: it went live
+             (NWOG, Breaker Block, Weekly Sweep) with no button here, so
+             there was no way to chart a symbol the bot actively trades
+             (found when Esdras asked for GER40's chart after investigating
+             a real 12s trade). A BTCUSD button was added at the same time
+             and removed hours later with the symbol itself - /api/candles
+             only serves symbols in CONFIG.symbols, so a button for a
+             retired symbol would just fail. -->
         <button data-symbol="GER40">GER40</button>
-        <button data-symbol="BTCUSD">BTCUSD</button>
       </div>
       <span class="spacer"></span>
       <div class="group" id="timeframe-group">
@@ -223,7 +225,9 @@
 <script>
 // GER40/BTCUSD added 2026-09-16 - both were falling into the 5-decimals
 // forex default (e.g. GER40's real 25445.05 would show as 25445.05000),
-// found alongside the missing chart button above.
+// found alongside the missing chart button above. BTCUSD stays listed even
+// though its button is gone: the open-position readout below can still show
+// a real BTCUSD position the broker is closing out on its own bracket.
 const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD' || symbol === 'GER40' || symbol === 'BTCUSD') ? 2 : 5;
 const fmt = (n, d = 2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 

@@ -78,38 +78,54 @@ function resolveRiskPctPerTrade() {
 }
 
 export const CONFIG = {
-  // BTCUSD (2026-09-13, temporary): Esdras wanted to see the bot actually
-  // fire an order this weekend, when forex/indices/metals are closed - see
-  // HANDOFF.md for the full reasoning. Meant to be removed again right
-  // after tonight's test ("on va supprimer BTC juste après"), NOT a
-  // permanent addition like the other 4 - see the matching perSymbol entry
-  // below and the maxTradesPerDay bump just below for why.
+  // BTCUSD was here from 2026-09-13 to 2026-09-16 as a deliberate temporary
+  // connectivity smoke test ("on va supprimer BTC juste après") - the only
+  // symbol open on a weekend, so it could prove the real order pipeline
+  // end to end. REMOVED 2026-09-16 at Esdras's explicit request, along with
+  // its fvg.perSymbol entry, its transactionCosts spread, its lotCalculator
+  // spec and its chart button. It had served its purpose and then some: it
+  // is what surfaced the null-orderId bug, the guardrail day-reset bug, the
+  // int64-as-string balance bug, and the stale-belief netting gap. It was
+  // also never a validated strategy (raw M1 FVG, no filters, 9.5% win rate
+  // over 21 real trades, -2.12R) and had just started losing ~$20-28 per
+  // trade instead of cents once real risk-based sizing replaced its forced
+  // broker-minimum size. Do NOT re-add it without a real train/test split.
   //
   // GER40 (2026-09-15): added for Weekly Liquidity Sweep - see the
   // `weeklySweep` config block below and HANDOFF.md for the full research
   // (the most credible finding of that session: real spread confirmed 0.5
   // via Esdras's own cTrader screenshot, bidirectional, robust across 2-year
   // blocks - but only ONE train/test split, never observed live before now).
-  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'BTCUSD', 'GER40'],
+  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'],
   timeframe: 'M15',
   accountMode: ACCOUNT_MODE, // 'challenge' | 'live' - see ACCOUNT_MODE comment above
   risk: {
     riskPctPerTrade: resolveRiskPctPerTrade(),
   },
   guardrails: {
-    // 2026-09-14 (Esdras, explicit: "leve un peu le garde fou qui empeche
-    // Les nouveaux trades pour linstant. On doit verifier que Tous Les
-    // trades passent normalement"): temporarily 20, ONLY to observe a
-    // handful more real trades go through cleanly tonight after the
-    // netting-fix + guardrail-day-reset-fix landed (both confirmed live
-    // separately, but not yet with a fresh trade taken under both fixes at
-    // once). tradesToday was already 12 (correctly retained now, see
-    // HANDOFF.md - that's the fix working, not a bug) against the old
-    // cap of 3, which is why every further trade was blocked. This account
-    // runs on cTrader's DEMO server (isDemo:true - see /api/accounts), not
-    // real money. REVERT to 3 (see the 2026-09-13 note this replaced, still
-    // true: ACCOUNT-WIDE cap shared across every symbol) once tonight's
-    // verification is done - not meant to stay loose long-term.
+    // ⚠️ STILL LOOSE ON PURPOSE, AND STILL PENDING A DECISION.
+    // Raised to 20 on 2026-09-14 (Esdras: "leve un peu le garde fou qui
+    // empeche Les nouveaux trades pour linstant. On doit verifier que Tous
+    // Les trades passent normalement") purely to watch a few more real
+    // trades flow through after the netting and guardrail-day-reset fixes
+    // landed. That verification is long done.
+    //
+    // It was never reverted, and the two reasons it was high are now both
+    // gone: the cap had been bumped 2 -> 3 for the BTCUSD weekend test, and
+    // BTCUSD itself was removed 2026-09-16. BTCUSD on M1 was generating
+    // essentially ALL the volume (21 of 21 real trades at one point), so
+    // without it the five validated mechanisms produce a few trades per
+    // WEEK, nowhere near 20 per day - meaning this cap no longer constrains
+    // anything, which defeats the anti-overtrading discipline that is the
+    // whole point of this project.
+    //
+    // Deliberately NOT changed while removing BTCUSD: this is an
+    // ACCOUNT-WIDE cap shared across every symbol and mechanism, so picking
+    // its new value is a real trading decision, not cleanup. The original 2
+    // was validated back when the bot ran FVG on 3 symbols plus Divergence;
+    // there are now 5 mechanisms across 5 symbols, so 2 may well be too
+    // tight. Decide the number deliberately rather than letting 20 stand by
+    // default.
     maxTradesPerDay: 20,
     cooldownMinutesAfterLoss: 30,
     dailyLossLimitPct: 2,
@@ -226,41 +242,9 @@ export const CONFIG = {
         sessionWindow: XAUUSD_WINDOW,
         liquiditySweepEnabled: true,
       },
-      // TEMPORARY (2026-09-13) - see the `symbols` array and
-      // guardrails.maxTradesPerDay comments above for the full context.
-      // Baseline raw FVG, NO filters at all - none of the HTF-bias/
-      // structure/session concepts above make sense on a 24/7 market with
-      // no NY session structure, and this was deliberately decided BEFORE
-      // looking at any result, not fit to it. Backtested on only 7 months
-      // of real BTCUSD data pulled live from the broker (Feb-Sep 2026, no
-      // train/test split, spread estimated not confirmed - see
-      // transactionCosts.js's BTCUSD entry) - net expectancy was positive
-      // but thin (profit factor ~1.07-1.08 across RR 2/3/5, nowhere near
-      // the robustness of the 4 symbols above). rrMultiple: 3 picked as the
-      // middle of the three tested, not the best-looking one. This is a
-      // connectivity smoke test, not a validated strategy - remove this
-      // whole block (plus its transactionCosts.js spread entry, the
-      // `symbols` array entry above, and the maxTradesPerDay bump) once
-      // it's served its purpose.
-      BTCUSD: {
-        variant: 'baseline',
-        stopMode: 'fvg-edge',
-        rrMultiple: 3,
-        structureEnabled: false,
-        sessionEnabled: false,
-        liquiditySweepEnabled: false,
-        // 2026-09-13, Esdras: "on fait le changement pour m1 pour btc
-        // seulement, laisser tout les autres pairs a leur configuration
-        // normale" - so she could see the pipeline actually fire tonight
-        // instead of waiting on M15 closes. Read by
-        // cTraderDataSource.js's resolveSymbolTimeframe() - every other
-        // symbol has no `timeframe` field here and keeps reading the
-        // global CONFIG.timeframe (M15) exactly as before. NOT backtested
-        // at M1 (the 7-month sanity check earlier tonight was M15) - purely
-        // a connectivity-speed choice, not a validated edge at this
-        // timeframe. Remove alongside every other temporary BTCUSD entry.
-        timeframe: 'M1',
-      },
+      // BTCUSD's entry lived here (2026-09-13 to 2026-09-16) - raw baseline
+      // FVG on M1, no filters, never train/test split. Removed with the
+      // symbol itself; see the `symbols` array comment above for why.
     },
   },
   // Price-action Divergence (log-ratio z-score pairs mean-reversion,

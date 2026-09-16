@@ -713,6 +713,8 @@ const fmtDuration = (ms) => {
 // US indices and gold trade in whole-ish points (2dp is plenty); forex pairs need more precision.
 // GER40/BTCUSD added 2026-09-16 - both were falling into the 5-decimals
 // forex default (e.g. GER40's real 25445.05 would show as 25445.05000).
+// BTCUSD stays listed here even though the symbol was retired from trading
+// the same day: the trade-history card still renders its real past trades.
 const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD' || symbol === 'GER40' || symbol === 'BTCUSD') ? 2 : 5;
 // NWOG + Judas Swing (2026-09) - both live, auto-executed (see config.js's
 // `nwog`/`judasSwing` comments / HANDOFF.md), same standing as FVG/Divergence now.
