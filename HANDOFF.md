@@ -4023,3 +4023,23 @@ Esdras : "donne moi un plan detaille a faire pour lavoir et mes chances de le fa
 `npm test` : 534/534 (inchangé — nouveau script de recherche uniquement, aucun fichier `src/` touché).
 
 **Fichiers** : `scripts/runFtmo25kFirstPayoutFullComboAnalysis.js` (nouveau, committé), `data/backtest-input/ftmo-25k-first-payout-full-combo-analysis.md` (nouveau, committé).
+
+## Tous les trades auto-exécutés passent maintenant par LIMIT order — 2026-09-16 (suite directe, même session)
+
+Esdras : "Pour passer le trade, ou Tous Les trades vont etre passe par limit order!"
+
+**Avant** : seul FVG utilisait un LIMIT order à son `entryPrice` (le prix du bord de la zone, déjà touché une fois avant que le signal ne se valide). Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block utilisaient un MARKET order — un écart d'exécution déjà documenté dans le code lui-même (le spot event porteur d'une bougie M15 close n'arrive qu'une fois la bougie fermée, donc le MARKET order part avec un prix déjà décalé de l'`entryPrice` original, potentiellement significatif après un gap week-end).
+
+**Changement** : `_handleAutoExecuteEntry()` (`cTraderDataSource.js` ET `matchTraderDataSource.js`, même discipline miroir qu'à chaque fois) envoie maintenant un LIMIT order à `entryPrice` pour TOUTES les sources, plus seulement FVG. Raisonnement clé : chaque backtest de ce projet suppose un remplissage exactement à `entryPrice`, jamais un prix dégradé par une poursuite de marché — un LIMIT order à ce même prix est donc **plus fidèle** au edge validé, pas moins. Le vrai compromis n'est pas la qualité du remplissage (un LIMIT ne peut jamais remplir à un prix pire que celui validé) mais le **taux** de remplissage : un signal dont le prix ne revient jamais à `entryPrice` avant expiration ne se remplit simplement pas, au lieu d'être forcé à un prix dégradé.
+
+**Deux fenêtres d'expiration distinctes**, pas une seule copiée partout :
+- **FVG** : garde sa fenêtre existante (`CONFIG.fvg.maxAgeCandles`, ~12.5h) — la zone reste un objet de retest valide longtemps, logique déjà établie et vérifiée (voir l'incident XAUUSD du 2026-09 qui avait motivé cet élargissement).
+- **Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block** : nouvelle fenêtre courte, **4 bougies** (`NON_FVG_LIMIT_EXPIRY_CANDLES`) — leur `entryPrice` est l'ouverture d'UNE bougie précise, pas une zone qui reste valide des heures ; si le prix n'y revient pas rapidement, le setup a déjà évolué. **Choix délibérément conservateur, pas backtesté par source** (aucun historique de taux de remplissage réel n'existe encore pour ce type d'ordre sur ces sources) — à revoir si `orderOutcomeLog` montre un vrai remplissage manqué, comme ça avait été le cas pour FVG avec son défaut initial de 4 bougies (élargi depuis à `maxAgeCandles`).
+
+**Non touché délibérément** : les ordres STOP du pyramidage (`_handlePyramidOrderRequested`) — un mécanisme différent (déclenche l'ajout de la 2e unité quand le prix a DÉJÀ avancé de `+1R`), un LIMIT order n'y aurait aucun sens (il faudrait que le prix REDESCENDE pour remplir, l'inverse du déclencheur voulu).
+
+**Limite honnête** : `matchTraderDataSource.js` reste non connecté en production (bloqué CTI/Cloudflare, FundingPips jamais câblé) — le changement y est fait par cohérence/parité de code, pas testé en conditions réelles. Côté Match-Trader, l'API documentée n'a pas de champ d'expiration confirmé (déjà noté avant ce changement pour FVG, maintenant pertinent pour toutes les sources) — un LIMIT order non rempli pourrait y rester ouvert indéfiniment si jamais ce chemin devient actif un jour.
+
+`npm test` : 534/534 (inchangé — aucun test unitaire n'existe sur cette logique, `cTraderDataSource.js`/`matchTraderDataSource.js` ne testent que leurs fonctions pures par convention établie, voir l'en-tête de leurs fichiers de test).
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`.
