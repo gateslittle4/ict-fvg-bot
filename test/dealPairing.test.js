@@ -120,6 +120,14 @@ test('parseSourceFromLabel: recognizes each auto-executed source', () => {
   assert.equal(parseSourceFromLabel('auto-fvg-US100'), 'fvg');
   assert.equal(parseSourceFromLabel('auto-divergence-US500'), 'divergence');
   assert.equal(parseSourceFromLabel('auto-nwog-US100'), 'nwog');
+  assert.equal(parseSourceFromLabel('auto-judaswing-EURUSD'), 'judaswing');
+  assert.equal(parseSourceFromLabel('auto-weeklysweep-GER40'), 'weeklysweep');
+  // 2026-09-16: added alongside the live Breaker Block mechanism - a real
+  // gap found by inspection (the regex hadn't been updated when the source
+  // was added), not a hypothetical - real broker orders were already being
+  // labeled auto-breakerblock-GER40 but this parser didn't recognize it yet,
+  // so those trades would have reconciled as source: null.
+  assert.equal(parseSourceFromLabel('auto-breakerblock-GER40'), 'breakerblock');
   assert.equal(parseSourceFromLabel('pyramid-add-US100'), 'pyramid');
 });
 

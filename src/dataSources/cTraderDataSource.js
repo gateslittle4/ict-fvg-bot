@@ -1791,6 +1791,7 @@ export class CTraderDataSource {
         e.source === 'nwog' ? 'NWOG (gap week-end)' :
         e.source === 'judaswing' ? 'Judas Swing (killzone Londres)' :
         e.source === 'weeklysweep' ? 'Weekly Liquidity Sweep (GER40)' :
+        e.source === 'breakerblock' ? 'Breaker Block (GER40)' :
         'FVG rempli';
       // Forward-test démo OBSERVATION ONLY (2026-09) - re-tags here rather than
       // reusing pushSignalEvents' already-tagged copy, so this stays a pure

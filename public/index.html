@@ -727,6 +727,7 @@ const sourceLabel = (s) => {
   if (s.source === 'nwog') return 'NWOG';
   if (s.source === 'judaswing') return 'Judas Swing';
   if (s.source === 'weeklysweep') return 'Weekly Sweep';
+  if (s.source === 'breakerblock') return 'Breaker Block';
   if (s.source === 'fvg') return 'FVG';
   if (s.source === 'pyramid') return 'Pyramide';
   return 'manuel/inconnu';
@@ -856,7 +857,7 @@ function renderStatus(data) {
   document.getElementById('settings-symbols-current').textContent = data.symbols.map((s) => s.symbol).join(' · ');
 }
 
-const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judasSwing: 'Judas Swing', weeklysweep: 'Weekly Sweep' };
+const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judasSwing: 'Judas Swing', weeklysweep: 'Weekly Sweep', breakerblock: 'Breaker Block' };
 function reconciliationExplanation(r) {
   if (r.status === 'match') return '✓ correspond';
   // 'none' (2026-09-14, bug réel trouvé par Esdras : "Écart bot/courtier ⚠
@@ -1028,7 +1029,7 @@ async function refreshAccount() {
   }
 }
 
-const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judasSwing: 'Judas', weeklysweep: 'W.Sweep' };
+const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judasSwing: 'Judas', weeklysweep: 'W.Sweep', breakerblock: 'Breaker' };
 async function refreshOrderLog() {
   const bodyEl = document.getElementById('order-log-body');
   try {
