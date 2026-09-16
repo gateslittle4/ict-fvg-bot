@@ -3402,3 +3402,45 @@ Le classement complet corrigé (pire → meilleur) : février (+83R) < décembre
 `npm test` : 531/531 (inchangé).
 
 **Fichiers** : `scripts/buildBacktestSummary.js` (nouveau), `data/backtest-summary.json` (nouveau, généré — 2019-2025 uniquement), `src/chatAssistant.js` (charge le résumé, system prompt distingue les deux sources de données).
+
+## PDF investisseur corrigé + rendu accessible à un non-trader — 2026-09-15
+
+Suite du bug de classement mensuel trouvé ci-dessus. Esdras a validé la correction ("Oui, corrige et renvoie-moi le PDF"), puis a soulevé un problème différent en relisant : "C'est ecrit dans un language quune simple personne peut. Comprendre?" — le PDF utilisait "R" des dizaines de fois sans jamais le définir, entre autres termes ICT non expliqués. Rappel explicite en même temps : "Noublies pas que c'est pour convainxre de linvestissement" — donc rendre le PDF lisible sans l'édulcorer ni perdre son ton orienté preuve.
+
+**Corrections apportées** (régénéré via le générateur existant, 9 → 10 pages) :
+- Chiffres corrigés : juillet +186R comme vrai meilleur mois (pas octobre +197R), février +83R (pas +82R) — voir l'entrée précédente pour le détail du bug.
+- **Nouvelle page 2 "Comment lire ce rapport"** (glossaire) : R, drawdown, plancher statique/trailing, prop firm, backtest, win rate — chacun expliqué en une phrase simple, cadré comme argument de conviction plutôt que comme définition scolaire (à la demande explicite d'Esdras de garder l'angle persuasif).
+- Section stratégie (page 3) réorganisée pour mener par le bénéfice (diversification sur 5 mécanismes, pas un seul pari) avant les noms techniques ICT.
+- Page 7 (recommandation) clarifiée pour distinguer explicitement "meilleur mois pour DÉMARRER un challenge" (octobre, simulation de démarrage non affectée par le bug) de "meilleur mois calendaire en général" (juillet).
+
+Vérifié visuellement page par page via Playwright (bug de troncature de texte trouvé et corrigé au passage : `statTiles()` clippait "10 fév → 15 sept" avec une taille de police fixe — ajout d'un rétrécissement dynamique + `maxWidth`).
+
+**Fichiers** : uniquement le script de génération du PDF (hors dépôt, scratchpad de session) — aucun fichier commité dans `ict-fvg-bot` pour cette entrée, le PDF lui-même a été envoyé directement à Esdras.
+
+## Faisabilité des challenges prop firm — HaitiForex vs FTMO/FundingPips/GoatFundedTrader/CTI — 2026-09-16
+
+Esdras a partagé les règles exactes d'un challenge local (haitiforex.org/Practice.html, compte $50,000, ticket 2,500 gourdes, payout 25,000 gourdes) : objectif 10%, perte max 5% du capital (statique), **plafond de gain de $1,100/jour ($2.2%)**, minimum 5 jours de trading, **maximum 30 jours de durée de compte**, no scalping (durée min 5 minutes/trade), toutes les positions fermées avant 16h Haiti sinon compte annulé.
+
+**Simulation construite** (scripts jetables de session, non commités) : rejeu du combo de production exact sur 2019-2025, une tentative par mois calendaire (84 tentatives), avec toutes les contraintes ci-dessus modélisées (plafond de gain quotidien qui limite ce qui compte vers l'objectif sans limiter le vrai P&L du compte, plancher statique, fenêtre de temps bornée).
+
+**Résultat HaitiForex** : **26% de réussite** sur 84 tentatives, **0% d'échec par perte** (le plancher n'est jamais le problème) — l'échec vient à 74% du temps écoulé (30 jours) avant que le plafond de gain journalier ait laissé le compteur officiel atteindre l'objectif, alors que le compte gagne souvent PLUS que $5,000 en argent réel sur la même période. Testé sans le plafond journalier (toutes choses égales par ailleurs) : **46%** — le plafond à lui seul coûte ~20 points de réussite sans réduire le risque d'un centime.
+
+**Comparaison avec les vraies règles des prop firms déjà cataloguées dans `src/propFirms/*.js`** (FTMO, FundingPips, GoatFundedTrader, CTI — voir ces fichiers pour le détail et les sources), même méthodologie (84 tentatives, 2019-2025), enchaînement des phases pour les programmes 2-step :
+
+| Programme | Objectif | Perte quot. | Drawdown max | Limite de temps | Réussite | Délai moyen si réussi |
+|---|---|---|---|---|---|---|
+| **FTMO 1-Step** | 10% | 3% | 10% (trailing EOD) | aucune | **100%** | 35j cal / 20j trading |
+| FTMO 2-Step | 10% puis 5% | 5% | 10% (statique) | aucune | 98.8% | 57j cal / 33j trading |
+| FundingPips 2-Step Standard | 8% puis 5% | 5% | 10% (statique) | aucune | 98.8% | 49j cal / 28j trading |
+| FundingPips 1-Step Flex | 12% | 3% | 12% (statique) | aucune | 98.8% | 43j cal / 25j trading |
+| GoatFundedTrader 1-Step | 10% | 3% | 6% (statique) | non confirmée | 92.9% | 34j cal / 19j trading |
+| CTI 1-Step | 8% | aucune | 5% (trailing serré) | aucune | 80.95% | 23j cal / 13j trading |
+| HaitiForex $50k | 10% | — | 5% statique | **30j max** | 26% | bloqué par la deadline |
+
+Aucun programme testé (HaitiForex compris) n'a jamais échoué par perte quotidienne ou drawdown — la stratégie ne s'approche jamais de casser un compte, peu importe la structure de règles. La seule variable qui fait vraiment varier le taux de réussite est la **rigidité du temps/plafond imposée**, pas le risque réel de la stratégie.
+
+**Décision d'Esdras** : ne pas prendre le challenge HaitiForex ("mission impossible" initialement, nuancé après calcul — mathématiquement le pari est +EV avec son propre payout 10x, mais le vrai risque identifié est la fiabilité de la contrepartie : paiements informels Moncash/Zelle, contact WhatsApp uniquement, règle "activité frauduleuse" vague et à sens unique, page mélangeant challenge et sollicitation d'investisseurs façon MLM). **FTMO 1-Step identifié comme le meilleur choix objectif** (100% de réussite historique, une seule phase, aucune limite de temps, aucun plafond bizarre) — prix réels des comptes FTMO pas encore vérifiés, à faire dans une prochaine session si Esdras veut avancer.
+
+`npm test` : inchangé (aucun code de production touché — uniquement des scripts d'analyse de session, non commités).
+
+**Fichiers** : aucun commité — scripts de simulation dans le scratchpad de session uniquement. À recréer ou committer en dur dans `scripts/` si cette analyse doit être répétée régulièrement (même pattern que `scripts/buildBacktestSummary.js`).
