@@ -3553,6 +3553,29 @@ Après avoir compté les trades réels de la semaine (3 lundi-mercredi, 10 la se
 
 **Fichiers** : `data/backtest-input/nwog-strategy-analysis.md` et `data/backtest-input/judas-swing-strategy-analysis.md` (régénérés avec l'historique étendu, chiffres légèrement différents des versions précédentes mais mêmes conclusions qualitatives).
 
+## Weekly Sweep testé sur les 7 autres symboles — US500 ressort comme candidat robuste (chevauchement PAS ENCORE vérifié) — 2026-09-16
+
+Suite directe de la recherche ci-dessus : Weekly Sweep (déjà LIVE sur GER40 seul, voir `config.js` `weeklySweep`) n'avait **jamais** été testé avec la même rigueur 8-symboles/train-test que NWOG/Judas Swing/Breaker Block — angle mort identifié et comblé. Nouveau script `scripts/runWeeklySweepStrategyAnalysis.js` (même gabarit exact que `runNwogStrategyAnalysis.js`/`runJudasSwingStrategyAnalysis.js`, réutilise `runWeeklySweepBacktest` de `src/backtest/weeklyLiquiditySweep.js` tel quel), résultat dans `data/backtest-input/weekly-sweep-strategy-analysis.md`.
+
+**US500 ressort nettement meilleur que tous les autres candidats testés aujourd'hui** — contrairement à NWOG/US500 (rejeté juste avant, train quasi plat + années violemment instables), celui-ci est robuste sur 4 découpages différents (2021/2022/2023/2024), jamais négatif, jamais de grand écart train/test :
+
+| Cutoff | Espérance train/test | Profit factor train/test |
+|---|---|---|
+| 2021-01-01 | 0.09 / 0.08 | 1.11 / 1.11 |
+| 2022-01-01 | 0.10 / 0.06 | 1.13 / 1.08 |
+| 2023-01-01 | 0.09 / 0.10 | 1.11 / 1.14 |
+| 2024-01-01 | 0.08 / 0.16 | 1.10 / 1.21 |
+
+Année par année (2011-2025) : **10 années positives sur 15**, pertes contenues (pire : -13.87R en 2016 — rien de comparable au -16.56R catastrophique isolé de NWOG/US500 en 2017). **716 trades sur la période complète, +63.30R cumulé.**
+
+Autres symboles testés dans le même passage, tous rejetés ou trop faibles : XAUUSD (train -0.10R/test -0.21R, rejeté net), GBPUSD (train -0.11R/test -0.16R, rejeté net), EURUSD/USDJPY/USDCAD (même piège train-négatif/test-positif suspect que NWOG/US500, pas creusé davantage faute de signal train positif pour commencer), US100 (train 0.17R/test 0.03R, s'affaiblit trop pour passer le seuil).
+
+**⚠️ PAS ENCORE FAIT avant de déployer** : vérifier le chevauchement avec FVG et Divergence, déjà actifs sur US500 (même vérification que Breaker Block/GER40 avant son activation : 7.7%/4.8% de chevauchement historique/réel, jugé assez bas). Weekly Sweep/US500 n'a pas encore ce calcul — c'est la prochaine étape avant toute activation dans `config.js`, pas encore faite cette session (question posée à Esdras, réponse pas encore reçue au moment de ce commit).
+
+`npm test` : inchangé (nouveau script d'analyse seul, aucun mécanisme activé).
+
+**Fichiers** : `scripts/runWeeklySweepStrategyAnalysis.js` (nouveau), `data/backtest-input/weekly-sweep-strategy-analysis.md` (nouveau, généré).
+
 ## Politique durable : tous les tests incluent maintenant tout l'historique disponible — `buildBacktestSummary.js` mis à jour — 2026-09-16
 
 Esdras, décision explicite et durable : "Tous Les nvs tests doivent inclure Tous Les annees maintenant, decris la performance de ma strategy pendant toutes ces annees." Retire le filtre `YEARS=[2019..2025]` de `scripts/buildBacktestSummary.js` (le seul endroit qui bornait encore artificiellement à 7 ans après le correctif prop-firm de l'entrée précédente) — même discipline que ce correctif : chaque symbole garde son propre historique réel le plus long, aucune homogénéisation à une fenêtre commune. `data/backtest-summary.json` régénéré (alimente aussi le chat IA du dashboard, `src/chatAssistant.js` - vérifié qu'il lit le JSON sans supposer un champ `years` figé, aucun changement de code nécessaire là).
