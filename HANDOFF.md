@@ -3537,6 +3537,22 @@ Suite directe des 3 extensions de données ci-dessus (US100/US500/XAUUSD mainten
 
 **Fichiers** : aucun commité — script de comparaison dans le scratchpad de session (même méthode que l'entrée "Faisabilité des challenges" précédente, juste sans le filtre d'années). Cette entrée HANDOFF.md est la source de vérité à jour ; l'entrée précédente reste dans l'historique pour comprendre comment la conclusion a évolué, mais ses chiffres de comparaison prop firm sont dépassés par celle-ci.
 
+## Recherche de nouveaux candidats de trade — NWOG/US500 rejeté après vérification, Judas Swing confirme EURUSD comme seul bon choix — 2026-09-16
+
+Après avoir compté les trades réels de la semaine (3 lundi-mercredi, 10 la semaine précédente, net ~0R), Esdras a demandé, en plaisantant à moitié ("On augmente encore les trades? 😅"), s'il fallait chercher plus de volume. Réponse : seulement via la même rigueur que d'habitude, pas en assouplissant les filtres existants. Deux candidats identifiés à partir des scopes déjà restreints dans `config.js` (NWOG scopé à US100+GER40 seulement, Judas Swing scopé à EURUSD seulement) : NWOG sur XAUUSD/US500, et Judas Swing sur les 7 autres symboles disponibles. Réutilisé `scripts/runNwogStrategyAnalysis.js` et `scripts/runJudasSwingStrategyAnalysis.js` (déjà existants, jamais relancés depuis l'extension des données 2009/2010→2025) — résultats régénérés dans `data/backtest-input/nwog-strategy-analysis.md` et `judas-swing-strategy-analysis.md`.
+
+**NWOG/XAUUSD** : rejeté net, train -0.15R / test -0.11R.
+
+**NWOG/US500** : semblait prometteur au premier passage (train 0.02R / test 0.34R, techniquement "tient" par la règle de verdict) — **rejeté après vérification de robustesse** (même traitement que GBPUSD/FVG plus haut) : train reste quasi plat sur 4 découpages différents (2021/2022/2023/2024, jamais au-dessus de 0.02R), et le détail année par année montre une instabilité violente (2017 : -16.56R, 2012 : -7.49R, contre 2025 : +28.77R) — le "signal positif" en test vient presque entièrement d'une seule année récente exceptionnelle (2025), pas d'un edge réel. Exactement le piège de surapprentissage que la vérification à plusieurs découpages est censée attraper.
+
+**Judas Swing sur les 7 autres symboles** : aucun candidat crédible trouvé. EURUSD (déjà en production) reste de loin le meilleur (train 0.03R / test 0.18R). US100 "passe" techniquement la règle de verdict mais avec un edge quasi nul (train 0.01R, à peine distinguable du bruit). GER40 s'effondre en test (0.11R→0.01R). USDJPY montre le même piège train-négatif/test-positif que NWOG/US500 (train -0.11R, test +0.23R — pas fiable sans vérification supplémentaire, non poussée plus loin faute de signal train positif pour commencer). GBPUSD (-0.24R test) et USDCAD (-0.17R test) rejetés nets.
+
+**Conclusion** : aucun nouveau mécanisme à ajouter cette fois. Les scopes actuels (NWOG US100+GER40, Judas Swing EURUSD seul) restent les bons choix — pas un résultat négatif au sens de "recherche ratée", mais la confirmation que la config déjà en production était déjà optimale parmi ce qui a été testé. Seul GBPUSD/FVG (entrée précédente, plancher statique uniquement) reste un candidat réel en attente, conditionnel au choix de prop firm.
+
+`npm test` : inchangé (aucun code de production touché, seulement régénération de 2 rapports d'analyse déjà existants avec l'historique étendu).
+
+**Fichiers** : `data/backtest-input/nwog-strategy-analysis.md` et `data/backtest-input/judas-swing-strategy-analysis.md` (régénérés avec l'historique étendu, chiffres légèrement différents des versions précédentes mais mêmes conclusions qualitatives).
+
 ## Politique durable : tous les tests incluent maintenant tout l'historique disponible — `buildBacktestSummary.js` mis à jour — 2026-09-16
 
 Esdras, décision explicite et durable : "Tous Les nvs tests doivent inclure Tous Les annees maintenant, decris la performance de ma strategy pendant toutes ces annees." Retire le filtre `YEARS=[2019..2025]` de `scripts/buildBacktestSummary.js` (le seul endroit qui bornait encore artificiellement à 7 ans après le correctif prop-firm de l'entrée précédente) — même discipline que ce correctif : chaque symbole garde son propre historique réel le plus long, aucune homogénéisation à une fenêtre commune. `data/backtest-summary.json` régénéré (alimente aussi le chat IA du dashboard, `src/chatAssistant.js` - vérifié qu'il lit le JSON sans supposer un champ `years` figé, aucun changement de code nécessaire là).
