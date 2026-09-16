@@ -177,6 +177,37 @@ export function sortDealsChronologically(deals) {
   return [...(deals || [])].sort((a, b) => Number(a.executionTimestamp) - Number(b.executionTimestamp));
 }
 
+/**
+ * Scales one of this broker's monetary int64 fields (ProtoOATrader.balance,
+ * closePositionDetail.balance, ...) into real currency units.
+ *
+ * Exists as its own exported helper because reading these fields wrong is
+ * the single most recurrent bug class in this integration: this broker
+ * serializes EVERY int64 as a JSON STRING (see dealPairing.js's long
+ * comment, sortDealsChronologically above, and _submitOrder), so the
+ * natural-looking `typeof raw === 'number'` guard is always false and
+ * silently skips the assignment. That exact guard shipped in _loadBalance
+ * and left the bot reporting accountRuntime.js's hardcoded 10000
+ * placeholder as a real balance for days, against a true broker balance of
+ * 10942.99 - caught 2026-09-16 only because Esdras compared the dashboard
+ * to the cTrader app by hand.
+ *
+ * @param {string|number|null|undefined} raw - the broker's raw field
+ * @param {number} [moneyDigits=2] - ProtoOA*'s own moneyDigits exponent
+ * @returns {number|null} the scaled amount, or null if `raw` is absent or
+ *   unparseable - NEVER a silently-wrong 0 (Number(null) is 0, and 0 is
+ *   finite, so a null field would otherwise read as a zeroed-out account).
+ */
+export function parseBrokerMoney(raw, moneyDigits = 2) {
+  if (raw == null) return null;
+  // Number('') and Number('   ') are both 0, and 0 is finite - an empty
+  // field would otherwise read as a genuinely zeroed-out account.
+  if (typeof raw === 'string' && raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return n / 10 ** (moneyDigits ?? 2);
+}
+
 export class CTraderDataSource {
   /**
    * @param {{account?: import('../accountRuntime.js').AccountRuntime, brokerConfig?: object, symbols?: string[]}} [opts]
@@ -370,6 +401,21 @@ export class CTraderDataSource {
       );
     }, 5 * 60 * 1000);
 
+    // 2026-09-16 (same investigation as _loadBalance's int64-as-string fix):
+    // the balance used to be read exactly ONCE, at boot, and from then on
+    // only nudged by each close this process happened to witness. Anything
+    // else that moves the real balance - a deposit, a withdrawal, a trade
+    // placed by hand from the cTrader app, a swap charge, or any close that
+    // landed while this process was restarting - drifted the dashboard away
+    // from the broker silently and permanently until the next deploy. Same
+    // best-effort discipline as the sweep above: a failed refresh is logged
+    // and retried next tick, never throws, never blocks trading.
+    this._balanceRefresh = setInterval(() => {
+      this._loadBalance(accountId).catch((err) =>
+        console.warn('[cTrader] periodic balance refresh failed (non-fatal, retries next tick):', err.message)
+      );
+    }, 5 * 60 * 1000);
+
     // ROOT CAUSE FIX (2026-09-10): connection.on(name, listener) delivers a
     // CTraderLayerEvent WRAPPER, not the raw decoded payload - see
     // CTraderLayerEmitter.notifyListeners() (`new CTraderLayerEvent({ type,
@@ -400,6 +446,7 @@ export class CTraderDataSource {
     const store = this.account;
     if (this._heartbeat) clearInterval(this._heartbeat);
     if (this._staleBeliefSweep) clearInterval(this._staleBeliefSweep);
+    if (this._balanceRefresh) clearInterval(this._balanceRefresh);
     if (this.connection) await this.connection.close?.();
     store.mode = 'demo';
   }
@@ -424,10 +471,31 @@ export class CTraderDataSource {
     // ACTUAL scale the broker uses - defaulting to 2 (equivalent to the old
     // hardcoded /100) only when the field is genuinely absent, not assuming
     // it up front.
-    const rawBalance = res.trader?.balance;
-    if (typeof rawBalance === 'number') {
-      const moneyDigits = res.trader?.moneyDigits ?? 2;
-      store.setBalance(rawBalance / 10 ** moneyDigits);
+    //
+    // 2026-09-16, REAL BUG found live (Esdras: "pourquoi les soldes sont
+    // differents ctrader vs le bot" - cTrader showed $10,942.99, the bot
+    // showed $9,972.06): the guard here used to be `typeof rawBalance ===
+    // 'number'`, but ProtoOATrader.balance is an int64, and THIS BROKER
+    // SERIALIZES EVERY int64 AS A JSON STRING (the same trap already
+    // documented at length in dealPairing.js and in _submitOrder below -
+    // timestamps, ids, volumes, and this). So the guard was ALWAYS false,
+    // setBalance() was NEVER called, and the bot silently kept
+    // accountRuntime.js's hardcoded 10000 placeholder as its "real" balance
+    // forever - then only ever adjusted it by each closed trade's P&L.
+    // The arithmetic proof at the moment it was caught: 10000 - 27.94 (that
+    // session's one closed trade) = 9972.06, exactly what the dashboard
+    // showed, against a real broker balance of 10942.99. Every downstream
+    // consumer of the balance was affected, position sizing included.
+    // parseBrokerMoney handles both shapes and refuses a missing field
+    // outright - see its own doc comment for why that matters here.
+    const balance = parseBrokerMoney(res.trader?.balance, res.trader?.moneyDigits);
+    if (balance !== null) {
+      store.setBalance(balance);
+      console.log(`[cTrader:${store.id}] balance loaded from broker: ${balance}`);
+    } else {
+      // Loud on purpose: a silent failure here is what let the placeholder
+      // balance masquerade as real for days.
+      console.error(`[cTrader:${store.id}] could NOT read balance from ProtoOATraderReq (got ${JSON.stringify(res.trader?.balance)}) - keeping ${store.balance}, position sizing is NOT using a real balance`);
     }
     // Bug fix (2026-09): the dashboard banner used to hard-code "FundingPips"
     // no matter which broker/environment the connected account actually
@@ -1647,7 +1715,19 @@ export class CTraderDataSource {
     // as ground truth (real trade, not a demo simulation).
     if (event.executionType === 'ORDER_FILLED' && event.deal?.closePositionDetail) {
       const pnl = Number(event.deal.closePositionDetail.grossProfit) / 100;
-      store.setBalance(store.balance + pnl);
+      // 2026-09-16: prefer the broker's OWN resulting balance over
+      // `store.balance + pnl`. closePositionDetail carries a `balance` field
+      // (an int64-as-string, same as everything else here) that is the
+      // account's real balance right after this close - accumulating our own
+      // running total instead drifts away from it on anything we don't see:
+      // swaps, commissions, manual trades placed from the cTrader app, and
+      // every close that happened while this process was down. Falls back to
+      // the old running-total behaviour only when the field is absent.
+      const balanceAfter = parseBrokerMoney(
+        event.deal.closePositionDetail.balance,
+        event.deal.closePositionDetail.moneyDigits
+      );
+      store.setBalance(balanceAfter !== null ? balanceAfter : store.balance + pnl);
       store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance, symbol: this.symbolNameById.get(event.deal.symbolId) });
 
       // 2026-09-14 (Esdras: "corrige pour voir le vrai P&L du courtier"):

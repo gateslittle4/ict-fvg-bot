@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickAccountOrThrow, foldLiveBidIntoCandle, sortDealsChronologically } from '../src/dataSources/cTraderDataSource.js';
+import { pickAccountOrThrow, foldLiveBidIntoCandle, sortDealsChronologically, parseBrokerMoney } from '../src/dataSources/cTraderDataSource.js';
 
 // Only the pure pieces are unit-tested here, deliberately - everything else
 // in cTraderDataSource.js is network I/O against an unverified live API (see
@@ -100,4 +100,49 @@ test('sortDealsChronologically: does not mutate the input array', () => {
   const copy = [...deals];
   sortDealsChronologically(deals);
   assert.deepEqual(deals, copy);
+});
+
+// 2026-09-16: real bug found live - Esdras compared the cTrader app
+// ($10,942.99) against the bot's dashboard ($9,972.06) and asked why they
+// disagreed. Root cause: _loadBalance guarded on `typeof raw === 'number'`,
+// but ProtoOATrader.balance is an int64 and THIS BROKER SENDS EVERY int64 AS
+// A STRING (the same trap dealPairing.js documents at length). The guard was
+// therefore always false, setBalance() was never called even once, and the
+// bot kept accountRuntime.js's hardcoded 10000 placeholder as its "real"
+// balance - then only nudged it by each close it witnessed. The arithmetic
+// that confirmed it: 10000 - 27.94 (the single close that session) =
+// 9972.06, exactly what the dashboard showed. Position sizing reads this
+// same balance, so it was sizing every real order off a fiction.
+// These fixtures are the VERBATIM shapes from that day's Render logs.
+test('parseBrokerMoney: the broker\'s real STRING int64 balance scales correctly (the bug that shipped)', () => {
+  assert.equal(parseBrokerMoney('1094299', 2), 10942.99); // the exact value the cTrader app was showing
+  assert.equal(parseBrokerMoney('1090477', 2), 10904.77);
+});
+
+test('parseBrokerMoney: a plain number works too - the fix must not trade one broken shape for another', () => {
+  assert.equal(parseBrokerMoney(1094299, 2), 10942.99);
+});
+
+test('parseBrokerMoney: moneyDigits drives the scale, it is not hardcoded to /100', () => {
+  assert.equal(parseBrokerMoney('1094299', 3), 1094.299);
+  assert.equal(parseBrokerMoney('1094299', 0), 1094299);
+});
+
+test('parseBrokerMoney: missing moneyDigits falls back to 2, matching the broker\'s observed default', () => {
+  assert.equal(parseBrokerMoney('1094299'), 10942.99);
+  assert.equal(parseBrokerMoney('1094299', undefined), 10942.99);
+});
+
+// The null case specifically: Number(null) is 0 and 0 IS finite, so a naive
+// Number.isFinite() guard would read an absent balance as a zeroed-out
+// account and wipe the real one - strictly worse than the original bug.
+test('parseBrokerMoney: an absent/garbage field returns null, NEVER a silently-wrong 0', () => {
+  assert.equal(parseBrokerMoney(null, 2), null);
+  assert.equal(parseBrokerMoney(undefined, 2), null);
+  assert.equal(parseBrokerMoney('', 2), null);
+  assert.equal(parseBrokerMoney('not-a-number', 2), null);
+});
+
+test('parseBrokerMoney: a genuine zero balance is a real value, not treated as missing', () => {
+  assert.equal(parseBrokerMoney('0', 2), 0);
 });
