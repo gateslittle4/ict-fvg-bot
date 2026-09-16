@@ -33,7 +33,7 @@
 import { CTraderConnection } from '@reiryoku/ctrader-layer';
 import { getDefaultAccount } from '../accountRegistry.js';
 import { CONFIG } from '../config.js';
-import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
+import { calculateLotSize, getDefaultSpec, buildSpecFromBrokerSymbol } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
@@ -229,11 +229,10 @@ export class CTraderDataSource {
     this.connection = null;
     this.symbolIdByName = new Map();
     this.symbolNameById = new Map();
-    // symbolName -> the broker's OWN ProtoOASymbol contract spec, fetched at
-    // boot by _loadSymbolSpecs(). Populated for observation only right now -
-    // nothing reads it for sizing yet, deliberately: see that method's
-    // comment for why the numbers have to be SEEN before they can be
-    // trusted with a real order's size.
+    // symbolName -> sizing spec built from the broker's OWN ProtoOASymbol,
+    // fetched at boot by _loadSymbolSpecs(). Read through _specFor(), which
+    // falls back to lotCalculator.js's placeholders for anything the broker
+    // did not answer for.
     this.brokerSymbolSpecByName = new Map();
     // Bookkeeping ONLY for the pyramid add-on leg, kept here (not in
     // LiveStrategyEngine) because by design that engine drops all tracking
@@ -475,35 +474,19 @@ export class CTraderDataSource {
 
   /**
    * Fetches the broker's OWN contract spec (ProtoOASymbol) for each traded
-   * symbol and logs it verbatim, once per boot.
+   * symbol at boot and turns it into a sizing spec with confirmed volume
+   * numbers - see buildSpecFromBrokerSymbol() for the full model and for
+   * what the 100000x bug this replaces actually was.
    *
-   * WHY THIS EXISTS, and why it deliberately does NOT feed position sizing
-   * yet (2026-09-16): every entry in lotCalculator.js's DEFAULT_SYMBOL_SPECS
-   * is a placeholder carrying `verified: false`, and that file's own header
-   * says real sizing MUST use broker-confirmed specs because "a wrong
-   * point/pip value silently produces a wrong lot size and therefore the
-   * wrong dollar risk on a real account". On top of that, _submitOrder's
-   * `volume = lots * lotSize * 100` conversion has never once been exercised
-   * against this broker: the only symbol that ever really traded was BTCUSD,
-   * and BTCUSD used `rawVolume: true` specifically to BYPASS that formula.
-   *
-   * There is direct evidence the formula is wrong. BTCUSD's real minimum
-   * order was volume=1, confirmed twice (ProtoOASymbolByIdReq's own
-   * minVolume, and the `units: 0.01` shown for a real position). If BTCUSD's
-   * lotSize were the natural 100 (1 lot = 1 BTC = 100 units of 0.01), then
-   * `lots * lotSize * 100` for that same 0.01-lot order yields 100, not 1 -
-   * a 100x error. Which of lotSize, the *100, or the lots<->units convention
-   * is at fault cannot be settled by reading the docs; it needs the real
-   * numbers.
-   *
-   * So this logs them and stops there. Wiring them into calculateLotSize()
-   * and _submitOrder() is a separate, deliberate step once the values are
-   * on screen - the same "don't guess at an undocumented broker payload"
-   * discipline already used for the raw-fill dump in _handleExecutionEvent.
-   * Reading a spec cannot move money; guessing at one can.
+   * These specs are what _specFor() hands to calculateLotSize() and
+   * _submitOrder(); only symbols the broker did not answer for fall back to
+   * lotCalculator.js's placeholders.
    *
    * Best-effort: a failure here is logged and never blocks boot, exactly
-   * like _loadClosedDeals and the stale-belief sweep.
+   * like _loadClosedDeals and the stale-belief sweep. Falling back means
+   * sizing reverts to the placeholders, which is the pre-2026-09-16
+   * behaviour - so _submitOrder still refuses to send a volume it cannot
+   * justify (see its own guard).
    */
   async _loadSymbolSpecs(accountId) {
     const wanted = this.symbols
@@ -522,14 +505,32 @@ export class CTraderDataSource {
       // than relying on either side's serialization.
       const match = wanted.find((s) => Number(s.id) === Number(spec.symbolId));
       if (!match) continue;
-      this.brokerSymbolSpecByName.set(match.name, spec);
-      console.log(`[cTrader] broker contract spec ${match.name}: ${JSON.stringify(spec)}`);
+      const merged = buildSpecFromBrokerSymbol(spec, getDefaultSpec(match.name));
+      if (!merged) {
+        console.warn(`[cTrader] broker spec for ${match.name} had no usable lotSize - keeping placeholder sizing`);
+        continue;
+      }
+      this.brokerSymbolSpecByName.set(match.name, merged);
+      console.log(
+        `[cTrader] broker contract spec ${match.name}: lotSize=${merged.lotSize} ` +
+          `minLots=${merged.minVolume} stepLots=${merged.volumeStep} maxLots=${merged.maxVolume}`
+      );
     }
 
     const missing = wanted.filter((s) => !this.brokerSymbolSpecByName.has(s.name)).map((s) => s.name);
     if (missing.length > 0) {
       console.warn(`[cTrader] no broker contract spec returned for: ${missing.join(', ')}`);
     }
+  }
+
+  /**
+   * The sizing spec for a symbol: broker-confirmed when we have it, the
+   * placeholder from lotCalculator.js otherwise. Single lookup point so
+   * auto-execute and the pyramid leg can never disagree about an order's
+   * size.
+   */
+  _specFor(symbolName) {
+    return this.brokerSymbolSpecByName.get(symbolName) || getDefaultSpec(symbolName);
   }
 
   async _loadBalance(accountId) {
@@ -1383,7 +1384,7 @@ export class CTraderDataSource {
   async _handlePyramidOrderRequested(symbolName, symbolId, e) {
     const store = this.account;
     try {
-      const spec = getDefaultSpec(symbolName);
+      const spec = this._specFor(symbolName);
       if (!spec) {
         console.warn(`[pyramid] no symbol spec for ${symbolName} - skipping add-on order`);
         return;
@@ -1526,18 +1527,33 @@ export class CTraderDataSource {
 
   async _submitOrder({ symbolId, orderType, tradeSide, lots, symbolSpec, price, stopLoss, takeProfit, label, expirationTimestamp }) {
     const accountId = Number(this.accountId);
-    // rawVolume (2026-09-13, temporary BTCUSD spec - see lotCalculator.js):
-    // that spec's `lots` is already forced to exactly the broker's own
-    // minVolume, in the broker's OWN volume units - sending it straight
-    // through avoids stacking a guessed lotSize on top of an already
-    // guessed contract spec. Every other symbol keeps the existing
-    // (still-unverified) lots*lotSize*100 convention unchanged.
+    // FIXED 2026-09-16. This was `lots * (symbolSpec.lotSize || 100000) * 100`,
+    // and no spec in lotCalculator.js has ever defined a lotSize - so every
+    // order used the hardcoded forex-shaped 100000, doubled by a further
+    // x100 that cTrader's own lotSize already contains. Right for EURUSD by
+    // pure coincidence (100000 * 100 == its real lotSize of 10000000),
+    // 100000x too large on US100/US500/GER40 and 1000x on XAUUSD - past
+    // those symbols' own maxVolume, so the broker would have rejected every
+    // single one. Never caught because the only symbol that ever really
+    // traded, BTCUSD, set rawVolume to skip this path entirely.
+    // Confirmed against all five symbols' real ProtoOASymbol responses; see
+    // buildSpecFromBrokerSymbol() for the model and the cross-check.
     let volume;
     if (symbolSpec.rawVolume) {
+      // The spec's `lots` IS the broker volume already - nothing to convert.
       volume = Math.round(lots);
     } else {
-      const lotSize = symbolSpec.lotSize || 100000; // VERIFY: fall back is a forex-standard-lot guess, not confirmed for indices/metals here
-      volume = Math.round(lots * lotSize * 100); // VERIFY units against a real response before going live
+      const lotSize = Number(symbolSpec.lotSize);
+      if (!Number.isFinite(lotSize) || lotSize <= 0) {
+        // Refuse rather than fall back to a guess. Sending a wrong volume is
+        // how this bug stayed invisible; a loud failure to place ONE order
+        // is strictly better than silently placing a mis-sized real one.
+        throw new Error(
+          `refusing to submit an order for symbolId=${symbolId}: no broker-confirmed lotSize ` +
+            '(ProtoOASymbolByIdReq did not return one at boot - see _loadSymbolSpecs)'
+        );
+      }
+      volume = Math.round(lots * lotSize);
     }
     const payload = { ctidTraderAccountId: accountId, symbolId, orderType, tradeSide, volume, stopLoss, takeProfit, label };
     if (orderType === 'STOP') payload.stopPrice = price;
@@ -1626,7 +1642,7 @@ export class CTraderDataSource {
     // that gap.
     console.log(`[auto-execute] entry signal received: ${symbolName} source=${signal.source} side=${signal.suggestedSide} id=${signal.id}`);
     try {
-      const spec = getDefaultSpec(symbolName);
+      const spec = this._specFor(symbolName);
       if (!spec) {
         console.warn(`[auto-execute] no symbol spec for ${symbolName} - skipping entry`);
         return;
