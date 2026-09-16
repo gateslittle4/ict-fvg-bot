@@ -687,25 +687,30 @@ export class MatchTraderDataSource {
         stopPrice: signal.stopPrice,
         symbolSpec: spec,
       });
-      const isFvg = signal.source === 'fvg';
       const side = signal.suggestedSide.toUpperCase();
+      // ALL sources now LIMIT at their own entryPrice (2026-09-16, mirrors
+      // cTraderDataSource.js's _handleAutoExecuteEntry - see its doc
+      // comment for the full rationale). Was FVG-only/MARKET-elsewhere
+      // before, same split this file always mirrored.
       await this._submitOrder({
         symbol,
-        orderType: isFvg ? 'LIMIT' : 'MARKET',
+        orderType: 'LIMIT',
         side,
         lots: sizing.lots,
-        price: isFvg ? signal.entryPrice : undefined,
+        price: signal.entryPrice,
         stopLoss: signal.stopPrice,
         takeProfit: signal.targetPrice,
       });
       this._notifyText(
         `🤖 [${signal.source.toUpperCase()}] Entrée auto envoyée sur ${symbol} (${side}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
       );
-      // Unlike cTrader's LIMIT order, Match-Trader's documented pending-order
-      // body has no `expirationTimestamp`/time-in-force field - VERIFY
-      // whether one exists before relying on it; until then, a stale unfilled
-      // FVG limit order may sit open indefinitely instead of expiring after
-      // ~1h like the cTrader path does. Worth an explicit manual check.
+      // Match-Trader's documented pending-order body has no
+      // `expirationTimestamp`/time-in-force field - VERIFY whether one
+      // exists before relying on it; until then, a stale unfilled LIMIT
+      // order (any source now, not just FVG) may sit open indefinitely
+      // instead of expiring like the cTrader path does. Worth an explicit
+      // manual check - more relevant now than before, since every source
+      // uses LIMIT here, not just FVG.
     } catch (err) {
       console.warn(`[auto-execute] failed to submit entry for ${symbol}:`, err.message);
       this._notifyText(`⚠️ [${signal.source.toUpperCase()}] Échec de l'envoi de l'entrée sur ${symbol} (${err.message}) - à vérifier manuellement`);
