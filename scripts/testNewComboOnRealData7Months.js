@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // testNewComboOnRealData7Months.js
 // Usage: node scripts/testNewComboOnRealData7Months.js <dir-with-real-csvs>
+// (les CSV réels utilisés ici sont committés dans data/real-data-2026-02-to-09/
+// - voir le README.md de ce dossier pour leur provenance exacte)
 //
 // Esdras (2026-09-16), suite directe : après avoir fourni ADMIN_EXPORT_TOKEN,
 // ce script rejoue EXACTEMENT la même comparaison que

@@ -3630,8 +3630,8 @@ Esdras a fourni `ADMIN_EXPORT_TOKEN` pour extraire les vraies bougies M15 depuis
 
 **Décision révisée : NE PAS déployer la cible dynamique en production pour l'instant.** Le backtest 17 ans reste positif et robuste (12/15 années), mais le seul test véritablement "en aveugle" disponible (ce fenêtre réelle récente) est négatif. Cohérent avec la mise en garde déjà répétée plusieurs fois dans ce document : un seul découpage/une seule fenêtre ne suffit jamais à valider un changement avant capital réel — ici on a maintenant DEUX fenêtres de test (2024-2025 CSV, positif ; 2026-02→09 réel, négatif) qui ne s'accordent pas, ce qui est justement le signal qu'il faut encore attendre avant de conclure, pas trancher dans un sens ou l'autre.
 
-**Fichiers réels NON committés** (par précaution — données de trading réelles temporaires, pas un artefact de recherche permanent comme les CSV historiques) : les 5 CSV exportés (`US100.csv`, etc.) restent uniquement dans le scratchpad de la session, jamais poussés au dépôt. Seul le script de test est committé.
+**Mise à jour (2026-09-16, même session) — Esdras : "on commit tout pour ne pas perdre des info pertinentes"** : décision revue — les 5 CSV réels exportés SONT maintenant committés (`data/real-data-2026-02-to-09/`, avec un `README.md` documentant leur provenance exacte : route, date d'export, plafond de 245 jours cTrader). Vérifié avant commit que le token lui-même n'apparaît nulle part dans ces fichiers (juste des bougies `time,open,high,low,close`) — seule la donnée de marché est conservée, jamais le secret utilisé pour l'obtenir. Choix justifié : cette fenêtre réelle est le seul test qui contredit le backtest 17 ans, donc précieuse à garder reproductible plutôt que perdue dans un scratchpad éphémère de session.
 
 `npm test` : 531/531 (aucun fichier de production modifié).
 
-**Fichiers** : `scripts/testNewComboOnRealData7Months.js` (nouveau).
+**Fichiers** : `scripts/testNewComboOnRealData7Months.js`, `data/real-data-2026-02-to-09/*.csv` + `README.md` (nouveaux, committés).
