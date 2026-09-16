@@ -3576,6 +3576,23 @@ Autres symboles testés dans le même passage, tous rejetés ou trop faibles : X
 
 **Fichiers** : `scripts/runWeeklySweepStrategyAnalysis.js` (nouveau), `data/backtest-input/weekly-sweep-strategy-analysis.md` (nouveau, généré).
 
+## Weekly Sweep/US500 activé en production — vérification de chevauchement terminée, propre — 2026-09-16
+
+Suite immédiate de l'entrée précédente. Esdras a confirmé ("Oui") de faire la vérification de chevauchement puis d'activer si c'est propre.
+
+**Vérification faite** (`scripts/testAddWeeklySweepUs500.mjs`, scratch de session, non commité — même principe que `testAddNwogGer40ToCombo.js`/`testAddBreakerBlockGer40ToCombo.js` mais AJOUT RÉEL au moteur complet plutôt qu'un simple proxy calendaire, puisque `weeklySweepConfig` accepte directement une liste de symboles sans le contournement nécessaire pour NWOG/GER40 bidirectionnel) : combo de production complet rejoué avec et sans `US500` dans `weeklySweep.symbols`, sur les deux fenêtres (historique 2009/2010-2025 ET les 7 mois réels broker déjà committés) :
+
+| Fenêtre | Sans Weekly Sweep/US500 | Avec | Impact net |
+|---|---|---|---|
+| Historique complet | 7217 trades, +2964R | 7798 trades, +3087R | **+581 trades, +123R** |
+| Réel (7 mois broker) | 287 trades, +98R | 310 trades, +107R | **+23 trades, +9R** |
+
+**Chevauchement avec FVG/Divergence (déjà actifs sur US500)** : minime des deux côtés — FVG passe de 515→505 trades (-1.9%) sur l'historique et reste inchangé (11→11) sur la fenêtre réelle ; Divergence passe de 890→875 (-1.7%) puis 36→35 (-2.8%). Aucune dégradation notable de ce qui tournait déjà.
+
+**Activé** : `config.js` `weeklySweep.symbols` passe de `['GER40']` à `['GER40', 'US500']`. `npm test` : 534/534 (inchangé — pas de nouveau test unitaire nécessaire, `runWeeklySweepBacktest` déjà testé, c'est juste un changement de config).
+
+**Fichiers** : `src/config.js` (`weeklySweep.symbols` étendu, commentaire complet ajouté). Script de vérification (`testAddWeeklySweepUs500.mjs`) resté en scratch de session, non commité — à recréer si cette vérification doit être refaite pour un autre symbole/mécanisme (même pattern que les scripts `testAddXxxToCombo.js` déjà committés, pourrait valoir la peine de le committer aussi si ce genre de vérification devient fréquent).
+
 ## Politique durable : tous les tests incluent maintenant tout l'historique disponible — `buildBacktestSummary.js` mis à jour — 2026-09-16
 
 Esdras, décision explicite et durable : "Tous Les nvs tests doivent inclure Tous Les annees maintenant, decris la performance de ma strategy pendant toutes ces annees." Retire le filtre `YEARS=[2019..2025]` de `scripts/buildBacktestSummary.js` (le seul endroit qui bornait encore artificiellement à 7 ans après le correctif prop-firm de l'entrée précédente) — même discipline que ce correctif : chaque symbole garde son propre historique réel le plus long, aucune homogénéisation à une fenêtre commune. `data/backtest-summary.json` régénéré (alimente aussi le chat IA du dashboard, `src/chatAssistant.js` - vérifié qu'il lit le JSON sans supposer un champ `years` figé, aucun changement de code nécessaire là).

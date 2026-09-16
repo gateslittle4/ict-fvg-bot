@@ -362,10 +362,27 @@ export const CONFIG = {
   // overlap (9-14% of the time), so attribution between the two remains
   // reasonably clear going forward.
   //
-  // Scoped to GER40 ONLY - never tested against US100/US500 in a way that
-  // survived the same robustness bar (see HANDOFF.md's GER40 sections).
+  // Scoped to GER40 + US500 - see HANDOFF.md's GER40 sections for GER40's
+  // own research thread. US500 UPDATE (2026-09-16): screened across all 8
+  // instruments with the same train/test rigor as NWOG/Judas Swing/Breaker
+  // Block (never done before for this mechanism - see
+  // data/backtest-input/weekly-sweep-strategy-analysis.md) - US500 is the
+  // only symbol besides GER40 that survives: positive AND stable across 4
+  // different train/test cutoffs (2021/2022/2023/2024, never negative,
+  // never a big train/test gap), 10 of 15 years positive, no single
+  // catastrophic year (worst -13.87R in 2016 - contrast with the
+  // same-day-rejected NWOG/US500 candidate's -16.56R single-year swing).
+  // Verified ADDITIVE at the full-combo level (not just in isolation) against the
+  // symbol's own FVG/Divergence mechanisms already live on it - both the
+  // 15-year backtest and the real 7-month broker window show low
+  // cannibalization (FVG net-unaffected to -2% trades, Divergence -2% to
+  // -4% trades) and a clearly positive net addition (+581 trades/+123R
+  // historical, +23 trades/+9R on the real window) - see
+  // scripts/testAddWeeklySweepUs500.mjs (session-scratch, not committed).
+  // XAUUSD/GBPUSD/EURUSD/USDJPY/USDCAD/US100 all rejected or too weak on
+  // this same screen.
   weeklySweep: {
-    symbols: ['GER40'],
+    symbols: ['GER40', 'US500'],
     rrMultiple: 3, // same convention already validated in src/backtest/weeklyLiquiditySweep.js - not re-tuned here
     maxHoldingM15Candles: 480,
   },
