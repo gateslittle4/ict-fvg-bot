@@ -229,6 +229,12 @@ export class CTraderDataSource {
     this.connection = null;
     this.symbolIdByName = new Map();
     this.symbolNameById = new Map();
+    // symbolName -> the broker's OWN ProtoOASymbol contract spec, fetched at
+    // boot by _loadSymbolSpecs(). Populated for observation only right now -
+    // nothing reads it for sizing yet, deliberately: see that method's
+    // comment for why the numbers have to be SEEN before they can be
+    // trusted with a real order's size.
+    this.brokerSymbolSpecByName = new Map();
     // Bookkeeping ONLY for the pyramid add-on leg, kept here (not in
     // LiveStrategyEngine) because by design that engine drops all tracking
     // of a pyramid leg the moment it's filled - see markPyramidOrderFilled()
@@ -334,6 +340,12 @@ export class CTraderDataSource {
     console.log('[cTrader] loading symbols...');
     await this._loadSymbols(accountId);
     console.log(`[cTrader] loaded ${this.symbolIdByName.size} symbols`);
+    console.log('[cTrader] loading broker contract specs...');
+    // Best-effort, like the other boot-time broker reads: observation only
+    // (see _loadSymbolSpecs), so a failure must never block going live.
+    await this._loadSymbolSpecs(accountId).catch((err) =>
+      console.warn('[cTrader] could not load broker contract specs (non-fatal, sizing keeps using placeholders):', err.message)
+    );
     console.log('[cTrader] loading balance...');
     await this._loadBalance(accountId);
     console.log('[cTrader] subscribing to live candles for', this.symbols.join(', '));
@@ -458,6 +470,65 @@ export class CTraderDataSource {
     for (const sym of res.symbol || []) {
       this.symbolIdByName.set(sym.symbolName, sym.symbolId);
       this.symbolNameById.set(sym.symbolId, sym.symbolName);
+    }
+  }
+
+  /**
+   * Fetches the broker's OWN contract spec (ProtoOASymbol) for each traded
+   * symbol and logs it verbatim, once per boot.
+   *
+   * WHY THIS EXISTS, and why it deliberately does NOT feed position sizing
+   * yet (2026-09-16): every entry in lotCalculator.js's DEFAULT_SYMBOL_SPECS
+   * is a placeholder carrying `verified: false`, and that file's own header
+   * says real sizing MUST use broker-confirmed specs because "a wrong
+   * point/pip value silently produces a wrong lot size and therefore the
+   * wrong dollar risk on a real account". On top of that, _submitOrder's
+   * `volume = lots * lotSize * 100` conversion has never once been exercised
+   * against this broker: the only symbol that ever really traded was BTCUSD,
+   * and BTCUSD used `rawVolume: true` specifically to BYPASS that formula.
+   *
+   * There is direct evidence the formula is wrong. BTCUSD's real minimum
+   * order was volume=1, confirmed twice (ProtoOASymbolByIdReq's own
+   * minVolume, and the `units: 0.01` shown for a real position). If BTCUSD's
+   * lotSize were the natural 100 (1 lot = 1 BTC = 100 units of 0.01), then
+   * `lots * lotSize * 100` for that same 0.01-lot order yields 100, not 1 -
+   * a 100x error. Which of lotSize, the *100, or the lots<->units convention
+   * is at fault cannot be settled by reading the docs; it needs the real
+   * numbers.
+   *
+   * So this logs them and stops there. Wiring them into calculateLotSize()
+   * and _submitOrder() is a separate, deliberate step once the values are
+   * on screen - the same "don't guess at an undocumented broker payload"
+   * discipline already used for the raw-fill dump in _handleExecutionEvent.
+   * Reading a spec cannot move money; guessing at one can.
+   *
+   * Best-effort: a failure here is logged and never blocks boot, exactly
+   * like _loadClosedDeals and the stale-belief sweep.
+   */
+  async _loadSymbolSpecs(accountId) {
+    const wanted = this.symbols
+      .map((name) => ({ name, id: this.symbolIdByName.get(name) }))
+      .filter((s) => s.id != null);
+    if (wanted.length === 0) return;
+
+    const res = await sendCommandWithTimeout(this.connection, 'ProtoOASymbolByIdReq', {
+      ctidTraderAccountId: Number(accountId),
+      symbolId: wanted.map((s) => Number(s.id)),
+    });
+
+    for (const spec of res?.symbol || []) {
+      // symbolId comes back as an int64 - i.e. possibly a string on this
+      // broker (see parseBrokerMoney). Match on the numeric value rather
+      // than relying on either side's serialization.
+      const match = wanted.find((s) => Number(s.id) === Number(spec.symbolId));
+      if (!match) continue;
+      this.brokerSymbolSpecByName.set(match.name, spec);
+      console.log(`[cTrader] broker contract spec ${match.name}: ${JSON.stringify(spec)}`);
+    }
+
+    const missing = wanted.filter((s) => !this.brokerSymbolSpecByName.has(s.name)).map((s) => s.name);
+    if (missing.length > 0) {
+      console.warn(`[cTrader] no broker contract spec returned for: ${missing.join(', ')}`);
     }
   }
 
