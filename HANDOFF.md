@@ -4806,3 +4806,15 @@ Esdras a testé le nouveau bouton "Tester la connexion broker" du dashboard (dé
 **Preuve que chaque nouveau test attrape vraiment une régression** (même discipline que toute la session) : cassé puis restauré individuellement — le fix pyramide (`if (false)` sur le `.set()`), le mapping take-profit (retour brut au lieu du mapping) — chaque fois le test correspondant échoue puis repasse au vert après restauration, diff vérifié identique à l'original.
 
 `npm test` : 672/672 (665 + 7 nouveaux : 2 dans `cTraderDataSourceExecutionEvent.test.js`, 1 dans `tradeCompliance.test.js`, 4 dans le nouveau `cTraderDataSourceStaleBeliefsSweep.test.js`). **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/dataSources/tradeCompliance.js`, `test/cTraderDataSourceExecutionEvent.test.js`, `test/tradeCompliance.test.js`, `test/cTraderDataSourceStaleBeliefsSweep.test.js` (nouveau).
+
+## Bug n°3, trouvé EN ÉCRIVANT le test manquant : même trou sur le chemin de vérification pyramide — 2026-09-17
+
+Esdras : "on doit tous coder, continue de chercher des bugs". En écrivant enfin le test pour `_handlePyramidOrderRequested` (laissé de côté il y a 2 tours), le test lui-même a révélé un 3e bug réel de la même famille que le n°1 : sa branche "reconcile trouve une position déjà remplie" (`verified?.positionId != null` — le cas où le STOP pyramide s'est déclenché avant qu'on ait pu vérifier) appelait bien `markPyramidOrderFilled()`, mais ne peuplait JAMAIS `openPositionInfoByPositionId` — exactement le même trou que celui du chemin confirmé-par-push, corrigé plus tôt aujourd'hui dans `_handleExecutionEvent`. Pire ici : cette branche existe SPÉCIFIQUEMENT pour le cas où la confirmation push a déjà été perdue — donc c'est précisément le chemin le PLUS susceptible d'être emprunté par un vrai incident, et il avait le même angle mort.
+
+**Corrigé** : même bloc que le fix n°1, ajouté dans `_handlePyramidOrderRequested` — `source:'pyramid'`, `stopPrice`/`targetPrice`/`riskAmount` réels via `filled`, `signalId: null` (même raisonnement de sûreté que le n°1).
+
+**Nouveau fichier `test/cTraderDataSourcePyramidOrderRequested.test.js`** (miroir de `cTraderDataSourceAutoExecuteEntry.test.js` mais pour l'entrée pyramide) : confirmation push reçue, reconcile trouve l'ordre STOP encore en attente, reconcile trouve la position déjà remplie (le bug n°3 ci-dessus), reconcile ne trouve rien → `clearPyramidPending`. 4 tests.
+
+**Preuve** : cassé le nouveau `.set()` (`if (false)` au lieu de `if (filled)`), le test correspondant échoue bien (3/4), restauré, diff identique, 4/4 de nouveau.
+
+`npm test` : 676/676 (672 + 4 nouveaux). **Fichiers** : `src/dataSources/cTraderDataSource.js` (`_handlePyramidOrderRequested`), `test/cTraderDataSourcePyramidOrderRequested.test.js` (nouveau).

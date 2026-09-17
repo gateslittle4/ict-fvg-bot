@@ -1581,6 +1581,31 @@ export class CTraderDataSource {
           // bookkeeping the push-confirmed fill path sets up.
           const filled = store.strategyEngine.markPyramidOrderFilled(symbolName);
           this.pyramidPositionIdBySymbol.set(symbolName, verified.positionId);
+          // BUG FOUND 2026-09-17 (same session, writing the regression test
+          // for THIS function surfaced it): the push-confirmed pyramid-fill
+          // path (_handleExecutionEvent) was just fixed to also populate
+          // openPositionInfoByPositionId (the missing-stop-loss sweep and
+          // the durable journal both read from it) - this reconcile-verified
+          // path, the one that exists SPECIFICALLY for when push
+          // confirmation is lost, had the identical gap and would have been
+          // even MORE exposed to it (this branch only ever runs when a push
+          // was already missed once). filled may be null if
+          // markPyramidOrderFilled's own slot was already empty (e.g. a
+          // previous verify already cleared it) - only set the tracking
+          // entry when there's a real filled record to source it from.
+          if (filled) {
+            this.openPositionInfoByPositionId.set(String(verified.positionId), {
+              symbolName,
+              source: 'pyramid',
+              signalId: null,
+              direction: filled.direction,
+              entryPrice: filled.entryPrice,
+              riskAmount: filled.riskAmount,
+              stopPrice: filled.stopPrice,
+              targetPrice: filled.targetPrice,
+              entryTime: Date.now(),
+            });
+          }
           console.warn(`[pyramid] no push confirmation for ${symbolName}, but reconcile found a REAL OPEN POSITION positionId=${verified.positionId} - adopted.`);
           this._notifyText(`🔺 Pyramide auto : 2e unité déjà REMPLIE sur ${symbolName} (confirmé en interrogeant le courtier) à ${filled?.entryPrice ?? e.entryPrice}`);
         } else {
