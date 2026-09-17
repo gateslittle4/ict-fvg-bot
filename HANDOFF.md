@@ -4167,3 +4167,21 @@ Le train se dégrade de façon MONOTONE et cohérente à mesure que le RR augmen
 **Statut : GBPUSD reste hors production.** Il n'a jamais été remis en config.js — cette recherche répond uniquement à la question posée, pour la trace. Pas de nouveau symbole ajouté cette session au final ; les options restantes (nouvel instrument avec données réelles à fournir, ou s'arrêter à 5 symboles) restent ouvertes.
 
 **Fichiers** : `scripts/runExtendedTargetAnalysis.js` (GBPUSD ajouté à `BASE_CONFIG`), `data/backtest-input/extended-target-analysis.md` (régénéré, section GBPUSD ajoutée). Script exploratoire, aucune logique testée touchée. `npm test` : 567/567 (inchangé).
+
+## NZDJPY — nouvel instrument, données réelles fournies par Esdras (2019-2025) — rejeté franchement, plus net que GBPUSD/USDCAD — 2026-09-17
+
+Suite du choix d'Esdras d'ajouter un nouvel instrument après le retrait de GBPUSD (edge réel mais RR plafonné à 3, voir entrées précédentes). Recommandation donnée : US30 (même famille — indices — que US100/US500/GER40, qui tiennent tous, contre la plupart des paires forex testées qui échouent). Esdras a fourni à la place des données réelles pour 3 paires forex différentes (NZDJPY, GBPJPY, AUDUSD) — d'abord seulement 2025 (1 an, inutilisable pour le découpage train/test de ce projet), puis 6 années supplémentaires (2019-2024) pour NZDJPY spécifiquement une fois le problème signalé.
+
+**Conversion** : `scripts/convertHistData.js` (déjà existant, même outil que GER40/USDCAD/USDJPY) sur les 7 fichiers HistData M1 fusionnés → `data/backtest-input/NZDJPY.csv`, 2019-01-01 à 2025-12-31, 170 939 bougies M15. Vérifié avant tout test : aucun écart de données anormal (plus grand écart 72h, le passage du nouvel an 2020→2021 — rien au-delà du seuil de 100h déjà utilisé comme garde-fou qualité ailleurs dans ce projet).
+
+**Bug évité avant de lancer un seul test** : NZDJPY était absent de `DEFAULT_SPREADS` — exactement le même piège déjà trouvé et corrigé pour USDJPY (coût de transaction traité comme ZÉRO par le fallback `?? 0`, ce qui avait produit des résultats artificiellement excellents la première fois). Ajouté `NZDJPY: 0.04` (~4 pips, estimation prudente pour un cross JPY moins liquide qu'USDJPY — aucun devis broker réel disponible, symbole jamais connecté/tradé) avant de lancer quoi que ce soit.
+
+**Méthode réutilisée telle quelle** : `scripts/runTrainTestValidation.js` — le même outil qui a validé GBPUSD/USDCAD (grille de 168 configurations, cutoff 2024-01-01, coûts réels), pointé sur un dossier isolé contenant uniquement NZDJPY pour ne pas relancer inutilement la grille sur les 5 symboles déjà en production.
+
+**Résultat : rejet net, plus clair que GBPUSD ou USDCAD.** Le TOP 5 des 168 configurations — c'est-à-dire les MEILLEURES combinaisons possibles trouvées sur TRAIN — sont TOUTES déjà négatives sur TRAIN lui-même (-0.06R à -0.09R), et empirent encore sur TEST (-0.10R à -0.16R). Contrairement à GBPUSD (où au moins un survivant marginal existait avant recherche plus poussée) ou USDCAD (configs positives en train mais qui s'effondraient en test), ici même le meilleur candidat sur 168 n'est jamais rentable, dans aucune des deux fenêtres. Pas une seule config n'approche même la barre de zéro.
+
+**Conclusion : NZDJPY rejeté, sans ambiguïté.** Cohérent avec le schéma déjà observé dans ce projet (les indices tiennent, la plupart des paires forex échouent) — et NZDJPY est en plus un cross JPY, une sous-famille jamais testée ici et structurellement moins liquide que les paires majeures déjà rejetées. Pas ajouté à `config.js` — recherche uniquement.
+
+**Reste ouvert** : GBPJPY et AUDUSD ont été reçus mais seulement pour 2025 (1 an, inutilisable) — pas encore testés. Si Esdras fournit 2019-2024 pour l'une des deux, même traitement à appliquer.
+
+**Fichiers** : `data/backtest-input/NZDJPY.csv` (nouveau, 170 939 bougies M15, 2019-2025), `src/backtest/transactionCosts.js` (ajout `NZDJPY: 0.04`), `data/backtest-input/nzdjpy-train-test-validation.md` (nouveau, résultat complet). Pas de nouveau code de production — recherche uniquement, même outils déjà existants. `npm test` : 567/567 (inchangé, une seule constante ajoutée).

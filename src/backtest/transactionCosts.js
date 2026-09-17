@@ -31,6 +31,21 @@ export const DEFAULT_SPREADS = {
   // exotic - similar liquidity profile to EURUSD/GBPUSD, not USDJPY's
   // different pip scale).
   USDCAD: 0.00015, // ~1.5 pips — INDICATIVE, never confirmed against a real broker spec
+  // 2026-09-17, Esdras uploaded real HistData NZDJPY M1 (2019-2025) to
+  // research a genuinely new instrument. Deliberately NOT left absent from
+  // this table - that exact gap (a symbol missing here silently costs
+  // ZERO via `DEFAULT_SPREADS[symbol] ?? 0`) is the specific bug already
+  // found and fixed for USDJPY (see its own comment above): the first pass
+  // showed suspiciously good numbers before that fix. Same 2-decimal pip
+  // scale as USDJPY (1 pip = 0.01), but NZDJPY is a cross between two
+  // lower-liquidity currencies (NZD/JPY), not a major - retail spreads run
+  // noticeably wider than USDJPY's ~1.2 pips. No live broker quote
+  // available (never connected/traded), so this is a conservative estimate
+  // (erring toward overstating cost, same discipline as GER40/BTCUSD's own
+  // "pick the higher end, not the average" choices) rather than a guess at
+  // the tight end - INDICATIVE, verify against a real broker spec before
+  // ever trusting a thin edge here.
+  NZDJPY: 0.04, // ~4 pips — INDICATIVE, conservative estimate for a JPY cross, never confirmed against a real broker spec
   US100: 0.6, // Sell 29074.45 / Buy 29075.05 — was 1.0, a 67% overestimate
   US500: 0.25, // Sell 7605.47 / Buy 7605.72 — was 0.4, a 60% overestimate
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec
