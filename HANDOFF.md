@@ -4527,3 +4527,17 @@ Esdras, après avoir vu le trade Judas Swing/EURUSD montré en détail : "on a p
 `npm test` : 631/631 (618 + 13 nouveaux).
 
 **Fichiers** : `src/backtest/breakerBlock.js`, `src/backtest/silverBullet.js`, `src/dataSources/tradeCompliance.js`, `src/dataSources/cTraderDataSource.js`, `src/liveStrategyEngine.js`, `public/journal.html`, `test/tradeCompliance.test.js`.
+
+## Trades BTCUSD retirés du journal — 2026-09-17
+
+Esdras : "Retire tous les trade btc du journal, pas besoin."
+
+BTCUSD (le smoke-test de connectivité temporaire, retiré du trading live le jour même de son lancement — voir `config.js`) laissait quand même ses vrais trades historiques apparaître dans le journal : `getTradeHistory()` rejoue simplement l'historique de deals réel du courtier, sans notion de "symbole encore actif".
+
+**Filtré côté serveur, AVANT la boucle d'enrichissement** (`cTraderDataSource.js`) — pas juste caché côté client : `pairDealsIntoTrades(...).filter((t) => t.symbolId !== btcusdId)`. Ça évite aussi les appels courtier inutiles (bougies de graphique, contexte de checklist) pour des trades que personne ne veut voir. `symbolIdByName.get('BTCUSD')` peut être `undefined` (compte jamais abonné au symbole) — la comparaison garde alors tous les trades, ce qui est correct.
+
+Commentaire obsolète dans `journal.html` corrigé au passage (disait encore "cette page affiche ses vrais trades historiques" — plus vrai depuis ce filtre).
+
+`npm test` : 631/631 (inchangé — chemin réseau uniquement, pas de test unitaire sur cette logique par convention établie).
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `public/journal.html`.

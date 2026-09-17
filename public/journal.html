@@ -371,8 +371,9 @@ const fmtTime = (t) => t ? new Date(t).toLocaleString('fr-FR') : '—';
 // US indices and gold trade in whole-ish points (2dp is plenty); forex pairs need more precision.
 // GER40/BTCUSD added 2026-09-16 - both were falling into the 5-decimals
 // forex default (e.g. GER40's real 25445.05 would show as 25445.05000).
-// BTCUSD stays listed here even though the symbol was retired from trading
-// the same day: this page still renders its real historical trades.
+// BTCUSD kept in this lookup even though its trades are now filtered out
+// server-side (2026-09-17, see getTradeHistory()'s own comment) - harmless
+// to leave here, and this stays correct if that filter is ever lifted.
 const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD' || symbol === 'GER40' || symbol === 'BTCUSD') ? 2 : 5;
 // Same source-label vocabulary as index.html (kept as its own copy, not a
 // shared import, same convention chart.html/accounts.html already use for

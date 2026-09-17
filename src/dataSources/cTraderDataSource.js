@@ -698,7 +698,22 @@ export class CTraderDataSource {
       console.warn('[cTrader] trade history: failed to fetch order labels (source will show as unknown):', err.message);
     }
 
-    const trades = pairDealsIntoTrades(res.deal || [], orderLabelsById).slice(0, maxTrades);
+    // BTCUSD (2026-09-17, Esdras: "retire tous les trade btc du journal, pas
+    // besoin") - the temporary M1 connectivity smoke-test was retired from
+    // live trading the same day it ran (see config.js/HANDOFF.md), but its
+    // real historical trades kept showing up here since getTradeHistory()
+    // just replays whatever the broker's own deal history returns, with no
+    // notion of "still an active symbol". Filtered out BEFORE the
+    // enrichment loop below (not just hidden client-side) so it also skips
+    // the chart-candle/checklist broker fetches for trades nobody wants to
+    // see - cheaper, not just tidier. symbolIdByName.get('BTCUSD') can be
+    // undefined (symbol never loaded, e.g. a fresh account never subscribed
+    // to it) - the `!== btcusdId` comparison then keeps every trade, which
+    // is correct (nothing to filter out).
+    const btcusdId = this.symbolIdByName.get('BTCUSD');
+    const trades = pairDealsIntoTrades(res.deal || [], orderLabelsById)
+      .filter((t) => t.symbolId !== btcusdId)
+      .slice(0, maxTrades);
 
     const enriched = [];
     for (const trade of trades) {
