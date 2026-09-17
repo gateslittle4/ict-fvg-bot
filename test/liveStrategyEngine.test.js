@@ -1147,12 +1147,12 @@ function loadCsv(path) {
 }
 
 // Hardcoded rather than read from CONFIG.symbols: this comparison needs to
-// stay pinned to the 4 symbols these tests actually load real CSV fixtures
+// stay pinned to the symbols these tests actually load real CSV fixtures
 // for, independent of whatever CONFIG.symbols happens to list at any given
-// time (it's grown twice already - XAUUSD, then EURUSD - and a mutable
-// global here silently breaks this file every time, with a confusing
-// "not iterable" error instead of a clear one).
-const WARMUP_COMPARISON_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD'];
+// time (it's grown several times already - XAUUSD, then EURUSD, then GER40 -
+// and a mutable global here silently breaks this file every time, with a
+// confusing "not iterable" error instead of a clear one).
+const WARMUP_COMPARISON_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
 
 function newEngineForWarmupComparison() {
   const guardrail = permissiveGuardrail();
@@ -1162,6 +1162,16 @@ function newEngineForWarmupComparison() {
     divergenceConfig: CONFIG.divergence,
     nwogConfig: CONFIG.nwog, // exercise NWOG's bulk-vs-sequential equivalence too, not just FVG/Divergence/pyramid
     judasSwingConfig: CONFIG.judasSwing, // same, for Judas Swing/EURUSD
+    // GER40 added 2026-09-17 specifically to exercise Weekly Sweep/Breaker
+    // Block/Silver Bullet's bulk-vs-sequential equivalence too - the
+    // pre-existing version of this test never touched these 3 (all either
+    // GER40-scoped or GER40-included), so a bug unique to their bulk warm-up
+    // path (as opposed to their live per-tick path, already covered by the
+    // dedicated tests above) could have shipped silently. Uses CONFIG's
+    // real production values directly, not a hand-picked subset.
+    weeklySweepConfig: CONFIG.weeklySweep,
+    breakerBlockConfig: CONFIG.breakerBlock,
+    silverBulletConfig: CONFIG.silverBullet,
     guardrail,
     riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
     pyramidConfig: { enabled: true, addAtR: 1, symbols: ['US100', 'US500'] }, // exercise _maybeRequestPyramid's bulk path too, not just the default-off case
@@ -1181,6 +1191,7 @@ test('warmUp(): bulk single-pass reconstruction is IDENTICAL to sequential inges
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
     EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
+    GER40: loadCsv('data/backtest-input/GER40.csv').slice(0, N),
   };
 
   const sequential = newEngineForWarmupComparison();
@@ -1224,12 +1235,14 @@ test('warmUp(): after reconstructing state, a NEW live candle produces the same 
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
     EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
+    GER40: loadCsv('data/backtest-input/GER40.csv').slice(0, N),
   };
   const nextCandles = {
     US100: loadCsv('data/backtest-input/US100.csv').slice(N, N + 50),
     US500: loadCsv('data/backtest-input/US500.csv').slice(N, N + 50),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(N, N + 50),
     EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(N, N + 50),
+    GER40: loadCsv('data/backtest-input/GER40.csv').slice(N, N + 50),
   };
 
   const sequential = newEngineForWarmupComparison();

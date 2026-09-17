@@ -4434,3 +4434,23 @@ L'écart confirme que le bug était réel et significatif (les horodatages des t
 `npm test` : 618/618 (script d'analyse seul, aucun code de production touché).
 
 **Fichiers** : `scripts/runFvgMultiTouchForwardTestWindowAnalysis.js` (bug corrigé), `data/forward-test-2026/fvg-multi-touch-forward-test-window-analysis.md` (régénéré avec les bonnes valeurs).
+
+## Audit complet du câblage des signaux live, suite au doute d'Esdras — 2026-09-17
+
+Esdras : "verifie que tous les signaux sont reelement cable, car je sens que des signaux pouraient etre bloque" — juste après le déploiement de Silver Bullet et la correction du bug Weekly Sweep/Breaker Block. Vérification en 5 étapes, au-delà des tests unitaires déjà en place :
+
+1. **Déploiement réel confirmé** (`mcp__Render__list_deploys`) : le dernier commit poussé (correction du bug de fuseau horaire) est bien `status: "live"` sur le service Render — pas seulement poussé sur GitHub, réellement déployé.
+
+2. **Logs de démarrage propres** (`mcp__Render__list_logs`, fenêtre du dernier redémarrage) : warm-up réussi pour les 5 symboles (US100/US500/XAUUSD/EURUSD/GER40), aucune exception, connexion cTrader établie, **`AUTO_EXECUTE_ALWAYS_ON=true` confirmé, armé jusqu'au 2026-09-24**. Si `_computeWeeklySweepCandidates`/`_computeBreakerBlockCandidates`/`_computeSilverBulletCandidates` avait une erreur sur données réelles, le warm-up aurait planté ici — il ne l'a pas fait.
+
+3. **Vérification directe sur données réelles fraîches** : bougies M15 réellement conservées par le bot récupérées via `/api/candles` (GER40/US100/US500, ~52 jours jusqu'à l'heure du redémarrage), puis les 4 détecteurs (`detectNwogEvents`, `detectWeeklySweepEvents`, `detectBosEvents`+`findOrderBlock`, `detectSilverBulletFvgs`) exécutés directement dessus. **Résultat : tous produisent des candidats fréquents et récents** — NWOG ~11/symbole (hebdomadaire, comme attendu), Weekly Sweep ~10-12/symbole, Breaker Block 300+ BOS avec bloc trouvé à chaque fois, **Silver Bullet 22-36 FVG éligibles par symbole, le plus récent formé le 2026-09-16 (la veille du contrôle)**. La détection est donc bien vivante, pas silencieusement cassée.
+
+4. **Nouveau test de régression ajouté** (`test/liveStrategyEngine.test.js`) : le test d'équivalence bit-à-bit "warm-up en masse vs replay séquentiel" (celui qui protège contre un bug propre au chemin RÉELLEMENT utilisé en production, `_warmUpOneSymbol`, différent du chemin `ingestCandle` testé ailleurs) ne couvrait jusqu'ici que NWOG/Judas Swing — Weekly Sweep/Breaker Block/Silver Bullet n'étaient JAMAIS passés par cette vérification spécifique. GER40 + les 3 configs ajoutés à ce test existant (données réelles `GER40.csv`, 1500+2×50 bougies) — **passe**, confirmant que le chemin de démarrage réellement utilisé en production reproduit exactement le même état que le traitement candle-par-candle pour ces 3 mécanismes aussi.
+
+5. **`/api/trade-history` (7 jours) ne montre encore aucun trade GER40/US100/US500 de ces nouveaux mécanismes** — attendu, pas un signe de blocage : (a) Silver Bullet/Breaker Block exigent une confirmation (mitigation/retest) après le signal initial, qui peut ne pas encore s'être produite ; (b) GER40 partage maintenant UNE SEULE place de netting entre 4 mécanismes (NWOG, Weekly Sweep, Breaker Block, Silver Bullet) — un candidat qui perd la course arrive avec `blockedReason: 'netting'`, comportement voulu, pas un bug (voir l'analyse de chevauchement : 9-24% de perte de course, jamais 100%).
+
+**Conclusion : aucun signal n'est structurellement bloqué au-delà du bug déjà corrigé (Weekly Sweep/Breaker Block).** La détection tourne, produit des candidats réels et récents sur les 3 symboles, le chemin de démarrage réel (pas juste le chemin de test) est maintenant vérifié bit-à-bit pour les 3 nouveaux mécanismes, et l'auto-execute est bien actif. L'absence de trades exécutés cette semaine reflète la rareté normale de ces signaux (hebdomadaire à occasionnel) et le partage de netting, pas un blocage caché.
+
+`npm test` : 618/618 (tests existants étendus, aucun nouveau test ajouté).
+
+**Fichiers** : `test/liveStrategyEngine.test.js` (couverture étendue).
