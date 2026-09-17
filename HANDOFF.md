@@ -4605,3 +4605,17 @@ Temps moyen pour réussir un challenge (cycles gagnés seulement) : 29 jours. Ra
 `npm test` : inchangé, 645/645 (aucun code de production touché, seulement un nouveau script d'analyse + son rapport généré).
 
 **Fichiers** : `scripts/runFtmo1StepFullComboReal7MonthsCycle.js` (nouveau), `data/real-data-2026-02-to-09/ftmo-1step-full-combo-7months-cycle.md` (nouveau, généré).
+
+## Même simulation cycle FTMO 1-Step sur les 2 années de test (2024-2025) — 2026-09-17
+
+Esdras, suite directe : "Tu fais la même chose pour les deux années de test?" — "les deux années de test" = le split train(2019-2023)/test(2024-2025) déjà utilisé partout dans ce projet pour valider chaque mécanisme individuellement.
+
+**Nouveau script `scripts/runFtmo1StepFullComboTestYearsCycle.js`**, quasi-identique à `runFtmo1StepFullComboReal7MonthsCycle.js` (même logique de cycle, mêmes 7 mécanismes, même risque 0.5% "mode challenge", mêmes garde-fous réels), 2 différences seulement : (1) données = `data/backtest-input/` (l'historique CSV 2010-2025 déjà committé) filtré à la fenêtre 2024-01-01 → 2026-01-01 ; (2) comme les autres scripts "par année" de ce projet (`runFtmoAllLiveStrategiesAccountImpact.js`/`simulateYear()`), les candidats de chaque mécanisme sont calculés uniquement sur les bougies de la fenêtre test elle-même, sans warm-up sur 2019-2023 — même simplification déjà acceptée ailleurs, signalée honnêtement dans les mises en garde du rapport.
+
+**Résultat sur 2024-2025 (2 ans complets, jamais vus pendant le réglage d'aucun des 7 mécanismes)** : **24 challenges réussis, 5 ratés**, 1336 trades au total, temps moyen pour réussir un challenge : 24 jours. Proportionnellement cohérent avec le résultat des 7 mois réels de 2026 (6 réussis / 1 raté sur 349 trades) — le taux de réussite (~83% des cycles) et le rythme (24j vs 29j en moyenne pour passer) sont dans le même ordre de grandeur sur les deux fenêtres, ce qui renforce la confiance dans le résultat des 7 mois réels (pas un coup de chance isolé sur une petite fenêtre). Détail des 29 cycles complets + 1 cycle en cours dans le rapport complet, envoyé à Esdras.
+
+**Nuance honnête ajoutée** (signalée dans le rapport, pas cachée) : Weekly Sweep/Breaker Block/Silver Bullet ont chacun été validés SÉPARÉMENT sur ce même découpage train/test avant d'être ajoutés au combo — ce test-ci les combine pour la première fois avec du netting et des garde-fous PARTAGÉS entre les 7 mécanismes, ce qui reste un test différent (et c'est justement l'objectif ici) de leur validation individuelle d'origine.
+
+`npm test` : inchangé, 645/645.
+
+**Fichiers** : `scripts/runFtmo1StepFullComboTestYearsCycle.js` (nouveau), `data/backtest-input/ftmo-1step-full-combo-test-years-cycle.md` (nouveau, généré).
