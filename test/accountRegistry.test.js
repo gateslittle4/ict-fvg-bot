@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildEffectiveConfig } from '../src/accountRegistry.js';
+import { CONFIG } from '../src/config.js';
 
 // Regression test for a real bug caught before it shipped (2026-09-13,
 // while adding CTI's 1-Step program, which has NO daily loss limit): a
@@ -41,4 +42,98 @@ test('buildEffectiveConfig: no propFirmProgramId means the account\'s own guardr
   const guardrails = { maxTradesPerDay: 5, cooldownMinutesAfterLoss: 15, dailyLossLimitPct: 1.5, dayBoundaryHourUTC: 0 };
   const effective = buildEffectiveConfig({ id: 'test-plain', propFirmProgramId: null, guardrails, riskPctPerTrade: 0.3 });
   assert.deepEqual(effective.guardrails, guardrails);
+});
+
+// Regression test for a real bug caught 2026-09-17 while wiring Silver
+// Bullet live: weeklySweep/breakerBlock were added to config.js and
+// accountRuntime.js ("LIVE, auto-executed") but never forwarded here -
+// AccountRuntime reads config.weeklySweep/config.breakerBlock directly, and
+// an omitted key is `undefined`, which LiveStrategyEngine's constructor
+// silently defaults back to null (disabled). Both mechanisms were inert in
+// production the entire time despite being documented as live. Every
+// live-mechanism config block must be forwarded, checked explicitly by name
+// so a future mechanism added to config.js but forgotten here fails loudly.
+test('buildEffectiveConfig: forwards every live-mechanism config block from CONFIG (nwog/judasSwing/weeklySweep/breakerBlock/silverBullet/pyramid), none silently dropped', () => {
+  const effective = buildEffectiveConfig({ id: 'test-plain', propFirmProgramId: null, guardrails: {}, riskPctPerTrade: 0.3 });
+  assert.equal(effective.nwog, CONFIG.nwog);
+  assert.equal(effective.judasSwing, CONFIG.judasSwing);
+  assert.equal(effective.weeklySweep, CONFIG.weeklySweep);
+  assert.equal(effective.breakerBlock, CONFIG.breakerBlock);
+  assert.equal(effective.silverBullet, CONFIG.silverBullet);
+  assert.equal(effective.pyramid, CONFIG.pyramid);
+});
+
+// --- DISABLED_ACCOUNT_IDS -------------------------------------------------
+// 2026-09-16: added so an account can be taken out of service without
+// rewriting ACCOUNTS_JSON, which holds live broker credentials. First real
+// use was the cti-freetrial Match-Trader account, whose login is answered by
+// a Cloudflare challenge on every boot so it never actually connects.
+// Exercised through a real CONFIG re-import per case (the filter runs at
+// module load), with the env var restored afterwards.
+async function accountIdsWith(disabledValue) {
+  const before = process.env.DISABLED_ACCOUNT_IDS;
+  const previousAccounts = process.env.ACCOUNTS_JSON;
+  process.env.ACCOUNTS_JSON = JSON.stringify([
+    { id: 'default', platform: 'mock' },
+    { id: 'cti-freetrial', platform: 'mock' },
+  ]);
+  if (disabledValue === undefined) delete process.env.DISABLED_ACCOUNT_IDS;
+  else process.env.DISABLED_ACCOUNT_IDS = disabledValue;
+  try {
+    // cache-bust so the module-level resolution re-runs against this env
+    const { CONFIG } = await import(`../src/config.js?disabled=${encodeURIComponent(String(disabledValue))}`);
+    return CONFIG.accounts.map((a) => a.id);
+  } finally {
+    if (before === undefined) delete process.env.DISABLED_ACCOUNT_IDS;
+    else process.env.DISABLED_ACCOUNT_IDS = before;
+    if (previousAccounts === undefined) delete process.env.ACCOUNTS_JSON;
+    else process.env.ACCOUNTS_JSON = previousAccounts;
+  }
+}
+
+test('DISABLED_ACCOUNT_IDS: unset keeps every account', async () => {
+  assert.deepEqual(await accountIdsWith(undefined), ['default', 'cti-freetrial']);
+});
+
+test('DISABLED_ACCOUNT_IDS: removes exactly the named account', async () => {
+  assert.deepEqual(await accountIdsWith('cti-freetrial'), ['default']);
+});
+
+test('DISABLED_ACCOUNT_IDS: tolerates spacing and empty entries', async () => {
+  assert.deepEqual(await accountIdsWith(' cti-freetrial , '), ['default']);
+});
+
+test('DISABLED_ACCOUNT_IDS: an unknown id is a harmless no-op, not an error', async () => {
+  assert.deepEqual(await accountIdsWith('does-not-exist'), ['default', 'cti-freetrial']);
+});
+
+// A bot with zero accounts boots into a state where nothing trades and every
+// dashboard route 404s - that reads as a crash, not a config choice.
+test('DISABLED_ACCOUNT_IDS: refuses to disable the last account, keeping all of them', async () => {
+  assert.deepEqual(await accountIdsWith('default,cti-freetrial'), ['default', 'cti-freetrial']);
+});
+
+// The Supabase path specifically: accounts can also arrive from
+// fetchDynamicAccounts() at boot, long after config.js loaded. The first
+// attempt at disabling cti-freetrial only filtered CONFIG.accounts and so
+// did nothing at all - the account lives in Supabase. isAccountDisabled() is
+// exported precisely so server.js's boot can apply the same rule there.
+test('isAccountDisabled: matches the ids listed in DISABLED_ACCOUNT_IDS', async () => {
+  const { isAccountDisabled } = await import('../src/config.js');
+  const before = process.env.DISABLED_ACCOUNT_IDS;
+  try {
+    process.env.DISABLED_ACCOUNT_IDS = 'cti-freetrial, other-one ';
+    assert.equal(isAccountDisabled('cti-freetrial'), true);
+    assert.equal(isAccountDisabled('other-one'), true);
+    assert.equal(isAccountDisabled('default'), false);
+
+    delete process.env.DISABLED_ACCOUNT_IDS;
+    assert.equal(isAccountDisabled('cti-freetrial'), false); // unset disables nothing
+
+    process.env.DISABLED_ACCOUNT_IDS = '';
+    assert.equal(isAccountDisabled('cti-freetrial'), false);
+  } finally {
+    if (before === undefined) delete process.env.DISABLED_ACCOUNT_IDS;
+    else process.env.DISABLED_ACCOUNT_IDS = before;
+  }
 });

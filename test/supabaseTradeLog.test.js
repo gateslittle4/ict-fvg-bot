@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTradeLogClient, toTradeRow, logClosedTrade, fetchPerformanceBySymbol } from '../src/dataSources/supabaseTradeLog.js';
+import { createTradeLogClient, toTradeRow, logClosedTrade, fetchPerformanceBySymbol, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from '../src/dataSources/supabaseTradeLog.js';
 
 const silentLog = { warn() {} };
 
@@ -72,6 +72,24 @@ test('toTradeRow: a timeout with no rMultiple becomes null, not undefined or NaN
     entryPrice: 19500, entryTime: 1, exitTime: 2,
   });
   assert.equal(row.r_multiple, null);
+});
+
+test('toTradeRow: carries pnlUsd/balanceAfter through as pnl_usd/balance_after (Esdras: "calendrier... chiffre brut et %")', () => {
+  const row = toTradeRow({
+    symbol: 'US500', source: 'fvg', direction: 'bearish', outcome: 'loss', rMultiple: -1,
+    entryPrice: 6850.5, entryTime: 1, exitTime: 2, pnlUsd: -49.5, balanceAfter: 9950.5,
+  });
+  assert.equal(row.pnl_usd, -49.5);
+  assert.equal(row.balance_after, 9950.5);
+});
+
+test('toTradeRow: pnlUsd/balanceAfter default to null when omitted (a row logged before those columns existed)', () => {
+  const row = toTradeRow({
+    symbol: 'US500', source: 'fvg', direction: 'bearish', outcome: 'loss', rMultiple: -1,
+    entryPrice: 6850.5, entryTime: 1, exitTime: 2,
+  });
+  assert.equal(row.pnl_usd, null);
+  assert.equal(row.balance_after, null);
 });
 
 test('logClosedTrade: no-op when client is null (persistence disabled)', async () => {
@@ -185,6 +203,53 @@ test('fetchPerformanceBySymbol: overall/equityCurve reuse summarizeTrades() math
   assert.equal(equityCurve[2].cumulativeR, 7);
 });
 
+// 2026-09-15 (Esdras: "stats par session") - a trade's ICT session
+// (Asie/Londres/New York) is a property of when it was ENTERED, not when it
+// closed, so equityCurve must carry entry_time alongside exit_time/cumulativeR.
+test('fetchPerformanceBySymbol: equityCurve carries entryTime alongside time/cumulativeR, for session bucketing', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z' },
+      ],
+      error: null,
+    },
+  });
+  const { equityCurve } = await fetchPerformanceBySymbol(client);
+  assert.equal(equityCurve[0].entryTime, '2026-09-01T08:30:00Z');
+  assert.equal(equityCurve[0].time, '2026-09-01T09:00:00Z');
+});
+
+// 2026-09-15 (Esdras: "calendrier des jours du mois... chiffre brut et %") -
+// the calendar needs real $ figures, not just R-multiples.
+test('fetchPerformanceBySymbol: equityCurve carries pnlUsd/balanceAfter when the DB has them', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z', pnl_usd: 247.5, balance_after: 10247.5 },
+      ],
+      error: null,
+    },
+  });
+  const { equityCurve } = await fetchPerformanceBySymbol(client);
+  assert.equal(equityCurve[0].pnlUsd, 247.5);
+  assert.equal(equityCurve[0].balanceAfter, 10247.5);
+});
+
+test('fetchPerformanceBySymbol: equityCurve.pnlUsd/balanceAfter default to null on rows logged before those columns existed', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z' },
+      ],
+      error: null,
+    },
+  });
+  const { equityCurve } = await fetchPerformanceBySymbol(client);
+  assert.equal(equityCurve[0].pnlUsd, null);
+  assert.equal(equityCurve[0].balanceAfter, null);
+});
+
 test('fetchPerformanceBySymbol: a query error surfaces as a reason rather than throwing or silently returning empty', async () => {
   const client = fakeClient({ selectResult: { data: null, error: { message: 'relation does not exist' } } });
   const { bySymbol, bySource, overall, equityCurve, reason } = await fetchPerformanceBySymbol(client);
@@ -212,4 +277,169 @@ test('fetchPerformanceBySymbol: passing days applies a gte filter on exit_time',
   await fetchPerformanceBySymbol(client, { days: 30 });
   assert.ok(capturedFilters.gte);
   assert.equal(capturedFilters.gte.col, 'exit_time');
+});
+
+// 2026-09-15 (Esdras: "toute information nécessaire pour un vrai journal,
+// le nombre de RRR etc") - cTrader's own deal history has no concept of
+// "risk amount" once a position is closed, so the real per-trade journal
+// (driven by that deal history, for its chart context) can only ever learn
+// its R-multiple by joining against the durable journal, which computed it
+// at close time. These tests cover that join in isolation.
+test('enrichTradesWithRMultiple: matches a broker trade to its durable row by symbol + close exit time, attaches rMultiple', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000, pnl: 50 }];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000500, rMultiple: 2.3 }]; // 500ms apart - real processing latency
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.rMultiple, 2.3);
+  assert.equal(enriched.symbol, 'US100'); // rest of the trade untouched
+  assert.equal(enriched.pnl, 50);
+});
+
+test('enrichTradesWithRMultiple: a durable row on a DIFFERENT symbol never matches, even at the exact same time', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'XAUUSD', exitTime: 1000000, rMultiple: 3 }];
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.rMultiple, null);
+});
+
+test('enrichTradesWithRMultiple: outside the tolerance window, no match - rMultiple stays null rather than guessing', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000000 + 60000, rMultiple: 3 }]; // 60s apart, default tolerance is 30s
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.rMultiple, null);
+});
+
+test('enrichTradesWithRMultiple: with several candidates on the same symbol, picks the CLOSEST one in time', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const durableRows = [
+    { symbol: 'US100', exitTime: 1000000 - 20000, rMultiple: 1 }, // 20s before
+    { symbol: 'US100', exitTime: 1000000 + 2000, rMultiple: 2.5 }, // 2s after - closest
+    { symbol: 'US100', exitTime: 1000000 + 25000, rMultiple: 3 }, // 25s after
+  ];
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.rMultiple, 2.5);
+});
+
+test('enrichTradesWithRMultiple: each durable row is used at most once - two broker trades never both claim the same durable row', () => {
+  const brokerTrades = [
+    { symbol: 'US100', exitTime: 1000000 },
+    { symbol: 'US100', exitTime: 1000100 }, // very close to the trade above
+  ];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000050, rMultiple: 4 }]; // only ONE durable row for TWO broker trades
+  const enriched = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  const matched = enriched.filter((t) => t.rMultiple !== null);
+  assert.equal(matched.length, 1, 'only one of the two broker trades should claim the single durable row');
+});
+
+test('enrichTradesWithRMultiple: an empty durable list leaves every trade with rMultiple: null, not a throw', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const enriched = enrichTradesWithRMultiple(brokerTrades, []);
+  assert.equal(enriched[0].rMultiple, null);
+});
+
+// 2026-09-15 (Esdras: "preuve visuelle de conformité") - the compliance
+// checklist's risk-check item needs the real $ pnl and balance, joined the
+// same way as rMultiple already was.
+test('enrichTradesWithRMultiple: also attaches pnlUsd/balanceAfter from the matched durable row', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000500, rMultiple: 2.3, pnlUsd: 115, balanceAfter: 10115 }];
+  const [enriched] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(enriched.pnlUsd, 115);
+  assert.equal(enriched.balanceAfter, 10115);
+});
+
+test('enrichTradesWithRMultiple: no match leaves pnlUsd/balanceAfter null, not undefined or a throw', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
+  const enriched = enrichTradesWithRMultiple(brokerTrades, []);
+  assert.equal(enriched[0].pnlUsd, null);
+  assert.equal(enriched[0].balanceAfter, null);
+});
+
+test('fetchRecentTradeRows: maps pnl_usd/balance_after to pnlUsd/balanceAfter', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [{ symbol: 'US100', source: 'fvg', direction: 'bullish', outcome: 'win', r_multiple: 5, entry_price: 19500, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z', pnl_usd: 247.5, balance_after: 10247.5 }],
+      error: null,
+    },
+  });
+  const [row] = await fetchRecentTradeRows(client);
+  assert.equal(row.pnlUsd, 247.5);
+  assert.equal(row.balanceAfter, 10247.5);
+});
+
+test('fetchRecentTradeRows: pnl_usd/balance_after default to null on rows logged before those columns existed', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [{ symbol: 'US100', source: 'fvg', direction: 'bullish', outcome: 'win', r_multiple: 5, entry_price: 19500, entry_time: '2026-09-01T08:30:00Z', exit_time: '2026-09-01T09:00:00Z' }],
+      error: null,
+    },
+  });
+  const [row] = await fetchRecentTradeRows(client);
+  assert.equal(row.pnlUsd, null);
+  assert.equal(row.balanceAfter, null);
+});
+
+// 2026-09-15 (Esdras: "qualité d'exécution") - same join shape as
+// enrichTradesWithRMultiple, but comparing the durable journal's entryPrice
+// (what the SIGNAL targeted) to the broker trade's own entryPrice (the REAL
+// fill) to measure slippage. Positive slippage always means "cost" (a worse
+// fill), negative always means "favorable" - regardless of direction.
+test('enrichTradesWithSlippage: a bullish trade filled WORSE (higher) than the signal price is a positive (cost) slippage', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19510, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', entryPrice: 19500, exitTime: 1000500 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.signalEntryPrice, 19500);
+  assert.equal(enriched.slippage, 10);
+});
+
+test('enrichTradesWithSlippage: a bullish trade filled BETTER (lower) than the signal price is a negative (favorable) slippage', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19490, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', entryPrice: 19500, exitTime: 1000500 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.slippage, -10);
+});
+
+test('enrichTradesWithSlippage: a bearish (sell) trade filled WORSE (lower) than the signal price is a positive (cost) slippage - sign flips vs bullish', () => {
+  const brokerTrades = [{ symbol: 'XAUUSD', direction: 'bearish', entryPrice: 2495, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'XAUUSD', entryPrice: 2500, exitTime: 1000500 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.slippage, 5); // sold 5 lower than intended = cost
+});
+
+test('enrichTradesWithSlippage: a bearish trade filled BETTER (higher) than the signal price is a negative (favorable) slippage', () => {
+  const brokerTrades = [{ symbol: 'XAUUSD', direction: 'bearish', entryPrice: 2505, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'XAUUSD', entryPrice: 2500, exitTime: 1000500 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.slippage, -5);
+});
+
+test('enrichTradesWithSlippage: a durable row on a different symbol never matches, slippage stays null', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19500, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'XAUUSD', entryPrice: 2500, exitTime: 1000000 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.signalEntryPrice, null);
+  assert.equal(enriched.slippage, null);
+});
+
+test('enrichTradesWithSlippage: outside the tolerance window, no match - slippage stays null rather than guessing', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19510, exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', entryPrice: 19500, exitTime: 1000000 + 60000 }];
+  const [enriched] = enrichTradesWithSlippage(brokerTrades, durableRows);
+  assert.equal(enriched.slippage, null);
+});
+
+test('enrichTradesWithSlippage: each durable row is used at most once', () => {
+  const brokerTrades = [
+    { symbol: 'US100', direction: 'bullish', entryPrice: 19510, exitTime: 1000000 },
+    { symbol: 'US100', direction: 'bullish', entryPrice: 19520, exitTime: 1000100 },
+  ];
+  const durableRows = [{ symbol: 'US100', entryPrice: 19500, exitTime: 1000050 }];
+  const enriched = enrichTradesWithSlippage(brokerTrades, durableRows);
+  const matched = enriched.filter((t) => t.slippage !== null);
+  assert.equal(matched.length, 1, 'only one of the two broker trades should claim the single durable row');
+});
+
+test('enrichTradesWithSlippage: an empty durable list leaves every trade with slippage: null, not a throw', () => {
+  const brokerTrades = [{ symbol: 'US100', direction: 'bullish', entryPrice: 19510, exitTime: 1000000 }];
+  const enriched = enrichTradesWithSlippage(brokerTrades, []);
+  assert.equal(enriched[0].slippage, null);
 });

@@ -4,8 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Apex FVG — Comptes</title>
+<script src="/theme.js"></script>
+<script src="/chat-widget.js" defer></script>
 <link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#05070a" />
+<meta name="theme-color" content="#05070a" data-dark="#05070a" data-light="#f6f7f9" />
 <link rel="icon" href="/icons/icon-192.png" type="image/png" />
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -28,6 +30,21 @@
     --blue: #4c9eff;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
   }
+  /* Light theme (2026-09-15, Esdras: "j'aimerais avoir la couleur blanche
+     aussi du site") - toggled via theme.js setting data-theme="light" on
+     <html>. */
+  :root[data-theme="light"] {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --panel-2: #f1f2f5;
+    --panel-border: #dcdfe4;
+    --text: #14181f;
+    --muted: #4c5560;
+    --green: #16915a;
+    --red: #d1383b;
+    --amber: #b3790f;
+    --blue: #2158d0;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -39,7 +56,9 @@
   }
   h1 { font-size: 18px; margin: 0 0 4px; }
   h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-  .topnav { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--panel-border); }
+  .topnav { display: flex; align-items: center; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--panel-border); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: 3px; color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+  .theme-toggle-btn:hover { border-color: var(--blue); }
   .topnav a {
     padding: 8px 12px; color: var(--muted); text-decoration: none; font-size: 13px;
     border-bottom: 2px solid transparent; margin-bottom: -1px;
@@ -91,7 +110,9 @@
   <nav class="topnav">
     <a href="/">Dashboard</a>
     <a href="/chart.html">Graphique</a>
+    <a href="/journal.html">Journal</a>
     <a href="/accounts.html" class="active">Comptes</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
   </nav>
 
   <div class="card gate" id="gate-card">
@@ -343,6 +364,17 @@ if (TOKEN) {
     document.getElementById('app').hidden = false;
     loadAccounts();
   }).catch(() => { localStorage.removeItem(TOKEN_KEY); TOKEN = ''; });
+}
+
+// PWA install support (2026-09-15: this page had the manifest link but
+// never actually registered the service worker, unlike index.html/
+// chart.html/journal.html - Chrome/Android needs a registered fetch
+// handler before it offers "Add to Home Screen" at all, per sw.js's own
+// comment, so a visit starting here couldn't trigger the install prompt).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
 }
 </script>
 </body>

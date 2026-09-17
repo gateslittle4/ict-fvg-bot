@@ -5,6 +5,7 @@ import { buildRecentPerformanceReport } from '../src/backtest/recentPerformanceR
 import { LiveStrategyEngine } from '../src/liveStrategyEngine.js';
 import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
 import { CONFIG } from '../src/config.js';
+import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 
 function loadCsv(path) {
   const lines = fs.readFileSync(path, 'utf8').trim().split('\n').slice(1);
@@ -25,6 +26,7 @@ test('empty history for every symbol produces an empty, well-shaped report', asy
     timeouts: 0,
     winRatePct: null,
     totalR: 0,
+    totalGrossR: 0,
   });
 });
 
@@ -47,9 +49,20 @@ test('against real historical data: every trade resolves to a valid outcome and 
     assert.ok(['win', 'loss', 'timeout'].includes(t.outcome));
     assert.ok(['fvg', 'divergence'].includes(t.source));
     assert.ok(t.exitTime > t.entryTime);
-    if (t.outcome === 'win') assert.ok(t.rMultiple > 0);
-    if (t.outcome === 'loss') assert.equal(t.rMultiple, -1);
-    if (t.outcome === 'timeout') assert.equal(t.rMultiple, null);
+    // 2026-09-14 ("on fait tout de facon honnete"): rMultiple is now NET of
+    // a real spread cost - grossRMultiple keeps the old idealized value
+    // (exactly the configured RR on a win, exactly -1 on a loss) so these
+    // checks target the number that's actually still guaranteed exact.
+    if (t.outcome === 'win') assert.ok(t.grossRMultiple > 0);
+    if (t.outcome === 'loss') assert.equal(t.grossRMultiple, -1);
+    if (t.outcome === 'timeout') {
+      assert.equal(t.grossRMultiple, null);
+      assert.equal(t.rMultiple, null);
+    }
+    // Spread cost only ever makes the net number worse than or equal to
+    // gross (a real cost is never negative) - true for every outcome,
+    // decided or not.
+    if (t.rMultiple !== null) assert.ok(t.rMultiple <= t.grossRMultiple + 1e-9);
   }
 
   const { summary } = report;
@@ -57,6 +70,9 @@ test('against real historical data: every trade resolves to a valid outcome and 
   assert.equal(summary.wins + summary.losses + summary.timeouts, summary.count);
   const expectedTotalR = Math.round(report.trades.reduce((s, t) => s + (t.rMultiple || 0), 0) * 100) / 100;
   assert.equal(summary.totalR, expectedTotalR);
+  const expectedTotalGrossR = Math.round(report.trades.reduce((s, t) => s + (t.grossRMultiple || 0), 0) * 100) / 100;
+  assert.equal(summary.totalGrossR, expectedTotalGrossR);
+  assert.ok(summary.totalR <= summary.totalGrossR + 1e-9);
   if (summary.wins + summary.losses > 0) {
     assert.equal(summary.winRatePct, (summary.wins / (summary.wins + summary.losses)) * 100);
   } else {
@@ -84,12 +100,18 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
     EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
   };
 
-  // Reference implementation: the exact loop this file used to run.
+  // Reference implementation: the exact loop this file used to run, plus
+  // the SAME spread-cost step buildRecentPerformanceReport() itself now
+  // applies (2026-09-14, "on fait tout de facon honnete") - both the
+  // engine's spreads option (changes WHICH signals validate) and the
+  // gross/net R split (changes what a win/loss is worth) have to match or
+  // this comparison stops proving anything.
   const engine = new LiveStrategyEngine({
     symbols: CONFIG.symbols,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
     guardrail: new GuardrailEngine({}),
+    spreads: DEFAULT_SPREADS,
   });
   const windowMs = 90 * 24 * 60 * 60 * 1000;
   const openById = new Map();
@@ -105,6 +127,9 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
           const opened = openById.get(e.id);
           if (!opened) continue;
           openById.delete(e.id);
+          const grossRMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
+          const spread = DEFAULT_SPREADS[symbol] || 0;
+          const costR = grossRMultiple !== null && spread > 0 && opened.distance > 0 ? spread / opened.distance : 0;
           referenceTrades.push({
             symbol,
             source: opened.source,
@@ -113,7 +138,8 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
             entryTime: opened.validatedAt,
             exitTime: e.exitTime,
             outcome: e.outcome,
-            rMultiple: e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null,
+            grossRMultiple,
+            rMultiple: grossRMultiple !== null ? grossRMultiple - costR : null,
           });
         }
       }

@@ -40,12 +40,103 @@ test('enforces cooldown after a losing trade and clears once it elapses', () => 
   assert.equal(afterCooldown.cooldownRemainingMs, 0);
 });
 
+// 2026-09-15 (Esdras, explicit request after seeing the cost of an
+// account-wide cooldown in the combined-portfolio simulation - see
+// HANDOFF.md): cooldown-after-loss scoped per symbol. maxTradesPerDay/
+// dailyLossLimitPct deliberately stay account-wide (checked separately
+// below) - only the cooldown gets this treatment.
+test('cooldown is scoped per symbol - a loss on one symbol does not block a different symbol', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 30, maxTradesPerDay: 10, dailyLossLimitPct: 100 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -100, time: DAY1, balanceAfter: 9900, symbol: 'EURUSD' });
+
+  const eurusdStatus = g.getStatus(DAY1 + 10 * 60 * 1000, 'EURUSD');
+  assert.equal(eurusdStatus.blocked, true);
+  assert.ok(eurusdStatus.blockReasons.includes('cooldown_active'));
+
+  const ger40Status = g.getStatus(DAY1 + 10 * 60 * 1000, 'GER40');
+  assert.equal(ger40Status.blocked, false, 'an unrelated symbol must not be silenced by another symbol\'s loss');
+
+  assert.equal(g.canTakeNewTrade(DAY1 + 10 * 60 * 1000, 'EURUSD'), false);
+  assert.equal(g.canTakeNewTrade(DAY1 + 10 * 60 * 1000, 'GER40'), true);
+});
+
+test('cooldown per symbol still clears after the configured window, independently per symbol', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 30, maxTradesPerDay: 10, dailyLossLimitPct: 100 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -100, time: DAY1, balanceAfter: 9900, symbol: 'EURUSD' });
+  g.recordTrade({ pnl: -50, time: DAY1 + 5 * 60 * 1000, balanceAfter: 9850, symbol: 'GER40' });
+
+  // Both still cooling down 10 min after their own loss.
+  assert.equal(g.canTakeNewTrade(DAY1 + 10 * 60 * 1000, 'EURUSD'), false);
+  assert.equal(g.canTakeNewTrade(DAY1 + 8 * 60 * 1000, 'GER40'), false);
+
+  // EURUSD's 30 min elapses first (it lost first) - GER40 still cooling down at that exact instant.
+  assert.equal(g.canTakeNewTrade(DAY1 + 31 * 60 * 1000, 'EURUSD'), true);
+  assert.equal(g.canTakeNewTrade(DAY1 + 31 * 60 * 1000, 'GER40'), false);
+
+  // GER40 clears 5 min later (30 min after its own loss).
+  assert.equal(g.canTakeNewTrade(DAY1 + 36 * 60 * 1000, 'GER40'), true);
+});
+
+test('getStatus()/canTakeNewTrade() without a symbol fall back to the account-wide last trade (display-only callers, e.g. the dashboard)', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 30, maxTradesPerDay: 10, dailyLossLimitPct: 100 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -100, time: DAY1, balanceAfter: 9900, symbol: 'EURUSD' });
+
+  const noSymbolStatus = g.getStatus(DAY1 + 10 * 60 * 1000);
+  assert.equal(noSymbolStatus.blocked, true);
+  assert.ok(noSymbolStatus.blockReasons.includes('cooldown_active'));
+});
+
+test('maxTradesPerDay and dailyLossLimitPct stay account-wide even with per-symbol cooldown - a busy symbol still trips the shared caps', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 0, maxTradesPerDay: 2, dailyLossLimitPct: 100 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: 10, time: DAY1, balanceAfter: 10010, symbol: 'EURUSD' });
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000, balanceAfter: 10020, symbol: 'GER40' });
+
+  // 2 trades already recorded today, account-wide - max_trades_reached blocks EVERY symbol, not just the ones that traded.
+  assert.equal(g.canTakeNewTrade(DAY1 + 2000, 'EURUSD'), false);
+  assert.equal(g.canTakeNewTrade(DAY1 + 2000, 'US100'), false);
+  assert.ok(g.getStatus(DAY1 + 2000, 'US100').blockReasons.includes('max_trades_reached'));
+});
+
 test('a winning trade does not trigger cooldown', () => {
   const g = new GuardrailEngine({ maxTradesPerDay: 10 });
   g.setBalance(10000, DAY1);
   g.recordTrade({ pnl: 75, time: DAY1, balanceAfter: 10075 });
   const status = g.getStatus(DAY1 + 60 * 1000);
   assert.equal(status.blocked, false);
+});
+
+// 2026-09-13: real bug found live. cTraderDataSource.js's _loadClosedDeals
+// (boot-time replay of the last 24h of REAL closed deals, to seed the
+// guardrail after a restart) passed the broker's OWN executionTimestamp
+// straight through as `time` - and this broker serializes that field as a
+// numeric STRING, confirmed via a real ProtoOAExecutionEvent dump. Before
+// the fix, `lastTrade.time + cooldownMinutesAfterLoss * 60000` used a raw
+// `+`, which string-concatenates instead of adding once either operand is
+// a string - producing an astronomically large "cooldown end" that never
+// actually elapses. Net effect: after ANY restart (this bot restarts
+// often - see HANDOFF.md) where the last deal in the trailing 24h was a
+// loss, trading would be silently blocked (`cooldown_active`) for what
+// looks like decades, not the configured cooldown. Fixed with Number(time)
+// both at the call site AND inside recordTrade itself (defense in depth).
+test('recordTrade coerces a STRING time (matches this broker\'s real executionTimestamp shape) - cooldown still elapses normally', () => {
+  const g = new GuardrailEngine({ cooldownMinutesAfterLoss: 30, maxTradesPerDay: 10 });
+  g.setBalance(10000, DAY1);
+  g.recordTrade({ pnl: -100, time: String(DAY1), balanceAfter: 9900 }); // string, like the real broker response
+
+  const duringCooldown = g.getStatus(DAY1 + 10 * 60 * 1000);
+  assert.equal(duringCooldown.blocked, true);
+  assert.ok(duringCooldown.blockReasons.includes('cooldown_active'));
+  // Without the fix this would be an astronomically large number (string
+  // concatenation of two epoch-ms values), not a real ~20-minute remainder.
+  assert.ok(duringCooldown.cooldownRemainingMs <= 30 * 60 * 1000);
+
+  const afterCooldown = g.getStatus(DAY1 + 31 * 60 * 1000);
+  assert.equal(afterCooldown.blocked, false);
+  assert.equal(afterCooldown.cooldownRemainingMs, 0);
 });
 
 test('blocks once daily loss limit % is reached', () => {
@@ -163,4 +254,104 @@ test('consumeTargetReachedEvent fires exactly once, on the first call after the 
   assert.equal(g.consumeTargetReachedEvent(DAY1 + 2000), true); // first call after reaching it - fires
   assert.equal(g.consumeTargetReachedEvent(DAY1 + 3000), false); // already consumed - never fires again
   assert.equal(g.getStatus(DAY1 + 4000).targetReached, true); // status itself stays true regardless
+});
+
+// 2026-09-14 (Esdras, monitoring overnight - "on dirait que le garde-fou se
+// réinitialise à chaque redémarrage"): real bug found. cTraderDataSource.js's
+// _loadClosedDeals() replays the last 24h of REAL closed deals into
+// recordTrade() at boot specifically so tradesToday/dailyLossPct survive a
+// restart - but ProtoOADealListReq's response order is never guaranteed
+// chronological, and _ensureDay() (below) resets this.trades every time the
+// computed day-key changes. That reset is correct for recordTrade()'s real
+// intended use (a live, forward-only stream) but unsafe for a historical
+// batch replayed out of order - exactly what a 24h lookback window hits on
+// every boot after 00:00 UTC (it spans two calendar days). These two tests
+// document the failure this class is exposed to, and prove sorting the
+// deals chronologically before replay (the actual fix, in
+// cTraderDataSource.js's sortDealsChronologically()) is what's required -
+// GuardrailEngine itself is correct and unchanged.
+test('recordTrade: replaying deals OUT OF ORDER across a day boundary silently loses already-recorded same-day trades (documents why the caller must sort first)', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10 });
+  const yesterday = DAY1 - 20 * 3600 * 1000; // still within a 24h lookback window from DAY1
+  // Scrambled order, exactly what an unsorted ProtoOADealListReq response
+  // could hand _loadClosedDeals(): today, today, yesterday, today.
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000 }); // today, trade 1
+  g.recordTrade({ pnl: 10, time: DAY1 + 2000 }); // today, trade 2
+  g.recordTrade({ pnl: -5, time: yesterday }); // yesterday, out of order - flips the day-key BACKWARD
+  g.recordTrade({ pnl: 10, time: DAY1 + 3000 }); // today, trade 3 - flips forward again
+
+  // Bug: _ensureDay() wiped trades[] on both flips, so only the LAST today
+  // trade survived instead of all 3 - undercounting tradesToday.
+  const status = g.getStatus(DAY1 + 4000);
+  assert.equal(status.tradesToday, 1); // should be 3 - this is the bug, not the desired behavior
+});
+
+test('recordTrade: replaying the SAME deals in chronological order (the fix) counts every same-day trade correctly', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10 });
+  const yesterday = DAY1 - 20 * 3600 * 1000;
+  // Same 4 deals as above, sorted ascending by time first - what
+  // sortDealsChronologically() now guarantees before _loadClosedDeals()
+  // replays them.
+  g.recordTrade({ pnl: -5, time: yesterday });
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 2000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 3000 });
+
+  const status = g.getStatus(DAY1 + 4000);
+  assert.equal(status.tradesToday, 3); // all 3 of today's trades correctly counted
+});
+
+// 2026-09-14 (Esdras: "Alors? Tout se passe bien?" - checking the sort fix
+// above live turned up a SECOND, bigger bug behind it): cTraderDataSource.js's
+// warmUp() replays thousands of real HISTORICAL candles through the shared
+// LiveStrategyEngine at every boot, whose signal-candidate path calls
+// GuardrailEngine.canTakeNewTrade(candle.time) - a READ that still mutates
+// via _ensureDay()'s day-boundary reset, using genuinely old candle
+// timestamps, by design (warm-up needs its OWN internal day-boundary
+// bookkeeping to stay consistent as it replays the past). The bug: warm-up
+// shares the SAME GuardrailEngine instance as the real, already-seeded
+// production guardrail - so any real trades _loadClosedDeals() had just
+// recorded got silently wiped the moment warm-up's replay crossed its
+// first day boundary, even though canTakeNewTrade() looks like a pure
+// read. Confirmed live: the sort fix was proven correct in isolation, yet
+// tradesToday still showed 0 seconds after a boot whose own log line
+// said the reconstruction itself briefly got the count right. Fix:
+// _loadClosedDeals() now runs AFTER warm-up in start(), not before -
+// this documents WHY that ordering matters (GuardrailEngine itself didn't
+// change - canTakeNewTrade() is legitimately allowed to observe an old
+// `now` and reset the day, that's correct for real usage; only the BOOT
+// SEQUENCE needed to stop calling it with historical time after the real
+// seed instead of before).
+test('canTakeNewTrade (a read-only check on its face) still resets tradesToday via _ensureDay when called with an unrelated OLD historical time - documents why warm-up must run BEFORE the real-history seed, not after', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10 });
+  // _loadClosedDeals seeds 3 real trades from today.
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 2000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 3000 });
+  assert.equal(g.getStatus(DAY1 + 4000).tradesToday, 3);
+
+  // warmUp() replays a candle from weeks ago, hits a signal candidate, and
+  // asks canTakeNewTrade() using that candle's own real (old) time - same
+  // as LiveStrategyEngine._blockReason()'s default `guardrailNow = candle.time`.
+  const weeksAgo = DAY1 - 30 * 24 * 3600 * 1000;
+  g.canTakeNewTrade(weeksAgo);
+
+  // The bug this test documents: even though canTakeNewTrade() reads like
+  // a pure check, today's just-seeded trades are gone.
+  assert.equal(g.getStatus(DAY1 + 5000).tradesToday, 0); // should still be 3 - this is the bug, not the desired behavior
+});
+
+test('the fix in practice: seeding real trade history AFTER warm-up (not before) means nothing is left to disturb it', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10 });
+  // warmUp() runs first now (cTraderDataSource.js's new boot order) - its
+  // historical candle replay touches the guardrail with old timestamps...
+  const weeksAgo = DAY1 - 30 * 24 * 3600 * 1000;
+  g.canTakeNewTrade(weeksAgo);
+  g.canTakeNewTrade(weeksAgo + 24 * 3600 * 1000);
+  // ...then _loadClosedDeals() seeds the real trades LAST, nothing runs afterward to disturb them.
+  g.recordTrade({ pnl: 10, time: DAY1 + 1000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 2000 });
+  g.recordTrade({ pnl: 10, time: DAY1 + 3000 });
+
+  assert.equal(g.getStatus(DAY1 + 4000).tradesToday, 3);
 });

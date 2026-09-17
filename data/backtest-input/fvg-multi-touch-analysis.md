@@ -4,9 +4,9 @@
 
 | Symbole | Mécanisme | Trades train | Espérance train (R) | Trades test | Espérance test (R) | Verdict |
 |---|---|---|---|---|---|---|
-| US100 | contact unique (production) | 68 | 1.38 | 38 | 1.44 | ✅ tient |
-| US100 | **multi-contact (proposition)** | 180 | 1.10 | 93 | 1.40 | ✅ tient |
-| US500 | contact unique (production) | 70 | 1.02 | 30 | 1.13 | ✅ tient |
-| US500 | **multi-contact (proposition)** | 136 | 0.72 | 73 | 0.60 | ✅ tient |
-| XAUUSD | contact unique (production) | 82 | 0.88 | 41 | 0.61 | ✅ tient |
-| XAUUSD | **multi-contact (proposition)** | 244 | 0.19 | 104 | 0.22 | ✅ tient |
+| US100 | contact unique (production) | 493 | 0.45 | 111 | 0.83 | ✅ tient |
+| US100 | **multi-contact (proposition)** | 969 | 0.77 | 229 | 1.11 | ✅ tient |
+| US500 | contact unique (production) | 152 | 0.71 | 31 | 1.29 | ✅ tient |
+| US500 | **multi-contact (proposition)** | 348 | 0.80 | 85 | 0.67 | ✅ tient |
+| XAUUSD | contact unique (production) | 488 | 0.17 | 76 | 0.46 | ✅ tient |
+| XAUUSD | **multi-contact (proposition)** | 1025 | 0.07 | 134 | 0.40 | ✅ tient |

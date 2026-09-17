@@ -34,6 +34,22 @@
 // snapshot taken at the moment of the request - close enough for a
 // dashboard estimate, not precise enough to trade off of.
 
+// 2026-09-14 (Esdras: "creuse" why a real position showed stopLoss:null on
+// the dashboard - it wasn't actually unprotected, the field just failed a
+// too-strict check): this broker serializes SOME numeric protobuf fields as
+// JSON strings, inconsistently per-field (confirmed 3 separate times
+// already this session: ProtoOASpotEvent's bid/ask, closePositionDetail's
+// grossProfit, positionId/symbolId) - a bare `typeof x === 'number'` guard
+// silently treats a real value like "76898" as absent. Converts but
+// preserves the ORIGINAL "we genuinely don't have this" -> null semantics
+// (unlike a bare Number(x), which would turn a truly-missing
+// undefined/null into NaN instead of null).
+function toNumberOrNull(value) {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * @param {object} position - one ProtoOAReconcileRes.position entry
  * @param {number|null} currentPrice - most recently seen price for this position's symbol
@@ -48,11 +64,14 @@ export function enrichRealPosition(position, currentPrice) {
   const direction = position.tradeData?.tradeSide === 'SELL' ? 'bearish' : 'bullish';
   const units = (position.tradeData?.volume || 0) / 100; // see module header - NOT a lots figure, real underlying units
 
+  const entryPrice = toNumberOrNull(position.price);
+  const numericCurrentPrice = toNumberOrNull(currentPrice);
+
   let grossFloatingPnl = null;
   let netFloatingPnl = null;
-  if (typeof currentPrice === 'number' && typeof position.price === 'number') {
+  if (numericCurrentPrice !== null && entryPrice !== null) {
     const directionSign = direction === 'bullish' ? 1 : -1;
-    grossFloatingPnl = (currentPrice - position.price) * units * directionSign;
+    grossFloatingPnl = (numericCurrentPrice - entryPrice) * units * directionSign;
     // Sign convention for swap/commission as broker-reported amounts is
     // ASSUMED (already signed, credit positive/cost negative), not yet
     // confirmed against a real live response - flag alongside the number
@@ -65,14 +84,14 @@ export function enrichRealPosition(position, currentPrice) {
     symbolId: position.tradeData?.symbolId ?? null,
     direction,
     units,
-    entryPrice: typeof position.price === 'number' ? position.price : null,
-    stopLoss: typeof position.stopLoss === 'number' ? position.stopLoss : null,
-    takeProfit: typeof position.takeProfit === 'number' ? position.takeProfit : null,
+    entryPrice,
+    stopLoss: toNumberOrNull(position.stopLoss),
+    takeProfit: toNumberOrNull(position.takeProfit),
     openTimestamp: position.tradeData?.openTimestamp ?? null,
     usedMargin,
     swap,
     commission,
-    currentPrice: typeof currentPrice === 'number' ? currentPrice : null,
+    currentPrice: numericCurrentPrice,
     grossFloatingPnl,
     netFloatingPnl,
     netFloatingPnlSignAssumed: true, // see module header tier 3 caveat
@@ -142,4 +161,110 @@ export function reconcileAccount({ realPositions, symbolNameById, currentPriceBy
  */
 export function estimateEquity(balance, floatingPnlEstimate) {
   return balance + (floatingPnlEstimate || 0);
+}
+
+/**
+ * Pure decision logic behind cTraderDataSource.js's
+ * _clearStaleBeliefsAgainstBroker() (2026-09-14, at Esdras's request after a
+ * night of manually clearing this by hand) - separated out so it's testable
+ * without a live/mocked broker connection, same discipline as
+ * reconcileAccount() above.
+ *
+ * warmUp()'s bulk replay uses the SAME live netting check as real
+ * processing, so it can reconstruct a "believed open" position from purely
+ * historical data that was NEVER submitted to the broker - left alone, that
+ * belief blocks every new real candidate on that symbol via netting until
+ * it naturally times out (maxHoldingCandles, often hours) or someone clears
+ * it by hand. A belief is only ever a false positive to clear here if
+ * NEITHER a real open position NOR a genuinely pending order backs it -
+ * checking pending orders too (not just positions) is what makes this safe
+ * to run unattended: a real LIMIT order that just hasn't filled yet would
+ * show up in `pendingOrders`, not `realPositions`, and must NOT be cleared
+ * out from under it (that would let netting open a SECOND real order on
+ * the same symbol once the first one eventually fills).
+ *
+ * @param {object[]} realPositions - raw ProtoOAReconcileRes.position array
+ * @param {object[]} pendingOrders - raw ProtoOAReconcileRes.order array (only ORDER_STATUS_ACCEPTED entries count as genuinely outstanding)
+ * @param {string[]} symbols - every symbol this account trades
+ * @param {Map<string,number>} symbolIdByName
+ * @param {(symbol: string) => {id: string}|null} getBelievedPosition - e.g. store.strategyEngine.getOpenPosition
+ * @returns {{symbol: string, id: string}[]} beliefs to clear, in `symbols` order
+ */
+export function computeStaleBeliefsToClear({ realPositions, pendingOrders, symbols, symbolIdByName, getBelievedPosition }) {
+  const outstandingSymbolIds = new Set();
+  for (const pos of realPositions || []) {
+    const sid = pos.tradeData?.symbolId;
+    if (sid != null) outstandingSymbolIds.add(Number(sid));
+  }
+  for (const ord of pendingOrders || []) {
+    if (ord.orderStatus && ord.orderStatus !== 'ORDER_STATUS_ACCEPTED') continue;
+    const sid = ord.tradeData?.symbolId;
+    if (sid != null) outstandingSymbolIds.add(Number(sid));
+  }
+
+  const toClear = [];
+  for (const symbol of symbols || []) {
+    const believed = getBelievedPosition(symbol);
+    if (!believed) continue;
+    const symbolId = symbolIdByName.get(symbol);
+    if (symbolId != null && outstandingSymbolIds.has(Number(symbolId))) continue;
+    toClear.push({ symbol, id: believed.id });
+  }
+  return toClear;
+}
+
+/**
+ * Pure decision logic behind cTraderDataSource.js's stop-protection sweep
+ * (2026-09-14, found live: a real BTCUSD position filled via a LIMIT order
+ * came back from the broker with stopLoss:null AND a genuinely separate
+ * pending stop order (a broker quirk - takeProfit attaches natively to the
+ * position, stopLoss doesn't for this order type) - that separate order
+ * later vanished (most likely a missed execution event across one of two
+ * process restarts in the following minutes) with NOTHING noticing: the
+ * existing 5-minute stale-belief sweep only checks whether a real position
+ * OR pending order exists for netting purposes, never whether a real open
+ * position's OWN protection is still intact. Confirmed live via
+ * /api/admin/reconcile-raw: position.stopLoss null AND pendingOrders empty
+ * for that positionId - a real position sat completely unprotected with no
+ * self-healing, unlike every other belief/state gap fixed earlier tonight.
+ *
+ * A position only needs fixing when its OWN stopLoss field is missing AND
+ * no pending order is linked to it (checked by `order.positionId`, per this
+ * project's own vendored OpenApiModelMessages.proto - not a guess) - a
+ * position whose stop lives as that kind of separate working order must
+ * never be touched. `getTrackedStopPrice` returns null when this process
+ * never observed this position's own entry (e.g. it was already open before
+ * this instance booted) - there is nothing safe to resubmit without a real
+ * stop level to use, so those are left alone rather than invented.
+ *
+ * @param {object[]} realPositions - raw ProtoOAReconcileRes.position array
+ * @param {object[]} pendingOrders - raw ProtoOAReconcileRes.order array
+ * @param {(positionId: string) => {stopPrice: number, takeProfit: number|null}|null} getTrackedStopPrice
+ * @returns {{positionId: number, symbolId: number|null, stopPrice: number, takeProfit: number|null}[]}
+ */
+export function computeMissingStopFixes({ realPositions, pendingOrders, getTrackedStopPrice }) {
+  const openPositions = (realPositions || []).filter(
+    (p) => !p.positionStatus || p.positionStatus === 'POSITION_STATUS_OPEN'
+  );
+  const protectedPositionIds = new Set(
+    (pendingOrders || [])
+      .filter((o) => (!o.orderStatus || o.orderStatus === 'ORDER_STATUS_ACCEPTED') && o.positionId != null)
+      .map((o) => String(o.positionId))
+  );
+
+  const toFix = [];
+  for (const pos of openPositions) {
+    if (toNumberOrNull(pos.stopLoss) !== null) continue; // already protected on the position itself
+    const positionId = String(pos.positionId);
+    if (protectedPositionIds.has(positionId)) continue; // a separate working stop order still exists
+    const tracked = getTrackedStopPrice(positionId);
+    if (!tracked || !Number.isFinite(tracked.stopPrice)) continue; // never observed this position's own entry - nothing safe to resubmit
+    toFix.push({
+      positionId: pos.positionId,
+      symbolId: pos.tradeData?.symbolId ?? null,
+      stopPrice: tracked.stopPrice,
+      takeProfit: Number.isFinite(tracked.takeProfit) ? tracked.takeProfit : null,
+    });
+  }
+  return toFix;
 }

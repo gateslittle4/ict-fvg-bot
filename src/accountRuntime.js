@@ -31,7 +31,7 @@ const MAX_LOG_LENGTH = 200;
 export const MAX_AUTO_EXECUTE_HOURS = 7 * 24;
 
 // Sources covered by the volatility-regime research (checkVolatilityRegimeImpactFullCombo.js /
-// runFtmo1StepVolAdaptiveRiskAccountImpact.js) - NWOG/Judas Swing/pyramid were never part of
+// runFtmo1StepVolAdaptiveRiskAccountImpact.js) - NWOG/Judas Swing/Weekly Sweep/pyramid were never part of
 // that study, so tagging them would imply a finding that was never actually tested.
 const VOL_REGIME_SOURCES = new Set(['fvg', 'divergence']);
 
@@ -83,6 +83,15 @@ export class AccountRuntime {
       // LIVE, auto-executed - see config.js's `judasSwing` comment. Same
       // opt-in-only pattern as nwogConfig above.
       judasSwingConfig: config.judasSwing,
+      // LIVE, auto-executed (2026-09-15, GER40) - see config.js's
+      // `weeklySweep` comment. Same opt-in-only pattern as nwogConfig above.
+      weeklySweepConfig: config.weeklySweep,
+      // LIVE, auto-executed (2026-09-16, GER40) - see config.js's
+      // `breakerBlock` comment. Same opt-in-only pattern as nwogConfig above.
+      breakerBlockConfig: config.breakerBlock,
+      // LIVE, auto-executed (2026-09-17, US100/US500/GER40) - see config.js's
+      // `silverBullet` comment. Same opt-in-only pattern as nwogConfig above.
+      silverBulletConfig: config.silverBullet,
       guardrail: this.guardrail,
       riskPctPerTrade: config.risk.riskPctPerTrade,
       spreads,
@@ -228,10 +237,17 @@ export class AccountRuntime {
 
   /**
    * Record the REAL outcome of an order this account's data source actually
-   * submitted to the broker, learned from a real ProtoOAExecutionEvent (see
-   * cTraderDataSource.js's _handleExecutionEvent) - never from the engine's
-   * own belief. `outcome` is 'filled' (a real position opened) or 'unfilled'
-   * (cancelled/expired/rejected - no real position ever existed).
+   * submitted to the broker - never from the engine's own belief. `outcome`
+   * is 'filled' (a real position opened) or 'unfilled' (cancelled/expired/
+   * rejected - no real position ever existed).
+   *
+   * Two real sources feed this, both broker ground truth: a
+   * ProtoOAExecutionEvent push (cTraderDataSource.js's
+   * _handleExecutionEvent, the normal path), and - since 2026-09-17, when a
+   * connection spent 6 hours delivering no pushes at all - a
+   * ProtoOAReconcileReq query that found the real position anyway
+   * (_handleAutoExecuteEntry's no-confirmation branch, `executionType:
+   * 'RECONCILE_VERIFIED'`).
    */
   recordOrderOutcome({ symbol, source, signalId, outcome, executionType }) {
     this.orderOutcomeLog.push({ symbol, source, signalId, outcome, executionType, at: Date.now() });

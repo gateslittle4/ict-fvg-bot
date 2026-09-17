@@ -101,7 +101,7 @@ export function startMockDataSource(account = getDefaultAccount(), { candleInter
       account.pushSignalEvents(events);
       account.lastCandleBySymbol.set(symbol, candle);
       for (const e of events) {
-        if (e.type === 'validated' && !e.blockedReason) maybeSimulateTradeOutcome(account);
+        if (e.type === 'validated' && !e.blockedReason) maybeSimulateTradeOutcome(account, e.symbol);
       }
     }
   }
@@ -114,7 +114,7 @@ export function startMockDataSource(account = getDefaultAccount(), { candleInter
       account.lastCandleBySymbol.set(symbol, candle);
       for (const e of events) {
         if (e.type === 'validated' && !e.blockedReason) {
-          maybeSimulateTradeOutcome(account);
+          maybeSimulateTradeOutcome(account, e.symbol);
           notifyDemo(account, e);
         }
       }
@@ -134,7 +134,7 @@ export function stopMockDataSource(account = getDefaultAccount()) {
 // (cooldown / daily loss / trade count) has something real to react to.
 // This NEVER happens once mode === 'live' - live trades come only from the
 // broker's own closed-position feed (see cTraderClient.js).
-function maybeSimulateTradeOutcome(account) {
+function maybeSimulateTradeOutcome(account, symbol) {
   if (account.mode !== 'demo') return;
   if (Math.random() > 0.6) return;
 
@@ -143,6 +143,6 @@ function maybeSimulateTradeOutcome(account) {
     const win = Math.random() < 0.45; // slightly losing-biased on purpose, to demo cooldown/loss-limit
     const pnl = win ? rand(40, 120) : -rand(40, 140);
     account.setBalance(account.balance + pnl);
-    account.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: account.balance });
+    account.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: account.balance, symbol });
   }, rand(2000, 6000));
 }

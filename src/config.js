@@ -78,14 +78,48 @@ function resolveRiskPctPerTrade() {
 }
 
 export const CONFIG = {
-  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD'],
+  // BTCUSD was here from 2026-09-13 to 2026-09-16 as a deliberate temporary
+  // connectivity smoke test ("on va supprimer BTC juste après") - the only
+  // symbol open on a weekend, so it could prove the real order pipeline
+  // end to end. REMOVED 2026-09-16 at Esdras's explicit request, along with
+  // its fvg.perSymbol entry, its transactionCosts spread, its lotCalculator
+  // spec and its chart button. It had served its purpose and then some: it
+  // is what surfaced the null-orderId bug, the guardrail day-reset bug, the
+  // int64-as-string balance bug, and the stale-belief netting gap. It was
+  // also never a validated strategy (raw M1 FVG, no filters, 9.5% win rate
+  // over 21 real trades, -2.12R) and had just started losing ~$20-28 per
+  // trade instead of cents once real risk-based sizing replaced its forced
+  // broker-minimum size. Do NOT re-add it without a real train/test split.
+  //
+  // GER40 (2026-09-15): added for Weekly Liquidity Sweep - see the
+  // `weeklySweep` config block below and HANDOFF.md for the full research
+  // (the most credible finding of that session: real spread confirmed 0.5
+  // via Esdras's own cTrader screenshot, bidirectional, robust across 2-year
+  // blocks - but only ONE train/test split, never observed live before now).
+  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'],
   timeframe: 'M15',
   accountMode: ACCOUNT_MODE, // 'challenge' | 'live' - see ACCOUNT_MODE comment above
   risk: {
     riskPctPerTrade: resolveRiskPctPerTrade(),
   },
   guardrails: {
-    maxTradesPerDay: 2,
+    // ACCOUNT-WIDE cap, shared across every symbol AND every mechanism -
+    // not per-symbol. This is the project's core anti-overtrading /
+    // anti-revenge-trading guardrail.
+    //
+    // History: 2 originally (validated back when the bot ran FVG on 3
+    // symbols plus Divergence), bumped to 3 for the BTCUSD weekend test
+    // (2026-09-13), then to 20 (2026-09-14) purely to watch a few more real
+    // trades flow through after the netting and guardrail-day-reset fixes
+    // landed. That verification finished, but 20 was never reverted, and
+    // BTCUSD - which was generating essentially all the volume, 21 of 21
+    // real trades at one point - was removed 2026-09-16, leaving the cap
+    // constraining nothing at all.
+    // Set back to 3 on 2026-09-16, chosen deliberately by Esdras: the five
+    // validated mechanisms across five symbols make a few trades per WEEK,
+    // so 3/day leaves normal activity untouched while restoring a real
+    // ceiling on a bad day.
+    maxTradesPerDay: 3,
     cooldownMinutesAfterLoss: 30,
     dailyLossLimitPct: 2,
     dayBoundaryHourUTC: 0,
@@ -157,6 +191,25 @@ export const CONFIG = {
         sessionEnabled: true,
         sessionWindow: SILVER_BULLET_WINDOW,
         liquiditySweepEnabled: true,
+        // 2026-09-16: "multi-contact" activé ici aussi (déjà en production
+        // sur US100 depuis longtemps, voir ce champ dans le bloc US100
+        // ci-dessus) - jamais testé avec la même rigueur sur US500 jusqu'à
+        // aujourd'hui (voir HANDOFF.md "FVG multi-contact sur US500/XAUUSD").
+        // Résultat sur 17 ans : contact unique 183 trades/31.8% de
+        // réussite/+147.61R → multi-contact 433 trades (+137%)/31.9% de
+        // réussite (inchangé)/+336.59R (plus du double) - le taux de gain ne
+        // bouge quasiment pas alors que le volume ET le R total augmentent
+        // fortement. Contrôles de robustesse les plus propres vus cette
+        // session : 8 blocs de 2 ans sur 8 positifs (aucun autre candidat de
+        // la session n'a fait mieux), achat/vente équilibré (58%/42%),
+        // concentration annuelle la plus faible (15%). Vérifié sur la
+        // fenêtre réelle récente (2026-02→09) aussi, mais l'échantillon y
+        // est minuscule des deux côtés (n=4 vs n=13) - pas assez pour
+        // trancher, contrairement au cas de la cible dynamique où le réel
+        // contredisait clairement l'historique. XAUUSD reste en contact
+        // unique - même test fait là-bas, robustesse correcte mais gain de R
+        // marginal (+4.7% seulement), pas activé.
+        multiTouch: true,
       },
       XAUUSD: {
         variant: 'H4_EMA20',
@@ -182,6 +235,20 @@ export const CONFIG = {
         sessionWindow: XAUUSD_WINDOW,
         liquiditySweepEnabled: true,
       },
+      // GBPUSD was here 2026-09-17, briefly - added, then removed the SAME
+      // day at Esdras's explicit request ("j'aime pas gbpusd, on va le
+      // remplacer car il ne donne pas bcp de rrr"): its validated config
+      // used rrMultiple: 3 (the grid-search survivor, not re-tuned), well
+      // below US100/US500's 5 and XAUUSD's 4. Removed rather than bumped to
+      // a bigger RR on the spot - GBPUSD's own research (HANDOFF.md,
+      // "Recherche GBPUSD/USDCAD") never tested it above RR 3, and picking
+      // a bigger number now, right after being told the current one is
+      // unwelcome, would be exactly the after-the-fact parameter choice
+      // this project's discipline exists to avoid. See HANDOFF.md's
+      // "GBPUSD retiré" entry for the options considered instead.
+      // BTCUSD's entry lived here (2026-09-13 to 2026-09-16) - raw baseline
+      // FVG on M1, no filters, never train/test split. Removed with the
+      // symbol itself; see the `symbols` array comment above for why.
     },
   },
   // Price-action Divergence (log-ratio z-score pairs mean-reversion,
@@ -205,18 +272,50 @@ export const CONFIG = {
   // 0.15R (n=224), test 0.34R (n=90, BETTER than train), and confirmed again
   // independently on the 2026 forward-test data (n=30, 0.28R - squarely
   // between train/test, ~10x FVG's own trade count on the same window).
-  // Scoped to US100 ONLY - the other 4 instruments were weaker/rejected on
-  // this same concept, see data/backtest-input/nwog-strategy-analysis.md.
   //
   // Wired into the SAME openPositions/netting/auto-execute path as FVG and
   // Divergence (liveStrategyEngine.js's _processNwogCandidate) - no
   // special-cased position tracking left. A signal fires roughly weekly
   // (the weekend gap), so the practical exposure/monitoring burden is low
   // even though there is no manual review step before an order is placed.
+  //
+  // longOnlySymbols: ['US100'] (2026-09-15) - the long/short-direction-split
+  // check built this same day for GER40 research, applied retroactively to
+  // this LIVE US100 mechanism: sell trades carry ~0 net edge (177 trades
+  // since 2019, totalR -1.70R, essentially breakeven) while buy carries the
+  // entire result (155 trades, totalR +87.43R, 40.6% WR). Esdras's explicit
+  // call ("on active achète seulement, car on a plus de chance de réussir à
+  // l'achat que la vente") - not a mechanism change, just stops taking the
+  // sell side that was never adding value. See HANDOFF.md for the numbers.
+  //
+  // GER40 (2026-09-16) - added a SECOND NWOG symbol, deliberately NOT in
+  // longOnlySymbols: GER40/NWOG was independently validated BIDIRECTIONAL
+  // (buy/sell split 59/41 - no hidden long bias, unlike US100's genuine
+  // long-only edge above), passing the formal train/test verdict AND
+  // 2-year-block robustness (6/8 positive, no single year >22% of profit) -
+  // see HANDOFF.md "GER40 — vrai spread confirmé... NWOG réhabilité". Held
+  // back at first, deployed alongside Weekly Sweep/GER40 only for
+  // attribution during that mechanism's own initial observation window, not
+  // for a quality reason - confirmed additive on both the 17-year backtest
+  // (+680 trades, +192R, win rate unchanged) and a real 7-month broker
+  // window (+29 trades, +23R, win rate improved) before being enabled here.
+  // Overlap with Weekly Sweep on the same symbol is low (9-14% of the time),
+  // so the two remain largely independent for guardrail/netting purposes.
+  // rrMultiple extended 3->5 (2026-09-16, same "does it help to let winners
+  // run further" question already answered for FVG on US100/US500/XAUUSD -
+  // see HANDOFF.md "cible étendue" entries): SAME signals/entries/stops on
+  // BOTH symbols sharing this config, only the target multiple changed.
+  // US100 (long-only): train exp 0.25R->0.37R, test 1.06R->1.48R, drawdown
+  // actually LOWER at 1:5 (19.53R->14.54R train). GER40 (bidirectional):
+  // train 0.14R->0.21R, test 0.53R->0.92R, drawdown stable (~26R train,
+  // ~9.5R test). Both monotonically improve through 1:7, but 1:5 was picked
+  // as the same conservative middle-ground already used for FVG rather than
+  // chasing the top of the curve.
   nwog: {
-    symbols: ['US100'],
-    rrMultiple: 3, // same convention already validated in src/backtest/nwog.js - not re-tuned here
+    symbols: ['US100', 'GER40'],
+    rrMultiple: 5,
     maxHoldingM15Candles: 480,
+    longOnlySymbols: ['US100'],
   },
   // Judas Swing (ICT London killzone PDH/PDL sweep+reclaim) - LIVE,
   // auto-executed (2026-09), at the user's explicit request ("on active
@@ -238,6 +337,136 @@ export const CONFIG = {
   judasSwing: {
     symbols: ['EURUSD'],
     rrMultiple: 3, // same convention already validated in src/backtest/judasSwing.js - not re-tuned here
+    maxHoldingM15Candles: 480,
+  },
+  // Weekly Liquidity Sweep (ICT PWH/PWL sweep+reclaim) on GER40 - LIVE,
+  // auto-executed (2026-09-15), at Esdras's explicit "on va plus vite"
+  // request: straight to full auto-execute, no alert-only observation phase
+  // first (same fast-track pattern as NWOG's own original rollout). The
+  // most credible research finding of a long GER40 research thread: real
+  // spread confirmed (0.5, from Esdras's own cTrader screenshot),
+  // bidirectional (32% long / 68% short - not a long-bias artifact like
+  // Asian Range Breakout/Unicorn Model/Asian Range Fade were on this same
+  // instrument), robust across 2-year blocks (6/8 positive, no single year
+  // above 16% of net profit) - see HANDOFF.md for the full writeup and its
+  // stated caveats: a single train/test split, never observed live before
+  // now, and GER40's spread is one screenshot, not an averaged measurement.
+  // NWOG was ALSO found credible on GER40 but deliberately NOT deployed
+  // alongside this in the same step - Esdras chose to start with one
+  // mechanism at a time so a future problem/success can be attributed to
+  // one signal, not two at once. UPDATE (2026-09-16): that initial
+  // observation window is over and NWOG/GER40 tested additive (see the
+  // `nwog` block above) - now deployed alongside this, still low mutual
+  // overlap (9-14% of the time), so attribution between the two remains
+  // reasonably clear going forward.
+  //
+  // Scoped to GER40 + US500 - see HANDOFF.md's GER40 sections for GER40's
+  // own research thread. US500 UPDATE (2026-09-16): screened across all 8
+  // instruments with the same train/test rigor as NWOG/Judas Swing/Breaker
+  // Block (never done before for this mechanism - see
+  // data/backtest-input/weekly-sweep-strategy-analysis.md) - US500 is the
+  // only symbol besides GER40 that survives: positive AND stable across 4
+  // different train/test cutoffs (2021/2022/2023/2024, never negative,
+  // never a big train/test gap), 10 of 15 years positive, no single
+  // catastrophic year (worst -13.87R in 2016 - contrast with the
+  // same-day-rejected NWOG/US500 candidate's -16.56R single-year swing).
+  // Verified ADDITIVE at the full-combo level (not just in isolation) against the
+  // symbol's own FVG/Divergence mechanisms already live on it - both the
+  // 15-year backtest and the real 7-month broker window show low
+  // cannibalization (FVG net-unaffected to -2% trades, Divergence -2% to
+  // -4% trades) and a clearly positive net addition (+581 trades/+123R
+  // historical, +23 trades/+9R on the real window) - see
+  // scripts/testAddWeeklySweepUs500.mjs (session-scratch, not committed).
+  // XAUUSD/GBPUSD/EURUSD/USDJPY/USDCAD/US100 all rejected or too weak on
+  // this same screen.
+  // rrMultiple extended 3->5 (2026-09-16, same lever already applied to FVG
+  // and NWOG above). Checked on BOTH symbols before touching this shared
+  // value (rrMultiple applies to every symbol in this block, so a change
+  // here silently affects both) - GER40 train 0.23R->0.36R/test
+  // 0.29R->0.31R, US500 train 0.08R->0.20R/test 0.16R->0.42R, drawdown
+  // moved but stayed in the same ballpark on both (GER40 ~40R->38R train,
+  // US500 ~29R->39R train).
+  weeklySweep: {
+    symbols: ['GER40', 'US500'],
+    rrMultiple: 5,
+    maxHoldingM15Candles: 480,
+  },
+  // Breaker Block (ICT failed Order Block, retested from the flipped side) -
+  // LIVE, auto-executed (2026-09-16), GER40. Left in a "zone grise" earlier
+  // this project (passed the formal train/test verdict but was only ever
+  // checked with the WRONG spread, 1.0, and never got the same 2-year-block
+  // robustness pass as NWOG/Weekly Sweep) - re-verified with the real 0.5
+  // spread (confirmed by Esdras's own cTrader screenshot, same value already
+  // used for weeklySweep/nwog above) and the SAME checks: 60% buy / 40%
+  // sell (balanced, not a hidden long-bias trap like Asian Range Breakout/
+  // Unicorn Model/Asian Range Fade), 7/8 two-year blocks positive (only
+  // 2010-2011 negative), best single year (2024) 34% of net profit (higher
+  // than NWOG's 22%/Weekly Sweep's 16%, but nowhere near the 82-146% that
+  // sank the rejected candidates), and by far the largest sample of the 3
+  // GER40 candidates (1562 trades over 16 years, +193.11R). Tested additive
+  // on top of the already-live Weekly Sweep + NWOG on this same symbol: 17-
+  // year backtest +1562 trades/+29% volume/+193R with win rate essentially
+  // unchanged (30.7%->30.5%), and a real 7-month broker window +105 trades/
+  // +61% volume/+19.17R with win rate essentially unchanged (33.1%->32.1%) -
+  // see HANDOFF.md "Recherche d'un 3e candidat GER40" and "Breaker Block
+  // implémenté et activé". Overlap with the other 2 GER40 mechanisms is low
+  // (7.7% historically, 4.8% real).
+  //
+  // Wired into the SAME openPositions/netting/auto-execute path as every
+  // other live source (liveStrategyEngine.js's
+  // _processBreakerBlockCandidate) - no special-cased position tracking. No
+  // direction filter (unlike US100/NWOG) - GER40/Breaker Block's edge is
+  // genuinely bidirectional, not a long-bias artifact.
+  //
+  // Scoped to GER40 ONLY - the only instrument where this concept was ever
+  // found this robust (see data/backtest-input/breaker-block-strategy-
+  // analysis.md for the other 7 instruments tested, all rejected/weaker).
+  // rrMultiple extended 3->5 (2026-09-16, same lever as NWOG/Weekly Sweep
+  // above). Most modest gain of the three: train exp 0.11R->0.12R (barely
+  // moves), test 0.17R->0.25R - net positive but smaller than NWOG/Weekly
+  // Sweep's improvement on this same symbol. Kept at 1:5 for consistency
+  // with the other two GER40 mechanisms rather than leaving this one alone
+  // at 1:3.
+  breakerBlock: {
+    symbols: ['GER40'],
+    rrMultiple: 5,
+    maxHoldingM15Candles: 480,
+  },
+  // Silver Bullet (ICT FVG formed inside the 10h-11h NY killzone AND
+  // agreeing with the active structure bias - NOT just a session filter on
+  // an already-existing FVG, see src/backtest/silverBullet.js's own header
+  // for the distinction from this project's older SILVER_BULLET_WINDOW
+  // constant) - LIVE, auto-executed (2026-09-17), straight to full
+  // auto-execute at Esdras's explicit request ("on les met en mode auto
+  // execute"), no alert-only observation phase first - same fast-track
+  // pattern as NWOG/Weekly Sweep/Breaker Block's own original rollout.
+  //
+  // Validated TWICE, independently: (1) train(<2024)/test(2024-2025) split
+  // on the 2019-2025 historical CSVs - US100/US500/GER40 all hold, PF
+  // 1.28-1.63, buy AND sell both positive in both windows (data/backtest-input/
+  // silver-bullet-strategy-analysis.md); (2) a forward-test on real cTrader
+  // candles (2026-02-10 -> 2026-09-16, never used to tune anything) -
+  // positive on all 3 symbols (PF 1.37-1.72), buy AND sell both positive on
+  // all 3 (6/6 subgroups, no sign flips) - see HANDOFF.md and
+  // data/real-data-2026-02-to-09/silver-bullet-forward-test.md. Checked for
+  // redundancy against what's already live on these same symbols before
+  // deploying: 76-83% of Silver Bullet's trades don't overlap in time with
+  // any already-open FVG/NWOG/Weekly Sweep/Breaker Block position on the
+  // same symbol (data/backtest-input/silver-bullet-overlap-analysis.md) -
+  // mostly new exposure, not double-counted risk.
+  //
+  // rrMultiple: 3 - the exact value both validations above were run at
+  // (silverBullet.js's own RR_MULTIPLE default), NOT re-tuned or extended to
+  // 5 the way FVG/NWOG/Weekly Sweep/Breaker Block eventually were elsewhere
+  // in this file - that extension was only ever tested for THOSE
+  // mechanisms, and picking a bigger number here now, never having tested
+  // it, would be exactly the after-the-fact parameter choice this project's
+  // discipline exists to avoid. No direction filter - validated bidirectional
+  // on all 3 symbols in both checks above, unlike US100/NWOG's genuine
+  // long-only edge.
+  silverBullet: {
+    symbols: ['US100', 'US500', 'GER40'],
+    rrMultiple: 3,
     maxHoldingM15Candles: 480,
   },
   // Pyramid add-on ("stops indépendants, sans breakeven" - see HANDOFF.md):
@@ -347,8 +576,20 @@ export function isLiveConfigured() {
 // RISK_PCT_PER_TRADE, BROKER_PLATFORM) - identical behavior to before
 // multi-account support existed, so nothing on the currently running
 // deployment has to change until ACCOUNTS_JSON is explicitly set.
+// FIXED 2026-09-13: this used to hardcode its own {maxTradesPerDay: 2, ...}
+// literal, a SECOND, independent copy of the same 4 numbers already set on
+// CONFIG.guardrails above - the two could (and did) drift: bumping
+// CONFIG.guardrails.maxTradesPerDay to 3 for the BTCUSD weekend test had NO
+// effect on the real 'default' account, which is built through THIS
+// function (see normalizeAccountEntry() below), still hardcoded at 2. A
+// real bug caught live via /api/accounts still reading maxTradesPerDay:2
+// after deploying the "fix" - see HANDOFF.md 2026-09-13. Now the only
+// source of truth: this function copies CONFIG.guardrails at call time
+// (safe - by the time any account is built via resolveAccounts() at the
+// bottom of this file, CONFIG.guardrails is already fully populated as
+// part of the CONFIG object literal above).
 function defaultGuardrails() {
-  return { maxTradesPerDay: 2, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 2, dayBoundaryHourUTC: 0 };
+  return { ...CONFIG.guardrails };
 }
 
 function resolveAccountRiskPct(accountMode, explicit) {
@@ -460,4 +701,53 @@ function resolveAccounts() {
   ];
 }
 
-CONFIG.accounts = resolveAccounts();
+// DISABLED_ACCOUNT_IDS (2026-09-16): comma-separated account ids to skip at
+// boot, e.g. "cti-freetrial". Added because the only other way to stop
+// running an account was to edit it out of ACCOUNTS_JSON - which means
+// rewriting a variable that holds live broker credentials, losing them in
+// the process, just to pause an account temporarily. This is the reversible
+// version: delete the variable and the account comes back untouched.
+//
+// First use: the cti-freetrial Match-Trader account, which has never once
+// connected - its login is answered by a Cloudflare challenge (HTTP 403
+// "Just a moment...") on every single boot, so it silently falls back to
+// simulated demo mode and reports a balance that is not real. Esdras asked
+// to take it out "pour l'instant" while that gets sorted out.
+//
+// Deliberately refuses to disable the LAST remaining account: a bot with
+// zero accounts boots into a state where nothing trades and every dashboard
+// route 404s, which looks far more like a crash than a configuration choice.
+// Exported because accounts come from TWO places and the variable has to
+// mean the same thing in both: CONFIG.accounts (env-derived, filtered just
+// below) and Supabase-stored dynamic accounts, which server.js registers at
+// boot long after this module loaded. Missing that second source is exactly
+// how the first attempt at disabling cti-freetrial silently did nothing -
+// it lives in Supabase, not in ACCOUNTS_JSON.
+export function isAccountDisabled(id) {
+  const raw = process.env.DISABLED_ACCOUNT_IDS;
+  if (!raw) return false;
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(id);
+}
+
+function applyDisabledAccounts(accounts) {
+  if (!process.env.DISABLED_ACCOUNT_IDS) return accounts;
+
+  const kept = accounts.filter((a) => !isAccountDisabled(a.id));
+  if (kept.length === 0) {
+    console.error(
+      `[config] DISABLED_ACCOUNT_IDS (${process.env.DISABLED_ACCOUNT_IDS}) would disable EVERY env-configured ` +
+        `account - ignoring it and keeping all ${accounts.length}.`
+    );
+    return accounts;
+  }
+  for (const a of accounts) {
+    if (isAccountDisabled(a.id)) console.log(`[config] account "${a.id}" disabled via DISABLED_ACCOUNT_IDS`);
+  }
+  return kept;
+}
+
+CONFIG.accounts = applyDisabledAccounts(resolveAccounts());

@@ -41,6 +41,17 @@ const BASE_CONFIG = {
   US100: { variant: 'H4_EMA200', stopMode: 'fvg-edge', structureEnabled: true, sessionEnabled: true, sessionWindow: SILVER_BULLET_WINDOW, liquiditySweepEnabled: true },
   US500: { variant: 'H1_EMA50', stopMode: 'fvg-edge', structureEnabled: true, sessionEnabled: true, sessionWindow: SILVER_BULLET_WINDOW, liquiditySweepEnabled: true },
   XAUUSD: { variant: 'H4_EMA20', stopMode: 'swing', structureEnabled: true, sessionEnabled: true, sessionWindow: LONDON_NY_OVERLAP_WINDOW, liquiditySweepEnabled: true },
+  // GBPUSD added 2026-09-17 - Esdras removed GBPUSD from production the same
+  // day it was added ("il ne donne pas bcp de rrr" - its grid-search config
+  // used rrMultiple: 3, never tested higher). This is the disciplined way to
+  // check that rather than guessing: the SAME extended-target sweep already
+  // used for US100/US500/XAUUSD above, applied to GBPUSD's own validated
+  // config (HANDOFF.md, "Recherche GBPUSD/USDCAD") - identical entries/
+  // stops, only the target changes. structureEnabled/liquiditySweepEnabled
+  // copied verbatim from that config (structure ON, sweep OFF - the
+  // combination its own robustness check used, not the weaker earlier grid
+  // survivor with structure off).
+  GBPUSD: { variant: 'H4_EMA20', stopMode: 'swing', structureEnabled: true, sessionEnabled: true, sessionWindow: LONDON_NY_OVERLAP_WINDOW, liquiditySweepEnabled: false },
 };
 
 const RR_VARIANTS = [3, 4, 5, 6, 7];

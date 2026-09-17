@@ -1,0 +1,1406 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Apex FVG — Journal</title>
+<script src="/theme.js"></script>
+<script src="/chat-widget.js" defer></script>
+<!-- PWA - see public/index.html's own head for why (same manifest/scope covers this page too). -->
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#05070a" data-dark="#05070a" data-light="#f6f7f9" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Apex FVG" />
+<style>
+  /* 2026-09-15 (Esdras: "pour le journal, ne le mets pas dans la première
+     page, donne-lui un onglet tout seul car il faut le graphe soit grand"):
+     the journal (durable performance + per-instrument breakdown + the full
+     per-trade list with candlestick chart context) used to live on
+     index.html, squeezed between a dozen other cards - moved here so the
+     per-trade chart can be genuinely large, with real context on both
+     sides of the trade (see cTraderDataSource.js's chartMarginMs). Same
+     terminal palette/tokens as index.html (copied, not shared via an
+     external stylesheet - same convention chart.html/accounts.html already
+     use) so this reads as the same product, not a bolted-on page. */
+  :root {
+    --bg: #05070a;
+    --bg-inset: #0a0e13;
+    --panel: #0e141b;
+    --panel-2: #131a22;
+    --panel-border: #202b37;
+    --panel-border-strong: #2d3b49;
+    --text: #eaf0f6;
+    --muted: #8b98a5;
+    --faint: #5c6773;
+    --green: #2fd480;
+    --red: #ff5c5f;
+    --amber: #e8b339;
+    --blue: #4c9eff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --radius: 3px;
+  }
+  /* Light theme (2026-09-15, Esdras: "j'aimerais avoir la couleur blanche
+     aussi du site") - same tokens, light values, toggled via theme.js
+     setting data-theme="light" on <html>. Every rule below already only
+     references these tokens, so no other CSS needs to change. */
+  :root[data-theme="light"] {
+    --bg: #f6f7f9;
+    --bg-inset: #ececf0;
+    --panel: #ffffff;
+    --panel-2: #f1f2f5;
+    --panel-border: #dcdfe4;
+    --panel-border-strong: #c3c8d1;
+    --text: #14181f;
+    --muted: #4c5560;
+    --faint: #8a919c;
+    --green: #16915a;
+    --red: #d1383b;
+    --amber: #b3790f;
+    --blue: #2158d0;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    padding: 0 16px 32px;
+    max-width: 1360px;
+    margin: 0 auto;
+    font-size: 13px;
+  }
+  ::selection { background: rgba(76,158,255,0.35); }
+  h1 { font-size: 14px; margin: 18px 0 2px; letter-spacing: 0.3px; font-family: var(--mono); font-weight: 700; text-transform: uppercase; }
+  .subtitle { color: var(--faint); font-size: 10.5px; margin-bottom: 14px; font-family: var(--mono); letter-spacing: 0.2px; }
+  a { color: var(--blue); }
+
+  .topnav { display: flex; align-items: center; gap: 4px; margin: 14px 0 0; border-bottom: 1px solid var(--panel-border); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+  .theme-toggle-btn:hover { border-color: var(--panel-border-strong); }
+  .topnav a {
+    color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600;
+    padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px;
+    transition: color 0.15s ease; font-family: var(--mono); text-transform: uppercase;
+  }
+  .topnav a:hover { color: var(--text); }
+  .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .card h2 {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
+    color: var(--muted); margin: 0 0 10px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--panel-border);
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--mono);
+  }
+  .meta { color: var(--muted); font-size: 11.5px; }
+  .err { color: var(--red); font-size: 12px; margin-top: 8px; }
+  .win { color: var(--green); }
+
+  .section-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;
+    color: var(--faint); margin: 22px 0 8px; padding: 0 2px;
+    font-family: var(--mono);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::before { content: '//'; color: var(--panel-border-strong); }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--panel-border); }
+  .section-title:first-of-type { margin-top: 4px; }
+
+  /* ---------- Journal filters + CSV export ---------- */
+  .btn-ghost {
+    text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 11px;
+    background: transparent; color: var(--blue); border: 1px solid var(--panel-border-strong);
+    border-radius: var(--radius); padding: 4px 9px; margin: 0; cursor: pointer; font-family: var(--mono);
+  }
+  .btn-ghost:hover { background: rgba(76,158,255,0.1); }
+  .journal-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filter-select {
+    padding: 5px 8px; border-radius: var(--radius); border: 1px solid var(--panel-border);
+    background: var(--bg-inset); color: var(--text); font-size: 11.5px; font-family: var(--mono);
+  }
+  .filter-select:focus { outline: none; border-color: var(--blue); }
+
+  .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-size: 12.5px; }
+  .stat-row .label { color: var(--muted); font-size: 11.5px; }
+  .stat-row > span:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ---------- Trade journal (2026-09-15: own page now, so the chart can be
+     genuinely LARGE - was 240px squeezed next to a dozen other cards,
+     now ~2x that, full page width) ---------- */
+  .journal-item {
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .journal-item:last-child { margin-bottom: 0; }
+  .journal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 4px; flex-wrap: wrap; gap: 6px; font-family: var(--mono); }
+  .journal-head .dir-bullish { color: var(--green); font-weight: 700; }
+  .journal-head .dir-bearish { color: var(--red); font-weight: 700; }
+  /* Stratégie (2026-09-15, Esdras: "il faut aussi ajouter la stratégie
+     utilisée") - its own tag, not buried in a parenthetical, so it reads
+     at a glance like the direction/symbol do. */
+  .strategy-tag {
+    display: inline-block; padding: 1px 8px; border-radius: var(--radius);
+    background: var(--panel-2); border: 1px solid var(--panel-border-strong);
+    color: var(--text); font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  }
+  .journal-sub { font-size: 11px; color: var(--faint); font-family: var(--mono); margin-bottom: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .journal-pnl { font-family: var(--mono); }
+  .journal-pnl.win { color: var(--green); font-weight: 700; }
+  .journal-pnl.loss { color: var(--red); font-weight: 700; }
+  /* R-multiple (2026-09-15, Esdras: "le nombre de RRR etc") - only ever
+     shown when the durable journal had a matching row to compute it from
+     (see enrichTradesWithRMultiple) - never guessed, so a trade with no
+     match simply omits this instead of showing a fake number. */
+  .r-multiple { font-family: var(--mono); font-weight: 700; padding: 1px 7px; border-radius: var(--radius); font-size: 11.5px; }
+  .r-multiple.win { background: rgba(47,212,128,0.12); color: var(--green); }
+  .r-multiple.loss { background: rgba(255,92,95,0.12); color: var(--red); }
+  .journal-chart { width: 100%; height: 460px; display: block; background: var(--bg); border: 1px solid var(--panel-border); border-radius: var(--radius); }
+  @media (max-width: 640px) { .journal-chart { height: 320px; } }
+
+  /* ---------- Preuve visuelle de conformité (2026-09-15, Esdras: "comment
+     peut-on prouver visuellement que le trade a respecté les procédures" +
+     mockup approuvé, "donne tout, pour l'avoir dès le départ") - the FVG
+     zone drawn on the chart (see renderTradeChart's zoneRect) plus a
+     checklist panel next to it, reusing the real production reconstruction
+     from tradeCompliance.js (server-side, see cTraderDataSource.js's
+     _attachComplianceChecklists). ---------- */
+  .proof-layout { display: flex; gap: 12px; align-items: stretch; }
+  @media (max-width: 900px) { .proof-layout { flex-direction: column; } }
+  .proof-layout .journal-chart { flex: 1 1 auto; min-width: 0; }
+  .checklist { flex: 0 0 260px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 9px 11px; font-family: var(--mono); }
+  @media (max-width: 900px) { .checklist { flex: 1 1 auto; } }
+  .checklist-title { font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 7px; }
+  .check-row { display: flex; align-items: flex-start; gap: 7px; font-size: 10.5px; padding: 4px 0; border-bottom: 1px solid var(--panel-border); }
+  .check-row:last-child { border-bottom: none; }
+  .check-icon { flex-shrink: 0; width: 13px; text-align: center; color: var(--faint); }
+  .check-icon.ok { color: var(--green); }
+  .check-icon.warn { color: var(--amber); }
+  .check-row .label { color: var(--text); }
+  .check-row .detail { color: var(--faint); display: block; font-size: 9.5px; margin-top: 1px; }
+
+  /* ---------- Performance overview (equity curve + key metrics) ---------- */
+  .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; margin-bottom: 14px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+  .metric-tile { background: var(--bg-inset); padding: 9px 11px; }
+  .metric-tile .metric-label { color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; font-family: var(--mono); }
+  .metric-tile .metric-value { font-family: var(--mono); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .metric-tile .metric-value.win { color: var(--green); }
+  .metric-tile .metric-value.loss { color: var(--red); }
+  .equity-chart { width: 100%; height: 140px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin-bottom: 14px; }
+  .strategy-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+  .strategy-table th { text-align: left; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border-strong); }
+  .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
+  .strategy-table tr:hover td { background: var(--bg-inset); }
+  .strategy-table tr:last-child td { border-bottom: none; }
+
+  /* ---------- Calendrier mensuel (2026-09-15, Esdras: "un calendrier des
+     jours du mois... genre le 📆 avec les chiffres totaux de chaque jour,
+     gain ou perte, chiffre brut et %") - a real wall-calendar grid, one
+     month at a time, distinct from the GitHub-heatmap above. ---------- */
+  .month-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .month-cal-nav { display: flex; align-items: center; gap: 8px; }
+  .month-cal-nav button {
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius);
+    color: var(--text); font-family: var(--mono); font-size: 12px; padding: 4px 10px; cursor: pointer;
+  }
+  .month-cal-nav button:hover { border-color: var(--panel-border-strong); }
+  .month-cal-nav button:disabled { opacity: 0.35; cursor: default; }
+  .month-cal-title { font-family: var(--mono); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.3px; min-width: 150px; text-align: center; }
+  .month-cal-summary { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+  .month-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .month-cal-dow { font-family: var(--mono); font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.4px; text-align: center; padding-bottom: 2px; }
+  .month-cal-day {
+    aspect-ratio: 1 / 0.82; border-radius: var(--radius); border: 1px solid var(--panel-border);
+    background: var(--bg-inset); padding: 5px 6px; display: flex; flex-direction: column; gap: 2px;
+    font-family: var(--mono); overflow: hidden;
+  }
+  .month-cal-day.empty { visibility: hidden; }
+  .month-cal-day.win { background: rgba(47,212,128,0.16); border-color: rgba(47,212,128,0.4); }
+  .month-cal-day.loss { background: rgba(255,92,95,0.16); border-color: rgba(255,92,95,0.4); }
+  .month-cal-day.today { border-color: var(--blue); border-width: 2px; }
+  .month-cal-daynum { font-size: 10.5px; color: var(--faint); }
+  .month-cal-day.win .month-cal-daynum, .month-cal-day.loss .month-cal-daynum { color: var(--muted); }
+  .month-cal-pnl { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .month-cal-day.win .month-cal-pnl { color: var(--green); }
+  .month-cal-day.loss .month-cal-pnl { color: var(--red); }
+  .month-cal-pct { font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .month-cal-count { font-size: 9px; color: var(--faint); margin-top: auto; }
+  @media (max-width: 560px) {
+    .month-cal-pnl { font-size: 10px; }
+    .month-cal-pct, .month-cal-count { display: none; }
+  }
+
+  /* ---------- Statistiques heure/jour (2026-09-15) - simple horizontal bar
+     rows, same "text/numbers over decorative charts" discipline as the rest
+     of the project - the bar itself is just a background-width gradient,
+     not a separate chart library. ---------- */
+  .time-stat-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 11.5px; font-family: var(--mono); }
+  .time-stat-label { width: 78px; flex-shrink: 0; color: var(--muted); }
+  .time-stat-bar-wrap { flex: 1; height: 16px; background: var(--bg-inset); border-radius: var(--radius); overflow: hidden; position: relative; }
+  .time-stat-bar { height: 100%; }
+  .time-stat-bar.win { background: rgba(47,212,128,0.45); }
+  .time-stat-bar.loss { background: rgba(255,92,95,0.45); }
+  .time-stat-value { width: 130px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .time-stats-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 760px) { .time-stats-cols { grid-template-columns: 1fr; } }
+  .time-stats-cols h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); margin: 0 0 8px; font-family: var(--mono); font-weight: 700; }
+  /* Session labels ("Chevauchement Londres/NY") are longer than hour/weekday
+     ones - the fixed 78px .time-stat-label would clip them, so this
+     modifier widens just that one column instead of touching the shared rule. */
+  .time-stat-label-wide { width: 150px; }
+
+  /* ---------- Stats par session ICT (2026-09-15) ---------- */
+  .session-note { font-size: 10.5px; color: var(--faint); font-family: var(--mono); margin: -4px 0 8px; }
+
+  /* ---------- Temps de récupération après drawdown (2026-09-15) - reuses
+     index.html's own .mismatch-alert look for the "en creux actuellement"
+     callout (copied here, same convention as the rest of this page's own
+     CSS - see the top-of-file comment). ---------- */
+  .mismatch-alert {
+    margin-top: 10px; padding: 9px 11px; border-radius: var(--radius);
+    background: rgba(232,179,57,0.1); border: 1px solid rgba(232,179,57,0.35);
+    color: var(--amber); font-size: 11.5px; line-height: 1.5;
+  }
+  .mismatch-alert strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 11.5px; }
+</style>
+</head>
+<body>
+  <nav class="topnav">
+    <a href="/">Dashboard</a>
+    <a href="/chart.html">Graphique</a>
+    <a href="/journal.html" class="active">Journal</a>
+    <a href="/accounts.html">Comptes</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
+  </nav>
+  <h1>Journal de trading</h1>
+  <div class="subtitle">Historique réel confirmé par le courtier — performance durable, détail par instrument, et chaque trade avec son contexte de marché complet.</div>
+
+  <div class="card">
+    <h2>Performance globale (journal durable)</h2>
+    <div class="meta" style="margin-bottom:8px;">Vrai journal des trades résolus, persisté en base (survit aux redémarrages) — courbe d'équité, métriques et répartition par stratégie.</div>
+    <div id="overview-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Journal durable par instrument</h2>
+    <div class="meta" style="margin-bottom:8px;">Même journal, détaillé par instrument.</div>
+    <div id="trade-log-summary">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>📆 Calendrier mensuel</h2>
+    <div class="meta" style="margin-bottom:8px;">Un mois à la fois, comme un vrai calendrier — chaque jour où un trade s'est clôturé affiche son gain/perte en $ réel et en % du solde de ce jour-là. $/% réels non disponibles sur les trades enregistrés avant le 2026-09-15 (colonne ajoutée ce jour-là) — affichés en R uniquement pour ces jours-là.</div>
+    <div id="month-calendar-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Statistiques par heure et jour de la semaine</h2>
+    <div class="meta" style="margin-bottom:8px;">Même journal durable, réparti par heure de sortie et par jour de la semaine (heure locale) — pour repérer si le bot performe mieux à certains moments.</div>
+    <div id="time-stats-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Statistiques par session de trading</h2>
+    <div class="meta" style="margin-bottom:2px;">Réparti par session au moment de l'ENTRÉE (pas de la sortie — un trade peut se clôturer des heures plus tard, dans une autre session) : c'est la session qui a produit le signal qui compte pour une stratégie ICT.</div>
+    <div class="session-note">Frontières standard du marché (heure UTC, pas heure locale) : Asie 00h–08h · Londres 08h–13h · Chevauchement Londres/NY 13h–16h · New York 16h–22h · Hors séance 22h–24h.</div>
+    <div id="session-stats-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Temps de récupération après un creux</h2>
+    <div class="meta" style="margin-bottom:8px;">Après chaque nouveau sommet de la courbe d'équité, combien de temps (trades et jours réels) il a fallu pour redépasser ce sommet — répond à "un passage dans le rouge, c'est normal ou pas".</div>
+    <div id="recovery-body">Chargement…</div>
+  </div>
+
+  <div class="card">
+    <h2>Qualité d'exécution</h2>
+    <div class="meta" style="margin-bottom:8px;">Prix réellement rempli par le courtier comparé au prix que le signal visait au moment de l'ordre — positif = coût réel (rempli à un prix pire), négatif = favorable. Exprimé en % du prix visé pour pouvoir comparer des instruments à des échelles de prix différentes (XAUUSD vs US100). Limité à la même fenêtre que le journal détaillé ci-dessous (le prix de fill réel n'est pas conservé au-delà de ce que le courtier garde en historique de deals).</div>
+    <div id="execution-quality-body">Chargement…</div>
+  </div>
+
+  <div class="section-title">Chaque trade, en détail</div>
+
+  <div class="card">
+    <h2 id="journal-heading">Journal de trading<span style="display:flex; gap:8px;"><button type="button" id="export-csv-btn" class="btn-ghost" title="Exporter les trades affichés (selon les filtres actifs) en CSV">⬇ CSV</button><button type="button" id="export-pdf-btn" class="btn-ghost" title="Rapport PDF complet : performance globale, répartitions, et les trades affichés (selon les filtres actifs)">⬇ PDF</button></span></h2>
+    <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader), stratégie utilisée, et R-multiple (quand le journal durable a pu le calculer — voir sa propre note plus bas) — stop/cible non affichés, cTrader ne les garde pas après clôture.</div>
+    <!-- Filtres (2026-09, "un vrai site... filtres + export CSV du journal") -
+         symbole/stratégie filtrent CÔTÉ CLIENT sur les trades déjà reçus (pas
+         de round-trip courtier pour un simple filtre d'affichage) ; la
+         fenêtre en jours EST envoyée au serveur (?days=N sur
+         /api/trade-history) car c'est la borne réelle de la requête
+         ProtoOADealListReq - voir buildJournalFilterOptions()/refreshTradeHistory()
+         plus bas. Les options symbole/stratégie sont reconstruites à partir
+         des trades RÉELLEMENT reçus (pas une liste figée dans ce fichier) -
+         pas de liste à tenir manuellement à jour à chaque nouvelle stratégie
+         ou instrument. -->
+    <div class="journal-toolbar">
+      <select id="filter-days" class="filter-select" title="Fenêtre (limite du courtier: 7 jours max)">
+        <option value="7">7 jours</option>
+        <option value="3">3 jours</option>
+        <option value="1">24 h</option>
+      </select>
+      <select id="filter-symbol" class="filter-select"><option value="">Tous symboles</option></select>
+      <select id="filter-source" class="filter-select"><option value="">Toutes stratégies</option></select>
+    </div>
+    <div id="journal-summary" style="margin-bottom:10px;"></div>
+    <div id="journal-list"></div>
+  </div>
+
+<!-- jsPDF/jsPDF-autotable (2026-09-15, Esdras: "rapport PDF exportable du
+     journal") - served from our own origin, same reasoning as
+     lightweight-charts on chart.html (see server.js's own comment), not a
+     CDN. Order matters: autotable patches jsPDF's own prototype, so jsPDF
+     must already be a global by the time it loads. -->
+<script src="/vendor/jspdf/jspdf.umd.min.js"></script>
+<script src="/vendor/jspdf-autotable/jspdf.plugin.autotable.min.js"></script>
+<script>
+const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
+const fmtTime = (t) => t ? new Date(t).toLocaleString('fr-FR') : '—';
+// US indices and gold trade in whole-ish points (2dp is plenty); forex pairs need more precision.
+// GER40/BTCUSD added 2026-09-16 - both were falling into the 5-decimals
+// forex default (e.g. GER40's real 25445.05 would show as 25445.05000).
+// BTCUSD kept in this lookup even though its trades are now filtered out
+// server-side (2026-09-17, see getTradeHistory()'s own comment) - harmless
+// to leave here, and this stays correct if that filter is ever lifted.
+const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD' || symbol === 'GER40' || symbol === 'BTCUSD') ? 2 : 5;
+// Same source-label vocabulary as index.html (kept as its own copy, not a
+// shared import, same convention chart.html/accounts.html already use for
+// their own small helper duplication rather than a build step).
+const sourceLabel = (s) => {
+  if (s.source === 'divergence') return 'Divergence';
+  if (s.source === 'nwog') return 'NWOG';
+  if (s.source === 'judaswing') return 'Judas Swing';
+  if (s.source === 'weeklysweep') return 'Weekly Sweep';
+  if (s.source === 'breakerblock') return 'Breaker Block';
+  if (s.source === 'silverbullet') return 'Silver Bullet';
+  if (s.source === 'fvg') return 'FVG';
+  if (s.source === 'pyramid') return 'Pyramide';
+  return 'manuel/inconnu';
+};
+
+// Inline SVG line chart of cumulative R over time (no library) - identical
+// to index.html's own copy.
+function renderEquityCurve(equityCurve) {
+  if (!equityCurve || equityCurve.length < 2) {
+    return '<div class="meta">Pas encore assez de trades clôturés pour tracer une courbe.</div>';
+  }
+  const W = 600, H = 140, PAD_L = 40, PAD_R = 10, PAD_T = 10, PAD_B = 10;
+  const values = equityCurve.map((p) => p.cumulativeR);
+  const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
+  const range = (maxR - minR) || 1;
+  const y = (v) => PAD_T + (1 - (v - minR) / range) * (H - PAD_T - PAD_B);
+  const plotW = W - PAD_L - PAD_R;
+  const x = (i) => PAD_L + (equityCurve.length === 1 ? 0 : (i / (equityCurve.length - 1)) * plotW);
+
+  const finalR = values[values.length - 1];
+  const color = finalR >= 0 ? 'var(--green)' : 'var(--red)';
+  const points = values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const zeroY = y(0);
+
+  return `
+    <svg class="equity-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <line x1="${PAD_L}" y1="${zeroY}" x2="${W - PAD_R}" y2="${zeroY}" stroke="var(--panel-border-strong)" stroke-width="1" stroke-dasharray="4,3" />
+      <text x="2" y="${zeroY + 4}" fill="var(--muted)" font-size="10">0R</text>
+      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" />
+    </svg>
+  `;
+}
+
+// Per-trade R, derived from the SAME equityCurve every other card here
+// already uses (2026-09-15) - no new endpoint, no new data: equityCurve is
+// a running cumulative sum in chronological order, so each trade's own R
+// is just the delta from the previous point (the first trade's R is its
+// cumulative value itself, since it started from 0). `time` on each point
+// is the durable journal's exit_time (see supabaseTradeLog.js) - real
+// broker-confirmed close time, not a guess.
+function deriveTradeR(equityCurve) {
+  if (!equityCurve) return [];
+  return equityCurve.map((p, i) => ({
+    time: p.time,
+    entryTime: p.entryTime,
+    r: i === 0 ? p.cumulativeR : p.cumulativeR - equityCurve[i - 1].cumulativeR,
+  }));
+}
+
+// Calendrier mensuel (2026-09-15, Esdras: "un calendrier des jours du mois...
+// genre le 📆 avec les chiffres totaux de chaque jour, gain ou perte, chiffre
+// brut et %") - a real wall-calendar grid, one month at a time, distinct from
+// the GitHub-heatmap above. Needs real $ (pnl_usd/balance_after, added to
+// bot_trade_events this same day) rather than just R, so it can show actual
+// dollars and the day's % of that day's STARTING balance - falls back to
+// showing R-only for any trade logged before those columns existed
+// (pnlUsdKnown: false), never a fabricated $ guess.
+const MONTH_CAL_STARTING_BALANCE_FALLBACK = 10000; // accountRuntime.js's own demo starting balance - only used for the very first trading day ever (no prior trade's balanceAfter to read).
+
+/**
+ * One pass over the (already chronological, oldest-first) equityCurve into
+ * per-LOCAL-calendar-day buckets: { r, count, pnlUsd, pnlUsdKnown,
+ * balanceBefore }. `balanceBefore` is the real balance right before this
+ * day's first trade (the previous day's last known balanceAfter, or null on
+ * the very first trading day) - needed to turn the day's $ into a %.
+ */
+function buildDailyBuckets(equityCurve) {
+  const byDay = new Map();
+  let prevBalance = null;
+  let prevCumulativeR = 0;
+  for (const t of equityCurve) {
+    const tradeR = t.cumulativeR - prevCumulativeR;
+    prevCumulativeR = t.cumulativeR;
+    const d = new Date(t.time);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (!byDay.has(key)) {
+      byDay.set(key, { r: 0, count: 0, pnlUsd: 0, pnlUsdKnown: true, balanceBefore: prevBalance });
+    }
+    const bucket = byDay.get(key);
+    bucket.count++;
+    bucket.r += tradeR;
+    if (t.pnlUsd == null) bucket.pnlUsdKnown = false;
+    else bucket.pnlUsd += t.pnlUsd;
+    if (t.balanceAfter != null) prevBalance = t.balanceAfter;
+  }
+  return byDay;
+}
+
+function monthCalIsCurrentMonth(year, month) {
+  const now = new Date();
+  return year === now.getFullYear() && month === now.getMonth();
+}
+
+function renderMonthCalendar(dailyBuckets, year, month) {
+  const firstOfMonth = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startDow = (firstOfMonth.getDay() + 6) % 7; // 0=Monday
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dowLabels = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push('<div class="month-cal-day empty"></div>');
+
+  let monthPnlUsd = 0, monthPnlKnown = true, monthR = 0, tradedDays = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(year, month, day);
+    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const bucket = dailyBuckets.get(key);
+    const isToday = date.getTime() === today.getTime();
+    if (!bucket) {
+      cells.push(`<div class="month-cal-day${isToday ? ' today' : ''}"><div class="month-cal-daynum">${day}</div></div>`);
+      continue;
+    }
+    tradedDays++;
+    const isWin = bucket.pnlUsdKnown ? bucket.pnlUsd >= 0 : bucket.r >= 0;
+    if (bucket.pnlUsdKnown) monthPnlUsd += bucket.pnlUsd;
+    else monthPnlKnown = false;
+    monthR += bucket.r;
+    const balBefore = bucket.balanceBefore ?? MONTH_CAL_STARTING_BALANCE_FALLBACK;
+    const pctStr = bucket.pnlUsdKnown ? `${bucket.pnlUsd >= 0 ? '+' : ''}${fmt((bucket.pnlUsd / balBefore) * 100)}%` : '';
+    const pnlStr = bucket.pnlUsdKnown
+      ? `${bucket.pnlUsd >= 0 ? '+' : ''}${fmt(bucket.pnlUsd)}$`
+      : `${bucket.r >= 0 ? '+' : ''}${fmt(bucket.r)}R`;
+    cells.push(`
+      <div class="month-cal-day ${isWin ? 'win' : 'loss'}${isToday ? ' today' : ''}" title="${date.toLocaleDateString('fr-FR')} — ${bucket.count} trade${bucket.count > 1 ? 's' : ''}">
+        <div class="month-cal-daynum">${day}</div>
+        <div class="month-cal-pnl">${pnlStr}</div>
+        ${pctStr ? `<div class="month-cal-pct">${pctStr}</div>` : ''}
+        <div class="month-cal-count">${bucket.count} trade${bucket.count > 1 ? 's' : ''}</div>
+      </div>
+    `);
+  }
+  const totalCells = startDow + daysInMonth;
+  const trailing = (7 - (totalCells % 7)) % 7;
+  for (let i = 0; i < trailing; i++) cells.push('<div class="month-cal-day empty"></div>');
+
+  const monthLabel = firstOfMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const summary = tradedDays === 0
+    ? 'Aucun trade ce mois-ci.'
+    : `${tradedDays} jour${tradedDays > 1 ? 's' : ''} tradé${tradedDays > 1 ? 's' : ''} — ${monthPnlKnown ? `${monthPnlUsd >= 0 ? '+' : ''}${fmt(monthPnlUsd)}$` : `${monthR >= 0 ? '+' : ''}${fmt(monthR)}R`}`;
+
+  return `
+    <div class="month-cal-head">
+      <div class="month-cal-nav">
+        <button onclick="changeMonthCalendar(-1)" title="Mois précédent">◀</button>
+        <div class="month-cal-title">${monthLabel}</div>
+        <button onclick="changeMonthCalendar(1)" title="Mois suivant" ${monthCalIsCurrentMonth(year, month) ? 'disabled' : ''}>▶</button>
+      </div>
+      <div class="month-cal-summary">${summary}</div>
+    </div>
+    <div class="month-cal-grid">
+      ${dowLabels.map((l) => `<div class="month-cal-dow">${l}</div>`).join('')}
+      ${cells.join('')}
+    </div>
+  `;
+}
+
+let monthCalDailyBuckets = new Map();
+let monthCalYear;
+let monthCalMonth; // 0-indexed, kept across data refreshes so navigating away from the current month survives a periodic reload
+
+function changeMonthCalendar(delta) {
+  monthCalMonth += delta;
+  if (monthCalMonth < 0) { monthCalMonth = 11; monthCalYear--; }
+  else if (monthCalMonth > 11) { monthCalMonth = 0; monthCalYear++; }
+  const el = document.getElementById('month-calendar-body');
+  if (el) el.innerHTML = renderMonthCalendar(monthCalDailyBuckets, monthCalYear, monthCalMonth);
+}
+
+// Statistiques par heure et jour de la semaine (2026-09-15) - same
+// deriveTradeR() source, bucketed by the LOCAL hour/weekday of each
+// trade's real exit time. Bars are relative to the biggest |R| bucket in
+// each table independently (hour vs weekday), not a shared scale - the
+// two tables answer different questions, forcing one scale on both would
+// just make whichever has fewer buckets look artificially flat.
+// Shared by renderTimeStats() and renderSessionStats() below (factored out
+// 2026-09-15 when session stats needed the exact same horizontal-bar
+// rendering with a different bucketing key - no point duplicating it).
+// `labelClass` lets a caller with longer bucket labels (session names) widen
+// just that column without touching the fixed-width default.
+function renderTimeStatRows(buckets, labelClass = 'time-stat-label') {
+  const nonEmpty = buckets.filter((b) => b.count > 0);
+  if (nonEmpty.length === 0) return '<div class="meta">Aucune donnée.</div>';
+  const maxAbsR = Math.max(0.01, ...nonEmpty.map((b) => Math.abs(b.r)));
+  return nonEmpty.map((b) => {
+    const win = b.r >= 0;
+    const widthPct = Math.max(4, Math.round((Math.abs(b.r) / maxAbsR) * 100));
+    const winRatePct = Math.round((b.wins / b.count) * 100);
+    return `
+      <div class="time-stat-row">
+        <span class="${labelClass}">${b.label}</span>
+        <span class="time-stat-bar-wrap"><span class="time-stat-bar ${win ? 'win' : 'loss'}" style="width:${widthPct}%;"></span></span>
+        <span class="time-stat-value journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(b.r)}R <span class="meta">(${b.count}, ${winRatePct}%)</span></span>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderTimeStats(equityCurve) {
+  const trades = deriveTradeR(equityCurve);
+  if (trades.length === 0) {
+    return '<div class="meta">Pas encore de trade clôturé.</div>';
+  }
+
+  function bucketBy(keyFn, labels) {
+    const buckets = labels.map(() => ({ r: 0, count: 0, wins: 0 }));
+    for (const t of trades) {
+      const k = keyFn(new Date(t.time));
+      buckets[k].r += t.r;
+      buckets[k].count++;
+      if (t.r >= 0) buckets[k].wins++;
+    }
+    return buckets.map((b, i) => ({ ...b, label: labels[i] }));
+  }
+
+  const hourLabels = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}h`);
+  const hourBuckets = bucketBy((d) => d.getHours(), hourLabels);
+
+  const dowLabels = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+  const dowBuckets = bucketBy((d) => (d.getDay() + 6) % 7, dowLabels);
+
+  return `
+    <div class="time-stats-cols">
+      <div>
+        <h3>Par heure de sortie (locale)</h3>
+        ${renderTimeStatRows(hourBuckets)}
+      </div>
+      <div>
+        <h3>Par jour de la semaine</h3>
+        ${renderTimeStatRows(dowBuckets)}
+      </div>
+    </div>
+  `;
+}
+
+// Sessions de trading ICT (2026-09-15, Esdras: "stats par session") -
+// bucketed by the UTC hour of each trade's ENTRY (not exit - see the card's
+// own explanation in the HTML above: an ICT setup sweeps liquidity during a
+// specific session at ENTRY, the close can land hours later in a different
+// one). Standard forex session hours in UTC, not configurable and not tied
+// to the viewer's own timezone (unlike renderTimeStats' local-hour buckets,
+// which deliberately answer a different question - "when does MY day look
+// good" vs "which market session does this edge come from").
+const SESSION_LABELS = ['Asie', 'Londres', 'Chevauchement Londres/NY', 'New York', 'Hors séance'];
+function sessionForHourUTC(h) {
+  if (h < 8) return 0; // Asie
+  if (h < 13) return 1; // Londres
+  if (h < 16) return 2; // Chevauchement
+  if (h < 22) return 3; // New York
+  return 4; // Hors séance
+}
+function renderSessionStats(equityCurve) {
+  const trades = deriveTradeR(equityCurve).filter((t) => t.entryTime);
+  if (trades.length === 0) {
+    return '<div class="meta">Pas encore de trade clôturé avec une heure d\'entrée connue.</div>';
+  }
+  const buckets = SESSION_LABELS.map((label) => ({ r: 0, count: 0, wins: 0, label }));
+  for (const t of trades) {
+    const idx = sessionForHourUTC(new Date(t.entryTime).getUTCHours());
+    buckets[idx].r += t.r;
+    buckets[idx].count++;
+    if (t.r >= 0) buckets[idx].wins++;
+  }
+  return renderTimeStatRows(buckets, 'time-stat-label time-stat-label-wide');
+}
+
+// Temps de récupération après un creux (drawdown) (2026-09-15, Esdras:
+// "temps de recuperation") - purement dérivé de la même equityCurve
+// (aucune nouvelle donnée, aucun nouvel appel réseau). Pour chaque nouveau
+// sommet de la courbe, mesure combien de temps (en trades ET en jours
+// calendaires réels, pas en nombre de bougies) il a fallu pour le
+// redépasser après en être descendu - répond concrètement à "cette série
+// de pertes actuelle, c'est dans la norme ou pas".
+function computeRecoveryStats(equityCurve) {
+  if (!equityCurve || equityCurve.length < 2) return null;
+  let peak = equityCurve[0].cumulativeR;
+  let peakTime = equityCurve[0].time;
+  let peakIdx = 0;
+  let inDrawdown = false;
+  const recoveries = [];
+  for (let i = 1; i < equityCurve.length; i++) {
+    const v = equityCurve[i].cumulativeR;
+    if (v >= peak) {
+      if (inDrawdown) {
+        const worst = Math.min(...equityCurve.slice(peakIdx, i + 1).map((p) => p.cumulativeR));
+        recoveries.push({
+          drawdownR: peak - worst,
+          trades: i - peakIdx,
+          days: (new Date(equityCurve[i].time) - new Date(peakTime)) / 86400000,
+        });
+        inDrawdown = false;
+      }
+      peak = v;
+      peakTime = equityCurve[i].time;
+      peakIdx = i;
+    } else {
+      inDrawdown = true;
+    }
+  }
+  const current = inDrawdown
+    ? {
+        drawdownR: peak - Math.min(...equityCurve.slice(peakIdx).map((p) => p.cumulativeR)),
+        trades: equityCurve.length - 1 - peakIdx,
+        days: (new Date(equityCurve[equityCurve.length - 1].time) - new Date(peakTime)) / 86400000,
+      }
+    : null;
+  return { recoveries, current };
+}
+
+function renderRecoveryStats(equityCurve) {
+  const stats = computeRecoveryStats(equityCurve);
+  if (!stats || (stats.recoveries.length === 0 && !stats.current)) {
+    return '<div class="meta">Pas encore assez de trades clôturés, ou aucun creux à mesurer (la courbe n\'a fait que monter jusqu\'ici).</div>';
+  }
+  const { recoveries, current } = stats;
+  let html = '';
+  if (recoveries.length > 0) {
+    const avgDays = recoveries.reduce((s, r) => s + r.days, 0) / recoveries.length;
+    const maxDays = Math.max(...recoveries.map((r) => r.days));
+    const avgTrades = recoveries.reduce((s, r) => s + r.trades, 0) / recoveries.length;
+    html += `
+      <div class="stat-row"><span class="label">Creux mesurés</span><span>${recoveries.length}</span></div>
+      <div class="stat-row"><span class="label">Récupération moyenne</span><span>${fmt(avgDays, 1)} jour${avgDays >= 2 ? 's' : ''} (${fmt(avgTrades, 1)} trades)</span></div>
+      <div class="stat-row"><span class="label">Récupération la plus longue</span><span>${fmt(maxDays, 1)} jour${maxDays >= 2 ? 's' : ''}</span></div>
+    `;
+  }
+  if (current) {
+    html += `
+      <div class="mismatch-alert">
+        <strong>En creux actuellement</strong>
+        Depuis ${fmt(current.days, 1)} jour${current.days >= 2 ? 's' : ''} (${current.trades} trade${current.trades > 1 ? 's' : ''}), -${fmt(current.drawdownR)}R sous le dernier sommet — pas encore reconquis.
+      </div>
+    `;
+  } else if (recoveries.length > 0) {
+    html += '<div class="meta" style="margin-top:8px;">Actuellement à un nouveau sommet — aucun creux en cours.</div>';
+  }
+  return html;
+}
+
+function renderOverview(data) {
+  const el = document.getElementById('overview-body');
+  const monthCalEl = document.getElementById('month-calendar-body');
+  const timeStatsEl = document.getElementById('time-stats-body');
+  const sessionStatsEl = document.getElementById('session-stats-body');
+  const recoveryEl = document.getElementById('recovery-body');
+  const overall = data.overall;
+  if (!overall || overall.totalSignals === 0) {
+    const emptyMsg = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+    el.innerHTML = emptyMsg;
+    if (monthCalEl) monthCalEl.innerHTML = emptyMsg;
+    if (timeStatsEl) timeStatsEl.innerHTML = emptyMsg;
+    if (sessionStatsEl) sessionStatsEl.innerHTML = emptyMsg;
+    if (recoveryEl) recoveryEl.innerHTML = emptyMsg;
+    return;
+  }
+  if (monthCalEl) {
+    monthCalDailyBuckets = buildDailyBuckets(data.equityCurve);
+    if (monthCalYear === undefined) {
+      const now = new Date();
+      monthCalYear = now.getFullYear();
+      monthCalMonth = now.getMonth();
+    }
+    monthCalEl.innerHTML = renderMonthCalendar(monthCalDailyBuckets, monthCalYear, monthCalMonth);
+  }
+  if (timeStatsEl) timeStatsEl.innerHTML = renderTimeStats(data.equityCurve);
+  if (sessionStatsEl) sessionStatsEl.innerHTML = renderSessionStats(data.equityCurve);
+  if (recoveryEl) recoveryEl.innerHTML = renderRecoveryStats(data.equityCurve);
+  const netWin = overall.finalEquityR >= 0;
+  const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
+  const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);
+
+  const tiles = `
+    <div class="metric-tiles">
+      <div class="metric-tile"><div class="metric-label">Trades</div><div class="metric-value">${overall.totalSignals}</div></div>
+      <div class="metric-tile"><div class="metric-label">Taux de réussite</div><div class="metric-value">${winRatePct === null ? '—' : fmt(winRatePct, 0) + '%'}</div></div>
+      <div class="metric-tile"><div class="metric-label">Profit factor</div><div class="metric-value">${pf}</div></div>
+      <div class="metric-tile"><div class="metric-label">Espérance</div><div class="metric-value ${overall.expectancyR >= 0 ? 'win' : 'loss'}">${overall.expectancyR >= 0 ? '+' : ''}${fmt(overall.expectancyR)}R</div></div>
+      <div class="metric-tile"><div class="metric-label">Drawdown max</div><div class="metric-value loss">-${fmt(overall.maxDrawdownR)}R</div></div>
+      <div class="metric-tile"><div class="metric-label">Total en R</div><div class="metric-value ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(overall.finalEquityR)}R</div></div>
+    </div>
+  `;
+
+  const sources = Object.keys(data.bySource || {});
+  const strategyTable = sources.length === 0 ? '' : `
+    <table class="strategy-table">
+      <thead><tr><th>Stratégie</th><th>Trades</th><th>Taux</th><th>Total R</th></tr></thead>
+      <tbody>
+        ${sources.map((source) => {
+          const b = data.bySource[source];
+          const netWinS = b.totalR >= 0;
+          return `<tr>
+            <td style="font-family:inherit;">${sourceLabel({ source })}</td>
+            <td>${b.count}</td>
+            <td>${b.winRatePct === null ? '—' : fmt(b.winRatePct, 0) + '%'}</td>
+            <td class="journal-pnl ${netWinS ? 'win' : 'loss'}">${netWinS ? '+' : ''}${fmt(b.totalR)}R</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+
+  el.innerHTML = tiles + renderEquityCurve(data.equityCurve) + strategyTable;
+}
+
+// Cached by refreshTradeLog() below, read by exportJournalPdf() - the PDF
+// report reuses whatever's already on screen (same data, same discipline
+// as every other card here) rather than issuing its own fetch.
+let latestTradeLogData = null;
+
+async function refreshTradeLog() {
+  const el = document.getElementById('trade-log-summary');
+  try {
+    const res = await fetch('/api/trade-log');
+    const data = await res.json();
+    latestTradeLogData = data;
+    renderOverview(data);
+    const symbols = Object.keys(data.bySymbol || {});
+    if (symbols.length === 0) {
+      el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+      return;
+    }
+    el.innerHTML = symbols.map((symbol) => {
+      const b = data.bySymbol[symbol];
+      const netWin = b.totalR >= 0;
+      return `
+        <div class="stat-row"><span class="label">${symbol}</span><span>${b.count} trade${b.count > 1 ? 's' : ''}</span></div>
+        <div class="stat-row"><span class="label">Taux de réussite</span><span>${b.winRatePct === null ? '—' : fmt(b.winRatePct, 0) + '%'} (${b.wins}G / ${b.losses}P${b.timeouts ? ' / ' + b.timeouts + ' exp.' : ''})</span></div>
+        <div class="stat-row" style="margin-bottom:10px;"><span class="label">Total en R</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(b.totalR)}R</span></div>
+      `;
+    }).join('');
+  } catch (err) {
+    el.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+    document.getElementById('overview-body').innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  }
+}
+
+// Builds a LARGE candlestick chart (inline SVG, no library) for one closed
+// trade: candles for full market context (see cTraderDataSource.js's
+// chartMarginMs - several candles before entry AND after exit, not just
+// enough to not look broken), plus dashed lines + labels at the actual
+// entry/exit prices (verified, from the deal history) - deliberately no
+// stop/target line, see the journal card's own explanation for why.
+function renderTradeChart(trade, decimals) {
+  // W/H (2026-09-15: this page's own, bigger than index.html's old inline
+  // version - matches .journal-chart's 460px height, see its own comment).
+  const W = 1100, H = 460, PAD_L = 54, PAD_R = 10, PAD_T = 14, PAD_B = 10;
+  const candles = trade.candles || [];
+  if (candles.length === 0) {
+    return '<div class="meta">Pas de données de graphique pour ce trade.</div>';
+  }
+
+  const prices = candles.flatMap((c) => [c.high, c.low]).concat([trade.entryPrice, trade.exitPrice]);
+  const minP = Math.min(...prices), maxP = Math.max(...prices);
+  const range = (maxP - minP) || 1;
+  const y = (p) => PAD_T + (1 - (p - minP) / range) * (H - PAD_T - PAD_B);
+
+  const plotW = W - PAD_L - PAD_R;
+  const slot = plotW / candles.length;
+  const x = (i) => PAD_L + i * slot + slot / 2;
+
+  const nearestIndex = (t) => {
+    let best = 0, bestDiff = Infinity;
+    candles.forEach((c, i) => { const d = Math.abs(c.time - t); if (d < bestDiff) { bestDiff = d; best = i; } });
+    return best;
+  };
+
+  const bodyWidth = Math.max(1, slot * 0.6);
+  const candleShapes = candles.map((c, i) => {
+    const up = c.close >= c.open;
+    const color = up ? 'var(--green)' : 'var(--red)';
+    const cx = x(i);
+    const bodyTop = y(Math.max(c.open, c.close));
+    const bodyBottom = y(Math.min(c.open, c.close));
+    return `
+      <line x1="${cx}" y1="${y(c.high)}" x2="${cx}" y2="${y(c.low)}" stroke="${color}" stroke-width="1" />
+      <rect x="${cx - bodyWidth / 2}" y="${bodyTop}" width="${bodyWidth}" height="${Math.max(1, bodyBottom - bodyTop)}" fill="${color}" />
+    `;
+  }).join('');
+
+  const entryX = x(nearestIndex(trade.entryTime));
+  const exitX = x(nearestIndex(trade.exitTime));
+  const entryY = y(trade.entryPrice);
+  const exitY = y(trade.exitPrice);
+  // Keep both labels inside the chart even when a price sits near the top/bottom edge:
+  // default entry-above/exit-below, but flip whichever one would clip off-canvas.
+  const entryLabelY = entryY - 5 < 12 ? entryY + 14 : entryY - 5;
+  const exitLabelY = exitY + 14 > H - 4 ? exitY - 5 : exitY + 14;
+
+  // FVG zone overlay (2026-09-15, "preuve visuelle de conformité") - drawn
+  // as a band across the WHOLE visible window, not just from its exact
+  // formation candle: the server (tradeCompliance.js) only transmits the
+  // zone's PRICE bounds {top,bottom}, not which candle index it started at
+  // - a full-width band still shows exactly what price range the zone
+  // covered without needing that extra data threaded through.
+  const zoneRect = trade.fvgZone
+    ? `<rect x="${PAD_L}" y="${y(trade.fvgZone.top)}" width="${W - PAD_L - PAD_R}" height="${Math.max(2, y(trade.fvgZone.bottom) - y(trade.fvgZone.top))}" fill="rgba(76,158,255,0.14)" stroke="rgba(76,158,255,0.5)" stroke-width="1" stroke-dasharray="4,3" />`
+    : '';
+
+  return `
+    <svg class="journal-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      ${zoneRect}
+      ${candleShapes}
+      <line x1="${PAD_L}" y1="${entryY}" x2="${W - PAD_R}" y2="${entryY}" stroke="var(--blue)" stroke-width="1" stroke-dasharray="5,4" />
+      <text x="4" y="${entryLabelY}" fill="var(--blue)" font-size="13">Entrée ${fmt(trade.entryPrice, decimals)}</text>
+      <line x1="${PAD_L}" y1="${exitY}" x2="${W - PAD_R}" y2="${exitY}" stroke="var(--amber)" stroke-width="1" stroke-dasharray="5,4" />
+      <text x="4" y="${exitLabelY}" fill="var(--amber)" font-size="13">Sortie ${fmt(trade.exitPrice, decimals)}</text>
+      <circle cx="${entryX}" cy="${entryY}" r="4" fill="var(--blue)" />
+      <circle cx="${exitX}" cy="${exitY}" r="4" fill="var(--amber)" />
+    </svg>
+  `;
+}
+
+// Preuve visuelle de conformité (2026-09-15) - combines the server-computed
+// checklist items (trade.checklist, from tradeCompliance.js's real
+// reconstruction: zone/bias/stop/risk) with 2 items that need nothing but
+// data already on the page: the ICT session bucket (reuses
+// sessionForHourUTC/SESSION_LABELS, the exact same boundaries as the
+// "Statistiques par session" card) and the guardrail item (trivially true -
+// a blocked signal never becomes a real trade in the first place, so any
+// trade reaching this journal already satisfies it).
+function guardrailChecklistItem() {
+  return {
+    key: 'guardrail', applicable: true, ok: true, label: 'Garde-fou au moment de l\'entrée',
+    detail: 'Aucun blocage actif — un trade bloqué (cooldown, limite du jour, drawdown) ne s\'ouvre jamais réellement',
+  };
+}
+function sessionChecklistItem(entryTime) {
+  if (!entryTime) return { key: 'session', applicable: false, label: 'Session', detail: 'Heure d\'entrée inconnue' };
+  const label = SESSION_LABELS[sessionForHourUTC(new Date(entryTime).getUTCHours())];
+  return { key: 'session', applicable: true, ok: true, label: 'Session', detail: `${label} (heure UTC)` };
+}
+function renderComplianceChecklist(trade) {
+  // 2026-09-17: was a hardcoded [zone, bias, stop, ..., risk] pick by key -
+  // only ever showed something real for 'fvg' trades, since every other
+  // source's server-side checklist used to be all "non applicable" filler.
+  // Now that tradeCompliance.js's buildComplianceChecklist() builds a real
+  // checklist per mechanism (signal/stop/session/direction-filter/etc, see
+  // its own header), render EVERY item the server actually sent, in the
+  // order it sent them, instead of picking 4 fixed keys that only existed
+  // for FVG - the 2 client-only items (guardrail, ICT session bucket) still
+  // apply to every source, so they stay appended at the end unchanged.
+  const items = [...(trade.checklist || []), guardrailChecklistItem(), sessionChecklistItem(trade.entryTime)];
+  const rows = items.map((it) => {
+    const icon = !it.applicable ? '—' : (it.ok ? '✔' : '⚠');
+    const iconClass = !it.applicable ? '' : (it.ok ? 'ok' : 'warn');
+    return `<div class="check-row"><span class="check-icon ${iconClass}">${icon}</span><span><span class="label">${it.label}</span><span class="detail">${it.detail}</span></span></div>`;
+  }).join('');
+  return `<div class="checklist"><div class="checklist-title">Critères respectés</div>${rows}</div>`;
+}
+
+// Unfiltered trades from the last fetch - the symbol/source filters below
+// re-render from this WITHOUT refetching (pure display filter, see the
+// card's own comment for why only `days` goes to the server).
+let allJournalTrades = [];
+
+// Qualité d'exécution (glissement à l'entrée) (2026-09-15, Esdras: "qualité
+// d'exécution") - compares the price the broker ACTUALLY filled (a fact,
+// dealPairing.js's opening.executionPrice) to the price the SIGNAL was
+// targeting at order-submission time (the durable journal's own entryPrice
+// - see enrichTradesWithSlippage's header). Positive = the broker filled at
+// a WORSE price than the signal wanted (a real cost); negative = better
+// (favorable). Shown as a % of the signal's own price, not raw price units,
+// specifically so XAUUSD (~2500) and US100 (~19500) can sit in the same
+// table without one dwarfing the other. ALWAYS the unfiltered window (same
+// as "Journal durable par instrument" above) - a diagnostic overview, not
+// meant to follow the per-trade list's own symbol/strategy filters.
+function renderExecutionQuality(trades) {
+  const withSlippage = trades.filter((t) => t.slippage !== null && t.slippage !== undefined && t.signalEntryPrice);
+  if (withSlippage.length === 0) {
+    return '<div class="meta">Pas encore de trade avec un prix de signal connu sur cette fenêtre (persistance durable désactivée, ou trades trop anciens).</div>';
+  }
+  const pctOf = (t) => (t.slippage / t.signalEntryPrice) * 100;
+  const bySymbol = new Map();
+  for (const t of withSlippage) {
+    const b = bySymbol.get(t.symbol) || { count: 0, totalPct: 0, favorable: 0 };
+    b.count++;
+    b.totalPct += pctOf(t);
+    if (t.slippage <= 0) b.favorable++;
+    bySymbol.set(t.symbol, b);
+  }
+  const overallPct = withSlippage.reduce((s, t) => s + pctOf(t), 0) / withSlippage.length;
+  const rows = [...bySymbol.entries()].map(([symbol, b]) => {
+    const avgPct = b.totalPct / b.count;
+    const cost = avgPct > 0;
+    return `<tr>
+      <td style="font-family:inherit;">${symbol}</td>
+      <td>${b.count}</td>
+      <td class="journal-pnl ${cost ? 'loss' : 'win'}">${avgPct >= 0 ? '+' : ''}${fmt(avgPct, 3)}%</td>
+      <td>${Math.round((b.favorable / b.count) * 100)}%</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="stat-row"><span class="label">Glissement moyen à l'entrée (${withSlippage.length} trade${withSlippage.length > 1 ? 's' : ''})</span><span class="journal-pnl ${overallPct > 0 ? 'loss' : 'win'}">${overallPct >= 0 ? '+' : ''}${fmt(overallPct, 3)}%</span></div>
+    <table class="strategy-table" style="margin-top:8px;">
+      <thead><tr><th>Instrument</th><th>Trades</th><th>Glissement moyen</th><th>% rempli à prix égal/meilleur</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+async function refreshTradeHistory() {
+  const list = document.getElementById('journal-list');
+  const eqEl = document.getElementById('execution-quality-body');
+  const days = document.getElementById('filter-days').value;
+  try {
+    const res = await fetch(`/api/trade-history?days=${encodeURIComponent(days)}`);
+    const data = await res.json();
+    allJournalTrades = data.trades || [];
+    populateJournalFilterOptions(allJournalTrades);
+    if (allJournalTrades.length === 0) {
+      document.getElementById('journal-summary').innerHTML = '';
+      const emptyMsg = data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur cette fenêtre.';
+      list.innerHTML = `<div class="meta">${emptyMsg}</div>`;
+      if (eqEl) eqEl.innerHTML = `<div class="meta">${emptyMsg}</div>`;
+      return;
+    }
+    renderJournalList();
+    if (eqEl) eqEl.innerHTML = renderExecutionQuality(allJournalTrades);
+  } catch (err) {
+    list.innerHTML = `<div class="err">Erreur de chargement du journal: ${err.message}</div>`;
+  }
+}
+
+// Rebuilds the symbol/strategy <select> OPTIONS from the trades ACTUALLY
+// present in the current window - not a list hardcoded in this file, so a
+// newly-activated symbol or strategy (Judas Swing/EURUSD, NWOG before it...)
+// shows up here automatically instead of needing a matching update. Keeps
+// the current selection if it's still a valid choice.
+function populateJournalFilterOptions(trades) {
+  const symbolSel = document.getElementById('filter-symbol');
+  const sourceSel = document.getElementById('filter-source');
+  const rebuild = (sel, values, allLabel) => {
+    const prev = sel.value;
+    sel.innerHTML = `<option value="">${allLabel}</option>` +
+      values.map((v) => `<option value="${v}"${v === prev ? ' selected' : ''}>${v}</option>`).join('');
+  };
+  rebuild(symbolSel, [...new Set(trades.map((t) => t.symbol))].sort(), 'Tous symboles');
+  rebuild(sourceSel, [...new Set(trades.map((t) => sourceLabel(t)))].sort(), 'Toutes stratégies');
+}
+
+function filteredJournalTrades() {
+  const symbolFilter = document.getElementById('filter-symbol').value;
+  const sourceFilter = document.getElementById('filter-source').value;
+  return allJournalTrades.filter((t) =>
+    (!symbolFilter || t.symbol === symbolFilter) && (!sourceFilter || sourceLabel(t) === sourceFilter)
+  );
+}
+
+function renderJournalList() {
+  const list = document.getElementById('journal-list');
+  const summaryEl = document.getElementById('journal-summary');
+  const filtered = filteredJournalTrades();
+
+  if (filtered.length === 0) {
+    summaryEl.innerHTML = '';
+    list.innerHTML = '<div class="meta">Aucun trade ne correspond à ces filtres.</div>';
+    return;
+  }
+
+  const wins = filtered.filter((t) => t.pnl >= 0).length;
+  const netPnl = filtered.reduce((sum, t) => sum + t.pnl, 0);
+  const netWin = netPnl >= 0;
+  // R-multiple moyen (2026-09-15) - seulement sur les trades qui EN ONT un
+  // (voir enrichTradesWithRMultiple côté serveur) : un trade sans
+  // correspondance dans le journal durable ne doit ni fausser la moyenne
+  // ni prétendre avoir un R inventé.
+  const withR = filtered.filter((t) => t.rMultiple !== null && t.rMultiple !== undefined);
+  const avgR = withR.length > 0 ? withR.reduce((sum, t) => sum + t.rMultiple, 0) / withR.length : null;
+
+  summaryEl.innerHTML = `
+    <div class="stat-row"><span class="label">Trades</span><span>${filtered.length}</span></div>
+    <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt((wins / filtered.length) * 100, 0)}% (${wins}/${filtered.length})</span></div>
+    <div class="stat-row"><span class="label">P&amp;L net</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(netPnl)}</span></div>
+    <div class="stat-row"><span class="label">R moyen${withR.length < filtered.length ? ` (${withR.length}/${filtered.length} trades)` : ''}</span><span class="journal-pnl ${avgR === null ? '' : avgR >= 0 ? 'win' : 'loss'}">${avgR === null ? '—' : (avgR >= 0 ? '+' : '') + fmt(avgR) + 'R'}</span></div>
+  `;
+
+  list.innerHTML = filtered.map((t) => {
+    const d = priceDecimals(t.symbol);
+    const win = t.pnl >= 0;
+    const hasR = t.rMultiple !== null && t.rMultiple !== undefined;
+    const rWin = hasR && t.rMultiple >= 0;
+    // Glissement (2026-09-15, Esdras: "qualité d'exécution") - see
+    // renderExecutionQuality's own header for the full reasoning. Only
+    // shown when known, same discipline as the R-multiple badge above -
+    // never a guessed "0" for a trade with no signal-price match.
+    const hasSlippage = t.slippage !== null && t.slippage !== undefined && t.signalEntryPrice;
+    const slippageCost = hasSlippage && t.slippage > 0;
+    return `
+      <div class="journal-item">
+        <div class="journal-head">
+          <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} <span class="strategy-tag">${sourceLabel(t)}</span></span>
+          <span style="display:flex; gap:8px; align-items:center;">
+            ${hasR ? `<span class="r-multiple ${rWin ? 'win' : 'loss'}">${rWin ? '+' : ''}${fmt(t.rMultiple, 1)}R</span>` : ''}
+            <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
+          </span>
+        </div>
+        <div class="journal-sub">
+          <span>Entrée ${fmtTime(t.entryTime)}</span>
+          <span>Sortie ${fmtTime(t.exitTime)}</span>
+          <span>Prix ${fmt(t.entryPrice, d)} → ${fmt(t.exitPrice, d)}</span>
+          ${!hasR ? '<span title="Pas de correspondance dans le journal durable pour ce trade (persistance désactivée, ou trade trop ancien)">R-multiple indisponible</span>' : ''}
+          ${hasSlippage ? `<span title="Prix réellement rempli par le courtier (${fmt(t.entryPrice, d)}) vs prix visé par le signal (${fmt(t.signalEntryPrice, d)})" class="${slippageCost ? '' : 'win'}">Glissement ${t.slippage >= 0 ? '+' : ''}${fmt(t.slippage, d)}</span>` : ''}
+        </div>
+        <div class="proof-layout">
+          ${renderTradeChart(t, d)}
+          ${renderComplianceChecklist(t)}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// CSV of whatever's CURRENTLY DISPLAYED (i.e. respects the active filters) -
+// exporting "everything regardless of filters" would be a silent surprise
+// (the button next to a filtered view exporting unfiltered data).
+function exportJournalCsv() {
+  const filtered = filteredJournalTrades();
+  if (filtered.length === 0) return;
+
+  const escapeCsv = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const headers = ['symbole', 'direction', 'stratégie', 'entrée', 'sortie', 'prix_entrée', 'prix_sortie', 'pnl', 'r_multiple', 'glissement_entrée'];
+  const rows = filtered.map((t) => [
+    t.symbol,
+    t.direction === 'bullish' ? 'achat' : 'vente',
+    sourceLabel(t),
+    new Date(t.entryTime).toISOString(),
+    new Date(t.exitTime).toISOString(),
+    t.entryPrice,
+    t.exitPrice,
+    t.pnl,
+    t.rMultiple ?? '',
+    t.slippage ?? '',
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `journal-trading-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Simple vector line chart of cumulative R, drawn directly with jsPDF's own
+// line primitive (no image, no SVG-to-canvas conversion) - same math as
+// renderEquityCurve()'s SVG version above, just mapped into PDF page
+// coordinates (mm) instead of an SVG viewBox.
+function drawEquityCurvePdf(doc, x, y, w, h, equityCurve) {
+  doc.setDrawColor(210);
+  doc.setLineWidth(0.2);
+  doc.rect(x, y, w, h);
+  if (!equityCurve || equityCurve.length < 2) {
+    doc.setFontSize(9);
+    doc.setTextColor(140);
+    doc.text('Pas encore assez de trades clôturés pour tracer une courbe.', x + 3, y + h / 2);
+    return;
+  }
+  const values = equityCurve.map((p) => p.cumulativeR);
+  const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
+  const range = (maxR - minR) || 1;
+  const padT = 3, padB = 3;
+  const plotH = h - padT - padB;
+  const py = (v) => y + padT + (1 - (v - minR) / range) * plotH;
+  const px = (i) => x + (equityCurve.length === 1 ? 0 : (i / (equityCurve.length - 1)) * w);
+
+  const zeroY = py(0);
+  doc.setDrawColor(210);
+  doc.setLineDashPattern([1, 1], 0);
+  doc.line(x, zeroY, x + w, zeroY);
+  doc.setLineDashPattern([], 0);
+  doc.setFontSize(7);
+  doc.setTextColor(140);
+  doc.text('0R', x + 1, zeroY - 1);
+
+  const finalR = values[values.length - 1];
+  if (finalR >= 0) doc.setDrawColor(47, 212, 128);
+  else doc.setDrawColor(255, 92, 95);
+  doc.setLineWidth(0.4);
+  for (let i = 1; i < values.length; i++) {
+    doc.line(px(i - 1), py(values[i - 1]), px(i), py(values[i]));
+  }
+}
+
+// Rapport PDF (2026-09-15, Esdras: "rapport PDF exportable du journal") - a
+// downloadable, presentable report built from the SAME data already on this
+// page (performance globale, répartitions, stats par session, temps de
+// récupération, qualité d'exécution, et le détail des trades filtrés) - no
+// second fetch, no new backend endpoint. Built as a native vector PDF
+// (jsPDF + jsPDF-autotable), not a screenshot (html2canvas etc.) - text
+// stays crisp/selectable/searchable and the file stays small. The trade
+// detail table respects the SAME active filters as the per-trade list/CSV
+// export right below it - same "no silent surprise" discipline.
+function exportJournalPdf() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const marginX = 15;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const contentW = pageW - marginX * 2;
+  let y = 18;
+
+  function ensureSpace(needed) {
+    if (y + needed > pageH - 15) {
+      doc.addPage();
+      y = 18;
+    }
+  }
+
+  function sectionTitle(text) {
+    ensureSpace(10);
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(20);
+    doc.text(text, marginX, y);
+    y += 5;
+    doc.setDrawColor(220);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, y, marginX + contentW, y);
+    y += 5;
+    doc.setFont(undefined, 'normal');
+  }
+
+  doc.setFontSize(16);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(20);
+  doc.text('Apex FVG — Journal de trading', marginX, y);
+  y += 7;
+  doc.setFontSize(9);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(120);
+  doc.text(`Rapport généré le ${new Date().toLocaleString('fr-FR')}`, marginX, y);
+  y += 10;
+
+  const data = latestTradeLogData;
+  const overall = data && data.overall;
+
+  sectionTitle('Performance globale (journal durable)');
+  if (!overall || overall.totalSignals === 0) {
+    doc.setFontSize(9);
+    doc.setTextColor(140);
+    doc.text('Aucun trade enregistré pour le moment.', marginX, y);
+    y += 8;
+  } else {
+    const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
+    const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);
+    doc.autoTable({
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 1.5 },
+      body: [
+        ['Trades', String(overall.totalSignals), 'Taux de réussite', winRatePct === null ? '—' : `${fmt(winRatePct, 0)}%`],
+        ['Profit factor', pf, 'Espérance', `${overall.expectancyR >= 0 ? '+' : ''}${fmt(overall.expectancyR)}R`],
+        ['Drawdown max', `-${fmt(overall.maxDrawdownR)}R`, 'Total en R', `${overall.finalEquityR >= 0 ? '+' : ''}${fmt(overall.finalEquityR)}R`],
+      ],
+    });
+    y = doc.lastAutoTable.finalY + 6;
+
+    ensureSpace(45);
+    drawEquityCurvePdf(doc, marginX, y, contentW, 38, data.equityCurve);
+    y += 38 + 8;
+
+    const sources = Object.keys(data.bySource || {});
+    if (sources.length > 0) {
+      sectionTitle('Répartition par stratégie');
+      doc.autoTable({
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['Stratégie', 'Trades', 'Taux', 'Total R']],
+        body: sources.map((s) => {
+          const b = data.bySource[s];
+          return [sourceLabel({ source: s }), String(b.count), b.winRatePct === null ? '—' : `${fmt(b.winRatePct, 0)}%`, `${b.totalR >= 0 ? '+' : ''}${fmt(b.totalR)}R`];
+        }),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [20, 26, 34] },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    const symbolsList = Object.keys(data.bySymbol || {});
+    if (symbolsList.length > 0) {
+      sectionTitle('Répartition par instrument');
+      doc.autoTable({
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        head: [['Instrument', 'Trades', 'Taux', 'Total R']],
+        body: symbolsList.map((s) => {
+          const b = data.bySymbol[s];
+          return [s, String(b.count), b.winRatePct === null ? '—' : `${fmt(b.winRatePct, 0)}%`, `${b.totalR >= 0 ? '+' : ''}${fmt(b.totalR)}R`];
+        }),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [20, 26, 34] },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    const sessionTrades = deriveTradeR(data.equityCurve).filter((t) => t.entryTime);
+    if (sessionTrades.length > 0) {
+      const buckets = SESSION_LABELS.map((label) => ({ r: 0, count: 0, wins: 0, label }));
+      for (const t of sessionTrades) {
+        const idx = sessionForHourUTC(new Date(t.entryTime).getUTCHours());
+        buckets[idx].r += t.r;
+        buckets[idx].count++;
+        if (t.r >= 0) buckets[idx].wins++;
+      }
+      const nonEmptySessions = buckets.filter((b) => b.count > 0);
+      if (nonEmptySessions.length > 0) {
+        sectionTitle("Statistiques par session de trading (heure UTC d'entrée)");
+        doc.autoTable({
+          startY: y,
+          margin: { left: marginX, right: marginX },
+          head: [['Session', 'Trades', 'Taux', 'Total R']],
+          body: nonEmptySessions.map((b) => [b.label, String(b.count), `${Math.round((b.wins / b.count) * 100)}%`, `${b.r >= 0 ? '+' : ''}${fmt(b.r)}R`]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [20, 26, 34] },
+        });
+        y = doc.lastAutoTable.finalY + 8;
+      }
+    }
+
+    const recovery = computeRecoveryStats(data.equityCurve);
+    if (recovery && (recovery.recoveries.length > 0 || recovery.current)) {
+      sectionTitle('Temps de récupération après un creux');
+      doc.setFontSize(9);
+      if (recovery.recoveries.length > 0) {
+        const avgDays = recovery.recoveries.reduce((s, r) => s + r.days, 0) / recovery.recoveries.length;
+        const maxDays = Math.max(...recovery.recoveries.map((r) => r.days));
+        doc.setTextColor(60);
+        doc.text(`Creux mesurés : ${recovery.recoveries.length}`, marginX, y); y += 5;
+        doc.text(`Récupération moyenne : ${fmt(avgDays, 1)} jours`, marginX, y); y += 5;
+        doc.text(`Récupération la plus longue : ${fmt(maxDays, 1)} jours`, marginX, y); y += 5;
+      }
+      if (recovery.current) {
+        doc.setTextColor(180, 130, 20);
+        doc.text(`En creux actuellement depuis ${fmt(recovery.current.days, 1)} jours (${recovery.current.trades} trades), -${fmt(recovery.current.drawdownR)}R sous le dernier sommet.`, marginX, y);
+        y += 5;
+      }
+      y += 3;
+    }
+  }
+
+  const withSlippage = (allJournalTrades || []).filter((t) => t.slippage !== null && t.slippage !== undefined && t.signalEntryPrice);
+  if (withSlippage.length > 0) {
+    const pctOf = (t) => (t.slippage / t.signalEntryPrice) * 100;
+    const bySymbolSlip = new Map();
+    for (const t of withSlippage) {
+      const b = bySymbolSlip.get(t.symbol) || { count: 0, totalPct: 0, favorable: 0 };
+      b.count++;
+      b.totalPct += pctOf(t);
+      if (t.slippage <= 0) b.favorable++;
+      bySymbolSlip.set(t.symbol, b);
+    }
+    sectionTitle("Qualité d'exécution (glissement à l'entrée)");
+    doc.autoTable({
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [['Instrument', 'Trades', 'Glissement moyen', '% rempli à prix égal/meilleur']],
+      body: [...bySymbolSlip.entries()].map(([symbol, b]) => [
+        symbol,
+        String(b.count),
+        `${(b.totalPct / b.count) >= 0 ? '+' : ''}${fmt(b.totalPct / b.count, 3)}%`,
+        `${Math.round((b.favorable / b.count) * 100)}%`,
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [20, 26, 34] },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  const filtered = filteredJournalTrades();
+  if (filtered.length > 0) {
+    sectionTitle(`Détail des trades (${filtered.length}, fenêtre et filtres actifs)`);
+    doc.autoTable({
+      startY: y,
+      margin: { left: marginX, right: marginX },
+      head: [['Symbole', 'Dir.', 'Stratégie', 'Entrée', 'Sortie', 'P&L', 'R']],
+      body: filtered.map((t) => [
+        t.symbol,
+        t.direction === 'bullish' ? 'Achat' : 'Vente',
+        sourceLabel(t),
+        fmtTime(t.entryTime),
+        fmtTime(t.exitTime),
+        `${t.pnl >= 0 ? '+' : ''}${fmt(t.pnl)}`,
+        t.rMultiple === null || t.rMultiple === undefined ? '—' : `${t.rMultiple >= 0 ? '+' : ''}${fmt(t.rMultiple, 1)}R`,
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [20, 26, 34] },
+    });
+  }
+
+  doc.save(`journal-trading-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+document.getElementById('filter-days').addEventListener('change', refreshTradeHistory);
+document.getElementById('filter-symbol').addEventListener('change', renderJournalList);
+document.getElementById('filter-source').addEventListener('change', renderJournalList);
+document.getElementById('export-csv-btn').addEventListener('click', exportJournalCsv);
+document.getElementById('export-pdf-btn').addEventListener('click', exportJournalPdf);
+
+refreshTradeHistory();
+refreshTradeLog();
+setInterval(refreshTradeHistory, 60000); // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for a faster cadence
+setInterval(refreshTradeLog, 60000); // grows one row per resolved trade, no meaningful reason to poll faster
+
+// PWA install support - see index.html's own copy of this for why.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>

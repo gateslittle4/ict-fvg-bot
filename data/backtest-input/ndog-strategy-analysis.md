@@ -4,9 +4,13 @@
 
 | Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |
 |---|---|---|---|---|---|---|---|---|---|
-| US100 | 1032 | 25.8% | 0.89 | -0.10 | 315 | 28.9% | 1.04 | 0.03 | ⚠️ affaibli |
-| US500 | 884 | 26.8% | 0.90 | -0.09 | 274 | 23.0% | 0.74 | -0.22 | ❌ ne tient pas |
-| XAUUSD | 511 | 25.5% | 0.82 | -0.16 | 249 | 21.7% | 0.68 | -0.29 | ❌ ne tient pas |
-| EURUSD | 245 | 31.8% | 1.11 | 0.09 | 1 | 100.0% | ∞ | 2.74 | ❓ pas assez de trades |
+| US100 | 1504 | 26.0% | 0.91 | -0.07 | 347 | 29.7% | 1.13 | 0.10 | ⚠️ affaibli |
+| US500 | 1369 | 27.5% | 0.95 | -0.04 | 326 | 24.5% | 0.84 | -0.14 | ❌ ne tient pas |
+| XAUUSD | 700 | 25.2% | 0.79 | -0.19 | 249 | 21.7% | 0.68 | -0.29 | ❌ ne tient pas |
+| EURUSD | 227 | 32.2% | 1.11 | 0.09 | 1 | 100.0% | ∞ | 2.71 | ❓ pas assez de trades |
 | GBPUSD | 219 | 23.7% | 0.73 | -0.25 | 2 | 0.0% | 0.00 | -1.08 | ❓ pas assez de trades |
 | USDJPY | 285 | 25.7% | 0.85 | -0.13 | 7 | 28.6% | 1.04 | 0.03 | ❓ pas assez de trades |
+| USDCAD | 179 | 26.8% | 0.85 | -0.13 | 0 | — | — | — | ❓ pas assez de trades |
+| GER40 | 502 | 28.9% | 1.05 | 0.04 | 340 | 29.1% | 1.08 | 0.06 | ✅ tient |
+| UKX | 799 | 24.2% | 0.76 | -0.21 | 206 | 25.2% | 0.80 | -0.17 | ❌ ne tient pas |
+| AUX | 829 | 28.2% | 0.97 | -0.03 | 306 | 31.8% | 1.17 | 0.13 | ⚠️ affaibli |

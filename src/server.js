@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry } from './config.js';
+import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry, isAccountDisabled } from './config.js';
 import { getDefaultAccount, getAccount, listAccounts, registerAccount } from './accountRegistry.js';
 import { MAX_AUTO_EXECUTE_HOURS } from './accountRuntime.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
@@ -19,6 +19,7 @@ import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, 
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
 import { getPropFirmProgram } from './propFirms/index.js';
+import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus } from './chatAssistant.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,12 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // can draw anything. Comes from the npm dependency, so it updates with
 // `npm install` instead of being a copied-in vendored blob.
 app.use('/vendor/lightweight-charts', express.static(path.join(__dirname, '..', 'node_modules', 'lightweight-charts', 'dist')));
+
+// jsPDF/jsPDF-autotable (2026-09-15, Esdras: "rapport PDF exportable du
+// journal") - same reasoning as lightweight-charts above: served from our
+// own origin, from the npm dependency, not a CDN.
+app.use('/vendor/jspdf', express.static(path.join(__dirname, '..', 'node_modules', 'jspdf', 'dist')));
+app.use('/vendor/jspdf-autotable', express.static(path.join(__dirname, '..', 'node_modules', 'jspdf-autotable', 'dist')));
 
 const BOOTED_AT = Date.now();
 
@@ -47,8 +54,27 @@ const BOOTED_AT = Date.now();
 function toRealTime(ms) {
   return typeof ms === 'number' ? ms + FIXED_EST_TO_UTC_OFFSET_MS : ms;
 }
-function withRealTimePosition(position) {
-  return position ? { ...position, entryTime: toRealTime(position.entryTime) } : null;
+// 2026-09-13, at Esdras's explicit correction ("le trade n'est pas ouvert,
+// dis plutôt un ordre en attente"): `position` here is ONLY
+// LiveStrategyEngine's own optimistic belief, set the instant a signal
+// validates (see _processFvgEvent etc. in liveStrategyEngine.js) - true for
+// EVERY source (FVG/Divergence/NWOG/Judas Swing) whether or not an order
+// was ever actually sent to the broker. It must never reach the dashboard
+// unlabeled as if it were a confirmed fact. `confirmed` cross-checks it
+// against orderOutcomeLog - the ONLY place a real ProtoOAExecutionEvent
+// outcome is recorded (see accountRuntime.js/_handleExecutionEvent) -
+// matched by the same signal id so a stale outcome from an older signal on
+// this symbol can never be mistaken for this one's. true only once the
+// broker itself has confirmed a real fill; false covers BOTH "still
+// awaiting confirmation" and "no order was ever submitted" (auto-execute
+// was off when this signal validated) - genuinely indistinguishable from
+// this log alone, so deliberately not oversold as more specific than that.
+function withRealTimePosition(symbol, position, orderOutcomeLog) {
+  if (!position) return null;
+  const confirmed = (orderOutcomeLog || []).some(
+    (o) => o.symbol === symbol && o.signalId === position.id && o.outcome === 'filled'
+  );
+  return { ...position, entryTime: toRealTime(position.entryTime), confirmed };
 }
 function withRealTimeSignal(signal) {
   return { ...signal, validatedAt: toRealTime(signal.validatedAt) };
@@ -186,7 +212,13 @@ function buildStatusPayload(store) {
       lastOpen: last ? last.open : null,
       lastHigh: last ? last.high : null,
       lastLow: last ? last.low : null,
-      openPosition: withRealTimePosition(store.strategyEngine.getOpenPosition(symbol)),
+      openPosition: withRealTimePosition(symbol, store.strategyEngine.getOpenPosition(symbol), store.orderOutcomeLog),
+      // 2026-09-15: cooldown-after-loss is now scoped PER SYMBOL (see
+      // guardrailEngine.js) - the top-level `guardrail` block below still
+      // reports the account-wide fallback (no symbol) for backward
+      // compatibility, which no longer reflects what actually gates a new
+      // entry on any ONE symbol. This is the real per-symbol number.
+      cooldownRemainingMs: store.guardrail.getStatus(Date.now(), symbol).cooldownRemainingMs,
     };
   });
 
@@ -241,6 +273,67 @@ const OVERLAY_CACHE_MS = 5 * 60 * 1000;
 const RECENT_PERFORMANCE_CACHE_MS = 15 * 60 * 1000;
 
 /**
+ * Shared core of a real position close (2026-09-15) - factored out of
+ * `/admin/close-position` so the dashboard's own "Fermer" button (see
+ * `/positions/:positionId/close` below) can send the exact same
+ * ProtoOAClosePositionReq + confirmation-wait logic, not a second
+ * reimplementation. Returns `{closed: true, closePnl}` or throws - callers
+ * decide their own response shape/status code around that.
+ * @param {object} ds - store.liveDataSource (must have a live `.connection`)
+ * @param {number} positionId
+ * @param {number} volume - broker units (centilots), e.g. BTCUSD's 1 == 0.01 lot
+ * @param {string} [logPrefix] - just for the console.error lines below
+ */
+async function closePositionOnBroker(ds, positionId, volume, logPrefix = 'close-position') {
+  const accountId = Number(ds.accountId);
+  const closeFillPromise = new Promise((resolve, reject) => {
+    let uuid;
+    const safeRemove = () => {
+      try {
+        if (uuid != null) ds.connection.removeEventListener(uuid);
+      } catch (removeErr) {
+        console.error(`[${logPrefix}] removeEventListener failed (non-fatal):`, removeErr);
+      }
+    };
+    const timer = setTimeout(() => {
+      safeRemove();
+      reject(new Error('timed out after 15000ms waiting for the close to confirm'));
+    }, 15000);
+    uuid = ds.connection.on('ProtoOAExecutionEvent', (event) => {
+      try {
+        const d = event.descriptor;
+        const pid = d.deal?.positionId ?? d.position?.positionId;
+        // String(...) both sides - protobuf serializes this field as a
+        // STRING, positionId here is a Number, so a bare !== can never
+        // match (2026-09-13, real bug found live via /admin/close-position).
+        if (String(pid) !== String(positionId)) return;
+        if (['ORDER_REJECTED', 'ORDER_CANCELLED', 'ORDER_EXPIRED'].includes(d.executionType)) {
+          clearTimeout(timer);
+          safeRemove();
+          reject(new Error(`close ${d.executionType.toLowerCase()} (errorCode=${d.errorCode ?? 'n/a'})`));
+          return;
+        }
+        if (d.executionType === 'ORDER_FILLED' && d.deal?.closePositionDetail) {
+          clearTimeout(timer);
+          safeRemove();
+          resolve(d);
+        }
+      } catch (predicateErr) {
+        clearTimeout(timer);
+        safeRemove();
+        reject(predicateErr);
+      }
+    });
+  });
+  console.error(`[${logPrefix}] closing positionId=${positionId} volume=${volume}...`);
+  await sendCommandWithTimeout(ds.connection, 'ProtoOAClosePositionReq', { ctidTraderAccountId: accountId, positionId, volume });
+  const closeFill = await closeFillPromise;
+  const closePnl = Number(closeFill.deal.closePositionDetail.grossProfit) / 100; // grossProfit is a string on this broker
+  console.error(`[${logPrefix}] closed, pnl=${closePnl}`);
+  return { closed: true, closePnl };
+}
+
+/**
  * Every route that reads/writes ONE account's state, mounted twice below:
  * once at the legacy flat `/api/*` paths (always the default account, for
  * the current dashboard - unaffected by this rollout until it's updated),
@@ -255,6 +348,7 @@ const RECENT_PERFORMANCE_CACHE_MS = 15 * 60 * 1000;
 function createAccountRouter(getStore) {
   const router = express.Router();
   const overlayCache = new Map(); // `${accountId}:${symbol}` -> { builtAt, payload }
+  const pendingChecklistCache = new Map(); // `${accountId}:${symbol}` -> { builtAt, payload } - see .../pending-checklist below (needs a real H1 broker fetch, same cache discipline as overlayCache)
   const recentPerformanceCache = new Map(); // accountId -> { builtAt, report }
   const recentPerformanceInFlight = new Map(); // accountId -> Promise - at most ONE computation at a time per account
 
@@ -351,6 +445,37 @@ function createAccountRouter(getStore) {
       res.json(account);
     } catch (err) {
       res.status(502).json({ error: err.message });
+    }
+  });
+
+  // Close a real open position from the dashboard itself (2026-09-15,
+  // Esdras: "on ne voit pas d'endroit où fermer la position" - the only
+  // existing close route was /admin/close-position, gated behind
+  // ADMIN_EXPORT_TOKEN and meant for one-off diagnostics, not a normal
+  // dashboard button). Same underlying close (closePositionOnBroker) as
+  // that admin route, no separate reimplementation - just a plain
+  // account-scoped route (same auth model as every other account route
+  // here: none, single-user private dashboard) so the "Fermer" button can
+  // call it directly. `volume` is required explicitly, same reasoning as
+  // the admin route: a wrong PARTIAL volume would only partially close the
+  // position, so never inferred/guessed here.
+  router.post('/positions/:positionId/close', async (req, res) => {
+    const store = getStore(req);
+    const ds = store.liveDataSource;
+    if (!ds?.connection) {
+      return res.status(503).json({ error: 'not connected to a live broker' });
+    }
+    const positionId = Number(req.params.positionId);
+    const volume = Number(req.body?.volume);
+    if (!Number.isFinite(positionId) || !Number.isFinite(volume) || volume <= 0) {
+      return res.status(400).json({ error: 'positionId (URL) and volume (body, broker units e.g. centilots) are both required' });
+    }
+    const report = { positionId, volume };
+    try {
+      const result = await closePositionOnBroker(ds, positionId, volume, `close-position:${store.id}`);
+      res.json({ ...report, ...result });
+    } catch (err) {
+      res.status(502).json({ ...report, error: err.message });
     }
   });
 
@@ -452,6 +577,40 @@ function createAccountRouter(getStore) {
     }
   });
 
+  // "Pourquoi on n'a pas encore de trade" (2026-09-15, Esdras, sur le chart)
+  // - for every zone the real engine currently still considers 'watching' on
+  // this symbol, a live pass/fail per filter criterion (bias/structure/
+  // session/sweep) - see cTraderDataSource.js's getPendingZoneChecklists()
+  // for the full reasoning and the time-convention care it takes. Needs a
+  // real H1 broker fetch for the bias item (only when the symbol's own
+  // variant isn't 'baseline'), so cached the same way/same TTL as .../overlays
+  // right above - watching zones don't change meaningfully faster than a new
+  // M15 candle anyway.
+  router.get('/pending-checklist', async (req, res) => {
+    const store = getStore(req);
+    const symbol = req.query.symbol;
+    if (!CONFIG.symbols.includes(symbol)) {
+      return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
+    }
+    if (store.mode !== 'live' || typeof store.liveDataSource?.getPendingZoneChecklists !== 'function') {
+      return res.json({ symbol, zones: [], reason: 'not connected to a live broker' });
+    }
+
+    const cacheKey = `${store.id}:${symbol}`;
+    const cached = pendingChecklistCache.get(cacheKey);
+    if (cached && Date.now() - cached.builtAt < OVERLAY_CACHE_MS) {
+      return res.json({ ...cached.payload, cachedAt: cached.builtAt });
+    }
+
+    try {
+      const payload = await store.liveDataSource.getPendingZoneChecklists(symbol);
+      pendingChecklistCache.set(cacheKey, { builtAt: Date.now(), payload });
+      res.json({ ...payload, cachedAt: Date.now() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // "What would the bot have done over the last 90 days?" - at the user's
   // request, after realizing the warm-up replay already computes this and
   // throws it away. Cached rather than recomputed on every dashboard poll -
@@ -546,7 +705,8 @@ function createAccountRouter(getStore) {
   // "je perds beaucoup en US500, est-ce normal?" - unlike .../recent-performance
   // above (a 90-day in-memory REPLAY that resets on every restart), this reads
   // real outcomes actually logged since persistence was turned on (see
-  // supabaseTradeLog.js and cTraderDataSource.js's _logTradeOutcomes()) -
+  // supabaseTradeLog.js and cTraderDataSource.js's _handleExecutionEvent(),
+  // which logs a REAL confirmed close - see its 2026-09-14 comment) -
   // grows over calendar time, survives Render sleeping/redeploying. Returns
   // an explicit `reason` (not an error) when SUPABASE_URL/SUPABASE_SERVICE_KEY
   // aren't set - persistence is opt-in, same as keepAlive.js.
@@ -559,6 +719,33 @@ function createAccountRouter(getStore) {
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Assistant IA du dashboard (2026-09-15, Esdras - voir chatAssistant.js
+  // pour le contexte complet). Même modèle "sans état" que le reste de cette
+  // API : le client renvoie tout l'historique de la conversation à chaque
+  // question, rien n'est gardé en mémoire côté serveur entre deux appels.
+  // Pas d'auth séparée - même modèle que chaque autre route de ce routeur
+  // ("dashboard privé single-user", voir /positions/:id/close ci-dessus) :
+  // quiconque a l'URL du dashboard peut déjà voir ces données brutes via les
+  // autres routes, ce chat ne les explique qu'en langage clair.
+  router.post('/chat', async (req, res) => {
+    const store = getStore(req);
+    if (!isChatConfigured()) {
+      return res.status(503).json({ error: "L'assistant IA n'est pas configuré sur ce serveur (ANTHROPIC_API_KEY manquant)." });
+    }
+    const message = typeof req.body?.message === 'string' ? req.body.message : '';
+    if (!message.trim()) {
+      return res.status(400).json({ error: 'message requis' });
+    }
+    try {
+      const context = await buildChatContext(store);
+      const reply = await answerChatQuestion({ message, history: req.body?.history, context });
+      res.json({ reply });
+    } catch (err) {
+      const { status, message: errMessage } = chatErrorStatus(err);
+      res.status(status).json({ error: errMessage });
     }
   });
 
@@ -595,13 +782,20 @@ function createAccountRouter(getStore) {
       return res.status(403).json({ error: 'invalid or missing token' });
     }
     const symbol = req.query.symbol;
-    if (!CONFIG.symbols.includes(symbol)) {
-      return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
-    }
-    const days = Math.min(Number(req.query.days) || 245, 245); // cTrader's own single-request cap for the M15 bucket (~35 weeks)
     if (typeof store.liveDataSource?.getHistoricalCandles !== 'function') {
       return res.status(503).json({ error: 'not connected to a live broker' });
     }
+    // 2026-09-13: was restricted to CONFIG.symbols (the 4 live-trading
+    // instruments) - loosened to any symbol the connected broker actually
+    // offers, so this same export can pull real history for a candidate
+    // symbol (e.g. BTCUSD, for a crypto strategy under research) BEFORE it's
+    // ever added to CONFIG.symbols. getHistoricalCandles() itself already
+    // rejects an unknown symbol via symbolIdByName, so this isn't opening
+    // anything the broker connection didn't already allow.
+    if (!store.liveDataSource.symbolIdByName?.get(symbol)) {
+      return res.status(400).json({ error: `Unknown symbol "${symbol}" for this broker - see .../admin/list-symbols` });
+    }
+    const days = Math.min(Number(req.query.days) || 245, 245); // cTrader's own single-request cap for the M15 bucket (~35 weeks)
     try {
       const candles = await store.liveDataSource.getHistoricalCandles({ symbol, days });
       res.set('Content-Type', 'text/csv');
@@ -688,6 +882,27 @@ function createAccountRouter(getStore) {
       .filter(([name]) => !filter || name.toUpperCase().includes(filter))
       .map(([name, id]) => ({ name, id }));
     res.json({ count: symbols.length, symbols });
+  });
+
+  // Urgent live check (2026-09-14): a BTCUSD position showed stopLoss:null
+  // on the dashboard right after a LIMIT entry while its floating loss kept
+  // growing - needed to confirm the broker-side protective order genuinely
+  // still exists and at what price, without guessing again. Same
+  // ADMIN_EXPORT_TOKEN gate as the other admin routes; read-only (never
+  // calls ProtoOACancelOrderReq/ProtoOAClosePositionReq). Temporary
+  // diagnostic - not wired into any UI.
+  router.get('/admin/reconcile-raw', async (req, res) => {
+    if (!requireAdminToken(req, res)) return;
+    const store = getStore(req);
+    if (typeof store.liveDataSource?.debugReconcileRaw !== 'function') {
+      return res.status(503).json({ error: 'not connected to cTrader (this diagnostic only exists on that data source)' });
+    }
+    try {
+      const result = await store.liveDataSource.debugReconcileRaw();
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
   });
 
   // Real open->close connectivity test (2026-09-12, at the user's explicit
@@ -793,6 +1008,12 @@ function createAccountRouter(getStore) {
         ctidTraderAccountId: accountId,
         symbolId: [Number(symbolId)],
       });
+      // Raw response kept on the report (not just console.error'd) so the
+      // real shape is visible in the JSON reply itself - avoids burning
+      // another live order just to go dig through Render logs when a field
+      // extraction below turns out to be guessing wrong, as openOrderId
+      // extraction already once did (see the 2026-09-12 timeout incident).
+      report.rawSpecRes = specRes;
       const spec = specRes?.symbol?.[0];
       const volume = spec?.minVolume ? Number(spec.minVolume) : null;
       if (!volume) {
@@ -802,6 +1023,38 @@ function createAccountRouter(getStore) {
       report.volume = volume;
       console.error(`[admin/test-order-cycle] volume=${volume}, submitting MARKET BUY...`);
 
+      // 2026-09-13, second real bug found live (first run since the
+      // console.log observability fix above): ProtoOANewOrderReq's own
+      // synchronous response came back as a bare `{}` on this broker - no
+      // order.orderId, no orderId, nothing to extract. The OLD code below
+      // used to derive openOrderId from that empty response, so the
+      // waitForExecution predicate below compared the REAL orderId in every
+      // ProtoOAExecutionEvent (confirmed via the new logging: orderId
+      // 50183119 really did arrive, ORDER_ACCEPTED then ORDER_FILLED, ~600ms
+      // after submission) against `null` - never matched, timed out at 15s,
+      // and the close step never ran, leaving a REAL position open on the
+      // demo account (positionId 41540705, closed manually afterward via
+      // the new /admin/close-position below once this was diagnosed).
+      // Fixed properly: register the fill listener BEFORE sending the
+      // order and match by symbolId instead of a since-unknown orderId -
+      // the FIRST fill/terminal event for this symbol is safely assumed to
+      // be this order's own outcome (this endpoint is a manual, single-shot
+      // admin diagnostic, never invoked concurrently with itself).
+      const openFillPromise = waitForExecution((d) => {
+        // Confirmed live (2026-09-13, raw event dump in cTraderDataSource.js
+        // - see _waitForOrderIdBySymbol's own comment): the real field is
+        // `order.tradeData.symbolId`, not the flatter `order.symbolId`
+        // guessed first (which is `undefined` on this broker's real
+        // response). Number(...) both sides also guards the separate
+        // protobuf-string-vs-Number mismatch this same block found earlier.
+        const eventSymbolId =
+          d.order?.tradeData?.symbolId ?? d.order?.symbolId ?? d.position?.tradeData?.symbolId ?? d.position?.symbolId ?? d.deal?.symbolId ?? null;
+        if (Number(eventSymbolId) !== Number(symbolId)) return false;
+        if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
+          throw new Error(`order ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
+        }
+        return d.executionType === 'ORDER_FILLED' && !d.deal?.closePositionDetail;
+      });
       const openRes = await sendCommandWithTimeout(ds.connection, 'ProtoOANewOrderReq', {
         ctidTraderAccountId: accountId,
         symbolId: Number(symbolId),
@@ -811,17 +1064,12 @@ function createAccountRouter(getStore) {
         label: `connectivity-test-${Date.now()}`,
         comment: 'connectivity test - opened then immediately closed by /admin/test-order-cycle',
       });
-      const openOrderId = openRes?.order?.orderId ?? openRes?.orderId ?? null;
-      report.openOrderId = openOrderId;
-      console.error(`[admin/test-order-cycle] openOrderId=${openOrderId}, waiting for fill...`);
+      report.rawOpenRes = openRes;
+      console.error(`[admin/test-order-cycle] order sent, waiting for fill event (matched by symbolId, not orderId)...`);
 
-      const openFill = await waitForExecution((d) => {
-        if (d.order?.orderId !== openOrderId) return false;
-        if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
-          throw new Error(`order ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
-        }
-        return d.executionType === 'ORDER_FILLED' && !d.deal?.closePositionDetail;
-      });
+      const openFill = await openFillPromise;
+      const openOrderId = openFill.order?.orderId ?? null;
+      report.openOrderId = openOrderId;
       const positionId = openFill.position?.positionId ?? openFill.deal?.positionId ?? null;
       report.opened = true;
       report.positionId = positionId;
@@ -837,20 +1085,97 @@ function createAccountRouter(getStore) {
       });
       const closeFill = await waitForExecution((d) => {
         const pid = d.deal?.positionId ?? d.position?.positionId;
-        if (pid !== positionId) return false;
+        // String(...) both sides - same protobuf string-vs-number bug as
+        // above; positionId here can itself already be a string (extracted
+        // from openFill the same way), so normalize instead of assuming.
+        if (String(pid) !== String(positionId)) return false;
         if (NON_FILL_TERMINAL_TYPES.has(d.executionType)) {
           throw new Error(`close ${d.executionType.toLowerCase()} instead of filled (errorCode=${d.errorCode ?? 'n/a'})`);
         }
         return d.executionType === 'ORDER_FILLED' && Boolean(d.deal?.closePositionDetail);
       });
       report.closed = true;
-      report.closePnl = typeof closeFill.deal.closePositionDetail.grossProfit === 'number' ? closeFill.deal.closePositionDetail.grossProfit / 100 : null;
+      report.closePnl = Number(closeFill.deal.closePositionDetail.grossProfit) / 100; // 2026-09-13: confirmed live this field is a STRING ("-19"), not a number - Number(...) instead of a `typeof === 'number'` guard that always failed and reported null
       console.error(`[admin/test-order-cycle] closed, pnl=${report.closePnl}`);
 
       res.json(report);
     } catch (err) {
       res.status(502).json({ ...report, error: err.message });
     }
+  });
+
+  // Manual real-position close (2026-09-13, added the moment the openOrderId
+  // bug above was diagnosed live: test-order-cycle's close step never ran
+  // because it timed out first, leaving a REAL demo position open -
+  // positionId 41540705, BTCUSD - with no existing route able to flatten
+  // it). Same low-level ProtoOAClosePositionReq test-order-cycle itself
+  // uses, exposed standalone so a stray position (from this endpoint, a
+  // manual broker-side action, or anything else) can always be closed from
+  // here without waiting for another code change. Same ADMIN_EXPORT_TOKEN
+  // gate; `volume` required explicitly (broker's own centilot units, e.g.
+  // BTCUSD's 1 == 0.01 lot here) rather than guessed, since a wrong partial
+  // volume would only partially close the position.
+  router.post('/admin/close-position', async (req, res) => {
+    const store = getStore(req);
+    const configuredToken = process.env.ADMIN_EXPORT_TOKEN;
+    if (!configuredToken) {
+      return res.status(404).json({ error: 'not enabled' });
+    }
+    if (req.query.token !== configuredToken) {
+      return res.status(403).json({ error: 'invalid or missing token' });
+    }
+    const ds = store.liveDataSource;
+    if (!ds?.connection) {
+      return res.status(503).json({ error: 'not connected to a live broker' });
+    }
+    const positionId = Number(req.query.positionId || req.body?.positionId);
+    const volume = Number(req.query.volume || req.body?.volume);
+    if (!Number.isFinite(positionId) || !Number.isFinite(volume) || volume <= 0) {
+      return res.status(400).json({ error: 'positionId and volume (broker units, e.g. centilots) are both required' });
+    }
+    const report = { positionId, volume };
+    try {
+      const result = await closePositionOnBroker(ds, positionId, volume, 'admin/close-position');
+      res.json({ ...report, ...result });
+    } catch (err) {
+      res.status(502).json({ ...report, error: err.message });
+    }
+  });
+
+  // Manual clear of an unconfirmed "believed open" position (2026-09-13,
+  // found live while chasing why BTCUSD still couldn't auto-execute after
+  // the spread fix above: warm-up's own bulk replay, using the SAME live
+  // netting check as real processing, had already set openPositions for
+  // BTCUSD from a purely-reconstructed historical signal - never submitted
+  // to the broker (warm-up NEVER does that, see cTraderDataSource.js's
+  // warmUp() vs live ingestCandle() separation), `confirmed: false`,
+  // maxHoldingCandles=480 on M1 = up to 8 real hours before it would clear
+  // on its own. Until it clears, EVERY new candidate on that symbol is
+  // netting-blocked, real signals included - the engine believes a
+  // position is already open. Deliberately refuses to touch anything
+  // `confirmed: true` (a real broker-confirmed fill) - clearing that would
+  // let netting open a SECOND real position on top of one that's actually
+  // live, a real safety hazard this check exists specifically to prevent.
+  // Same ADMIN_EXPORT_TOKEN gate as every other admin route here.
+  router.post('/admin/clear-believed-position', (req, res) => {
+    if (!requireAdminToken(req, res)) return;
+    const store = getStore(req);
+    const symbol = String(req.query.symbol || req.body?.symbol || '').toUpperCase();
+    if (!CONFIG.symbols.includes(symbol)) {
+      return res.status(400).json({ error: `Unknown symbol "${symbol}". Known: ${CONFIG.symbols.join(', ')}` });
+    }
+    const position = store.strategyEngine.getOpenPosition(symbol);
+    if (!position) {
+      return res.json({ symbol, cleared: false, reason: 'nothing believed open for this symbol' });
+    }
+    const confirmed = (store.orderOutcomeLog || []).some(
+      (o) => o.symbol === symbol && o.signalId === position.id && o.outcome === 'filled'
+    );
+    if (confirmed) {
+      return res.status(409).json({ symbol, cleared: false, reason: 'this position is broker-CONFIRMED filled - refusing to clear a real position\'s belief (would let netting open a second one on top of it)' });
+    }
+    const cleared = store.strategyEngine.clearBelievedPosition(symbol, position.id);
+    res.json({ symbol, id: position.id, cleared });
   });
 
   router.post('/lot-calc', (req, res) => {
@@ -936,7 +1261,6 @@ async function bootAccount(accountConfig) {
       await live.start();
       account.liveDataSource = live;
       console.log(`[boot:${account.id}] connected live to Match-Trader.`);
-      armAutoExecuteIfConfigured(account);
     } catch (err) {
       console.error(`[boot:${account.id}] live Match-Trader connection failed, falling back to demo mode:`, err.message);
       startMockDataSource(account);
@@ -947,7 +1271,6 @@ async function bootAccount(accountConfig) {
       await live.start();
       account.liveDataSource = live;
       console.log(`[boot:${account.id}] connected live to cTrader.`);
-      armAutoExecuteIfConfigured(account);
     } catch (err) {
       console.error(`[boot:${account.id}] live cTrader connection failed, falling back to demo mode:`, err.message);
       startMockDataSource(account);
@@ -956,6 +1279,19 @@ async function bootAccount(accountConfig) {
     console.log(`[boot:${account.id}] no broker credentials configured — starting in demo mode.`);
     startMockDataSource(account);
   }
+  // 2026-09-15 (Esdras: "on dirait que les nouveaux comptes suivent l'ancien
+  // système trade semi-automatique") - this used to only run on the
+  // successful-connection path above, so any account that hit a connection
+  // failure (falls back to mock - e.g. cti-freetrial's Match-Trader login
+  // blocked by a Cloudflare challenge, a persistent failure that never
+  // clears on retry) NEVER got AUTO_EXECUTE_ALWAYS_ON applied, silently
+  // staying on the pre-automatic default (semi-automatic) forever -
+  // contradicting this env var's own documented intent ("applied to EVERY
+  // account uniformly"). Mock mode itself ignores the autoExecute flag
+  // entirely (ignores nothing, ALWAYS simulates), so arming it here changes
+  // no simulated behavior - it only fixes what the dashboard displays for
+  // that account, which is exactly the inconsistency Esdras noticed.
+  armAutoExecuteIfConfigured(account);
 }
 
 if (process.env.NODE_ENV !== 'test') {
@@ -976,7 +1312,21 @@ if (process.env.NODE_ENV !== 'test') {
     // static account. A Supabase hiccup here never blocks the static
     // accounts (fetchDynamicAccounts() returns [] and logs, never throws).
     const dynamicRawAccounts = await fetchDynamicAccounts();
-    const dynamicAccountConfigs = dynamicRawAccounts.map((raw, i) => normalizeAccountEntry(raw, CONFIG.accounts.length + i));
+    // DISABLED_ACCOUNT_IDS has to apply here too, not just to CONFIG.accounts
+    // (2026-09-16): a Supabase-stored account is otherwise unreachable by it,
+    // which is exactly how the first attempt to disable cti-freetrial did
+    // nothing at all - it lives in Supabase, not in ACCOUNTS_JSON. Filtering
+    // before registerAccount() means a disabled account is never built, never
+    // connects, and never appears on the dashboard. CONFIG.accounts always
+    // keeps at least one entry (see applyDisabledAccounts), so dropping every
+    // dynamic account here can never leave the bot with none.
+    const dynamicAccountConfigs = dynamicRawAccounts
+      .map((raw, i) => normalizeAccountEntry(raw, CONFIG.accounts.length + i))
+      .filter((accountConfig) => {
+        if (!isAccountDisabled(accountConfig.id)) return true;
+        console.log(`[boot] Supabase account "${accountConfig.id}" skipped via DISABLED_ACCOUNT_IDS`);
+        return false;
+      });
     for (const accountConfig of dynamicAccountConfigs) {
       registerAccount(accountConfig);
     }

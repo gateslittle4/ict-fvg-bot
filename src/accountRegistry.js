@@ -60,6 +60,19 @@ export function buildEffectiveConfig(accountConfig) {
     divergence: CONFIG.divergence,
     nwog: CONFIG.nwog,
     judasSwing: CONFIG.judasSwing,
+    // 2026-09-17, real bug found while wiring Silver Bullet live (see
+    // HANDOFF.md): weeklySweep/breakerBlock were added to config.js and
+    // accountRuntime.js ("LIVE, auto-executed") on 2026-09-15/16, but never
+    // added HERE - AccountRuntime reads config.weeklySweep/config.breakerBlock
+    // directly, and an omitted key is `undefined`, which LiveStrategyEngine's
+    // constructor defaults right back to null (disabled). Both mechanisms
+    // have been silently INERT in production ever since being "deployed" -
+    // caught before Silver Bullet could suffer the identical fate. See
+    // test/accountRegistry.test.js's new regression test guarding against
+    // this exact class of bug recurring for the next mechanism.
+    weeklySweep: CONFIG.weeklySweep,
+    breakerBlock: CONFIG.breakerBlock,
+    silverBullet: CONFIG.silverBullet,
     pyramid: CONFIG.pyramid,
     guardrails,
     risk: { riskPctPerTrade: accountConfig.riskPctPerTrade },

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enrichRealPosition, reconcileAccount, estimateEquity } from '../src/dataSources/accountReconciliation.js';
+import { enrichRealPosition, reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from '../src/dataSources/accountReconciliation.js';
 
 function realPosition(overrides = {}) {
   return {
@@ -32,6 +32,31 @@ test('enrichRealPosition: a bearish (SELL) position profits when price falls', (
   const enriched = enrichRealPosition(pos, 19990); // price fell 10
   assert.equal(enriched.direction, 'bearish');
   assert.ok(Math.abs(enriched.grossFloatingPnl - 1000) < 1e-9); // short profits on a drop
+});
+
+// 2026-09-14 (Esdras: "creuse" a real position dashboard-displayed as
+// stopLoss:null/unprotected - it had a real numeric stop, this broker just
+// serializes SOME numeric protobuf fields as JSON strings, inconsistently
+// per-field (confirmed 3 other times already this session: bid/ask,
+// grossProfit, positionId/symbolId). A bare `typeof x === 'number'` guard
+// silently reads a real "19800" as absent. Without the toNumberOrNull() fix
+// this test fails: stopLoss/takeProfit/entryPrice/floating P&L all come
+// back null despite every value being genuinely present.
+test('enrichRealPosition: broker-serialized STRING price/stopLoss/takeProfit are read as real numbers, not silently treated as absent', () => {
+  const pos = realPosition({ price: '20000', stopLoss: '19800', takeProfit: '20600' });
+  const enriched = enrichRealPosition(pos, '20010');
+  assert.equal(enriched.entryPrice, 20000);
+  assert.equal(enriched.stopLoss, 19800);
+  assert.equal(enriched.takeProfit, 20600);
+  assert.equal(enriched.currentPrice, 20010);
+  assert.ok(Math.abs(enriched.grossFloatingPnl - 1000) < 1e-9);
+});
+
+test('enrichRealPosition: a genuinely MISSING stopLoss/takeProfit (undefined) still reports null, not NaN', () => {
+  const pos = realPosition({ stopLoss: undefined, takeProfit: undefined });
+  const enriched = enrichRealPosition(pos, 20010);
+  assert.equal(enriched.stopLoss, null);
+  assert.equal(enriched.takeProfit, null);
 });
 
 test('enrichRealPosition: swap and commission (scaled by moneyDigits) are added into net floating P&L', () => {
@@ -135,4 +160,150 @@ test('estimateEquity: balance plus floating P&L, positive and negative', () => {
   assert.equal(estimateEquity(10000, -150), 9850);
   assert.equal(estimateEquity(10000, 0), 10000);
   assert.equal(estimateEquity(10000, null), 10000);
+});
+
+// 2026-09-14, real bug found live: warm-up's bulk replay can reconstruct a
+// "believed open" position that was NEVER submitted to the broker - left
+// alone, it blocks every new real candidate on that symbol via netting for
+// hours. computeStaleBeliefsToClear() is the decision logic behind
+// cTraderDataSource.js's boot-time auto-fix for this.
+const symbolIdByName = new Map([
+  ['US100', 100],
+  ['BTCUSD', 101],
+]);
+
+test('computeStaleBeliefsToClear: clears a belief with NO real position and NO pending order', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [],
+    pendingOrders: [],
+    symbols: ['BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => (s === 'BTCUSD' ? { id: 'BTCUSD-1' } : null),
+  });
+  assert.deepEqual(toClear, [{ symbol: 'BTCUSD', id: 'BTCUSD-1' }]);
+});
+
+test('computeStaleBeliefsToClear: leaves a belief alone when a REAL position backs it', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [{ tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    symbols: ['BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => (s === 'BTCUSD' ? { id: 'BTCUSD-1' } : null),
+  });
+  assert.deepEqual(toClear, []);
+});
+
+test('computeStaleBeliefsToClear: leaves a belief alone when a genuinely PENDING order backs it (must not clobber a real working LIMIT order)', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [],
+    pendingOrders: [{ tradeData: { symbolId: 101 }, orderStatus: 'ORDER_STATUS_ACCEPTED' }],
+    symbols: ['BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => (s === 'BTCUSD' ? { id: 'BTCUSD-1' } : null),
+  });
+  assert.deepEqual(toClear, []);
+});
+
+test('computeStaleBeliefsToClear: a non-ACCEPTED order (e.g. already filled/rejected) does NOT count as outstanding', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [],
+    pendingOrders: [{ tradeData: { symbolId: 101 }, orderStatus: 'ORDER_STATUS_REJECTED' }],
+    symbols: ['BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => (s === 'BTCUSD' ? { id: 'BTCUSD-1' } : null),
+  });
+  assert.deepEqual(toClear, [{ symbol: 'BTCUSD', id: 'BTCUSD-1' }]);
+});
+
+test('computeStaleBeliefsToClear: a symbol with no belief at all is simply skipped, not an error', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [],
+    pendingOrders: [],
+    symbols: ['US100', 'BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: () => null,
+  });
+  assert.deepEqual(toClear, []);
+});
+
+test('computeStaleBeliefsToClear: real/pending on ONE symbol never affects an unrelated symbol\'s stale belief', () => {
+  const toClear = computeStaleBeliefsToClear({
+    realPositions: [{ tradeData: { symbolId: 100 } }], // US100 is real
+    pendingOrders: [],
+    symbols: ['US100', 'BTCUSD'],
+    symbolIdByName,
+    getBelievedPosition: (s) => ({ id: `${s}-1` }), // both believe something is open
+  });
+  assert.deepEqual(toClear, [{ symbol: 'BTCUSD', id: 'BTCUSD-1' }]); // only the unbacked one clears
+});
+
+// 2026-09-14, real bug found live: a filled LIMIT order's position came
+// back stopLoss:null with no working pending order behind it either (the
+// broker's own contingent stop order had vanished) - nothing noticed until
+// checked by hand via /api/admin/reconcile-raw. computeMissingStopFixes()
+// is the decision logic behind cTraderDataSource.js's fix: resubmit the
+// stop this process originally asked for, but only when it's truly missing
+// and we actually know what to resubmit.
+test('computeMissingStopFixes: flags a real open position with no stopLoss and no backing pending order', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: (id) => (id === '1' ? { stopPrice: 78069.5, takeProfit: 78827.5 } : null),
+  });
+  assert.deepEqual(toFix, [{ positionId: 1, symbolId: 101, stopPrice: 78069.5, takeProfit: 78827.5 }]);
+});
+
+test('computeMissingStopFixes: leaves a position alone when its stopLoss is already a real number', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: 78069.5, tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, []);
+});
+
+test('computeMissingStopFixes: leaves a position alone when a genuinely working pending order still protects it', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [{ positionId: 1, orderStatus: 'ORDER_STATUS_ACCEPTED' }],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, []);
+});
+
+test('computeMissingStopFixes: a CANCELLED/EXPIRED pending order does not count as protection', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [{ positionId: 1, orderStatus: 'ORDER_STATUS_CANCELLED' }],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, [{ positionId: 1, symbolId: 101, stopPrice: 78069.5, takeProfit: null }]);
+});
+
+test('computeMissingStopFixes: a position this process never saw the entry of is left alone, not guessed', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: () => null, // this instance never observed this position's entry
+  });
+  assert.deepEqual(toFix, []);
+});
+
+test('computeMissingStopFixes: a broker-serialized STRING stopLoss (e.g. "78069.5") reads as present, not missing', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_OPEN', stopLoss: '78069.5', tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, []);
+});
+
+test('computeMissingStopFixes: a non-open position (e.g. already closed) is never touched', () => {
+  const toFix = computeMissingStopFixes({
+    realPositions: [{ positionId: 1, positionStatus: 'POSITION_STATUS_CLOSED', stopLoss: null, tradeData: { symbolId: 101 } }],
+    pendingOrders: [],
+    getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
+  });
+  assert.deepEqual(toFix, []);
 });

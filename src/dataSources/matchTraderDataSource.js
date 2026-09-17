@@ -272,12 +272,34 @@ export class MatchTraderDataSource {
   // ---- auth ----
 
   async _login({ email, password, brokerId }) {
-    const res = await fetch(`${this.baseUrl}/manager/co-login`, {
+    // 2026-09-14, CONFIRMED LIVE (Esdras, City Traders Imperium/Match-Trader,
+    // via her own browser DevTools Network tab - the actual POST fired by
+    // CTI's own login form): the real path is `/mtr-core-edge/v2/login`, NOT
+    // `/manager/co-login` as this file originally guessed from the Platform
+    // API PDF (see file header - that doc never covered CTI's specific
+    // white-label edge/gateway routing, which splits different endpoint
+    // groups under different `*-edge` prefixes, e.g. `/match-trader-edge/`
+    // for the pre-login available-brokers list vs `/mtr-core-edge/` for the
+    // login itself). `/manager/co-login` produced a real HTTP 403 tonight -
+    // this is the fix, not a guess. Body shape sent ({email, password,
+    // brokerId}) already matched the real request's ~58-byte payload size.
+    const res = await fetch(`${this.baseUrl}/mtr-core-edge/v2/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, brokerId }),
     });
-    if (!res.ok) throw new Error(`Match-Trader login failed: HTTP ${res.status}`);
+    if (!res.ok) {
+      // 2026-09-14: the URL fix above didn't clear the 403 - could be wrong
+      // credentials, or Cloudflare bot-management rejecting a plain
+      // server-side fetch() outright (no browser fingerprint/JS challenge
+      // cookie) rather than the API itself rejecting the login. Logging the
+      // body (truncated - Cloudflare block pages are large HTML, a real API
+      // error is short JSON) distinguishes the two instead of guessing
+      // again. Never includes the request's own email/password - only what
+      // the SERVER sent back.
+      const text = await res.text().catch(() => '');
+      throw new Error(`Match-Trader login failed: HTTP ${res.status} body=${text.slice(0, 500)}`);
+    }
     const setCookie = res.headers.get('set-cookie');
     this.coAuthToken = parseCookie(setCookie, 'co-auth');
     this.refreshToken = parseCookie(setCookie, 'rt');
@@ -364,7 +386,11 @@ export class MatchTraderDataSource {
       // A bucket closed -> feed the ENGINE. _toEngineCandle shifts it into the
       // backtest's fixed-EST-as-UTC convention so the NY session filter reads
       // the correct wall-clock hour (see _toEngineCandle / candleTimeOffsetMs).
-      const events = store.strategyEngine.ingestCandle(symbol, this._toEngineCandle(closedCandle));
+      // Date.now() as the 3rd arg (2026-09-14) - same real bug fixed in
+      // cTraderDataSource.js: the shifted candle time must never reach
+      // GuardrailEngine's real-calendar-day bookkeeping, or its cooldown/
+      // daily-trade-count protection silently resets itself for ~5h every day.
+      const events = store.strategyEngine.ingestCandle(symbol, this._toEngineCandle(closedCandle), Date.now());
       store.pushSignalEvents(events);
 
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
@@ -416,6 +442,9 @@ export class MatchTraderDataSource {
       for (const entry of entries) {
         if (typeof entry.profit !== 'number' || !entry.time) continue;
         if (entry.time < from || entry.time > to) continue;
+        // No confirmed symbol field on this shape (see this method's own
+        // "unconfirmed" comment above) - omitted rather than guessed; this
+        // replayed trade just doesn't seed any symbol's cooldown.
         this.account.guardrail.recordTrade({ pnl: entry.profit, time: entry.time });
       }
     } catch (err) {
@@ -450,7 +479,7 @@ export class MatchTraderDataSource {
       // exact if there was no slippage between the last poll and the actual
       // close and only approximate otherwise. Flagged, not silently assumed exact.
       const pnl = typeof prevSnapshot.profit === 'number' ? prevSnapshot.profit : 0;
-      store.guardrail.recordTrade({ pnl, time: Date.now() });
+      store.guardrail.recordTrade({ pnl, time: Date.now(), symbol: this._symbolFromInstrument(prevSnapshot.instrument) });
 
       for (const [symbol, trackedKey] of this.pyramidPositionKeyBySymbol) {
         if (trackedKey === key) {
@@ -660,6 +689,12 @@ export class MatchTraderDataSource {
       });
       const isFvg = signal.source === 'fvg';
       const side = signal.suggestedSide.toUpperCase();
+      // FVG-only LIMIT, MARKET elsewhere - mirrors cTraderDataSource.js's
+      // _handleAutoExecuteEntry (see its doc comment for the full
+      // rationale, including the "tried full-LIMIT, reverted same day"
+      // note - a resting LIMIT order's uncontrolled fill timing is a real
+      // risk against FTMO's "no trade within 2min of major news" EA rule,
+      // with no live news-blackout filter built yet).
       await this._submitOrder({
         symbol,
         orderType: isFvg ? 'LIMIT' : 'MARKET',
@@ -695,6 +730,9 @@ export class MatchTraderDataSource {
         e.source === 'divergence' ? 'divergence' :
         e.source === 'nwog' ? 'NWOG (gap week-end)' :
         e.source === 'judaswing' ? 'Judas Swing (killzone Londres)' :
+        e.source === 'weeklysweep' ? 'Weekly Liquidity Sweep (GER40)' :
+        e.source === 'breakerblock' ? 'Breaker Block (GER40)' :
+        e.source === 'silverbullet' ? 'Silver Bullet (killzone 10h-11h NY)' :
         'FVG rempli';
       // Forward-test démo OBSERVATION ONLY (2026-09) - see cTraderDataSource.js's
       // own _notify() and accountRuntime.js's tagVolatilityObservation()/HANDOFF.md.

@@ -50,7 +50,7 @@ export function createTradeLogClient({ url, serviceKey } = {}) {
  * event that opened it - same shape recentPerformanceReport.js already
  * builds) to the row shape bot_trade_events expects.
  */
-export function toTradeRow({ symbol, source, direction, outcome, rMultiple, entryPrice, entryTime, exitTime }) {
+export function toTradeRow({ symbol, source, direction, outcome, rMultiple, entryPrice, entryTime, exitTime, pnlUsd, balanceAfter }) {
   return {
     symbol,
     source,
@@ -60,6 +60,15 @@ export function toTradeRow({ symbol, source, direction, outcome, rMultiple, entr
     entry_price: entryPrice,
     entry_time: new Date(entryTime).toISOString(),
     exit_time: new Date(exitTime).toISOString(),
+    // pnl_usd/balance_after added 2026-09-15 (Esdras: "calendrier des jours
+    // du mois... chiffre brut et %") - the real broker $ P&L and the real
+    // resulting account balance, both already known at the call site
+    // (cTraderDataSource.js's _handleExecutionEvent computes `pnl` from the
+    // broker's own closePositionDetail.grossProfit before calling this).
+    // Optional/nullable: existing rows logged before this column existed
+    // simply have pnl_usd=null - never backfilled with a guess.
+    pnl_usd: pnlUsd ?? null,
+    balance_after: balanceAfter ?? null,
   };
 }
 
@@ -94,6 +103,134 @@ function finalizeBucket(b) {
 }
 
 /**
+ * Raw individual rows (not aggregated) for a recent window - added
+ * 2026-09-15 at Esdras's explicit request ("toute information nécessaire
+ * pour un vrai journal, le nombre de RRR etc") so the real per-trade
+ * journal (cTraderDataSource.js's getTradeHistory, driven by the broker's
+ * own deal history for the chart context) can be enriched with the R-
+ * multiple this table already stores - cTrader's own deal history has NO
+ * concept of "risk amount" once a position is closed, so r_multiple can
+ * only ever come from here (computed at close time, when the real
+ * riskAmount was still known - see cTraderDataSource.js's
+ * openPositionInfoByPositionId). Matched to a broker deal by the caller
+ * (symbol + closest exit_time within a tolerance) - see
+ * enrichTradesWithRMultiple() below for that join, kept pure/testable
+ * separately from this live query.
+ */
+export async function fetchRecentTradeRows(client, { days = 7 } = {}) {
+  if (!client) return [];
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await client
+    .from(TABLE)
+    .select('symbol, source, direction, outcome, r_multiple, entry_price, entry_time, exit_time, pnl_usd, balance_after')
+    .gte('exit_time', since)
+    .order('exit_time', { ascending: false });
+  if (error) return [];
+  return (data || []).map((row) => ({
+    symbol: row.symbol,
+    source: row.source,
+    direction: row.direction,
+    outcome: row.outcome,
+    rMultiple: row.r_multiple ?? null,
+    entryPrice: row.entry_price,
+    entryTime: new Date(row.entry_time).getTime(),
+    exitTime: new Date(row.exit_time).getTime(),
+    // pnlUsd/balanceAfter added 2026-09-15 (Esdras: "preuve visuelle de
+    // conformité" - the risk-check item needs the REAL $ risked, not just
+    // the R-multiple) - null on any row logged before those columns
+    // existed, never backfilled with a guess.
+    pnlUsd: row.pnl_usd ?? null,
+    balanceAfter: row.balance_after ?? null,
+  }));
+}
+
+/**
+ * Pure join: attaches `rMultiple` (and, ONLY when the broker deal's own
+ * source came back unknown, the durable row's source as a fallback - never
+ * overriding a real order-label match) from the durable journal onto each
+ * broker-sourced trade (cTraderDataSource.js's getTradeHistory output),
+ * matched by symbol + closest exit_time within `toleranceMs`. Best-effort,
+ * same discipline as dealPairing.js's own matching: on this broker, two
+ * trades on the same symbol rarely close within seconds of each other, but
+ * never guaranteed-unique - a trade with no close match simply keeps
+ * rMultiple: null rather than guessing. Exported separately from the live
+ * query above so this join logic is unit-testable without a real Supabase
+ * connection.
+ * @param {Array} brokerTrades - getTradeHistory()'s trade objects (symbol, exitTime, ...)
+ * @param {Array} durableRows - fetchRecentTradeRows()'s output
+ * @param {number} [toleranceMs] - default 30s: durable rows use Date.now() at
+ *   close-handling time, broker deals use the broker's own executionTimestamp -
+ *   a few seconds of processing latency apart, never more on this broker.
+ */
+export function enrichTradesWithRMultiple(brokerTrades, durableRows, toleranceMs = 30000) {
+  const used = new Set(); // each durable row matched to at most one broker trade
+  return brokerTrades.map((trade) => {
+    let best = null;
+    let bestDiff = Infinity;
+    durableRows.forEach((row, i) => {
+      if (used.has(i) || row.symbol !== trade.symbol) return;
+      const diff = Math.abs(row.exitTime - trade.exitTime);
+      if (diff <= toleranceMs && diff < bestDiff) {
+        best = i;
+        bestDiff = diff;
+      }
+    });
+    if (best === null) return { ...trade, rMultiple: null, pnlUsd: null, balanceAfter: null };
+    used.add(best);
+    return { ...trade, rMultiple: durableRows[best].rMultiple, pnlUsd: durableRows[best].pnlUsd, balanceAfter: durableRows[best].balanceAfter };
+  });
+}
+
+/**
+ * Pure join, same matching logic as enrichTradesWithRMultiple (its own
+ * independent pass, not chained off that function's result - keeps each
+ * concern separately testable): attaches `signalEntryPrice` and `slippage`
+ * to each broker trade (2026-09-15, Esdras: "qualité d'exécution"). The
+ * durable journal's own `entryPrice` is the price the SIGNAL targeted at
+ * order-submission time (see cTraderDataSource.js's
+ * openPositionInfoByPositionId/_handleExecutionEvent - `info.entryPrice`
+ * comes straight from `signal.entryPrice`, never a broker fill); the
+ * broker trade's `entryPrice` (dealPairing.js's `opening.executionPrice`)
+ * is the REAL price the broker actually filled at. Neither is invented -
+ * both already existed for other reasons, this just compares them.
+ *
+ * `slippage` is signed so positive always means "cost" (a worse fill than
+ * the signal wanted) regardless of direction: for a bullish (buy) trade a
+ * HIGHER real fill than intended is a cost; for a bearish (sell) trade a
+ * LOWER real fill than intended is a cost - see the sign flip below.
+ * Expressed in raw price units (NOT comparable across symbols with
+ * different price scales - callers wanting a cross-symbol view should
+ * normalize by signalEntryPrice themselves, e.g. slippage/signalEntryPrice).
+ *
+ * @param {Array} brokerTrades - getTradeHistory()'s trade objects (symbol, direction, entryPrice, exitTime, ...)
+ * @param {Array} durableRows - fetchRecentTradeRows()'s output
+ * @param {number} [toleranceMs] - default 30s, same reasoning as enrichTradesWithRMultiple
+ */
+export function enrichTradesWithSlippage(brokerTrades, durableRows, toleranceMs = 30000) {
+  const used = new Set();
+  return brokerTrades.map((trade) => {
+    let best = null;
+    let bestDiff = Infinity;
+    durableRows.forEach((row, i) => {
+      if (used.has(i) || row.symbol !== trade.symbol) return;
+      const diff = Math.abs(row.exitTime - trade.exitTime);
+      if (diff <= toleranceMs && diff < bestDiff) {
+        best = i;
+        bestDiff = diff;
+      }
+    });
+    const signalEntryPrice = best === null ? null : durableRows[best].entryPrice;
+    if (signalEntryPrice == null || trade.entryPrice == null) {
+      return { ...trade, signalEntryPrice: null, slippage: null };
+    }
+    used.add(best);
+    const rawDiff = trade.entryPrice - signalEntryPrice;
+    const slippage = trade.direction === 'bearish' ? -rawDiff : rawDiff;
+    return { ...trade, signalEntryPrice, slippage };
+  });
+}
+
+/**
  * Per-symbol/per-strategy win/loss/timeout/R aggregation over a real,
  * durable window - unlike /api/recent-performance (recentPerformanceReport.js),
  * this reads whatever has actually been logged since persistence was turned
@@ -112,7 +249,7 @@ function finalizeBucket(b) {
  */
 export async function fetchPerformanceBySymbol(client, { days = null } = {}) {
   if (!client) return { bySymbol: {}, bySource: {}, overall: null, equityCurve: [], reason: 'not configured' };
-  let query = client.from(TABLE).select('symbol, source, outcome, r_multiple, exit_time').order('exit_time', { ascending: false });
+  let query = client.from(TABLE).select('symbol, source, outcome, r_multiple, entry_time, exit_time, pnl_usd, balance_after').order('exit_time', { ascending: false });
   if (days != null) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     query = query.gte('exit_time', since);
@@ -137,8 +274,23 @@ export async function fetchPerformanceBySymbol(client, { days = null } = {}) {
   const overall = chronological.length > 0
     ? summarizeTrades(chronological.map((row) => ({ outcome: row.outcome, rMultiple: row.r_multiple ?? 0 })))
     : null;
+  // entryTime added 2026-09-15 (Esdras: "stats par session") - a trade's
+  // TRADING SESSION (Asie/Londres/New York) is a property of when it was
+  // ENTERED, not when it happened to close (an ICT setup swept liquidity
+  // during a specific session; the close can land hours later in a
+  // completely different one) - so the journal page needs entry_time
+  // alongside exit_time on every equityCurve point to bucket by it.
+  // pnlUsd/balanceAfter added 2026-09-15 (Esdras: "calendrier... chiffre
+  // brut et %") - null on any row logged before those columns existed
+  // (never backfilled with a guess), so callers must handle a null pnlUsd.
   const equityCurve = overall
-    ? chronological.map((row, i) => ({ time: row.exit_time, cumulativeR: overall.equityCurve[i] }))
+    ? chronological.map((row, i) => ({
+        time: row.exit_time,
+        entryTime: row.entry_time,
+        cumulativeR: overall.equityCurve[i],
+        pnlUsd: row.pnl_usd ?? null,
+        balanceAfter: row.balance_after ?? null,
+      }))
     : [];
 
   return { bySymbol, bySource, overall, equityCurve };

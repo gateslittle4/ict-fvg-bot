@@ -20,6 +20,7 @@
 import { LiveStrategyEngine } from '../liveStrategyEngine.js';
 import { GuardrailEngine } from '../engines/guardrailEngine.js';
 import { CONFIG } from '../config.js';
+import { DEFAULT_SPREADS } from './transactionCosts.js';
 
 // PERFORMANCE (2026-09-09, real production incident - see HANDOFF.md):
 // this used to call engine.ingestCandle() once per historical candle. Each
@@ -50,11 +51,19 @@ import { CONFIG } from '../config.js';
 export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 } = {}) {
   const windowMs = days * 24 * 60 * 60 * 1000;
   const guardrail = new GuardrailEngine({});
+  // spreads (2026-09-14, Esdras: "on fait tout de facon honnete" - this
+  // report used to run with NO spread at all, unlike the real live engine
+  // (accountRegistry.js wires DEFAULT_SPREADS into every real account) -
+  // so a signal the live bot would reject as 'spread-too-tight' (see
+  // liveStrategyEngine.js's own check) could still show up here as a
+  // clean win. Passing the SAME spreads makes this replay reject the SAME
+  // signals live auto-execute would have.
   const engine = new LiveStrategyEngine({
     symbols: CONFIG.symbols,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
     guardrail,
+    spreads: DEFAULT_SPREADS,
   });
 
   // Window each symbol against ITS OWN latest candle (unchanged from the
@@ -81,7 +90,17 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
       const opened = openById.get(e.id);
       if (!opened) return; // this position was already open before our window started - we don't know its real entry, so exclude it rather than guess
       openById.delete(e.id);
-      const rMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
+      const grossRMultiple = e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null;
+      // Spread cost (2026-09-14, "on fait tout de facon honnete" - see the
+      // engine's own spreads option above for why this file never applied
+      // one before): same formula gridRunner.js's applyTransactionCosts()
+      // uses on every real backtest report - costR = spread/distance, paid
+      // once per round trip. null for a timeout (no rMultiple to begin
+      // with) or a symbol with no configured spread (can't judge cost,
+      // shown as gross with 0 rather than silently invented).
+      const spread = DEFAULT_SPREADS[e.symbol] || 0;
+      const costR = grossRMultiple !== null && spread > 0 && opened.distance > 0 ? spread / opened.distance : 0;
+      const rMultiple = grossRMultiple !== null ? grossRMultiple - costR : null;
       trades.push({
         symbol: e.symbol,
         source: opened.source,
@@ -90,6 +109,7 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
         entryTime: opened.validatedAt,
         exitTime: e.exitTime,
         outcome: e.outcome,
+        grossRMultiple,
         rMultiple,
       });
     },
@@ -101,6 +121,7 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
   const losses = trades.filter((t) => t.outcome === 'loss').length;
   const timeouts = trades.filter((t) => t.outcome === 'timeout').length;
   const totalR = trades.reduce((sum, t) => sum + (t.rMultiple || 0), 0);
+  const totalGrossR = trades.reduce((sum, t) => sum + (t.grossRMultiple || 0), 0);
   const decided = wins + losses; // timeouts excluded from win rate - neither a win nor a loss
 
   return {
@@ -112,7 +133,11 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
       losses,
       timeouts,
       winRatePct: decided > 0 ? (wins / decided) * 100 : null,
+      // totalR is now NET of spread (2026-09-14, "on fait tout de facon
+      // honnete") - totalGrossR kept alongside so the cost of trading is
+      // visible, not hidden behind one optimistic number.
       totalR: Math.round(totalR * 100) / 100,
+      totalGrossR: Math.round(totalGrossR * 100) / 100,
     },
   };
 }

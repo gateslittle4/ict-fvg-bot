@@ -66,7 +66,17 @@ export class GuardrailEngine {
     this.maxDrawdownType = maxDrawdownType;
 
     this.dayKey = null;
-    this.trades = []; // { time, pnl, isLoss }
+    this.trades = []; // { time, pnl, isLoss } - account-wide, drives tradesToday/dailyLossPct (deliberately NOT scoped per symbol - those protect TOTAL account risk)
+    // 2026-09-15 (Esdras, explicit request after seeing the cost): cooldown-
+    // after-loss scoped PER SYMBOL instead of account-wide. Combined-
+    // portfolio research found the account-wide version silenced ~14% of
+    // signals with a BETTER win rate than the ones that fired (a loss on
+    // EURUSD blocking an unrelated GER40 signal 10 minutes later has no
+    // "revenge trading" rationale on a fully automated bot with independent
+    // mechanisms) - see HANDOFF.md. maxTradesPerDay/dailyLossLimitPct stay
+    // account-wide on purpose - those protect total exposure, not a single
+    // instrument's recent behavior.
+    this.lastTradeBySymbol = new Map(); // symbol -> { time, isLoss }
     this.startingBalance = null;
     this.currentBalance = null;
 
@@ -102,6 +112,11 @@ export class GuardrailEngine {
       }
       this.dayKey = key;
       this.trades = [];
+      // Mirrors this.trades' own day-boundary reset above (same pre-existing
+      // quirk this project already had for the account-wide cooldown - a
+      // loss at 23:50 stopped gating by 00:00 sharp - preserved as-is here,
+      // just scoped per symbol now instead of account-wide).
+      this.lastTradeBySymbol = new Map();
       // Roll the starting balance forward to whatever we last knew, so a
       // fresh day starts its loss-% calculation from today's actual equity.
       this.startingBalance = this.currentBalance;
@@ -125,9 +140,24 @@ export class GuardrailEngine {
    * @param {number} trade.pnl - profit (positive) or loss (negative), in account currency
    * @param {number} [trade.time] - epoch ms, defaults to now
    * @param {number} [trade.balanceAfter] - account balance after this trade closed
+   * @param {string} [trade.symbol] - drives the PER-SYMBOL cooldown-after-loss
+   *   check (see the constructor's `lastTradeBySymbol` comment). Omitting it
+   *   (a caller that doesn't know the symbol) just means this trade never
+   *   feeds any symbol's cooldown - tradesToday/dailyLossPct still work fine.
    */
-  recordTrade({ pnl, time = Date.now(), balanceAfter } = {}) {
+  recordTrade({ pnl, time = Date.now(), balanceAfter, symbol } = {}) {
     if (typeof pnl !== 'number') throw new Error('recordTrade requires a numeric pnl');
+    // Number(...) (2026-09-13, defense in depth): a caller passing a
+    // numeric STRING for `time` (cTraderDataSource.js's _loadClosedDeals
+    // did exactly this - the broker's own executionTimestamp is a string -
+    // until fixed at the call site too) would silently corrupt the
+    // cooldown-after-loss check below: `lastTrade.time + cooldownMs` uses
+    // `+`, which string-concatenates rather than adds when either operand
+    // is a string, producing an astronomically large "cooldown end" that
+    // effectively never expires and blocks all trading. Coercing here means
+    // this class can never be broken this way again, regardless of what a
+    // future caller passes.
+    time = Number(time);
     this._ensureDay(time);
 
     if (typeof balanceAfter === 'number') {
@@ -137,6 +167,7 @@ export class GuardrailEngine {
     }
 
     this.trades.push({ time, pnl, isLoss: pnl < 0 });
+    if (symbol) this.lastTradeBySymbol.set(symbol, { time, isLoss: pnl < 0 });
   }
 
   /** Pure - the current phase's real drawdown floor, or null if not configured/not enough data yet. */
@@ -175,12 +206,19 @@ export class GuardrailEngine {
   /**
    * Evaluate current gate status.
    * @param {number} [now]
+   * @param {string} [symbol] - scopes the cooldown-after-loss check to this
+   *   symbol's own last trade (see the constructor's `lastTradeBySymbol`
+   *   comment). Omitted (every display-only caller - the dashboard, /api/status)
+   *   falls back to the account's own last trade, same as before this
+   *   per-symbol split existed - purely informational there, doesn't gate
+   *   anything. The one caller that actually GATES a real entry
+   *   (LiveStrategyEngine's `_blockReason`) always passes it.
    */
-  getStatus(now = Date.now()) {
+  getStatus(now = Date.now(), symbol = null) {
     this._ensureDay(now);
 
     const tradesToday = this.trades.length;
-    const lastTrade = this.trades[this.trades.length - 1];
+    const lastTrade = symbol ? this.lastTradeBySymbol.get(symbol) : this.trades[this.trades.length - 1];
 
     let cooldownRemainingMs = 0;
     if (lastTrade && lastTrade.isLoss) {
@@ -234,7 +272,8 @@ export class GuardrailEngine {
     };
   }
 
-  canTakeNewTrade(now = Date.now()) {
-    return !this.getStatus(now).blocked;
+  /** @param {string} [symbol] - see getStatus()'s own doc - passed straight through. */
+  canTakeNewTrade(now = Date.now(), symbol = null) {
+    return !this.getStatus(now, symbol).blocked;
   }
 }

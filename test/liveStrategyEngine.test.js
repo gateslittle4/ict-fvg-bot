@@ -138,6 +138,78 @@ test('LiveStrategyEngine: guardrail block prevents a position from opening, but 
   assert.equal(engine.getOpenPosition('TEST1'), null);
 });
 
+// 2026-09-14: real bug found live. cTraderDataSource.js's live tick handler
+// feeds ingestCandle() a candle whose `.time` has been shifted -5h (the
+// "fixed EST as UTC" convention _toEngineCandle applies so session/HTF
+// logic matches backtest-validated behavior), while GuardrailEngine's OTHER
+// real inputs (a live fill's recordTrade, the dashboard's getStatus() poll)
+// use genuine, unshifted Date.now(). During the real-UTC window where the
+// shift crosses a calendar-day boundary (~00:00-05:00 UTC daily), a live
+// candle's guardrail check computed "yesterday" while every other call
+// computed "today" - GuardrailEngine's _ensureDay() silently wipes
+// `this.trades` on ANY dayKey mismatch, so this thrashed the daily
+// trade count and cooldown-after-loss protection clean, confirmed live: a
+// real loss's 30-minute cooldown vanished after ~3 minutes. Fixed with an
+// explicit `guardrailNow` parameter threaded through ingestCandle -> each
+// _detect*Signal -> each _process*/_blockReason, defaulting to `candle.time`
+// (so warmUp()'s bulk replay and every OTHER existing test above/below stay
+// byte-for-byte unaffected - only the live call site overrides it with
+// real Date.now()).
+test('LiveStrategyEngine: an explicit guardrailNow survives the live -5h candle-time shift (real fix)', () => {
+  const REAL_NOW = Date.UTC(2026, 8, 14, 1, 30, 0); // 2026-09-14T01:30:00Z
+  const FIVE_H = 5 * 3600 * 1000;
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, REAL_NOW);
+  guardrail.recordTrade({ pnl: -10, time: REAL_NOW, balanceAfter: 9990, symbol: 'TEST1' }); // a real loss, real time -> 30-min cooldown starts (per-symbol since 2026-09-15 - see guardrailEngine.js)
+
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+
+  // Live candles arriving minutes later - each candle's OWN .time is
+  // shifted -5h (matches _toEngineCandle), landing on the PREVIOUS
+  // calendar day even though real time has barely moved - exactly the live
+  // shape cTraderDataSource.js feeds in.
+  const guardrailNow = REAL_NOW + 5 * 60 * 1000;
+  const shiftedBase = guardrailNow - FIVE_H;
+  for (const cd of [c(shiftedBase, 100, 101, 99, 100), c(shiftedBase + M15, 100, 102, 100, 101), c(shiftedBase + 2 * M15, 102, 105, 103, 104)]) {
+    engine.ingestCandle('TEST1', cd, guardrailNow);
+  }
+  const evs = engine.ingestCandle('TEST1', c(shiftedBase + 3 * M15, 104, 104, 102, 103), guardrailNow);
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].blockedReason, 'guardrail'); // cooldown still active - NOT wiped by the shifted candle.time
+});
+
+test('LiveStrategyEngine: WITHOUT guardrailNow, the shifted candle.time reproduces the bug (documents why the fix above is needed)', () => {
+  const REAL_NOW = Date.UTC(2026, 8, 14, 1, 30, 0);
+  const FIVE_H = 5 * 3600 * 1000;
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, REAL_NOW);
+  guardrail.recordTrade({ pnl: -10, time: REAL_NOW, balanceAfter: 9990, symbol: 'TEST1' });
+
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+
+  const shiftedBase = REAL_NOW + 5 * 60 * 1000 - FIVE_H;
+  for (const cd of [c(shiftedBase, 100, 101, 99, 100), c(shiftedBase + M15, 100, 102, 100, 101), c(shiftedBase + 2 * M15, 102, 105, 103, 104)]) {
+    engine.ingestCandle('TEST1', cd); // no 3rd arg - old behavior, defaults to candle.time
+  }
+  const evs = engine.ingestCandle('TEST1', c(shiftedBase + 3 * M15, 104, 104, 102, 103));
+  assert.equal(evs.length, 1);
+  // The cooldown got silently wiped by the day-key mismatch - the position
+  // opens as if the loss/cooldown never happened at all.
+  assert.notEqual(evs[0].blockedReason, 'guardrail');
+});
+
 test('LiveStrategyEngine: netting blocks a second FVG signal on the same symbol while a position is already open', () => {
   const guardrail = permissiveGuardrail();
   const engine = new LiveStrategyEngine({
@@ -167,6 +239,115 @@ test('LiveStrategyEngine: netting blocks a second FVG signal on the same symbol 
 
   // Netting must guarantee the ORIGINAL position is still the one open, untouched.
   assert.equal(engine.getOpenPosition('TEST1').id, firstOpen.id);
+});
+
+// 2026-09-14 (Esdras, monitoring overnight - real double-position bug,
+// recurred twice live: 02:00 opposite-direction, 09:11 same-direction): a
+// simulated stop/target hit (_resolveOpenPosition, from candle highs/lows)
+// can land before the REAL broker-side close confirms. Live, that used to
+// delete openPositions immediately on the simulated hit, so netting saw the
+// symbol as free and let a second real position open on top of the first,
+// still-open one. deferCloseToRealConfirmation fixes this for the live call
+// site only (see liveStrategyEngine.js/cTraderDataSource.js for the full
+// story) - these tests drive the FIRST position to actually hit its target
+// (candle 4, high=110 >= the ~109.6 target), then a SECOND, independent gap
+// forms and tries to validate a few candles later. The buffer candles
+// (5-6) are deliberately flat/low enough that they don't accidentally form
+// their OWN gap against candle 3's high(104) - verified empirically, not
+// just by inspection, before committing to these exact numbers.
+function firstPositionAndResolution(engine, opts) {
+  for (const cd of [c(0, 100, 101, 99, 100), c(M15, 100, 102, 100, 101), c(2 * M15, 102, 105, 103, 104), c(3 * M15, 104, 104, 102, 103)]) {
+    engine.ingestCandle('TEST1', cd, cd.time, opts);
+  }
+  const firstOpen = engine.getOpenPosition('TEST1');
+  // target ~= entry(103) + 3R(2.2) = 109.6 (fvg-edge stop, see the very first test in this file) - high=110 hits it.
+  const resolvedEvs = engine.ingestCandle('TEST1', c(4 * M15, 103, 110, 103, 108), 4 * M15, opts);
+  return { firstOpen, resolvedEvs };
+}
+
+function secondGapCandles() {
+  return [
+    c(5 * M15, 108, 108, 103, 105), // buffer - low<=104 keeps this from pairing into a spurious gap with candle 3
+    c(6 * M15, 105, 106, 104, 105), // buffer
+    c(7 * M15, 105, 107, 105, 106), // c1 of the second gap
+    c(8 * M15, 106, 107, 105, 106.5), // c2
+    c(9 * M15, 106.5, 109, 108, 108.5), // c3: c1.high(107) < c3.low(108) -> gap [107,108]
+  ];
+}
+const SECOND_GAP_REENTRY = c(10 * M15, 108.5, 108.6, 106, 107); // low dips back into [107,108]
+
+test('LiveStrategyEngine: deferCloseToRealConfirmation defaults to false (warm-up/backtest/every other caller unchanged) - a simulated target hit clears the belief immediately, netting does not block a new signal', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({ symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1 });
+  const { firstOpen, resolvedEvs } = firstPositionAndResolution(engine);
+  assert.ok(resolvedEvs.some((e) => e.type === 'closed' && e.outcome === 'win'));
+  assert.equal(engine.getOpenPosition('TEST1'), null, 'belief cleared immediately - old/default behavior, unchanged');
+
+  for (const cd of secondGapCandles()) engine.ingestCandle('TEST1', cd);
+  const secondEvs = engine.ingestCandle('TEST1', SECOND_GAP_REENTRY);
+  const secondValidated = secondEvs.find((e) => e.type === 'validated');
+  assert.ok(secondValidated);
+  assert.equal(secondValidated.blockedReason, null, 'nothing believed open anymore - free to trade');
+  assert.notEqual(engine.getOpenPosition('TEST1').id, firstOpen.id);
+});
+
+test('LiveStrategyEngine: deferCloseToRealConfirmation=true (live) - a simulated target hit does NOT clear the belief, netting still blocks a new signal (the actual double-position fix)', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({ symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1 });
+  const opts = { deferCloseToRealConfirmation: true };
+  const { firstOpen, resolvedEvs } = firstPositionAndResolution(engine, opts);
+  assert.ok(resolvedEvs.some((e) => e.type === 'closed' && e.outcome === 'win'), 'still emits the informational closed event, same as before');
+  // The bug this fixes: belief must still be there (not deleted) so netting stays blocked.
+  assert.ok(engine.getOpenPosition('TEST1'), 'belief NOT cleared yet - waiting on the real broker close');
+  assert.equal(engine.getOpenPosition('TEST1').id, firstOpen.id);
+  assert.equal(engine.getOpenPosition('TEST1').awaitingRealClose, true);
+
+  for (const cd of secondGapCandles()) engine.ingestCandle('TEST1', cd, cd.time, opts);
+  const secondEvs = engine.ingestCandle('TEST1', SECOND_GAP_REENTRY, SECOND_GAP_REENTRY.time, opts);
+  const secondValidated = secondEvs.find((e) => e.type === 'validated');
+  assert.ok(secondValidated, 'expected the second gap to reach validated stage');
+  assert.equal(secondValidated.blockedReason, 'netting', 'THE FIX: still netted - a second real position must not open on top of the first, unconfirmed-closed one');
+  assert.equal(engine.getOpenPosition('TEST1').id, firstOpen.id, 'still the original belief, untouched');
+});
+
+test('LiveStrategyEngine: deferCloseToRealConfirmation=true - once the REAL close is confirmed (clearBelievedPosition), netting opens back up for a new signal', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({ symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1 });
+  const opts = { deferCloseToRealConfirmation: true };
+  const { firstOpen } = firstPositionAndResolution(engine, opts);
+
+  // The REAL broker confirmation arrives (cTraderDataSource.js's _handleExecutionEvent) -
+  // this is the only thing that should release the belief once deferred.
+  const cleared = engine.clearBelievedPosition('TEST1', firstOpen.id);
+  assert.equal(cleared, true);
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+
+  for (const cd of secondGapCandles()) engine.ingestCandle('TEST1', cd, cd.time, opts);
+  const secondEvs = engine.ingestCandle('TEST1', SECOND_GAP_REENTRY, SECOND_GAP_REENTRY.time, opts);
+  const secondValidated = secondEvs.find((e) => e.type === 'validated');
+  assert.ok(secondValidated);
+  assert.equal(secondValidated.blockedReason, null, 'freed up the instant the real close confirmed - a new position can open');
+  assert.notEqual(engine.getOpenPosition('TEST1').id, firstOpen.id);
+});
+
+test('LiveStrategyEngine: _maybeRequestPyramid does not fire on a position that just simulated-closed this same candle under deferCloseToRealConfirmation', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['TEST1'] },
+  });
+  for (const cd of [c(0, 100, 101, 99, 100), c(M15, 100, 102, 100, 101), c(2 * M15, 102, 105, 103, 104), c(3 * M15, 104, 104, 102, 103)]) {
+    engine.ingestCandle('TEST1', cd, cd.time, { deferCloseToRealConfirmation: true });
+  }
+  // Same candle both crosses the addAtR pyramid trigger AND hits the target -
+  // without the awaitingRealClose guard in _maybeRequestPyramid, this could
+  // wrongly request a pyramid add-on on a position that just closed.
+  const events = engine.ingestCandle('TEST1', c(4 * M15, 103, 110, 103, 108), 4 * M15, { deferCloseToRealConfirmation: true });
+  assert.equal(events.some((e) => e.type === 'pyramid-order-requested'), false);
 });
 
 // Fixed-EST-as-UTC convention (nySession.js, also used by
@@ -440,6 +621,78 @@ test('LiveStrategyEngine: netting blocks a second NWOG signal while an earlier N
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
 
+// --- NWOG longOnlySymbols (2026-09-15, revised 2026-09-16) - Esdras's
+// explicit call after seeing the long/short-direction-split check: the sell
+// side of live NWOG/US100 carries ~0 net edge (-1.70R over 177 trades since
+// 2019, essentially breakeven) while buy carries the entire result - "on
+// active achète seulement". Was a single `longOnly` boolean applying to
+// every NWOG symbol; became a per-symbol `longOnlySymbols` array once GER40
+// was added as a second NWOG symbol with the OPPOSITE (bidirectional,
+// validated 59/41 buy/sell) setting.
+
+const NWOG_CFG_LONG_ONLY = { ...NWOG_CFG, longOnlySymbols: ['TEST1'] };
+
+test('LiveStrategyEngine (NWOG longOnly): a bearish gap-fill candidate is blocked with "direction-filtered", never opens a real position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, nwogConfig: NWOG_CFG_LONG_ONLY, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100); // prevClose = 100
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5); // gapped UP -> bearish bet
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5);
+
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'nwog');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
+  assert.equal(entryEvents[0].direction, 'bearish');
+  assert.equal(entryEvents[0].blockedReason, 'direction-filtered');
+  assert.equal(engine.getOpenPosition('TEST1'), null, 'no real position opened for the filtered-out sell side');
+});
+
+test('LiveStrategyEngine (NWOG longOnly): a bullish gap-fill candidate still fires and opens a real position normally', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, nwogConfig: NWOG_CFG_LONG_ONLY, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100); // prevClose = 100
+  const c3 = c(c2.time + GAP_HOURS, 95, 95.5, 94, 94.5); // gapped DOWN -> bullish bet, stopReference = low = 94
+  const c4 = c(c3.time + M15, 94.8, 95, 94.2, 94.5);
+
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'nwog');
+
+  assert.equal(entryEvents.length, 1);
+  assert.equal(entryEvents[0].direction, 'bullish');
+  assert.equal(entryEvents[0].suggestedSide, 'buy');
+  assert.equal(entryEvents[0].blockedReason, null);
+  assert.equal(engine.getOpenPosition('TEST1').source, 'nwog', 'the buy side is unaffected by longOnly and opens a real position as usual');
+});
+
+test('LiveStrategyEngine (NWOG longOnlySymbols): a bearish candidate on a symbol NOT listed stays bidirectional (unaffected by another symbol\'s long-only restriction)', () => {
+  const guardrail = permissiveGuardrail();
+  // Same config shape actually deployed in production: US100 long-only,
+  // GER40 bidirectional, both sharing one nwogConfig object.
+  const cfg = { ...NWOG_CFG, symbols: ['TEST1', 'TEST2'], longOnlySymbols: ['TEST1'] };
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1', 'TEST2'], fvgConfig: {}, divergenceConfig: null, nwogConfig: cfg, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100); // prevClose = 100
+  const c3 = c(c2.time + GAP_HOURS, 105, 106, 104.5, 105.5); // gapped UP -> bearish bet
+  const c4 = c(c3.time + M15, 105.2, 105.3, 104, 104.5);
+
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST2', candle);
+  const entryEvents = engine.ingestCandle('TEST2', c4).filter((e) => e.source === 'nwog');
+
+  assert.equal(entryEvents.length, 1);
+  assert.equal(entryEvents[0].direction, 'bearish');
+  assert.equal(entryEvents[0].blockedReason, null, 'TEST2 is not in longOnlySymbols, so its sell side fires normally');
+  assert.equal(engine.getOpenPosition('TEST2').source, 'nwog');
+});
+
 // --- Judas Swing (ICT London killzone, EURUSD - 2026-09, activated at the
 // user's explicit request) - same openPositions/netting/auto-execute shared
 // path as FVG/Divergence/NWOG above, no Judas-Swing-specific tracking.
@@ -561,6 +814,103 @@ test('LiveStrategyEngine: netting blocks a second Judas Swing signal while an ea
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
 
+// --- Weekly Liquidity Sweep (PWH/PWL, GER40) - LIVE, auto-executed
+// (2026-09-15, at Esdras's explicit "on va plus vite" request - straight to
+// full auto-execute, no alert-only phase). Same week-boundary-gap detection
+// mechanics as NWOG above (both use the same [20h,100h] gap window - see
+// weeklyLiquiditySweep.js), same openPositions/netting/auto-execute path.
+
+const WEEKLYSWEEP_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+
+test('LiveStrategyEngine (Weekly Sweep): a sweep+reclaim of the PREVIOUS WEEK high fires a "validated" signal one candle later, entry = candle.open, and opens a REAL position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, weeklySweepConfig: WEEKLYSWEEP_CFG, guardrail, riskPctPerTrade: 1,
+  });
+
+  // Week 1: high = 100.5 (from c1/c2). Week 2 opens after a weekend-sized
+  // gap; c3 sweeps above week 1's high (100.5) intra-candle but CLOSES back
+  // inside it -> bearish bet on a fade back down, stopReference = high.
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 100.2, 101, 100, 100.3); // sweeps 100.5, closes back inside -> bearish
+  const c4 = c(c3.time + M15, 100.25, 100.3, 99.8, 100);
+
+  engine.ingestCandle('TEST1', c1);
+  engine.ingestCandle('TEST1', c2);
+  const gapEvents = engine.ingestCandle('TEST1', c3);
+  assert.equal(gapEvents.filter((e) => e.source === 'weeklysweep').length, 0, 'the sweep+reclaim candle itself does not fire a signal - entry waits one more candle');
+
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'weeklysweep');
+  assert.equal(entryEvents.length, 1);
+  const sig = entryEvents[0];
+  assert.equal(sig.direction, 'bearish');
+  assert.equal(sig.suggestedSide, 'sell');
+  assert.equal(sig.entryPrice, 100.25);
+  assert.equal(sig.stopPrice, 101);
+  assert.ok(Math.abs(sig.distance - 0.75) < 1e-9);
+  assert.equal(sig.blockedReason, null);
+  assert.equal(engine.getOpenPosition('TEST1').source, 'weeklysweep', 'a clean signal now claims the REAL netting slot, same as FVG/Divergence/NWOG/Judas Swing');
+});
+
+test('LiveStrategyEngine (Weekly Sweep): resolves to a WIN when the fixed 1:3 target is hit', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, weeklySweepConfig: WEEKLYSWEEP_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 100.2, 101, 100, 100.3);
+  const c4 = c(c3.time + M15, 100.25, 100.3, 99.8, 100); // entry 100.25, stop 101, distance 0.75, target = 100.25 - 2.25 = 98.0
+  const c5 = c(c4.time + M15, 99.9, 100, 97.8, 98); // low 97.8 <= target 98.0 -> WIN
+
+  for (const candle of [c1, c2, c3, c4]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', c5).filter((e) => e.type === 'closed' && e.source === 'weeklysweep');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'win');
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+});
+
+test('LiveStrategyEngine (Weekly Sweep): resolves to a LOSS when the stop is hit', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, weeklySweepConfig: WEEKLYSWEEP_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 100.2, 101, 100, 100.3);
+  const c4 = c(c3.time + M15, 100.25, 100.3, 99.8, 100); // stop 101
+  const c5 = c(c4.time + M15, 100.3, 101.2, 100, 101); // high 101.2 >= stop 101 -> LOSS
+
+  for (const candle of [c1, c2, c3, c4]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', c5).filter((e) => e.type === 'closed' && e.source === 'weeklysweep');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'loss');
+});
+
+test('LiveStrategyEngine: netting blocks a Weekly Sweep signal on a symbol that already has an open FVG position (and vice versa - same shared slot)', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, weeklySweepConfig: WEEKLYSWEEP_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake', direction: 'bullish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 50, targetPrice: 500, distance: 50, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const c1 = c(0, 100, 100.5, 99.5, 100);
+  const c2 = c(M15, 100, 100.5, 99.5, 100);
+  const c3 = c(c2.time + GAP_HOURS, 100.2, 101, 100, 100.3);
+  const c4 = c(c3.time + M15, 100.25, 100.3, 99.8, 100);
+  for (const candle of [c1, c2, c3]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', c4).filter((e) => e.source === 'weeklysweep');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, matches how a blocked FVG/Divergence/NWOG/Judas Swing signal is also still reported');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+  assert.equal(engine.getOpenPosition('TEST1').source, 'fvg', 'the pre-existing real position must remain untouched, no double-booking');
+});
+
 // --- Pyramid add-on ("stops indépendants, sans breakeven") ---------------
 
 function engineWithPyramid(pyramidConfig = { enabled: true, addAtR: 1, symbols: ['TEST1'] }) {
@@ -615,6 +965,62 @@ test('LiveStrategyEngine (pyramid): +1R reached requests an independent add-on o
   const open = engine.getOpenPosition('TEST1');
   assert.ok(Math.abs(open.stopPrice - 100.8) < 1e-9);
   assert.ok(Math.abs(open.targetPrice - 109.6) < 1e-9);
+});
+
+// 2026-09-15 (Esdras, after seeing the combined-portfolio numbers - see
+// HANDOFF.md): pyramid legs that fire while their own symbol is in an
+// active cooldown from a recent loss perform dramatically worse (4-12% win
+// rate) than ones that don't (50-60%) - _maybeRequestPyramid now consults
+// the guardrail like every other live source, instead of never checking it
+// at all.
+// The loss is recorded AFTER openBullishTest1() opens the FVG position, not
+// before - recording it any earlier would ALSO block the FVG's own entry on
+// candle 3 (it's gated by this same per-symbol cooldown too), which would
+// silently prevent the position from ever opening at all rather than
+// testing what this test actually wants to check (the already-open
+// position's pyramid add-on being gated).
+
+test('LiveStrategyEngine (pyramid): blocked while its own symbol is in an active cooldown from a recent loss', () => {
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, 0);
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['TEST1'] },
+  });
+  openBullishTest1(engine); // opens cleanly - no loss recorded yet
+  guardrail.recordTrade({ pnl: -50, time: 3 * M15 + 5 * 60 * 1000, balanceAfter: 9950, symbol: 'TEST1' }); // a loss on TEST1 shortly after entry
+  const guardrailNow = 4 * M15 + 5 * 60 * 1000; // ~20 min after the loss - still within the 30-min cooldown
+  const evs = engine.ingestCandle('TEST1', c(4 * M15, 103, 105.3, 103, 104), guardrailNow);
+  assert.equal(evs.filter((e) => e.type === 'pyramid-order-requested').length, 0, 'no pyramid order requested while the symbol is cooling down');
+  assert.equal(engine.getPyramidPending('TEST1'), null);
+});
+
+test('LiveStrategyEngine (pyramid): fires normally once its own symbol\'s cooldown has elapsed', () => {
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, 0);
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['TEST1'] },
+  });
+  openBullishTest1(engine);
+  guardrail.recordTrade({ pnl: -50, time: 3 * M15 + 5 * 60 * 1000, balanceAfter: 9950, symbol: 'TEST1' });
+  const guardrailNow = 3 * M15 + 36 * 60 * 1000; // 31 min after the loss - cooldown has cleared
+  const evs = engine.ingestCandle('TEST1', c(4 * M15, 103, 105.3, 103, 104), guardrailNow);
+  assert.equal(evs.filter((e) => e.type === 'pyramid-order-requested').length, 1, 'requests normally once the cooldown has cleared');
+});
+
+test('LiveStrategyEngine (pyramid): a loss on a DIFFERENT symbol does not block this symbol\'s pyramid (per-symbol cooldown, not account-wide)', () => {
+  const guardrail = new GuardrailEngine({ maxTradesPerDay: 100, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+  guardrail.setBalance(10000, 0);
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: { TEST1: BASELINE_FVG_CFG }, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+    pyramidConfig: { enabled: true, addAtR: 1, symbols: ['TEST1'] },
+  });
+  openBullishTest1(engine);
+  guardrail.recordTrade({ pnl: -50, time: 3 * M15 + 5 * 60 * 1000, balanceAfter: 9950, symbol: 'OTHERSYM' });
+  const guardrailNow = 4 * M15 + 5 * 60 * 1000; // still well within OTHERSYM's cooldown, but that's a different symbol
+  const evs = engine.ingestCandle('TEST1', c(4 * M15, 103, 105.3, 103, 104), guardrailNow);
+  assert.equal(evs.filter((e) => e.type === 'pyramid-order-requested').length, 1, 'an unrelated symbol\'s loss must not silence this one\'s pyramid');
 });
 
 test('LiveStrategyEngine (pyramid): only requests once per trade - a second candle past +1R does not re-fire', () => {
@@ -741,12 +1147,12 @@ function loadCsv(path) {
 }
 
 // Hardcoded rather than read from CONFIG.symbols: this comparison needs to
-// stay pinned to the 4 symbols these tests actually load real CSV fixtures
+// stay pinned to the symbols these tests actually load real CSV fixtures
 // for, independent of whatever CONFIG.symbols happens to list at any given
-// time (it's grown twice already - XAUUSD, then EURUSD - and a mutable
-// global here silently breaks this file every time, with a confusing
-// "not iterable" error instead of a clear one).
-const WARMUP_COMPARISON_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD'];
+// time (it's grown several times already - XAUUSD, then EURUSD, then GER40 -
+// and a mutable global here silently breaks this file every time, with a
+// confusing "not iterable" error instead of a clear one).
+const WARMUP_COMPARISON_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
 
 function newEngineForWarmupComparison() {
   const guardrail = permissiveGuardrail();
@@ -756,6 +1162,16 @@ function newEngineForWarmupComparison() {
     divergenceConfig: CONFIG.divergence,
     nwogConfig: CONFIG.nwog, // exercise NWOG's bulk-vs-sequential equivalence too, not just FVG/Divergence/pyramid
     judasSwingConfig: CONFIG.judasSwing, // same, for Judas Swing/EURUSD
+    // GER40 added 2026-09-17 specifically to exercise Weekly Sweep/Breaker
+    // Block/Silver Bullet's bulk-vs-sequential equivalence too - the
+    // pre-existing version of this test never touched these 3 (all either
+    // GER40-scoped or GER40-included), so a bug unique to their bulk warm-up
+    // path (as opposed to their live per-tick path, already covered by the
+    // dedicated tests above) could have shipped silently. Uses CONFIG's
+    // real production values directly, not a hand-picked subset.
+    weeklySweepConfig: CONFIG.weeklySweep,
+    breakerBlockConfig: CONFIG.breakerBlock,
+    silverBulletConfig: CONFIG.silverBullet,
     guardrail,
     riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
     pyramidConfig: { enabled: true, addAtR: 1, symbols: ['US100', 'US500'] }, // exercise _maybeRequestPyramid's bulk path too, not just the default-off case
@@ -775,6 +1191,7 @@ test('warmUp(): bulk single-pass reconstruction is IDENTICAL to sequential inges
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
     EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
+    GER40: loadCsv('data/backtest-input/GER40.csv').slice(0, N),
   };
 
   const sequential = newEngineForWarmupComparison();
@@ -818,12 +1235,14 @@ test('warmUp(): after reconstructing state, a NEW live candle produces the same 
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
     EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
+    GER40: loadCsv('data/backtest-input/GER40.csv').slice(0, N),
   };
   const nextCandles = {
     US100: loadCsv('data/backtest-input/US100.csv').slice(N, N + 50),
     US500: loadCsv('data/backtest-input/US500.csv').slice(N, N + 50),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(N, N + 50),
     EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(N, N + 50),
+    GER40: loadCsv('data/backtest-input/GER40.csv').slice(N, N + 50),
   };
 
   const sequential = newEngineForWarmupComparison();
@@ -912,4 +1331,176 @@ test('clearBelievedPosition: a symbol with nothing believed open is a safe no-op
   });
   assert.equal(engine.clearBelievedPosition('TEST1', 'anything'), false);
   assert.equal(engine.getOpenPosition('TEST1'), null);
+});
+
+// --- Breaker Block (ICT failed Order Block, retested from the flipped
+// side) - LIVE, auto-executed (2026-09-16, GER40 - rehabilitated with the
+// real 0.5 spread and the same robustness checks that validated NWOG, see
+// HANDOFF.md). Same openPositions/netting/auto-execute path as every other
+// live source above. Fixture is the SAME shape as test/breakerBlock.test.js
+// (a bullish BOS finds a bearish OB as its support zone [0.85, 1.02], price
+// breaks THROUGH it downward, flips to a bearish breaker, then retests the
+// breaker's mid (0.935) from below) but re-spaced for this engine's
+// PRODUCTION-DEFAULT detection params (breakerBlock.test.js's own fixture
+// uses a custom {lookback:2,...} - too tight a window for the real
+// SWING_LOOKBACK=5 default this engine actually uses: the BOS candle's own
+// huge high (2.2) would fall inside the swing-high-at-index-5 confirmation
+// window with lookback 5, invalidating it as a swing point before the BOS
+// could ever reference it. Re-verified directly against
+// runBreakerBlockBacktest(candles, {}) - i.e. every default, no overrides -
+// producing exactly one trade before writing this fixture into the test.
+
+const BREAKER_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+
+function breakerFixtureCandles() {
+  const candles = [];
+  for (let i = 0; i <= 4; i++) candles.push(c(i * 1000, 1, 1.05, 0.95, 1));
+  candles.push(c(5000, 1, 2.0, 0.95, 1)); // swing high spike
+  for (let i = 6; i <= 10; i++) candles.push(c(i * 1000, 1, 1.05, 0.95, 1)); // filler, keeps the lookback=5 confirmation window [0,10] clean
+  candles.push(c(11000, 1.0, 1.02, 0.85, 0.9)); // bearish OB candle
+  candles.push(c(12000, 1, 1.05, 0.95, 1.05)); // bullish filler, NOT the OB
+  candles.push(c(13000, 1, 2.2, 0.95, 2.1)); // bullish BOS candle
+  for (let i = 14; i <= 17; i++) candles.push(c(i * 1000, 1, 1.05, 0.95, 1));
+  candles.push(c(18000, 1, 1.05, 0.5, 0.6)); // breaks through zoneLow (0.85)
+  for (let i = 19; i <= 22; i++) candles.push(c(i * 1000, 0.6, 0.7, 0.55, 0.6));
+  candles.push(c(23000, 0.6, 0.94, 0.55, 0.7)); // retests the mid (0.935) from below
+  candles.push(c(24000, 0.93, 0.95, 0.9, 0.92)); // entry candle, open=0.93
+  // Deliberately stops here (no resolution candle) - these tests only cover
+  // entry/netting, same scope as the NWOG/Judas Swing/Weekly Sweep tests
+  // above; exit behavior (stop/target/timeout) is already covered by
+  // test/breakerBlock.test.js directly against runBreakerBlockBacktest().
+  return candles;
+}
+
+test('LiveStrategyEngine (Breaker Block): the retest-confirmation candle emits an actionable "validated" signal and opens a real position, same fixture already proven against runBreakerBlockBacktest()', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, breakerBlockConfig: BREAKER_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const candles = breakerFixtureCandles();
+  let entryEvents = [];
+  for (const candle of candles) {
+    entryEvents.push(...engine.ingestCandle('TEST1', candle).filter((e) => e.source === 'breakerblock'));
+  }
+
+  assert.equal(entryEvents.length, 1);
+  const e = entryEvents[0];
+  assert.equal(e.direction, 'bearish');
+  assert.equal(e.suggestedSide, 'sell');
+  assert.equal(e.entryPrice, 0.93);
+  assert.equal(e.stopPrice, 1.02);
+  assert.equal(e.blockedReason, null);
+
+  const open = engine.getOpenPosition('TEST1');
+  assert.ok(open, 'expected a real position to have opened');
+  assert.equal(open.source, 'breakerblock');
+  assert.equal(open.direction, 'bearish');
+});
+
+test('LiveStrategyEngine (Breaker Block): netting blocks the signal while an earlier position on the same symbol is still open', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, breakerBlockConfig: BREAKER_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  // Price range scaled to THIS fixture (0.5-2.2), unlike the NWOG netting
+  // test above (~100) - a stop/target sized for that other fixture's scale
+  // would instantly trigger against these candles' own prices instead of
+  // staying open throughout, as intended here.
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake-open', direction: 'bullish', entryIndex: 0, entryTime: -1,
+    entryPrice: 1, stopPrice: 0.1, targetPrice: 10, distance: 0.9, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const candles = breakerFixtureCandles();
+  let entryEvents = [];
+  for (const candle of candles) {
+    entryEvents.push(...engine.ingestCandle('TEST1', candle).filter((e) => e.source === 'breakerblock'));
+  }
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+});
+
+// --- Silver Bullet (ICT FVG formed inside the 10h-11h NY killzone AND
+// agreeing with the active structure bias - 2026-09-17, US100/US500/GER40,
+// LIVE auto-executed at the user's explicit request, see config.js's
+// `silverBullet` comment and HANDOFF.md). Same openPositions/netting/
+// auto-execute shared path as every other live source above. Fixture is
+// the SAME shape (and same January-dates-avoid-DST convention) as
+// test/silverBullet.test.js's own baseToFvg(): a swing high pivot at 110,
+// confirmed, then a BOS candle closing above it (bullish structure bias),
+// padded to 09:30 NY, then a 3-candle bullish FVG whose c3 lands at 10:00
+// NY (inside the killzone) - re-verified directly against
+// detectSilverBulletFvgs()/this engine's own _computeSilverBulletCandidates()
+// before writing this fixture into the test.
+
+const SILVERBULLET_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+
+function silverBulletBaseFixture() {
+  let t = Date.UTC(2024, 0, 1, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 10; i++) { candles.push(c(t, 100, 100.2, 99.8, 100)); t += M15; }
+  candles.push(c(t, 105, 110, 104, 106)); t += M15; // swing high = 110
+  for (let i = 0; i < 5; i++) { candles.push(c(t, 100, 101, 99, 100)); t += M15; }
+  for (let i = 0; i < 10; i++) { candles.push(c(t, 100, 100.2, 99.8, 100)); t += M15; }
+  candles.push(c(t, 105, 112, 104, 111)); t += M15; // BOS: close 111 > 110 -> bullish structure bias
+  for (let i = 0; i < 5; i++) { candles.push(c(t, 108, 108.2, 107.8, 108)); t += M15; }
+  while (new Date(t).getUTCHours() < 9 || (new Date(t).getUTCHours() === 9 && new Date(t).getUTCMinutes() < 30)) {
+    candles.push(c(t, 108, 108.2, 107.8, 108)); t += M15;
+  }
+  candles.push(c(t, 108, 108.5, 107.5, 108)); t += M15; // c1, high=108.5
+  candles.push(c(t, 108, 109, 107, 108)); t += M15; // c2
+  candles.push(c(t, 109, 110, 108.9, 109.5)); t += M15; // c3 (10:00 NY) -> bullish FVG [108.5, 108.9]
+  return { candles, t };
+}
+
+test('LiveStrategyEngine (Silver Bullet): an FVG formed inside the killzone, agreeing with structure, fires a "validated" signal one candle after mitigation, entry = candle.open, and opens a REAL position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, silverBulletConfig: SILVERBULLET_CFG, guardrail, riskPctPerTrade: 1,
+  });
+
+  const { candles, t: t0 } = silverBulletBaseFixture();
+  let t = t0;
+  const mitigation = c(t, 109.3, 109.4, 108.7, 108.8); t += M15; // low 108.7 <= zone.top 108.9
+  const entry = c(t, 109.5, 109.6, 109.4, 109.5); t += M15; // entry candle, open=109.5
+
+  for (const candle of candles) engine.ingestCandle('TEST1', candle);
+  const mitigationEvents = engine.ingestCandle('TEST1', mitigation);
+  assert.equal(mitigationEvents.filter((e) => e.source === 'silverbullet').length, 0, 'the mitigation candle itself does not fire a signal - entry waits one more candle');
+
+  const entryEvents = engine.ingestCandle('TEST1', entry).filter((e) => e.source === 'silverbullet');
+  assert.equal(entryEvents.length, 1);
+  const sig = entryEvents[0];
+  assert.equal(sig.direction, 'bullish');
+  assert.equal(sig.suggestedSide, 'buy');
+  assert.equal(sig.entryPrice, 109.5);
+  assert.ok(Math.abs(sig.stopPrice - 108.46) < 1e-9); // zone.bottom(108.5) - 10% of zone height(0.4) buffer
+  assert.equal(sig.blockedReason, null);
+  assert.equal(engine.getOpenPosition('TEST1').source, 'silverbullet', 'a clean Silver Bullet signal now claims the REAL netting slot, same as FVG/Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block');
+});
+
+test('LiveStrategyEngine: netting blocks a Silver Bullet signal on a symbol that already has an open position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, silverBulletConfig: SILVERBULLET_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake-open', direction: 'bearish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 200, targetPrice: 0, distance: 100, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const { candles, t: t0 } = silverBulletBaseFixture();
+  let t = t0;
+  const mitigation = c(t, 109.3, 109.4, 108.7, 108.8); t += M15;
+  const entry = c(t, 109.5, 109.6, 109.4, 109.5); t += M15;
+
+  for (const candle of candles) engine.ingestCandle('TEST1', candle);
+  engine.ingestCandle('TEST1', mitigation);
+  const entryEvents = engine.ingestCandle('TEST1', entry).filter((e) => e.source === 'silverbullet');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
 });

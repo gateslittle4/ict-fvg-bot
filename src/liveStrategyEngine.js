@@ -131,6 +131,9 @@ import { computeZScoreSeries, alignByTime } from './backtest/correlation.js';
 import { computeAtrSeries } from './backtest/rsiDivergence.js';
 import { detectNwogEvents } from './backtest/nwog.js';
 import { detectJudasSwingEvents } from './backtest/judasSwing.js';
+import { detectWeeklySweepEvents } from './backtest/weeklyLiquiditySweep.js';
+import { computeBreakerBlockCandidates } from './backtest/breakerBlock.js';
+import { computeSilverBulletCandidates } from './backtest/silverBullet.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
@@ -166,6 +169,29 @@ export class LiveStrategyEngine {
     // `judasSwing` comment and HANDOFF.md). Not defaulted so the three
     // backtest/report engines don't silently start folding it in.
     judasSwingConfig = null,
+    // Same opt-in-only pattern as nwogConfig/judasSwingConfig above
+    // (2026-09-15, GER40 - Esdras's explicit "on va plus vite" request,
+    // straight to full auto-execute, no alert-only observation phase - see
+    // HANDOFF.md). Not defaulted so the three backtest/report engines don't
+    // silently start folding it in.
+    weeklySweepConfig = null,
+    // Same opt-in-only pattern as nwogConfig/judasSwingConfig/
+    // weeklySweepConfig above (2026-09-16, GER40 - rehabilitated with the
+    // real 0.5 spread and the same 2-year-block/buy-sell robustness checks
+    // that validated NWOG - see HANDOFF.md "Breaker Block réhabilité"). Not
+    // defaulted so the three backtest/report engines don't silently start
+    // folding it in.
+    breakerBlockConfig = null,
+    // Same opt-in-only pattern as nwogConfig/judasSwingConfig/weeklySweepConfig/
+    // breakerBlockConfig above (2026-09-17, US100/US500/GER40 - Esdras's
+    // explicit "on les met en mode auto execute" request, straight to full
+    // auto-execute, no alert-only observation phase first - see HANDOFF.md
+    // for the research this was validated against: a train/test split on
+    // 2019-2025 historical CSVs AND a confirming forward-test on real
+    // cTrader candles never used to tune anything, both positive and
+    // symmetric buy/sell on all 3 symbols). Not defaulted so the three
+    // backtest/report engines don't silently start folding it in.
+    silverBulletConfig = null,
     guardrail,
     riskPctPerTrade = CONFIG.risk.riskPctPerTrade,
     spreads = {},
@@ -177,6 +203,9 @@ export class LiveStrategyEngine {
     this.divergenceConfig = divergenceConfig || null;
     this.nwogConfig = nwogConfig || null;
     this.judasSwingConfig = judasSwingConfig || null;
+    this.weeklySweepConfig = weeklySweepConfig || null;
+    this.breakerBlockConfig = breakerBlockConfig || null;
+    this.silverBulletConfig = silverBulletConfig || null;
     this.guardrail = guardrail;
     this.riskPctPerTrade = riskPctPerTrade;
     this.spreads = spreads;
@@ -243,7 +272,48 @@ export class LiveStrategyEngine {
    * check `blockedReason` to know whether a position was actually opened)
    * | 'closed' (a previously-open position resolved: stop/target/timeout).
    */
-  ingestCandle(symbol, candle) {
+  // guardrailNow (2026-09-14, real bug found live: GuardrailEngine's cooldown
+  // and daily-trade-count silently reset themselves every day between
+  // ~00:00-05:00 UTC) - defaults to `candle.time` so every existing
+  // caller (every test in this file, warmUp()'s own replay - though that
+  // path never reaches _blockReason at all, see below - and any future
+  // backtest script) is byte-for-byte unaffected: `candle.time` already IS
+  // the correct, consistent simulated clock in those contexts, since
+  // nothing there ever mixes in a real Date.now() reading.
+  //
+  // The live path is different: cTraderDataSource.js feeds ingestCandle()
+  // a candle whose `.time` has been shifted -5h (see _toEngineCandle's own
+  // header - "fixed EST as UTC", needed so session-window/HTF-bias checks
+  // match backtest-validated behavior) while GuardrailEngine's OTHER real
+  // inputs (recordTrade() for a live fill, via Date.now(); recordTrade()
+  // for _loadClosedDeals' boot-time replay, via the broker's own real
+  // executionTimestamp; getStatus() for the dashboard, via Date.now())
+  // all use genuine, UNSHIFTED wall-clock time. Feeding the SAME
+  // GuardrailEngine instance two different clocks was silently resetting
+  // its `trades` array (see guardrailEngine.js's _ensureDay - any dayKey
+  // mismatch wipes it) every time real UTC was between 00:00 and 05:00 -
+  // the 5h shift lands squarely on the PREVIOUS calendar day during that
+  // window, so a live real-time candle's guardrail check would compute
+  // "yesterday" while the very next getStatus()/recordTrade() call (real
+  // time) computed "today", thrashing back and forth on every tick and
+  // wiping the daily trade count / cooldown-after-loss protection clean -
+  // confirmed live: a real loss's 30-minute cooldown vanished within ~3
+  // minutes instead of lasting the full 30. `guardrailNow` lets the ONE
+  // call site that actually has real wall-clock time (cTraderDataSource.js's
+  // live tick handler) supply it explicitly, without touching any other
+  // caller's behavior.
+  // deferCloseToRealConfirmation (2026-09-14, real double-position bug found
+  // monitoring overnight - see _resolveOpenPosition's own header for the
+  // full story): opt-in, default false, so every existing caller (warm-up,
+  // backtests, every existing test, and matchTraderDataSource.js - which has
+  // no real-close confirmation loop yet) keeps today's exact behavior. Only
+  // cTraderDataSource.js's live tick handler passes true, because it alone
+  // has the real ProtoOAExecutionEvent confirmation loop
+  // (_handleExecutionEvent -> clearBelievedPosition) needed to eventually
+  // release a belief held pending under this flag - turning it on anywhere
+  // else would strand that belief forever, a worse bug than the one this
+  // fixes.
+  ingestCandle(symbol, candle, guardrailNow = candle.time, { deferCloseToRealConfirmation = false } = {}) {
     if (!this.history.has(symbol)) return [];
     const hist = this.history.get(symbol);
     if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) {
@@ -253,31 +323,66 @@ export class LiveStrategyEngine {
 
     const events = [];
 
-    this._resolveOpenPosition(symbol, candle, events);
-    this._maybeRequestPyramid(symbol, candle, events);
+    this._resolveOpenPosition(symbol, candle, events, deferCloseToRealConfirmation);
+    this._maybeRequestPyramid(symbol, candle, events, guardrailNow);
 
     if (this.fvgConfig[symbol]) {
-      events.push(...this._detectFvgSignal(symbol, candle));
+      events.push(...this._detectFvgSignal(symbol, candle, guardrailNow));
     }
 
     if (this.divergenceConfig && this.divergenceConfig.pair.includes(symbol)) {
-      events.push(...this._detectDivergenceSignal(symbol, candle));
+      events.push(...this._detectDivergenceSignal(symbol, candle, guardrailNow));
     }
 
     if (this.nwogConfig && this.nwogConfig.symbols.includes(symbol)) {
-      events.push(...this._detectNwogSignal(symbol, candle));
+      events.push(...this._detectNwogSignal(symbol, candle, guardrailNow));
     }
 
     if (this.judasSwingConfig && this.judasSwingConfig.symbols.includes(symbol)) {
-      events.push(...this._detectJudasSwingSignal(symbol, candle));
+      events.push(...this._detectJudasSwingSignal(symbol, candle, guardrailNow));
+    }
+
+    if (this.weeklySweepConfig && this.weeklySweepConfig.symbols.includes(symbol)) {
+      events.push(...this._detectWeeklySweepSignal(symbol, candle, guardrailNow));
+    }
+
+    if (this.breakerBlockConfig && this.breakerBlockConfig.symbols.includes(symbol)) {
+      events.push(...this._detectBreakerBlockSignal(symbol, candle, guardrailNow));
+    }
+
+    if (this.silverBulletConfig && this.silverBulletConfig.symbols.includes(symbol)) {
+      events.push(...this._detectSilverBulletSignal(symbol, candle, guardrailNow));
     }
 
     return events;
   }
 
-  _resolveOpenPosition(symbol, candle, events) {
+  // 2026-09-14, real double-position bug found monitoring overnight (recurred
+  // twice: 02:00 opposite-direction, 09:11 same-direction): this method
+  // decides "stop/target/timeout hit" purely from candle highs/lows - a
+  // SIMULATION, same as the backtest. Live, that simulated hit can land
+  // BEFORE the REAL broker-side stop/target order actually fills (a real
+  // fill took up to ~10s tonight) - deleting openPositions right here, as
+  // this used to do unconditionally, means netting (_blockReason's
+  // `openPositions.has(symbol)` check) sees the symbol as free and lets a
+  // NEW signal open a second real position on top of the first, still-open
+  // one. With deferCloseToRealConfirmation, this method still detects the
+  // simulated hit and still emits the 'closed' event (informational -
+  // signal log / notifications, not the durable journal, which already logs
+  // real broker P&L only - see cTraderDataSource.js's
+  // openPositionInfoByPositionId), but leaves the belief IN openPositions,
+  // guarded so it fires only once (`awaitingRealClose`) - netting stays
+  // blocked until clearBelievedPosition() (called from
+  // cTraderDataSource.js's _handleExecutionEvent on the REAL confirmed
+  // close) removes it. Without the flag (warm-up, backtests, every existing
+  // test, matchTraderDataSource.js), behavior is byte-for-bit unchanged:
+  // there is no real broker confirmation loop to eventually release a
+  // deferred belief in those contexts, so deferring there would strand it
+  // forever instead of fixing anything.
+  _resolveOpenPosition(symbol, candle, events, deferCloseToRealConfirmation = false) {
     const open = this.openPositions.get(symbol);
     if (!open || candle.time <= open.entryTime) return;
+    if (open.awaitingRealClose) return; // already simulated-resolved, waiting on the real broker close - see header above
 
     const bullish = open.direction === 'bullish';
     const hitStop = bullish ? candle.low <= open.stopPrice : candle.high >= open.stopPrice;
@@ -287,7 +392,11 @@ export class LiveStrategyEngine {
     if (!hitStop && !hitTarget && !timedOut) return;
 
     const outcome = hitStop ? 'loss' : hitTarget ? 'win' : 'timeout';
-    this.openPositions.delete(symbol);
+    if (deferCloseToRealConfirmation) {
+      open.awaitingRealClose = true; // netting (openPositions.has(symbol)) stays blocked until the REAL close confirms
+    } else {
+      this.openPositions.delete(symbol);
+    }
     events.push({
       type: 'closed',
       source: open.source,
@@ -327,12 +436,37 @@ export class LiveStrategyEngine {
    * `pyramidConfig` is null/disabled (the default) - existing behavior is
    * completely unchanged in that case.
    */
-  _maybeRequestPyramid(symbol, candle, events) {
+  _maybeRequestPyramid(symbol, candle, events, guardrailNow = candle.time) {
     if (!this.pyramidConfig || !this.pyramidConfig.symbols.includes(symbol)) return;
     const open = this.openPositions.get(symbol);
     if (!open || open.source !== 'fvg') return; // only ever validated for FVG trades on these symbols - see config.js comment
+    // 2026-09-14: with deferCloseToRealConfirmation, _resolveOpenPosition (which
+    // runs right before this, same candle) can leave `open` in the map with
+    // awaitingRealClose=true instead of deleting it outright - without this
+    // check, a pyramid add-on could get requested on a position that just
+    // simulated-closed this very candle (previously impossible, since the old
+    // unconditional delete meant `open` was already gone by the time this ran).
+    if (open.awaitingRealClose) return;
     if (this.pyramidPositions.get(symbol)) return; // already requested/placed for this trade
     if (candle.time <= open.entryTime) return; // same conservative "next candle" ordering as everywhere else in this project
+    // 2026-09-15 (Esdras, after seeing the numbers - see HANDOFF.md): a
+    // pyramid leg that fires while its own symbol is still in cooldown from
+    // a recent loss performs dramatically worse (4-12% win rate, net
+    // negative) than one that fires clear of it (50-60% win rate, strongly
+    // positive) - a recent loss on this symbol looks like a leading
+    // indicator of a choppier regime, exactly where adding a second unit is
+    // most likely to also get whipsawed. Previously this function never
+    // consulted the guardrail at all. Same canTakeNewTrade(now, symbol) call
+    // every other live source already uses via _blockReason() - covers the
+    // per-symbol cooldown this was actually tested against, plus
+    // maxTradesPerDay/dailyLossLimitPct/overall-drawdown for free (adding
+    // MORE exposure once any of those has already tripped make no sense
+    // either). guardrailNow (NOT candle.time directly) - same live -5h
+    // candle-time-shift lesson already applied to every other source's own
+    // guardrail check (see ingestCandle()'s own comment) - candle.time is
+    // the shifted "fixed EST as UTC" engine clock in live operation, wrong
+    // for GuardrailEngine's real-calendar-day bookkeeping.
+    if (!this.guardrail.canTakeNewTrade(guardrailNow, symbol)) return;
 
     const addAtR = this.pyramidConfig.addAtR ?? 1;
     const bullish = open.direction === 'bullish';
@@ -384,12 +518,16 @@ export class LiveStrategyEngine {
     return this.pyramidPositions.get(symbol) || null;
   }
 
-  _blockReason(symbol, distance, candle) {
+  _blockReason(symbol, distance, candle, guardrailNow = candle.time) {
     const spread = this.spreads[symbol] ?? 0;
     if (this.openPositions.has(symbol)) return 'netting';
     if (!(distance > 0)) return 'invalid-distance';
     if (spread > 0 && distance < spread * MIN_DISTANCE_SPREAD_MULTIPLE) return 'spread-too-tight';
-    if (!this.guardrail.canTakeNewTrade(candle.time)) return 'guardrail';
+    // guardrailNow, NOT candle.time directly (2026-09-14) - see
+    // ingestCandle()'s own comment for the full story: candle.time is the
+    // shifted "fixed EST as UTC" engine clock, wrong for GuardrailEngine's
+    // real-calendar-day bookkeeping in live operation.
+    if (!this.guardrail.canTakeNewTrade(guardrailNow, symbol)) return 'guardrail';
     return null;
   }
 
@@ -411,7 +549,7 @@ export class LiveStrategyEngine {
     return buildFilteredEngine(candles, symbol, cfg).engine;
   }
 
-  _detectFvgSignal(symbol, candle) {
+  _detectFvgSignal(symbol, candle, guardrailNow = candle.time) {
     const cfg = this.fvgConfig[symbol];
     const hist = this.history.get(symbol);
     const formationIndex = this.formationIndexBySymbol.get(symbol);
@@ -426,7 +564,7 @@ export class LiveStrategyEngine {
       }
     }
 
-    return lastEvents.map((e) => this._processFvgEvent(symbol, cfg, candle, e, hist, formationIndex));
+    return lastEvents.map((e) => this._processFvgEvent(symbol, cfg, candle, e, hist, formationIndex, guardrailNow));
   }
 
   /**
@@ -437,9 +575,12 @@ export class LiveStrategyEngine {
    * candle) and the bulk warm-up path below (_warmUpOneSymbol, called once
    * per HISTORICAL candle in a single engine pass) - both must produce
    * bit-for-bit identical results for the same (symbol, candle, event), so
-   * this is the ONE place that logic lives.
+   * this is the ONE place that logic lives. `guardrailNow` defaults to
+   * `candle.time` (2026-09-14) - correct as-is for warm-up (its own
+   * simulated clock), overridden with real Date.now() only by the live
+   * call site - see ingestCandle()'s own comment for why.
    */
-  _processFvgEvent(symbol, cfg, candle, e, hist, formationIndex) {
+  _processFvgEvent(symbol, cfg, candle, e, hist, formationIndex, guardrailNow = candle.time) {
     if (e.type === 'watching' || e.type === 'expired') {
       return { ...e, source: 'fvg' };
     }
@@ -456,7 +597,7 @@ export class LiveStrategyEngine {
       swingLookback: 10,
     });
     const distance = Math.abs(entryPrice - stopPrice);
-    const blockedReason = this._blockReason(symbol, distance, candle);
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
 
     const signal = { ...e, source: 'fvg', entryPrice, stopPrice, distance, rrMultiple: cfg.rrMultiple, blockedReason };
 
@@ -484,7 +625,7 @@ export class LiveStrategyEngine {
     return signal;
   }
 
-  _detectDivergenceSignal(symbol, candle) {
+  _detectDivergenceSignal(symbol, candle, guardrailNow = candle.time) {
     const cfg = this.divergenceConfig;
     const [symA, symB] = cfg.pair;
     const histA = this.history.get(symA);
@@ -495,7 +636,7 @@ export class LiveStrategyEngine {
     const candidate = candidates.find((cd) => cd.entryTime === candle.time && cd.symbol === symbol);
     if (!candidate) return [];
 
-    return [this._processDivergenceCandidate(symbol, candle, candidate)];
+    return [this._processDivergenceCandidate(symbol, candle, candidate, guardrailNow)];
   }
 
   /**
@@ -548,10 +689,10 @@ export class LiveStrategyEngine {
   }
 
   /** Shared tail of divergence signal handling - same role as _processFvgEvent() above. */
-  _processDivergenceCandidate(symbol, candle, candidate) {
+  _processDivergenceCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
     const cfg = this.divergenceConfig;
     const distance = candidate.stopDistance;
-    const blockedReason = this._blockReason(symbol, distance, candle);
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
     const entryPrice = candle.open;
     const stopPrice = entryPrice - distance; // Divergence is always long the laggard
 
@@ -614,11 +755,11 @@ export class LiveStrategyEngine {
     return candidates;
   }
 
-  _detectNwogSignal(symbol, candle) {
+  _detectNwogSignal(symbol, candle, guardrailNow = candle.time) {
     const hist = this.history.get(symbol);
     const candidate = this._computeNwogCandidates(hist).find((cd) => cd.entryTime === candle.time);
     if (!candidate) return [];
-    return [this._processNwogCandidate(symbol, candle, candidate)];
+    return [this._processNwogCandidate(symbol, candle, candidate, guardrailNow)];
   }
 
   /**
@@ -633,7 +774,7 @@ export class LiveStrategyEngine {
    * because _handleAutoExecuteEntry (cTraderDataSource.js) reads it directly
    * to submit the real broker order - every source must set it.
    */
-  _processNwogCandidate(symbol, candle, candidate) {
+  _processNwogCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
     const cfg = this.nwogConfig;
     const bullish = candidate.direction === 'bullish';
     const entryPrice = candle.open; // nwog.js: "Entry at the open of the candle AFTER the gap candle"
@@ -661,7 +802,27 @@ export class LiveStrategyEngine {
       };
     }
 
-    const blockedReason = this._blockReason(symbol, distance, candle);
+    // 2026-09-15: the long/short-direction-split check (built this same day
+    // for GER40 research) applied retroactively to NWOG on US100 - the
+    // symbol it's actually LIVE on - shows the sell side contributes ~0 net
+    // edge (177 trades, totalR -1.70R, essentially breakeven) while buy
+    // carries the entire result (155 trades, totalR +87.43R). At Esdras's
+    // explicit request ("on active achète seulement"), a symbol listed in
+    // cfg.longOnlySymbols skips straight to a blocked signal for bearish
+    // candidates - still reported (informational, same convention as every
+    // other blockedReason here), never opens a real position or reaches
+    // auto-execute.
+    //
+    // 2026-09-16: was a single `cfg.longOnly` boolean applying to every
+    // symbol in `nwog.symbols` - broke the moment a SECOND NWOG symbol
+    // needed the OPPOSITE setting. GER40/NWOG was independently validated
+    // BIDIRECTIONAL (buy/sell split 59/41, no hidden long bias - see
+    // HANDOFF.md "GER40 — vrai spread confirmé... NWOG réhabilité"), unlike
+    // US100's genuine long-only edge above - forcing both through one flag
+    // would have wrongly restricted GER40 to buy-only (unvalidated) or
+    // wrongly reopened US100's known-breakeven sell side. `longOnlySymbols`
+    // (an array, default none) scopes the restriction per-symbol instead.
+    const blockedReason = cfg.longOnlySymbols?.includes(symbol) && !bullish ? 'direction-filtered' : this._blockReason(symbol, distance, candle, guardrailNow);
 
     const signal = {
       type: 'validated',
@@ -720,11 +881,11 @@ export class LiveStrategyEngine {
     return candidates;
   }
 
-  _detectJudasSwingSignal(symbol, candle) {
+  _detectJudasSwingSignal(symbol, candle, guardrailNow = candle.time) {
     const hist = this.history.get(symbol);
     const candidate = this._computeJudasSwingCandidates(hist).find((cd) => cd.entryTime === candle.time);
     if (!candidate) return [];
-    return [this._processJudasSwingCandidate(symbol, candle, candidate)];
+    return [this._processJudasSwingCandidate(symbol, candle, candidate, guardrailNow)];
   }
 
   /**
@@ -737,7 +898,7 @@ export class LiveStrategyEngine {
    * failure mode on EURUSD specifically (checked before shipping this) -
    * cheap, permanent insurance rather than assuming it can't happen here.
    */
-  _processJudasSwingCandidate(symbol, candle, candidate) {
+  _processJudasSwingCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
     const cfg = this.judasSwingConfig;
     const bullish = candidate.direction === 'bullish';
     const entryPrice = candle.open; // judasSwing.js: "Entry at the OPEN of the next candle after the reclaim"
@@ -763,7 +924,7 @@ export class LiveStrategyEngine {
       };
     }
 
-    const blockedReason = this._blockReason(symbol, distance, candle);
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
 
     const signal = {
       type: 'validated',
@@ -785,6 +946,311 @@ export class LiveStrategyEngine {
       const riskAmount = this.balance * (this.riskPctPerTrade / 100);
       this.openPositions.set(symbol, {
         source: 'judaswing',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
+  }
+
+  /**
+   * Pure computation of every Weekly Liquidity Sweep entry candidate implied
+   * by one symbol's full candle history - reuses detectWeeklySweepEvents()
+   * (src/backtest/weeklyLiquiditySweep.js) UNCHANGED (PWH/PWL sweep+reclaim,
+   * no time-of-day restriction - not reimplemented here), then shifts each
+   * event forward one candle to its entry, same pattern as
+   * _computeNwogCandidates()/_computeJudasSwingCandidates() above.
+   */
+  _computeWeeklySweepCandidates(candles) {
+    const events = detectWeeklySweepEvents(candles);
+    const candidates = [];
+    for (const e of events) {
+      const entryIndex = e.index + 1;
+      if (entryIndex >= candles.length) continue; // signal candle is the most recent one - entry hasn't printed yet
+      candidates.push({ direction: e.direction, entryTime: candles[entryIndex].time, stopReference: e.sweepExtreme });
+    }
+    return candidates;
+  }
+
+  _detectWeeklySweepSignal(symbol, candle, guardrailNow = candle.time) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeWeeklySweepCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processWeeklySweepCandidate(symbol, candle, candidate, guardrailNow)];
+  }
+
+  /**
+   * Shared tail of Weekly Liquidity Sweep signal handling - same shape and
+   * same openPositions/netting/auto-execute participation as
+   * _processNwogCandidate()/_processJudasSwingCandidate() above (2026-09-15,
+   * GER40 - Esdras's explicit "on va plus vite" request, straight to full
+   * auto-execute, no alert-only observation phase first - see HANDOFF.md for
+   * the research this was validated against and its stated caveats: a single
+   * train/test split, never observed live before now). Same validStopSide
+   * guard as every other source here, same reasoning (smtDivergence.js's
+   * lesson) even though never observed to fail on GER40 specifically.
+   */
+  _processWeeklySweepCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
+    const cfg = this.weeklySweepConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // weeklyLiquiditySweep.js: "Entry at the OPEN of the next candle after the reclaim"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `weeklysweep-${symbol}-${candle.time}`;
+    const suggestedSide = bullish ? 'buy' : 'sell';
+
+    if (distance <= 0 || !validStopSide) {
+      return {
+        type: 'validated',
+        source: 'weeklysweep',
+        symbol,
+        id,
+        direction: candidate.direction,
+        suggestedSide,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
+
+    const signal = {
+      type: 'validated',
+      source: 'weeklysweep',
+      symbol,
+      id,
+      direction: candidate.direction,
+      suggestedSide,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'weeklysweep',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
+  }
+
+  /**
+   * Pure computation of every Breaker Block entry candidate implied by one
+   * symbol's full candle history - now a thin alias for
+   * computeBreakerBlockCandidates() (src/backtest/breakerBlock.js), which
+   * holds the actual watchBreak/watchRetest/pendingEntry state machine
+   * (extracted 2026-09-17 so tradeCompliance.js's checklist reconstruction
+   * and this engine share ONE implementation instead of two copies that
+   * could silently drift - same discipline as detectNwogEvents/
+   * detectJudasSwingEvents/detectWeeklySweepEvents already being the single
+   * source of truth for their own mechanisms). See that function's own doc
+   * comment for the full behavior description (position-agnostic detector,
+   * not gated on "is a trade currently open" - the shared netting layer
+   * decides that).
+   */
+  _computeBreakerBlockCandidates(candles) {
+    return computeBreakerBlockCandidates(candles);
+  }
+
+  _detectBreakerBlockSignal(symbol, candle, guardrailNow = candle.time) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeBreakerBlockCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processBreakerBlockCandidate(symbol, candle, candidate, guardrailNow)];
+  }
+
+  /**
+   * Shared tail of Breaker Block signal handling - same shape and same
+   * openPositions/netting/auto-execute participation as
+   * _processNwogCandidate()/_processJudasSwingCandidate()/
+   * _processWeeklySweepCandidate() above (2026-09-16, GER40 - rehabilitated
+   * with the real 0.5 spread and the same robustness checks that validated
+   * NWOG, see HANDOFF.md). No direction filter - GER40/Breaker Block was
+   * validated bidirectional (60% buy / 40% sell, not a hidden long-bias
+   * trap), unlike US100/NWOG's genuine long-only edge. Same validStopSide
+   * guard as every other source here (smtDivergence.js's lesson).
+   */
+  _processBreakerBlockCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
+    const cfg = this.breakerBlockConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // breakerBlock.js: "Entry trigger = a retest... at the open of the candle after"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `breakerblock-${symbol}-${candle.time}`;
+    const suggestedSide = bullish ? 'buy' : 'sell';
+
+    if (distance <= 0 || !validStopSide) {
+      return {
+        type: 'validated',
+        source: 'breakerblock',
+        symbol,
+        id,
+        direction: candidate.direction,
+        suggestedSide,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
+
+    const signal = {
+      type: 'validated',
+      source: 'breakerblock',
+      symbol,
+      id,
+      direction: candidate.direction,
+      suggestedSide,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'breakerblock',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
+  }
+
+  /**
+   * Pure computation of every Silver Bullet entry candidate implied by one
+   * symbol's full candle history - now a thin alias for
+   * computeSilverBulletCandidates() (src/backtest/silverBullet.js), which
+   * holds the actual active-zone/mitigation state machine (extracted
+   * 2026-09-17, same reasoning as _computeBreakerBlockCandidates() above:
+   * tradeCompliance.js's checklist reconstruction and this engine now
+   * share ONE implementation instead of two copies that could silently
+   * drift). See that function's own doc comment for the full behavior
+   * description.
+   */
+  _computeSilverBulletCandidates(candles) {
+    return computeSilverBulletCandidates(candles);
+  }
+
+  _detectSilverBulletSignal(symbol, candle, guardrailNow = candle.time) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeSilverBulletCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processSilverBulletCandidate(symbol, candle, candidate, guardrailNow)];
+  }
+
+  /**
+   * Shared tail of Silver Bullet signal handling - same shape and same
+   * openPositions/netting/auto-execute participation as
+   * _processNwogCandidate()/_processJudasSwingCandidate()/
+   * _processWeeklySweepCandidate()/_processBreakerBlockCandidate() above
+   * (2026-09-17, US100/US500/GER40 - see config.js's `silverBullet` comment
+   * and HANDOFF.md). No direction filter - validated bidirectional on all 3
+   * symbols (buy AND sell positive, both the 2019-2025 train/test split and
+   * the real cTrader forward-test), unlike US100/NWOG's genuine long-only
+   * edge. Same validStopSide guard as every other source here
+   * (smtDivergence.js's lesson).
+   */
+  _processSilverBulletCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
+    const cfg = this.silverBulletConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // silverBullet.js: "Entry at the open of the candle after mitigation"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `silverbullet-${symbol}-${candle.time}`;
+    const suggestedSide = bullish ? 'buy' : 'sell';
+
+    if (distance <= 0 || !validStopSide) {
+      return {
+        type: 'validated',
+        source: 'silverbullet',
+        symbol,
+        id,
+        direction: candidate.direction,
+        suggestedSide,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
+
+    const signal = {
+      type: 'validated',
+      source: 'silverbullet',
+      symbol,
+      id,
+      direction: candidate.direction,
+      suggestedSide,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'silverbullet',
         id,
         direction: candidate.direction,
         entryIndex: this.history.get(symbol).length - 1,
@@ -890,6 +1356,32 @@ export class LiveStrategyEngine {
         ? this._computeJudasSwingCandidates(candles)
         : null;
 
+    // Weekly Liquidity Sweep candidates (2026-09-15, GER40 - see config.js's
+    // `weeklySweep` comment and HANDOFF.md). Same shape as NWOG/Judas Swing's
+    // own precomputation above: only needs this symbol's own final history.
+    const weeklySweepCandidates =
+      this.weeklySweepConfig && this.weeklySweepConfig.symbols.includes(symbol)
+        ? this._computeWeeklySweepCandidates(candles)
+        : null;
+
+    // Breaker Block candidates (2026-09-16, GER40 - see config.js's
+    // `breakerBlock` comment and HANDOFF.md). Same shape as NWOG/Judas
+    // Swing/Weekly Sweep's own precomputation above: only needs this
+    // symbol's own final history.
+    const breakerBlockCandidates =
+      this.breakerBlockConfig && this.breakerBlockConfig.symbols.includes(symbol)
+        ? this._computeBreakerBlockCandidates(candles)
+        : null;
+
+    // Silver Bullet candidates (2026-09-17, US100/US500/GER40 - see
+    // config.js's `silverBullet` comment and HANDOFF.md). Same shape as
+    // NWOG/Judas Swing/Weekly Sweep/Breaker Block's own precomputation
+    // above: only needs this symbol's own final history.
+    const silverBulletCandidates =
+      this.silverBulletConfig && this.silverBulletConfig.symbols.includes(symbol)
+        ? this._computeSilverBulletCandidates(candles)
+        : null;
+
     for (let i = 0; i < candles.length; i++) {
       const candle = candles[i];
       if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
@@ -935,6 +1427,30 @@ export class LiveStrategyEngine {
         const candidate = judasSwingCandidates.find((cd) => cd.entryTime === candle.time);
         if (candidate) {
           const signal = this._processJudasSwingCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (weeklySweepCandidates) {
+        const candidate = weeklySweepCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processWeeklySweepCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (breakerBlockCandidates) {
+        const candidate = breakerBlockCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processBreakerBlockCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (silverBulletCandidates) {
+        const candidate = silverBulletCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processSilverBulletCandidate(symbol, candle, candidate);
           if (onEvent) onEvent(signal, candle);
         }
       }

@@ -7,14 +7,26 @@
 <!-- PWA (2026-09, at the user's request: "entrer direct sans passer par
      Chrome") - installable on iOS/Android home screen, opens without browser
      chrome (address bar/tabs). See public/manifest.json + sw.js. -->
+<script src="/theme.js"></script>
+<script src="/chat-widget.js" defer></script>
 <link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#0b0f14" />
+<meta name="theme-color" content="#0b0f14" data-dark="#0b0f14" data-light="#f6f7f9" />
 <link rel="icon" href="/icons/icon-192.png" type="image/png" />
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Apex FVG" />
 <style>
+  /* 2026-09-14 (Esdras: "j'aimerais que mon dashboard soit comme Les
+     dashboard des grands compagnies de trading... trop simple" - chose
+     "terminal sombre type Bloomberg/prop firm" over a softer consumer-broker
+     look when asked which direction). Same color roles as before (kept so
+     every existing win/loss/pill/badge class still means the same thing),
+     but every SHAPE decision moves toward "dense data terminal": corners go
+     from soft (10px) to near-square (3px), body copy tightens, headers/
+     labels go monospace (a real terminal doesn't switch fonts between
+     numbers and labels), and a permanent 3-up status strip + live clock
+     replace what used to be a single stacked column of cards. */
   :root {
     --bg: #05070a;
     --bg-inset: #0a0e13;
@@ -31,142 +43,226 @@
     --blue: #4c9eff;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
-    --radius: 10px;
-    --shadow-card: 0 1px 0 rgba(255,255,255,0.02) inset, 0 10px 24px -16px rgba(0,0,0,0.7);
+    --radius: 3px;
+  }
+  /* Light theme (2026-09-15, Esdras: "j'aimerais avoir la couleur blanche
+     aussi du site") - same tokens, light values, toggled via theme.js
+     setting data-theme="light" on <html>. */
+  :root[data-theme="light"] {
+    --bg: #f6f7f9;
+    --bg-inset: #ececf0;
+    --panel: #ffffff;
+    --panel-2: #f1f2f5;
+    --panel-border: #dcdfe4;
+    --panel-border-strong: #c3c8d1;
+    --text: #14181f;
+    --muted: #4c5560;
+    --faint: #8a919c;
+    --green: #16915a;
+    --red: #d1383b;
+    --amber: #b3790f;
+    --blue: #2158d0;
   }
   * { box-sizing: border-box; }
   html { background: var(--bg); }
   body {
     margin: 0;
-    background:
-      radial-gradient(1200px 500px at 50% -10%, rgba(76,158,255,0.06), transparent 60%),
-      var(--bg);
+    background: var(--bg);
     color: var(--text);
     font-family: var(--sans);
     -webkit-font-smoothing: antialiased;
     padding: 0 16px 32px;
-    max-width: 1180px;
+    max-width: 1360px;
     margin: 0 auto;
+    font-size: 13px;
   }
   ::selection { background: rgba(76,158,255,0.35); }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-thumb { background: var(--panel-border-strong); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--panel-border-strong); border-radius: 0; }
 
-  /* ---------- Header ---------- */
+  /* ---------- Header (terminal chrome: brand + live clock + connection banner) ---------- */
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 16px; padding: 20px 4px 16px; flex-wrap: wrap;
+    gap: 16px; padding: 12px 4px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--panel-border);
   }
-  .topbar-brand { display: flex; align-items: center; gap: 12px; }
+  .topbar-brand { display: flex; align-items: center; gap: 10px; }
   .brand-mark {
-    width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(155deg, #4c9eff, #2f6fd6); color: #fff; font-weight: 800; font-size: 15px;
-    box-shadow: 0 4px 14px -4px rgba(76,158,255,0.7); flex-shrink: 0;
+    width: 28px; height: 28px; border-radius: 3px; display: flex; align-items: center; justify-content: center;
+    background: var(--bg-inset); color: var(--blue); font-weight: 800; font-size: 12px; font-family: var(--mono);
+    border: 1px solid var(--panel-border-strong); flex-shrink: 0;
   }
-  h1 { font-size: 17px; margin: 0; letter-spacing: 0.1px; }
-  .subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  h1 { font-size: 14px; margin: 0; letter-spacing: 0.3px; font-family: var(--mono); font-weight: 700; text-transform: uppercase; }
+  .subtitle { color: var(--faint); font-size: 10.5px; margin-top: 2px; font-family: var(--mono); letter-spacing: 0.2px; }
+
+  #clock {
+    font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.5px;
+    padding: 0 12px; border-left: 1px solid var(--panel-border); border-right: 1px solid var(--panel-border);
+  }
+  @media (max-width: 640px) { #clock { display: none; } }
 
   .banner {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 7px 14px 7px 10px;
-    border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 10px;
+    border-radius: var(--radius);
     font-weight: 600;
-    font-size: 12.5px;
+    font-size: 11.5px;
     letter-spacing: 0.2px;
     white-space: nowrap;
     font-family: var(--mono);
   }
   .banner::before {
-    content: ''; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-    box-shadow: 0 0 0 3px currentColor / 20%;
+    content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
   }
-  .banner.demo { background: rgba(232,179,57,0.12); color: var(--amber); border: 1px solid rgba(232,179,57,0.35); }
-  .banner.live { background: rgba(47,212,128,0.12); color: var(--green); border: 1px solid rgba(47,212,128,0.35); }
+  .banner.demo { background: rgba(232,179,57,0.1); color: var(--amber); border: 1px solid rgba(232,179,57,0.35); }
+  .banner.live { background: rgba(47,212,128,0.1); color: var(--green); border: 1px solid rgba(47,212,128,0.35); }
   .banner.live::before { animation: pulse-dot 2s ease-in-out infinite; }
   @keyframes pulse-dot {
     0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(47,212,128,0.5); }
     50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(47,212,128,0); }
   }
 
-  /* ---------- Ticker (live prices, prominent) ---------- */
+  /* ---------- Positions ouvertes, temps réel (2026-09-15, Esdras: "un
+     endroit au-dessus de la partie garde-fou, compte réel qui me montre les
+     positions réelles [...] comme les brokers") - même table de sources
+     réelles que le petit bloc déjà dans "Compte réel" (data.positions, voir
+     accountReconciliation.js), juste sa propre section dédiée, mise en
+     avant, plutôt qu'une liste à puces noyée dans une carte de stats. ---------- */
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse-dot 2s ease-in-out infinite; }
+  .positions-table td.pnl-cell, .positions-table th.pnl-cell { text-align: right; }
+
+  /* ---------- Ticker (live prices, dense market-strip style) ---------- */
   .ticker {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px;
     background: var(--panel-border);
     border: 1px solid var(--panel-border);
-    border-radius: var(--radius);
+    border-radius: 0;
     overflow: hidden;
-    margin-bottom: 14px;
-    box-shadow: var(--shadow-card);
+    margin: 10px 0 14px;
   }
   @media (max-width: 640px) { .ticker { grid-template-columns: 1fr; } }
   .ticker-cell {
     background: var(--panel);
-    padding: 12px 16px;
+    padding: 8px 12px;
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border-left: 2px solid transparent;
   }
-  .ticker-sym { font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; }
-  .ticker-sym .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--blue); margin-right: 6px; vertical-align: 1px; }
-  .ticker-price { font-family: var(--mono); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
+  .ticker-sym { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; font-family: var(--mono); }
+  .ticker-sym .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--blue); margin-right: 6px; vertical-align: 1px; }
+  .ticker-price { font-family: var(--mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; transition: color 0.6s ease; }
   .ticker-price.flash-up { color: var(--green); }
   .ticker-price.flash-down { color: var(--red); }
-  .ticker-meta { font-size: 11px; color: var(--faint); font-family: var(--mono); }
-  .ticker-pos { color: var(--blue); font-size: 11px; font-weight: 700; }
+  .ticker-meta { font-size: 10px; color: var(--faint); font-family: var(--mono); }
+  .ticker-pos { color: var(--blue); font-size: 10px; font-weight: 700; }
+  /* Deliberately distinct from .ticker-pos (2026-09-13, honesty fix - see
+     server.js's withRealTimePosition): this is the engine's own unconfirmed
+     belief, not yet matched to a real broker fill in orderOutcomeLog. */
+  .ticker-signal { color: var(--amber); font-size: 10px; font-weight: 700; }
+
+  /* ---------- Hero strip (2026-09-15, Esdras: "rend mon site encore plus
+     impressionnant/professionnel") - the headline numbers (real equity,
+     today's real P&L, all-time journal performance) get ONE glanceable row
+     right under the ticker, before anything else - a real trading terminal
+     leads with "how is this actually doing", not three clicks/scrolls in.
+     Reuses .metric-tile's exact tile shape (same visual language as the
+     rest of the page) with a bigger value size and a top accent bar to read
+     as the primary strip, not a duplicate of the metrics further down (this
+     shows real/live figures - balance, today's P&L; the metrics card below
+     still owns the full historical breakdown/strategy table). Text/numbers
+     only, deliberately - no chart here (see the comment above the ticker
+     for why: Esdras keeps this page open at work and explicitly does not
+     want anything chart-shaped instantly readable as "trading" on it). */
+  .hero-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; margin: 0 0 14px; background: var(--panel-border); border: 1px solid var(--panel-border); border-top: 2px solid var(--blue); }
+  .hero-tile { background: var(--panel); padding: 11px 13px; }
+  .hero-tile .hero-label { color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; font-family: var(--mono); }
+  .hero-tile .hero-value { font-family: var(--mono); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+  .hero-tile .hero-value.win { color: var(--green); }
+  .hero-tile .hero-value.loss { color: var(--red); }
+  .hero-tile .hero-sub { font-size: 10px; color: var(--faint); font-family: var(--mono); margin-top: 3px; }
+  @media (max-width: 640px) { .hero-tile .hero-value { font-size: 19px; } }
 
   /* ---------- Layout ---------- */
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-bottom: 12px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+  .grid .card { margin-bottom: 0; border: none; }
   @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  /* Permanent 3-up status strip (2026-09-14) - a real trading terminal shows
+     account/risk/execution-mode side by side at all times, never stacked
+     full-width one under the other. Same background-as-grid-line trick as
+     .grid/.ticker above (1px gaps painted by the parent's own background,
+     no extra border rules needed per cell). */
+  .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-bottom: 12px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+  .status-grid .card { margin-bottom: 0; border: none; }
+  @media (max-width: 900px) { .status-grid { grid-template-columns: 1fr; } }
   .card {
-    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    background: var(--panel);
     border: 1px solid var(--panel-border);
     border-radius: var(--radius);
-    padding: 16px 18px;
-    margin-bottom: 12px;
-    box-shadow: var(--shadow-card);
+    padding: 12px 14px;
+    margin-bottom: 10px;
   }
-  .grid .card { margin-bottom: 0; }
   .card h2 {
-    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700;
-    color: var(--muted); margin: 0 0 12px; padding-bottom: 10px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
+    color: var(--muted); margin: 0 0 10px; padding-bottom: 8px;
     border-bottom: 1px solid var(--panel-border);
     display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--mono);
   }
-  .meta { color: var(--muted); font-size: 12px; }
+  .meta { color: var(--muted); font-size: 11.5px; }
+
+  /* Group headers between sections of cards (2026-09-14, Esdras: dashboard
+     read as a flat, undifferentiated stack of 13 cards - grouping by what
+     each answers - "is it healthy right now" / "what's the bot seeing" /
+     "what actually happened" / "tools" - and labeling each group makes that
+     structure visible instead of implied by card order alone). Styled as a
+     terminal panel divider: bracketed label + a rule filling the rest of
+     the row, rather than a plain floating line of text. */
+  .section-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;
+    color: var(--faint); margin: 22px 0 8px; padding: 0 2px;
+    font-family: var(--mono);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::before { content: '//'; color: var(--panel-border-strong); }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--panel-border); }
+  .section-title:first-of-type { margin-top: 4px; }
 
   /* ---------- Journal filters + CSV export ---------- */
   .btn-ghost {
-    text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 11.5px;
+    text-transform: none; letter-spacing: normal; font-weight: 600; font-size: 11px;
     background: transparent; color: var(--blue); border: 1px solid var(--panel-border-strong);
-    border-radius: 6px; padding: 4px 9px; margin: 0; cursor: pointer;
+    border-radius: var(--radius); padding: 4px 9px; margin: 0; cursor: pointer; font-family: var(--mono);
   }
   .btn-ghost:hover { background: rgba(76,158,255,0.1); }
   .journal-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   .filter-select {
-    padding: 6px 9px; border-radius: 7px; border: 1px solid var(--panel-border);
-    background: var(--bg-inset); color: var(--text); font-size: 12.5px; font-family: var(--sans);
+    padding: 5px 8px; border-radius: var(--radius); border: 1px solid var(--panel-border);
+    background: var(--bg-inset); color: var(--text); font-size: 11.5px; font-family: var(--mono);
   }
   .filter-select:focus { outline: none; border-color: var(--blue); }
 
   /* ---------- Nav tabs ---------- */
-  .topnav { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--panel-border); }
+  .topnav { display: flex; align-items: center; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--panel-border); }
   .topnav a {
-    color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 600;
-    padding: 9px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.2px;
-    transition: color 0.15s ease;
+    color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600;
+    padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px;
+    transition: color 0.15s ease; font-family: var(--mono); text-transform: uppercase;
   }
   .topnav a:hover { color: var(--text); }
-  .topnav a.active { color: var(--text); border-bottom-color: var(--blue); }
+  .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; }
+  .theme-toggle-btn:hover { border-color: var(--panel-border-strong); }
 
   /* ---------- Multi-account switcher + overview (2026-09, Phase 3 of the
      multi-account rollout - see HANDOFF.md "Multi-compte") - hidden
      entirely while only one account exists (today's reality), so nothing
      changes visually until a second real account is actually configured. ---------- */
   #account-switcher-wrap { display: flex; align-items: center; gap: 7px; }
-  #account-switcher-wrap label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
-  #account-switcher { padding: 6px 9px; border-radius: 7px; border: 1px solid var(--panel-border); background: var(--bg-inset); color: var(--text); font-size: 12.5px; font-family: var(--sans); }
+  #account-switcher-wrap label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; font-family: var(--mono); }
+  #account-switcher { padding: 5px 8px; border-radius: var(--radius); border: 1px solid var(--panel-border); background: var(--bg-inset); color: var(--text); font-size: 11.5px; font-family: var(--mono); }
   .account-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
   .account-overview-row {
-    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px;
-    padding: 10px 12px; cursor: pointer; transition: border-color 0.15s ease;
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius);
+    padding: 10px 12px; cursor: pointer; transition: border-color 0.15s ease; font-family: var(--mono);
   }
   .account-overview-row:hover { border-color: var(--panel-border-strong); }
   .account-overview-row.active { border-color: var(--blue); }
@@ -178,8 +274,8 @@
      itself: nothing to see until a second real account exists. */
   .firm-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
   .firm-tab {
-    padding: 6px 14px; border-radius: 999px; border: 1px solid var(--panel-border); background: var(--bg-inset);
-    color: var(--muted); font-size: 12.5px; font-family: var(--sans); font-weight: 600; cursor: pointer;
+    padding: 5px 12px; border-radius: var(--radius); border: 1px solid var(--panel-border); background: var(--bg-inset);
+    color: var(--muted); font-size: 11.5px; font-family: var(--mono); font-weight: 600; cursor: pointer;
     transition: border-color 0.15s ease, color 0.15s ease;
   }
   .firm-tab:hover { border-color: var(--panel-border-strong); }
@@ -187,58 +283,72 @@
   .firm-tab .count { color: var(--muted); font-weight: 400; }
 
   /* ---------- Stats / pills ---------- */
-  .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 13.5px; }
-  .stat-row .label { color: var(--muted); font-size: 12.5px; }
+  .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; font-size: 12.5px; }
+  .stat-row .label { color: var(--muted); font-size: 11.5px; }
   .stat-row > span:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; font-family: var(--mono); }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: var(--radius); font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px; font-family: var(--mono); }
   .pill.ok { background: rgba(47,212,128,0.12); color: var(--green); }
   .pill.blocked { background: rgba(255,92,95,0.12); color: var(--red); }
+  .pill.simulated { background: rgba(232,179,57,0.14); color: var(--amber); }
+
+  /* ---------- Progression du challenge (2026-09-15, Esdras) - une barre
+     entre le plancher de drawdown (gauche, toujours 0%) et la cible de
+     profit (droite, toujours 100%) ; le solde de départ se place quelque
+     part entre les deux selon leurs valeurs réelles - jamais supposé être
+     au milieu. ---------- */
+  .challenge-bar-wrap { position: relative; height: 22px; background: var(--bg-inset); border-radius: var(--radius); margin: 10px 0 6px; overflow: hidden; }
+  .challenge-bar-track { position: absolute; inset: 0; }
+  .challenge-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; background: rgba(76,158,255,0.35); transition: width 0.3s ease; }
+  .challenge-bar-fill.breached { background: rgba(255,92,95,0.45); }
+  .challenge-bar-marker { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); opacity: 0.5; }
+  .challenge-bar-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); font-family: var(--mono); }
 
   /* ---------- Signal lists ---------- */
   .signal-list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
-  .signal-item { padding: 9px 2px; border-bottom: 1px solid var(--panel-border); font-size: 13px; line-height: 1.5; }
+  .signal-item { padding: 7px 2px; border-bottom: 1px solid var(--panel-border); font-size: 12px; line-height: 1.5; font-family: var(--mono); }
   .signal-item:last-child { border-bottom: none; }
   .signal-item .dir-bullish { color: var(--green); font-weight: 700; }
   .signal-item .dir-bearish { color: var(--red); font-weight: 700; }
-  .signal-item .meta { color: var(--faint); font-size: 11.5px; }
-  .badge-actionable { background: rgba(76,158,255,0.16); color: var(--blue); border: 1px solid rgba(76,158,255,0.35); padding: 1px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 700; margin-left: 6px; letter-spacing: 0.3px; }
-  .badge-blocked { background: rgba(255,92,95,0.1); color: #ff9698; border: 1px solid rgba(255,92,95,0.3); padding: 1px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 700; margin-left: 6px; letter-spacing: 0.3px; }
+  .signal-item .meta { color: var(--faint); font-size: 10.5px; }
+  .badge-actionable { background: rgba(76,158,255,0.16); color: var(--blue); border: 1px solid rgba(76,158,255,0.35); padding: 1px 6px; border-radius: var(--radius); font-size: 9.5px; font-weight: 700; margin-left: 6px; letter-spacing: 0.3px; }
+  .badge-blocked { background: rgba(255,92,95,0.1); color: #ff9698; border: 1px solid rgba(255,92,95,0.3); padding: 1px 6px; border-radius: var(--radius); font-size: 9.5px; font-weight: 700; margin-left: 6px; letter-spacing: 0.3px; }
 
   /* ---------- Forms / calculator ---------- */
   form.calc { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  form.calc label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); display: block; margin-bottom: 5px; font-weight: 600; }
+  form.calc label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--faint); display: block; margin-bottom: 5px; font-weight: 600; font-family: var(--mono); }
   form.calc input, form.calc select {
-    width: 100%; padding: 9px 10px; border-radius: 7px; border: 1px solid var(--panel-border);
-    background: var(--bg-inset); color: var(--text); font-size: 14px; font-family: var(--mono);
+    width: 100%; padding: 8px 9px; border-radius: var(--radius); border: 1px solid var(--panel-border);
+    background: var(--bg-inset); color: var(--text); font-size: 13px; font-family: var(--mono);
     transition: border-color 0.15s ease;
   }
   form.calc input:focus, form.calc select:focus { outline: none; border-color: var(--blue); }
   form.calc .full { grid-column: 1 / -1; }
   button {
-    background: var(--blue); color: #fff; border: none; border-radius: 7px;
-    padding: 10px 16px; font-size: 13px; font-weight: 700; cursor: pointer; margin-top: 4px;
-    letter-spacing: 0.2px; transition: filter 0.15s ease, transform 0.05s ease;
+    background: var(--blue); color: #05070a; border: none; border-radius: var(--radius);
+    padding: 9px 16px; font-size: 12px; font-weight: 700; cursor: pointer; margin-top: 4px;
+    letter-spacing: 0.4px; transition: filter 0.15s ease, transform 0.05s ease;
+    font-family: var(--mono); text-transform: uppercase;
   }
-  button:hover { filter: brightness(1.1); }
+  button:hover { filter: brightness(1.15); }
   button:active { transform: scale(0.98); }
-  .result { margin-top: 14px; padding: 14px; border-radius: var(--radius); background: var(--bg-inset); border: 1px solid var(--panel-border); font-size: 13.5px; }
-  .result .big { font-size: 26px; font-weight: 800; color: var(--blue); font-family: var(--mono); margin: 4px 0; }
-  .warn { color: var(--amber); font-size: 12px; margin-top: 6px; }
+  .result { margin-top: 12px; padding: 12px; border-radius: var(--radius); background: var(--bg-inset); border: 1px solid var(--panel-border); font-size: 12.5px; }
+  .result .big { font-size: 24px; font-weight: 800; color: var(--blue); font-family: var(--mono); margin: 4px 0; }
+  .warn { color: var(--amber); font-size: 11.5px; margin-top: 6px; }
   .mismatch-alert {
-    margin-top: 10px; padding: 10px 12px; border-radius: 8px;
+    margin-top: 10px; padding: 9px 11px; border-radius: var(--radius);
     background: rgba(232,179,57,0.1); border: 1px solid rgba(232,179,57,0.35);
-    color: var(--amber); font-size: 12.5px; line-height: 1.5;
+    color: var(--amber); font-size: 11.5px; line-height: 1.5;
   }
-  .mismatch-alert strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 12px; }
-  .err { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .mismatch-alert strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 11.5px; }
+  .err { color: var(--red); font-size: 12px; margin-top: 8px; }
   .win { color: var(--green); }
 
   /* ---------- Live price card (legacy list form, still used) ---------- */
-  .price-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; font-family: var(--mono); }
-  .price-row .sym { color: var(--muted); font-family: var(--sans); }
+  .price-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; font-family: var(--mono); }
+  .price-row .sym { color: var(--muted); font-family: var(--mono); }
 
   /* ---------- Auto-execute ---------- */
-  .auto-status { font-size: 13px; margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: var(--bg-inset); border: 1px solid var(--panel-border); }
+  .auto-status { font-size: 12px; margin-bottom: 12px; padding: 9px 11px; border-radius: var(--radius); background: var(--bg-inset); border: 1px solid var(--panel-border); font-family: var(--mono); }
   .auto-status.active { color: var(--green); font-weight: 600; border-color: rgba(47,212,128,0.3); }
   .auto-status.inactive { color: var(--muted); }
   .auto-btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -247,25 +357,36 @@
   button.danger { background: rgba(255,92,95,0.15); color: #ff9698; border: 1px solid rgba(255,92,95,0.4); }
 
   /* ---------- Trade journal ---------- */
-  .journal-item { border-bottom: 1px solid var(--panel-border); padding: 12px 0; }
-  .journal-item:last-child { border-bottom: none; }
-  .journal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 8px; flex-wrap: wrap; gap: 4px; }
+  /* 2026-09-14, Esdras (screenshot): trades read as one continuous strip
+     (a thin border-bottom, 12px padding) instead of separate cards, and
+     each chart was squeezed to 130px tall across the full window width -
+     hard to tell where one trade ends and the next starts, and too short
+     to actually see a position's price action. Each item now reads as its
+     own card (background/border/radius, real gap between them via the
+     parent's own spacing) and the chart is nearly twice as tall. */
+  .journal-item {
+    background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius);
+    padding: 12px 14px; margin-bottom: 10px;
+  }
+  .journal-item:last-child { margin-bottom: 0; }
+  .journal-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; margin-bottom: 10px; flex-wrap: wrap; gap: 4px; font-family: var(--mono); }
   .journal-pnl { font-family: var(--mono); }
   .journal-pnl.win { color: var(--green); font-weight: 700; }
   .journal-pnl.loss { color: var(--red); font-weight: 700; }
-  .journal-chart { width: 100%; height: 130px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; }
+  .journal-chart { width: 100%; height: 240px; display: block; background: var(--bg); border: 1px solid var(--panel-border); border-radius: var(--radius); }
 
   /* ---------- Performance overview (equity curve + key metrics) ---------- */
-  .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 14px; }
-  .metric-tile { background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; padding: 10px 12px; }
-  .metric-tile .metric-label { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; }
-  .metric-tile .metric-value { font-family: var(--mono); font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; margin-bottom: 14px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+  .metric-tile { background: var(--bg-inset); padding: 9px 11px; }
+  .metric-tile .metric-label { color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; font-family: var(--mono); }
+  .metric-tile .metric-value { font-family: var(--mono); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .metric-tile .metric-value.win { color: var(--green); }
   .metric-tile .metric-value.loss { color: var(--red); }
-  .equity-chart { width: 100%; height: 140px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 8px; margin-bottom: 14px; }
-  .strategy-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .strategy-table th { text-align: left; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border); }
-  .strategy-table td { padding: 7px 8px; border-bottom: 1px solid var(--panel-border); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .equity-chart { width: 100%; height: 140px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin-bottom: 14px; }
+  .strategy-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+  .strategy-table th { text-align: left; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border-strong); }
+  .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
+  .strategy-table tr:hover td { background: var(--bg-inset); }
   .strategy-table tr:last-child td { border-bottom: none; }
 </style>
 </head>
@@ -275,20 +396,23 @@
       <div class="brand-mark">AX</div>
       <div>
         <h1>Apex FVG</h1>
-        <div class="subtitle">US100 · US500 · XAUUSD · EURUSD — FVG filtré + Divergence + NWOG + Judas Swing</div>
+        <div class="subtitle">US100 · US500 · XAUUSD · EURUSD · GER40 — FVG filtré + Divergence + NWOG + Judas Swing + Weekly Sweep</div>
       </div>
     </div>
     <div id="account-switcher-wrap" hidden>
       <label for="account-switcher">Compte</label>
       <select id="account-switcher"></select>
     </div>
+    <span id="clock">--:--:--</span>
     <div id="banner" class="banner demo">Chargement…</div>
   </header>
 
   <nav class="topnav">
     <a href="/" class="active">Dashboard</a>
     <a href="/chart.html">Graphique</a>
+    <a href="/journal.html">Journal</a>
     <a href="/accounts.html">Comptes</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
   </nav>
 
   <!-- Vue d'ensemble multi-comptes (2026-09, Phase 3 - voir HANDOFF.md
@@ -303,6 +427,13 @@
 
   <div class="ticker" id="prices-body"><div class="ticker-cell"><span class="ticker-sym">Chargement…</span></div></div>
 
+  <!-- Bandeau principal (2026-09-15) - voir le commentaire CSS .hero-strip
+       pour le pourquoi. Rempli progressivement par renderHeroStrip(), au fil
+       de ce que /status, /account et /trade-log renvoient - jamais de
+       nombre inventé, chaque tuile reste "—" tant que sa source réelle n'a
+       pas encore répondu. -->
+  <div class="hero-strip" id="hero-strip"><div class="hero-tile"><div class="hero-label">Équité (réelle)</div><div class="hero-value">Chargement…</div></div></div>
+
   <!-- Le graphique N'EST PAS intégré ici (revenu en arrière le 2026-09,
        même session) - essayé un temps en <iframe> depuis chart.html, mais
        l'utilisatrice a explicitement demandé de le retirer de ce premier
@@ -314,27 +445,80 @@
        redemander explicitement - discrétion au travail, pas une préférence
        esthétique. -->
 
-  <div class="card">
-    <h2>Garde-fous</h2>
-    <div id="guardrail-body">—</div>
+  <div class="section-title"><span class="live-dot"></span>Positions ouvertes (réelles, temps réel)</div>
+
+  <div class="card" id="open-positions-card">
+    <div class="meta" style="margin-bottom:8px;">Directement depuis le courtier (ProtoOAReconcileReq) — jamais une croyance du bot. P&amp;L flottant estimé au dernier prix vu (pas un flux tick-par-tick).</div>
+    <div id="open-positions-body"><div class="meta">Chargement…</div></div>
   </div>
 
-  <div class="card" id="account-card">
-    <h2>Compte réel (cTrader)</h2>
-    <div class="meta" style="margin-bottom:8px;">Solde/marge réels du courtier ; équité et P&amp;L flottant estimés (dernier prix vu, pas un flux instantané).</div>
-    <div id="account-body">—</div>
+  <div class="section-title">État actuel</div>
+
+  <div class="status-grid">
+    <div class="card">
+      <h2>Garde-fous</h2>
+      <div id="guardrail-body">—</div>
+    </div>
+
+    <div class="card" id="challenge-progress-card">
+      <h2>Progression du challenge</h2>
+      <div id="challenge-progress-body">—</div>
+    </div>
+
+    <div class="card" id="account-card">
+      <h2>Compte réel (cTrader)</h2>
+      <div class="meta" style="margin-bottom:8px;">Solde/marge réels ; équité et P&amp;L flottant estimés (dernier prix vu, pas un flux instantané).</div>
+      <div id="account-body">—</div>
+    </div>
+
+    <div class="card" id="auto-execute-card">
+      <h2>Mode indisponible (exécution auto)</h2>
+      <div id="auto-execute-body">—</div>
+    </div>
   </div>
+
+  <div class="section-title">Signaux</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Signaux d'entrée validés (actionnables)</h2>
+      <ul id="actionable-list" class="signal-list"><li class="signal-item meta">Aucun pour l'instant…</li></ul>
+    </div>
+    <div class="card">
+      <h2>FVG en surveillance</h2>
+      <ul id="watching-list" class="signal-list"><li class="signal-item meta">Aucun pour l'instant…</li></ul>
+    </div>
+  </div>
+
+  <div class="section-title">Journal &amp; performance (réel)</div>
+
+  <!-- 2026-09-15 (Esdras: "pour le journal, ne le mets pas dans la première
+       page, donne-lui un onglet tout seul car il faut le graphe soit
+       grand") - moved to its own page (public/journal.html): performance
+       globale (journal durable), détail par instrument, ET le journal de
+       trading complet avec le graphique par trade (maintenant bien plus
+       grand, avec plusieurs bougies de contexte avant/après - voir ce
+       fichier et cTraderDataSource.js's chartMarginMs). Rien de tout ça
+       n'est calculé une seconde fois ici : le bandeau principal ci-dessus
+       garde son propre appel léger à /trade-log (voir refreshTradeLog plus
+       bas) juste pour ses 3 chiffres, sans reconstruire les cartes. -->
 
   <div class="card" id="order-log-card">
     <h2>Ordres envoyés (résultat réel)</h2>
-    <div class="meta" style="margin-bottom:8px;">Rempli/jamais rempli confirmé par le courtier (pas une supposition) — voir "Écart bot/courtier" ci-dessus pour l'explication d'un ordre jamais rempli.</div>
+    <div class="meta" style="margin-bottom:8px;">Rempli/jamais rempli confirmé par le courtier (pas une supposition) — voir "Écart bot/courtier" plus haut pour l'explication d'un ordre jamais rempli.</div>
     <div id="order-log-body">—</div>
   </div>
 
-  <div class="card" id="auto-execute-card">
-    <h2>Mode indisponible (exécution automatique des entrées)</h2>
-    <div id="auto-execute-body">—</div>
+  <div class="section-title">Simulation (pas des trades réels)</div>
+
+  <div class="card">
+    <h2>Performance récente (90 derniers jours, hypothétique)</h2>
+    <div class="meta" style="margin-bottom:8px;">Simulation sur les 90 derniers jours de vrais prix — pas des trades réels.</div>
+    <div id="recent-perf-summary">Chargement…</div>
+    <div id="recent-perf-list" style="margin-top:8px;"></div>
   </div>
+
+  <div class="section-title">Outils &amp; réglages</div>
 
   <!-- Réglages (2026-09, 4ème et dernière "feature terminal pro" choisie) -
        le risque % est réellement modifiable en direct (setRiskPctPerTrade(),
@@ -352,65 +536,9 @@
       <input type="number" id="settings-risk-input" class="filter-select" step="0.05" min="0.05" max="2" placeholder="ex: 0.5" style="width:100px;" />
       <button type="button" id="settings-risk-save" class="btn-ghost">Enregistrer</button>
     </div>
-    <div class="meta" id="settings-risk-note" style="margin-top:6px;">Effectif immédiatement sur les prochains signaux (jamais rétroactif) — revient à la valeur par défaut au prochain redémarrage, sauf si tu me demandes de la rendre permanente.</div>
+    <div class="meta" id="settings-risk-note" style="margin-top:6px;">Effectif immédiatement sur les prochains signaux (jamais rétroactif) — revient à la valeur par défaut au prochain redémarrage sauf changement permanent en configuration.</div>
     <div class="stat-row" style="margin-top:14px;"><span class="label">Symboles actifs</span><span id="settings-symbols-current">—</span></div>
-    <div class="meta">Non modifiable ici — câblé à la connexion live au démarrage (souscription courtier + 90 jours d'historique par symbole). Demande-moi directement pour ajouter/retirer un symbole (redéploiement nécessaire).</div>
-  </div>
-
-  <div class="grid">
-    <div class="card">
-      <h2>Signaux d'entrée validés (actionnables)</h2>
-      <ul id="actionable-list" class="signal-list"><li class="signal-item meta">Aucun pour l'instant…</li></ul>
-    </div>
-    <div class="card">
-      <h2>FVG en surveillance</h2>
-      <ul id="watching-list" class="signal-list"><li class="signal-item meta">Aucun pour l'instant…</li></ul>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Performance récente (90 derniers jours, hypothétique)</h2>
-    <div class="meta" style="margin-bottom:8px;">Simulation sur les 90 derniers jours de vrais prix — pas des trades réels.</div>
-    <div id="recent-perf-summary">Chargement…</div>
-    <div id="recent-perf-list" style="margin-top:8px;"></div>
-  </div>
-
-  <div class="card">
-    <h2>Performance globale (journal durable)</h2>
-    <div class="meta" style="margin-bottom:8px;">Vrai journal des trades résolus, persisté en base (survit aux redémarrages) — courbe d'équité, métriques et répartition par stratégie.</div>
-    <div id="overview-body">Chargement…</div>
-  </div>
-
-  <div class="card">
-    <h2>Journal durable par instrument</h2>
-    <div class="meta" style="margin-bottom:8px;">Même journal, détaillé par instrument.</div>
-    <div id="trade-log-summary">Chargement…</div>
-  </div>
-
-  <div class="card">
-    <h2 id="journal-heading">Journal de trading<button type="button" id="export-csv-btn" class="btn-ghost" title="Exporter les trades affichés (selon les filtres actifs) en CSV">⬇ CSV</button></h2>
-    <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader) — stop/cible non affichés, cTrader ne les garde pas après clôture.</div>
-    <!-- Filtres (2026-09, "un vrai site... filtres + export CSV du journal") -
-         symbole/stratégie filtrent CÔTÉ CLIENT sur les trades déjà reçus (pas
-         de round-trip courtier pour un simple filtre d'affichage) ; la
-         fenêtre en jours EST envoyée au serveur (?days=N sur
-         /api/trade-history) car c'est la borne réelle de la requête
-         ProtoOADealListReq - voir buildJournalFilterOptions()/refreshTradeHistory()
-         plus bas. Les options symbole/stratégie sont reconstruites à partir
-         des trades RÉELLEMENT reçus (pas une liste figée dans ce fichier) -
-         pas de liste à tenir manuellement à jour à chaque nouvelle stratégie
-         ou instrument. -->
-    <div class="journal-toolbar">
-      <select id="filter-days" class="filter-select" title="Fenêtre (limite du courtier: 7 jours max)">
-        <option value="7">7 jours</option>
-        <option value="3">3 jours</option>
-        <option value="1">24 h</option>
-      </select>
-      <select id="filter-symbol" class="filter-select"><option value="">Tous symboles</option></select>
-      <select id="filter-source" class="filter-select"><option value="">Toutes stratégies</option></select>
-    </div>
-    <div id="journal-summary" style="margin-bottom:10px;"></div>
-    <div id="journal-list"></div>
+    <div class="meta">Non modifiable ici — câblé à la connexion live au démarrage (souscription courtier + 90 jours d'historique par symbole). Ajout/retrait d'un symbole = changement de configuration (redéploiement nécessaire).</div>
   </div>
 
   <div class="card">
@@ -457,7 +585,124 @@ function acctUrl(suffix) {
   return `/api/accounts/${encodeURIComponent(currentAccountId)}${suffix}`;
 }
 
+// Live clock (2026-09-14, "terminal" pass) - purely cosmetic, matches the
+// same local-time convention fmtTime() already uses elsewhere on this page.
+function tickClock() {
+  const el = document.getElementById('clock');
+  if (el) el.textContent = new Date().toLocaleTimeString('fr-FR');
+}
+tickClock();
+setInterval(tickClock, 1000);
+
 const previousPrices = {}; // symbol -> last seen lastPrice, for the ticker's up/down flash effect
+
+// Positions ouvertes, "temps réel" (2026-09-15, Esdras: "le prix actuel ne
+// bouge pas, le pnl ne bouge pas [...] l'équité ne bouge pas") - the full
+// broker reconciliation (/account, real ProtoOAReconcileReq) only runs
+// every 30s (a real broker round-trip, deliberately not hammered faster -
+// see its own setInterval comment), so a viewer staring at the table for
+// 10-15s genuinely saw nothing change. Fix: the SSE /stream push already
+// arrives every ~1s with each symbol's live lastPrice (folded on every real
+// tick, see cTraderDataSource.js) - recompute each position's
+// currentPrice/floating P&L/equity from THAT every second, client-side, no
+// extra broker round-trip. The 30s /account fetch stays the source of
+// truth for the position LIST itself (open/closed, stop/target, balance) -
+// this only refines what's already there between those fetches.
+let lastKnownPositions = [];
+let lastKnownBalance = null;
+
+// Mirrors accountReconciliation.js's enrichRealPosition() floating-P&L math
+// (same sign convention, same swap+commission handling) - kept in sync
+// deliberately, see that file's own header for the formula's reasoning.
+function recomputeFloatingPnl(position, currentPrice) {
+  if (currentPrice === null || currentPrice === undefined || position.entryPrice === null) {
+    return { currentPrice: position.currentPrice, netFloatingPnl: position.netFloatingPnl };
+  }
+  const directionSign = position.direction === 'bullish' ? 1 : -1;
+  const grossFloatingPnl = (currentPrice - position.entryPrice) * position.units * directionSign;
+  const netFloatingPnl = grossFloatingPnl + (position.swap || 0) + (position.commission || 0);
+  return { currentPrice, netFloatingPnl };
+}
+
+function recomputeLivePositions(symbolsData) {
+  if (lastKnownPositions.length === 0) return;
+  const priceBySymbol = {};
+  for (const s of symbolsData || []) priceBySymbol[s.symbol] = s.lastPrice;
+  const recomputed = lastKnownPositions.map((p) => ({ ...p, ...recomputeFloatingPnl(p, priceBySymbol[p.symbol]) }));
+  renderOpenPositions(recomputed);
+  if (lastKnownBalance !== null) {
+    const totalFloating = recomputed.reduce((sum, p) => sum + (p.netFloatingPnl || 0), 0);
+    heroState.equityEstimate = lastKnownBalance + totalFloating;
+    renderHeroStrip();
+  }
+}
+
+// Bandeau principal (2026-09-15) - voir .hero-strip dans le <style> pour le
+// pourquoi. renderStatus()/refreshAccount()/renderOverview() alimentent
+// chacun leur part de cet objet au fil de leurs propres réponses (des
+// endpoints distincts, jamais tous prêts en même temps) puis appellent
+// renderHeroStrip() - jamais de second fetch dédié, uniquement des données
+// déjà récupérées ailleurs sur cette page.
+const heroState = { balance: null, dailyPnl: null, dailyLossPct: null, blocked: null, equityEstimate: null, totalR: null, winRatePct: null, totalTrades: null, freshestTickTime: null };
+// Santé de connexion (2026-09-15, Esdras: liste d'idées demandée) - the
+// simplest honest signal that the live feed is actually alive: age of the
+// MOST RECENT candle across every subscribed symbol. Deliberately not
+// per-symbol-timeframe-aware (an M15 symbol's own candle can legitimately
+// be ~14 min old and still be healthy) - BTCUSD's M1 cadence means the
+// FRESHEST tick across all symbols stays under a couple minutes whenever
+// the connection is genuinely alive, and goes stale together with
+// everything else the moment it isn't. One number, not five.
+function connectionHealth(ageMs) {
+  if (ageMs === null) return { label: '—', cls: '' };
+  ageMs = Math.max(0, ageMs); // clock drift / accelerated demo-mode clocks can put the "latest" candle a hair in the future - never show a negative age
+  if (ageMs < 2 * 60 * 1000) return { label: `🟢 données fraîches (${Math.round(ageMs / 1000)}s)`, cls: 'win' };
+  if (ageMs < 10 * 60 * 1000) return { label: `🟡 ralenti (${Math.round(ageMs / 60000)} min)`, cls: '' };
+  return { label: `🔴 aucune donnée récente (${Math.round(ageMs / 60000)} min)`, cls: 'loss' };
+}
+function renderHeroStrip() {
+  const el = document.getElementById('hero-strip');
+  if (!el) return;
+  const dailyClass = heroState.dailyPnl === null ? '' : heroState.dailyPnl > 0 ? 'win' : heroState.dailyPnl < 0 ? 'loss' : '';
+  const totalRClass = heroState.totalR === null ? '' : heroState.totalR >= 0 ? 'win' : 'loss';
+  const equity = heroState.equityEstimate !== null ? heroState.equityEstimate : heroState.balance;
+  const health = connectionHealth(heroState.freshestTickTime === null ? null : Date.now() - heroState.freshestTickTime);
+  el.innerHTML = `
+    <div class="hero-tile">
+      <div class="hero-label">Équité (réelle)</div>
+      <div class="hero-value">${fmt(equity)}</div>
+      <div class="hero-sub">${heroState.blocked === null ? '' : heroState.blocked ? '⛔ signaux bloqués' : '● signaux actifs'}</div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">P&amp;L du jour (réel)</div>
+      <div class="hero-value ${dailyClass}">${heroState.dailyPnl === null ? '—' : (heroState.dailyPnl >= 0 ? '+' : '') + fmt(heroState.dailyPnl)}</div>
+      <div class="hero-sub">${heroState.dailyLossPct === null ? '' : `${fmt(heroState.dailyLossPct)}% de perte`}</div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">Total (journal durable)</div>
+      <div class="hero-value ${totalRClass}">${heroState.totalR === null ? '—' : (heroState.totalR >= 0 ? '+' : '') + fmt(heroState.totalR) + 'R'}</div>
+      <div class="hero-sub">${heroState.totalTrades === null ? '' : `${heroState.totalTrades} trade${heroState.totalTrades > 1 ? 's' : ''} réels confirmés`}</div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">Taux de réussite</div>
+      <div class="hero-value">${heroState.winRatePct === null ? '—' : fmt(heroState.winRatePct, 0) + '%'}</div>
+      <div class="hero-sub">journal durable, tous instruments</div>
+    </div>
+    <div class="hero-tile">
+      <div class="hero-label">Santé connexion</div>
+      <div class="hero-value ${health.cls}" style="font-size:15px;">${health.label}</div>
+      <div class="hero-sub">bougie la plus récente, tous symboles</div>
+    </div>
+  `;
+}
+// Re-render on its own clock, not just when new /api/status data arrives
+// (2026-09-15) - the whole point of a connection-health indicator is to
+// catch a feed that's gone quiet, so its displayed age must keep climbing
+// in real time even if the SSE stream itself stalls (the freshestTickTime
+// it's computed from simply stops advancing - only a live Date.now() at
+// render time reveals that as a growing "il y a Xmin" instead of a frozen
+// number that looks fine at a glance).
+setInterval(renderHeroStrip, 5000);
+
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 const fmtTime = (t) => t ? new Date(t).toLocaleTimeString('fr-FR') : '—';
 const fmtDuration = (ms) => {
@@ -466,21 +711,28 @@ const fmtDuration = (ms) => {
   return m + ' min';
 };
 // US indices and gold trade in whole-ish points (2dp is plenty); forex pairs need more precision.
-const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD') ? 2 : 5;
+// GER40/BTCUSD added 2026-09-16 - both were falling into the 5-decimals
+// forex default (e.g. GER40's real 25445.05 would show as 25445.05000).
+// BTCUSD stays listed here even though the symbol was retired from trading
+// the same day: the trade-history card still renders its real past trades.
+const priceDecimals = (symbol) => (symbol.startsWith('US') || symbol === 'XAUUSD' || symbol === 'GER40' || symbol === 'BTCUSD') ? 2 : 5;
 // NWOG + Judas Swing (2026-09) - both live, auto-executed (see config.js's
 // `nwog`/`judasSwing` comments / HANDOFF.md), same standing as FVG/Divergence now.
-// Every caller except the trade journal (refreshTradeHistory) always has a
-// real `source` of exactly 'fvg'/'divergence'/'nwog'/'judaswing'
-// (LiveStrategyEngine's own signal shapes), so the fallback below never
-// fires for them. The journal's trades come from real broker deal history
-// instead, where the source is only known when the opening order carried a
-// recognizable label (see dealPairing.js's parseSourceFromLabel) - a
-// manually-placed or unlabeled trade must show as unknown, never be guessed
-// as "FVG".
+// Every caller on THIS page always has a real `source` of exactly
+// 'fvg'/'divergence'/'nwog'/'judaswing' (LiveStrategyEngine's own signal
+// shapes), so the fallback below never fires here. journal.html has its own
+// copy of this function for its own trades, which DO need the fallback:
+// those come from real broker deal history, where the source is only known
+// when the opening order carried a recognizable label (see dealPairing.js's
+// parseSourceFromLabel) - a manually-placed or unlabeled trade must show as
+// unknown, never be guessed as "FVG".
 const sourceLabel = (s) => {
   if (s.source === 'divergence') return 'Divergence';
   if (s.source === 'nwog') return 'NWOG';
   if (s.source === 'judaswing') return 'Judas Swing';
+  if (s.source === 'weeklysweep') return 'Weekly Sweep';
+  if (s.source === 'breakerblock') return 'Breaker Block';
+  if (s.source === 'silverbullet') return 'Silver Bullet';
   if (s.source === 'fvg') return 'FVG';
   if (s.source === 'pyramid') return 'Pyramide';
   return 'manuel/inconnu';
@@ -493,6 +745,54 @@ const sourceLabel = (s) => {
 async function refreshStatus() {
   const res = await fetch(acctUrl('/status'));
   renderStatus(await res.json());
+}
+
+// Progression du challenge (2026-09-15, Esdras: demande #1 de la liste
+// "données utiles mais noyées" - targetPct/targetBalance/maxDrawdownPct/
+// overallDrawdownFloor étaient déjà calculés par GuardrailEngine.getStatus()
+// et déjà envoyés dans /api/status, mais jamais affichés nulle part). Pour
+// le compte "default" actuel (pas un vrai challenge), targetPct/
+// maxDrawdownPct restent null - cette carte affiche alors honnêtement
+// "pas un compte de challenge" plutôt qu'une barre vide ou des zéros
+// trompeurs ; elle prend tout son sens une fois un vrai compte FTMO/CTI
+// configuré (voir config.js's per-account guardrails).
+function renderChallengeProgress(g, balance) {
+  const el = document.getElementById('challenge-progress-body');
+  if (!el) return;
+  if (g.targetPct == null && g.maxDrawdownPct == null) {
+    el.innerHTML = '<div class="meta">Pas un compte de challenge (aucune cible de profit ni plancher de drawdown configurés pour ce compte).</div>';
+    return;
+  }
+  const current = g.currentBalance ?? balance;
+  let html = '';
+  if (g.targetPct != null) {
+    const progressPct = (g.startingBalance != null && g.targetBalance != null && g.targetBalance !== g.startingBalance)
+      ? ((current - g.startingBalance) / (g.targetBalance - g.startingBalance)) * 100
+      : null;
+    html += `<div class="stat-row"><span class="label">Cible de profit</span><span>+${fmt(g.targetPct, 1)}% (${fmt(g.targetBalance)})</span></div>`;
+    if (g.targetReached) html += '<div class="stat-row"><span class="pill ok">OBJECTIF ATTEINT</span></div>';
+    else if (progressPct !== null) html += `<div class="stat-row"><span class="label">Progression vers la cible</span><span>${fmt(Math.max(0, progressPct), 0)}%</span></div>`;
+  }
+  if (g.maxDrawdownPct != null) {
+    const typeLabel = { static: 'statique', 'trailing-eod': 'glissant fin de journée', 'trailing-locks-at-start-balance': 'glissant, verrouillé au départ' }[g.maxDrawdownType] || g.maxDrawdownType || '—';
+    html += `<div class="stat-row"><span class="label">Plancher de drawdown</span><span>-${fmt(g.maxDrawdownPct, 1)}% (${fmt(g.overallDrawdownFloor)}, ${typeLabel})</span></div>`;
+    if (g.overallDrawdownBreached) html += '<div class="stat-row"><span class="pill blocked">PLANCHER CASSÉ</span></div>';
+    else if (g.overallDrawdownFloor != null) html += `<div class="stat-row"><span class="label">Distance au plancher</span><span>${fmt(current - g.overallDrawdownFloor)}</span></div>`;
+  }
+  // Barre visuelle seulement quand les 2 bornes (plancher + cible) sont connues.
+  if (g.overallDrawdownFloor != null && g.targetBalance != null && g.targetBalance > g.overallDrawdownFloor) {
+    const span = g.targetBalance - g.overallDrawdownFloor;
+    const fillPct = Math.max(0, Math.min(100, ((current - g.overallDrawdownFloor) / span) * 100));
+    const startMarkerPct = g.startingBalance != null ? Math.max(0, Math.min(100, ((g.startingBalance - g.overallDrawdownFloor) / span) * 100)) : null;
+    html += `
+      <div class="challenge-bar-wrap">
+        <div class="challenge-bar-fill${g.overallDrawdownBreached ? ' breached' : ''}" style="width:${fillPct}%;"></div>
+        ${startMarkerPct !== null ? `<div class="challenge-bar-marker" style="left:${startMarkerPct}%;" title="Solde de départ"></div>` : ''}
+      </div>
+      <div class="challenge-bar-labels"><span>Plancher ${fmt(g.overallDrawdownFloor)}</span><span>Cible ${fmt(g.targetBalance)}</span></div>
+    `;
+  }
+  el.innerHTML = html || '<div class="meta">Données de challenge incomplètes.</div>';
 }
 
 function renderStatus(data) {
@@ -520,6 +820,16 @@ function renderStatus(data) {
     <div class="stat-row"><span class="label">Solde</span><span>${fmt(data.balance)}</span></div>
     ${g.blocked ? `<div class="warn">Raisons: ${g.blockReasons.join(', ')}</div>` : ''}
   `;
+  renderChallengeProgress(g, data.balance);
+  recomputeLivePositions(data.symbols);
+
+  heroState.balance = data.balance;
+  heroState.dailyPnl = g.dailyPnl;
+  heroState.dailyLossPct = g.dailyLossPct;
+  heroState.blocked = g.blocked;
+  const tickTimes = data.symbols.map((s) => s.lastCandleTime).filter((t) => t !== null && t !== undefined);
+  heroState.freshestTickTime = tickTimes.length > 0 ? Math.max(...tickTimes) : null;
+  renderHeroStrip();
 
   document.getElementById('prices-body').innerHTML = data.symbols.map((s) => {
     const prev = previousPrices[s.symbol];
@@ -528,7 +838,13 @@ function renderStatus(data) {
     return `
     <div class="ticker-cell">
       <div>
-        <div class="ticker-sym"><span class="dot"></span>${s.symbol}${s.openPosition ? ' <span class="ticker-pos">●POSITION</span>' : ''}</div>
+        <div class="ticker-sym"><span class="dot"></span>${s.symbol}${
+          s.openPosition
+            ? s.openPosition.confirmed
+              ? ' <span class="ticker-pos">●POSITION</span>'
+              : ' <span class="ticker-signal">●signal (non confirmé)</span>'
+            : ''
+        }${s.cooldownRemainingMs > 0 ? ` <span class="ticker-signal">⏸ cooldown ${fmtDuration(s.cooldownRemainingMs)}</span>` : ''}</div>
         <div class="ticker-meta">${fmtTime(s.lastCandleTime)}</div>
       </div>
       <div class="ticker-price ${flashClass}">${fmt(s.lastPrice, priceDecimals(s.symbol))}</div>
@@ -546,9 +862,21 @@ function renderStatus(data) {
   document.getElementById('settings-symbols-current').textContent = data.symbols.map((s) => s.symbol).join(' · ');
 }
 
-const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judasSwing: 'Judas Swing' };
+const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judasSwing: 'Judas Swing', weeklysweep: 'Weekly Sweep', breakerblock: 'Breaker Block', silverbullet: 'Silver Bullet' };
 function reconciliationExplanation(r) {
   if (r.status === 'match') return '✓ correspond';
+  // 'none' (2026-09-14, bug réel trouvé par Esdras : "Écart bot/courtier ⚠
+  // statut inconnu" affiché pour des symboles parfaitement au repos) - ni le
+  // bot ni le courtier ne pensent avoir quoi que ce soit d'ouvert, c'est
+  // l'état NORMAL la plupart du temps, pas un écart. Resté invisible tant
+  // que le bug du nettoyage automatique (voir HANDOFF.md) laissait presque
+  // toujours au moins un symbole coincé en "believed-only" après chaque
+  // redémarrage - une fois CE bug-là corrigé, les symboles retombent
+  // légitimement à "none" bien plus souvent, ce qui a rendu celui-ci enfin
+  // visible. Le vrai fix est le filtre ci-dessous (refreshAccount), pas
+  // seulement cette branche - gardée en défense en profondeur si cette
+  // fonction est un jour appelée ailleurs sans passer par ce filtre.
+  if (r.status === 'none') return '✓ rien d\'ouvert, des deux côtés';
   if (r.status === 'real-only') return `⚠ ${r.symbol} : position réelle chez le courtier sans alerte du bot (trade manuel ?)`;
   if (r.status === 'believed-only') {
     const src = sourceLabelFull[r.source] || r.source || 'un signal';
@@ -565,38 +893,135 @@ function reconciliationExplanation(r) {
   return '⚠ statut inconnu';
 }
 
+// Positions ouvertes, temps réel (2026-09-15, Esdras: "un endroit au-dessus
+// de la partie garde-fou, compte réel qui me montre les positions réelles
+// [...] pour que je puisse suivre la position en temps réel comme les
+// brokers") - real broker positions only (data.positions, from
+// accountReconciliation.js via /api/account), never LiveStrategyEngine's
+// own "believed" state - same table style as journal.html's strategy-table.
+// Volume réel (2026-09-15, bug trouvé en vérifiant sur le compte réel : une
+// position BTCUSD avec units=0.01 s'affichait "0" avec 0 décimale fixe,
+// pertinent pour un symbole en unités de 1+ mais pas pour un volume
+// centilot). Trim les zéros de fin plutôt qu'un nombre fixe de décimales.
+function fmtUnits(units) {
+  if (units === null || units === undefined || Number.isNaN(units)) return '—';
+  return String(Number(units.toFixed(4)));
+}
+
+function renderOpenPositions(positions) {
+  const el = document.getElementById('open-positions-body');
+  if (!el) return;
+  if (!positions || positions.length === 0) {
+    el.innerHTML = '<div class="meta">Aucune position réellement ouverte chez le courtier en ce moment.</div>';
+    return;
+  }
+  const rows = positions.map((p) => {
+    const d = priceDecimals(p.symbol);
+    const pnlKnown = p.netFloatingPnl !== null && p.netFloatingPnl !== undefined;
+    const pnlClass = !pnlKnown ? '' : p.netFloatingPnl >= 0 ? 'win' : 'loss';
+    const openSince = p.openTimestamp ? fmtDuration(Date.now() - p.openTimestamp) : '—';
+    // volume = units * 100 reconstructs the broker's own centilot field
+    // exactly (accountReconciliation.js's enrichRealPosition divides by 100
+    // to get units in the first place - the round-trip is exact).
+    const rawVolume = Math.round(p.units * 100);
+    return `
+      <tr>
+        <td><span class="dir-${p.direction}">${p.direction === 'bullish' ? '▲' : '▼'}</span> ${p.symbol}</td>
+        <td>${fmtUnits(p.units)}</td>
+        <td>${fmt(p.entryPrice, d)}</td>
+        <td>${fmt(p.currentPrice, d)}</td>
+        <td>${fmt(p.stopLoss, d)}</td>
+        <td>${fmt(p.takeProfit, d)}</td>
+        <td class="pnl-cell journal-pnl ${pnlClass}">${pnlKnown ? (p.netFloatingPnl >= 0 ? '+' : '') + fmt(p.netFloatingPnl) : '—'}</td>
+        <td class="meta">${openSince}</td>
+        <td><button type="button" class="btn-ghost" onclick="closePosition(${p.positionId}, ${rawVolume}, '${p.symbol}')">Fermer</button></td>
+      </tr>
+    `;
+  }).join('');
+  el.innerHTML = `
+    <table class="strategy-table positions-table">
+      <thead><tr><th>Symbole</th><th>Volume</th><th>Entrée</th><th>Prix actuel</th><th>Stop</th><th>Cible</th><th class="pnl-cell">P&amp;L flottant</th><th>Ouverte depuis</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+// Fermer une position réelle (2026-09-15, Esdras: "on ne voit pas d'endroit
+// où fermer la position") - un vrai ordre de marché irréversible, donc une
+// confirmation explicite d'abord (même discipline que toute action risquée/
+// difficile à annuler). Rafraîchit la table + le compte juste après, succès
+// ou échec, pour que l'état affiché ne mente jamais.
+async function closePosition(positionId, volume, symbol) {
+  if (!confirm(`Fermer réellement la position ${symbol} (id ${positionId}) au marché ? Cette action est irréversible.`)) return;
+  try {
+    const res = await fetch(acctUrl(`/positions/${positionId}/close`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ volume }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`Échec de la fermeture: ${data.error || res.statusText}`);
+    } else {
+      alert(`Position fermée. P&L réalisé: ${fmt(data.closePnl)}`);
+    }
+  } catch (err) {
+    alert(`Erreur réseau lors de la fermeture: ${err.message}`);
+  } finally {
+    refreshAccount();
+  }
+}
+
 async function refreshAccount() {
   const bodyEl = document.getElementById('account-body');
+  const openPositionsEl = document.getElementById('open-positions-body');
   try {
     const res = await fetch(acctUrl('/account'));
     const data = await res.json();
     if (data.reason) {
       bodyEl.innerHTML = `<div class="meta">${data.reason}</div>`;
+      if (openPositionsEl) openPositionsEl.innerHTML = `<div class="meta">${data.reason}</div>`;
       return;
     }
+    heroState.equityEstimate = data.equityEstimate;
+    renderHeroStrip();
     const pnl = data.floatingPnlEstimate || 0;
     const pnlClass = pnl > 0 ? 'win' : pnl < 0 ? 'loss' : '';
-    const mismatches = (data.reconciliation || []).filter((r) => r.status !== 'match');
+    // 'none' excluded too (2026-09-14, real bug): a symbol where NEITHER
+    // side thinks anything is open is the normal resting state, not a
+    // mismatch - only 'real-only'/'believed-only' are genuine discrepancies
+    // worth an "Écart bot/courtier" alert card.
+    const mismatches = (data.reconciliation || []).filter((r) => r.status !== 'match' && r.status !== 'none');
+
+    // Exposition totale (2026-09-15, Esdras: liste d'idées demandée) -
+    // combined REAL risk across every open position, i.e. what's actually
+    // at stake if every stop got hit at once - not the same thing as
+    // marginUsedReal above (margin is a broker leverage mechanic, not a
+    // loss-at-risk figure). Only computable per position when the broker
+    // reports a real stopLoss - a position without one (or missing
+    // entryPrice/units) is excluded and flagged as partial, same honesty
+    // convention as floatingPnlIsPartial above, never guessed.
+    const positions = data.positions || [];
+    let totalRiskAmount = 0;
+    let riskKnownCount = 0;
+    for (const p of positions) {
+      if (p.stopLoss === null || p.entryPrice === null) continue;
+      totalRiskAmount += Math.abs(p.entryPrice - p.stopLoss) * p.units;
+      riskKnownCount++;
+    }
+    const riskIsPartial = riskKnownCount < positions.length;
 
     let html = `
       <div class="stat-row"><span class="label">Solde (réel)</span><span>${fmt(data.balance)}</span></div>
       <div class="stat-row"><span class="label">Équité (estimée)</span><span>${fmt(data.equityEstimate)}${data.floatingPnlIsPartial ? ' <span class="meta">(partielle — prix manquant pour au moins une position)</span>' : ''}</span></div>
       <div class="stat-row"><span class="label">Marge utilisée (réelle)</span><span>${fmt(data.marginUsedReal)}</span></div>
       <div class="stat-row"><span class="label">P&amp;L flottant (estimé)</span><span class="journal-pnl ${pnlClass}">${pnl >= 0 ? '+' : ''}${fmt(pnl)}</span></div>
+      ${positions.length > 0 ? `<div class="stat-row"><span class="label">Exposition totale (risque réel si tout touche le stop)</span><span>${fmt(totalRiskAmount)}${riskIsPartial ? ` <span class="meta">(${riskKnownCount}/${positions.length} positions — stop inconnu pour le reste)</span>` : ''}</span></div>` : ''}
     `;
 
-    if (data.positions && data.positions.length > 0) {
-      html += '<div class="meta" style="margin-top:8px;">Positions réellement ouvertes chez le courtier :</div><ul class="signal-list">';
-      html += data.positions.map((p) => `
-        <li class="signal-item">
-          <span class="dir-${p.direction}">${p.direction === 'bullish' ? '▲' : '▼'}</span> ${p.symbol}
-          <span class="meta">entrée ${fmt(p.entryPrice, priceDecimals(p.symbol))} · marge ${fmt(p.usedMargin)}</span>
-          <span class="journal-pnl ${p.netFloatingPnl === null ? '' : p.netFloatingPnl >= 0 ? 'win' : 'loss'}">${p.netFloatingPnl === null ? '—' : (p.netFloatingPnl >= 0 ? '+' : '') + fmt(p.netFloatingPnl)}</span>
-        </li>`).join('');
-      html += '</ul>';
-    } else {
-      html += '<div class="meta" style="margin-top:8px;">Aucune position réellement ouverte chez le courtier en ce moment.</div>';
-    }
+    lastKnownPositions = positions;
+    lastKnownBalance = data.balance;
+    renderOpenPositions(positions);
 
     if (mismatches.length > 0) {
       html += mismatches.map((r) => `<div class="mismatch-alert"><strong>Écart bot/courtier</strong>${reconciliationExplanation(r)}</div>`).join('');
@@ -605,10 +1030,11 @@ async function refreshAccount() {
     bodyEl.innerHTML = html;
   } catch (err) {
     bodyEl.innerHTML = `<div class="err">Erreur de chargement du compte: ${err.message}</div>`;
+    if (openPositionsEl) openPositionsEl.innerHTML = `<div class="err">Erreur de chargement: ${err.message}</div>`;
   }
 }
 
-const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judasSwing: 'Judas' };
+const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judasSwing: 'Judas', weeklysweep: 'W.Sweep', breakerblock: 'Breaker', silverbullet: 'SilverB.' };
 async function refreshOrderLog() {
   const bodyEl = document.getElementById('order-log-body');
   try {
@@ -650,7 +1076,7 @@ function renderAutoExecute(ae) {
     `;
   } else {
     body.innerHTML = `
-      <div class="auto-status inactive">Semi-automatique (normal) — alerte, tu cliques toi-même Buy/Sell</div>
+      <div class="auto-status inactive">Semi-automatique (normal) — alerte envoyée, exécution manuelle (Buy/Sell)</div>
       <div class="auto-btn-row">
         <button class="secondary" onclick="setAutoExecute(true, 4)">Activer 4h</button>
         <button class="secondary" onclick="setAutoExecute(true, 8)">Activer 8h</button>
@@ -702,67 +1128,6 @@ function renderSignals(data) {
     : '<li class="signal-item meta">Aucun pour l\'instant…</li>';
 }
 
-// Builds a small candlestick chart (inline SVG, no library) for one closed
-// trade: candles for visual context, plus dashed lines + labels at the
-// actual entry/exit prices (verified, from the deal history) - deliberately
-// no stop/target line, see the journal card's own explanation for why.
-function renderTradeChart(trade, decimals) {
-  const W = 600, H = 130, PAD_L = 46, PAD_R = 8, PAD_T = 10, PAD_B = 8;
-  const candles = trade.candles || [];
-  if (candles.length === 0) {
-    return '<div class="meta">Pas de données de graphique pour ce trade.</div>';
-  }
-
-  const prices = candles.flatMap((c) => [c.high, c.low]).concat([trade.entryPrice, trade.exitPrice]);
-  const minP = Math.min(...prices), maxP = Math.max(...prices);
-  const range = (maxP - minP) || 1;
-  const y = (p) => PAD_T + (1 - (p - minP) / range) * (H - PAD_T - PAD_B);
-
-  const plotW = W - PAD_L - PAD_R;
-  const slot = plotW / candles.length;
-  const x = (i) => PAD_L + i * slot + slot / 2;
-
-  const nearestIndex = (t) => {
-    let best = 0, bestDiff = Infinity;
-    candles.forEach((c, i) => { const d = Math.abs(c.time - t); if (d < bestDiff) { bestDiff = d; best = i; } });
-    return best;
-  };
-
-  const bodyWidth = Math.max(1, slot * 0.6);
-  const candleShapes = candles.map((c, i) => {
-    const up = c.close >= c.open;
-    const color = up ? 'var(--green)' : 'var(--red)';
-    const cx = x(i);
-    const bodyTop = y(Math.max(c.open, c.close));
-    const bodyBottom = y(Math.min(c.open, c.close));
-    return `
-      <line x1="${cx}" y1="${y(c.high)}" x2="${cx}" y2="${y(c.low)}" stroke="${color}" stroke-width="1" />
-      <rect x="${cx - bodyWidth / 2}" y="${bodyTop}" width="${bodyWidth}" height="${Math.max(1, bodyBottom - bodyTop)}" fill="${color}" />
-    `;
-  }).join('');
-
-  const entryX = x(nearestIndex(trade.entryTime));
-  const exitX = x(nearestIndex(trade.exitTime));
-  const entryY = y(trade.entryPrice);
-  const exitY = y(trade.exitPrice);
-  // Keep both labels inside the chart even when a price sits near the top/bottom edge:
-  // default entry-above/exit-below, but flip whichever one would clip off-canvas.
-  const entryLabelY = entryY - 3 < 8 ? entryY + 10 : entryY - 3;
-  const exitLabelY = exitY + 10 > H - 2 ? exitY - 3 : exitY + 10;
-
-  return `
-    <svg class="journal-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      ${candleShapes}
-      <line x1="${PAD_L}" y1="${entryY}" x2="${W - PAD_R}" y2="${entryY}" stroke="var(--blue)" stroke-width="1" stroke-dasharray="4,3" />
-      <text x="2" y="${entryLabelY}" fill="var(--blue)" font-size="10">Entrée ${fmt(trade.entryPrice, decimals)}</text>
-      <line x1="${PAD_L}" y1="${exitY}" x2="${W - PAD_R}" y2="${exitY}" stroke="var(--amber)" stroke-width="1" stroke-dasharray="4,3" />
-      <text x="2" y="${exitLabelY}" fill="var(--amber)" font-size="10">Sortie ${fmt(trade.exitPrice, decimals)}</text>
-      <circle cx="${entryX}" cy="${entryY}" r="3" fill="var(--blue)" />
-      <circle cx="${exitX}" cy="${exitY}" r="3" fill="var(--amber)" />
-    </svg>
-  `;
-}
-
 async function refreshRecentPerformance() {
   const summaryEl = document.getElementById('recent-perf-summary');
   const listEl = document.getElementById('recent-perf-list');
@@ -776,10 +1141,19 @@ async function refreshRecentPerformance() {
     }
     const s = data.summary;
     const netWin = s.totalR >= 0;
+    // 2026-09-14, "on fait tout de facon honnete" - totalR is now NET of a
+    // real spread cost (recentPerformanceReport.js), where before it was a
+    // spread-free simulation (a win always counted as the full configured
+    // RR, a loss always exactly -1R). totalGrossR shown alongside, muted,
+    // so the cost of trading is visible rather than hidden behind one
+    // optimistic number - same gross/net split the real backtest reports
+    // already use.
     summaryEl.innerHTML = `
       <div class="stat-row"><span class="label">Signaux (${s.windowDays}j)</span><span>${s.count}</span></div>
       <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt(s.winRatePct, 0)}% (${s.wins}G / ${s.losses}P${s.timeouts ? ' / ' + s.timeouts + ' expirés' : ''})</span></div>
-      <div class="stat-row"><span class="label">Total en R</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.totalR)}R</span></div>
+      <div class="stat-row"><span class="label">Total en R (net du spread)</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.totalR)}R</span></div>
+      <div class="stat-row"><span class="label meta">dont brut (sans spread)</span><span class="meta">${s.totalGrossR >= 0 ? '+' : ''}${fmt(s.totalGrossR)}R</span></div>
+      <div class="meta" style="margin-top:4px">Simulation : un gain = la cible RR configurée, une perte = -1R exactement, moins le spread réel. Pas un ordre réellement passé - voir le journal durable pour les vrais résultats confirmés par le courtier.</div>
     `;
     listEl.innerHTML = data.trades.length
       ? '<ul class="signal-list">' + data.trades.slice(0, 30).map((t) => {
@@ -799,228 +1173,33 @@ async function refreshRecentPerformance() {
   }
 }
 
-// Inline SVG line chart of cumulative R over time (no library, same
-// no-dependency convention as renderTradeChart's candlestick chart below).
-// A flat zero-baseline is drawn for reference since "above/below zero" is
-// the only threshold that actually matters for an equity curve.
-function renderEquityCurve(equityCurve) {
-  if (!equityCurve || equityCurve.length < 2) {
-    return '<div class="meta">Pas encore assez de trades clôturés pour tracer une courbe.</div>';
-  }
-  const W = 600, H = 140, PAD_L = 40, PAD_R = 10, PAD_T = 10, PAD_B = 10;
-  const values = equityCurve.map((p) => p.cumulativeR);
-  const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
-  const range = (maxR - minR) || 1;
-  const y = (v) => PAD_T + (1 - (v - minR) / range) * (H - PAD_T - PAD_B);
-  const plotW = W - PAD_L - PAD_R;
-  const x = (i) => PAD_L + (equityCurve.length === 1 ? 0 : (i / (equityCurve.length - 1)) * plotW);
-
-  const finalR = values[values.length - 1];
-  const color = finalR >= 0 ? 'var(--green)' : 'var(--red)';
-  const points = values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
-  const zeroY = y(0);
-
-  return `
-    <svg class="equity-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <line x1="${PAD_L}" y1="${zeroY}" x2="${W - PAD_R}" y2="${zeroY}" stroke="var(--panel-border-strong)" stroke-width="1" stroke-dasharray="4,3" />
-      <text x="2" y="${zeroY + 4}" fill="var(--muted)" font-size="10">0R</text>
-      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" />
-    </svg>
-  `;
-}
-
-function renderOverview(data) {
-  const el = document.getElementById('overview-body');
-  const overall = data.overall;
-  if (!overall || overall.totalSignals === 0) {
-    el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
-    return;
-  }
-  const netWin = overall.finalEquityR >= 0;
-  const winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
-  const pf = overall.profitFactor === null ? '—' : overall.profitFactor === Infinity ? '∞' : fmt(overall.profitFactor);
-
-  const tiles = `
-    <div class="metric-tiles">
-      <div class="metric-tile"><div class="metric-label">Trades</div><div class="metric-value">${overall.totalSignals}</div></div>
-      <div class="metric-tile"><div class="metric-label">Taux de réussite</div><div class="metric-value">${winRatePct === null ? '—' : fmt(winRatePct, 0) + '%'}</div></div>
-      <div class="metric-tile"><div class="metric-label">Profit factor</div><div class="metric-value">${pf}</div></div>
-      <div class="metric-tile"><div class="metric-label">Espérance</div><div class="metric-value ${overall.expectancyR >= 0 ? 'win' : 'loss'}">${overall.expectancyR >= 0 ? '+' : ''}${fmt(overall.expectancyR)}R</div></div>
-      <div class="metric-tile"><div class="metric-label">Drawdown max</div><div class="metric-value loss">-${fmt(overall.maxDrawdownR)}R</div></div>
-      <div class="metric-tile"><div class="metric-label">Total en R</div><div class="metric-value ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(overall.finalEquityR)}R</div></div>
-    </div>
-  `;
-
-  const sources = Object.keys(data.bySource || {});
-  const strategyTable = sources.length === 0 ? '' : `
-    <table class="strategy-table">
-      <thead><tr><th>Stratégie</th><th>Trades</th><th>Taux</th><th>Total R</th></tr></thead>
-      <tbody>
-        ${sources.map((source) => {
-          const b = data.bySource[source];
-          const netWinS = b.totalR >= 0;
-          return `<tr>
-            <td style="font-family:inherit;">${sourceLabel({ source })}</td>
-            <td>${b.count}</td>
-            <td>${b.winRatePct === null ? '—' : fmt(b.winRatePct, 0) + '%'}</td>
-            <td class="journal-pnl ${netWinS ? 'win' : 'loss'}">${netWinS ? '+' : ''}${fmt(b.totalR)}R</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  `;
-
-  el.innerHTML = tiles + renderEquityCurve(data.equityCurve) + strategyTable;
-}
-
+// 2026-09-15: the full performance breakdown (equity curve, per-instrument
+// stats, strategy table) moved to its own page - see journal.html and the
+// HTML comment above where those 3 cards used to sit. This page keeps only
+// this slim fetch, purely to feed the hero strip's 3 durable-journal
+// numbers (totalR/winRatePct/totalTrades) - no DOM section left here to
+// render the rest into, so none of it is rebuilt on this page anymore.
 async function refreshTradeLog() {
-  const el = document.getElementById('trade-log-summary');
   try {
     const res = await fetch(acctUrl('/trade-log'));
     const data = await res.json();
-    renderOverview(data);
-    const symbols = Object.keys(data.bySymbol || {});
-    if (symbols.length === 0) {
-      el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
-      return;
+    const overall = data.overall;
+    if (!overall || overall.totalSignals === 0) {
+      heroState.totalR = null;
+      heroState.winRatePct = null;
+      heroState.totalTrades = 0;
+    } else {
+      heroState.totalR = overall.finalEquityR;
+      heroState.winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
+      heroState.totalTrades = overall.totalSignals;
     }
-    el.innerHTML = symbols.map((symbol) => {
-      const b = data.bySymbol[symbol];
-      const netWin = b.totalR >= 0;
-      return `
-        <div class="stat-row"><span class="label">${symbol}</span><span>${b.count} trade${b.count > 1 ? 's' : ''}</span></div>
-        <div class="stat-row"><span class="label">Taux de réussite</span><span>${b.winRatePct === null ? '—' : fmt(b.winRatePct, 0) + '%'} (${b.wins}G / ${b.losses}P${b.timeouts ? ' / ' + b.timeouts + ' exp.' : ''})</span></div>
-        <div class="stat-row" style="margin-bottom:10px;"><span class="label">Total en R</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(b.totalR)}R</span></div>
-      `;
-    }).join('');
+    renderHeroStrip();
   } catch (err) {
-    el.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
-    document.getElementById('overview-body').innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+    // Best-effort, same as every other hero-strip source - the tile just
+    // stays on whatever it last showed (or "—") rather than erroring loudly
+    // on a card that no longer exists on this page.
   }
 }
-
-// Unfiltered trades from the last fetch - the symbol/source filters below
-// re-render from this WITHOUT refetching (pure display filter, see the
-// card's own comment for why only `days` goes to the server).
-let allJournalTrades = [];
-
-async function refreshTradeHistory() {
-  const list = document.getElementById('journal-list');
-  const days = document.getElementById('filter-days').value;
-  try {
-    const res = await fetch(acctUrl(`/trade-history?days=${encodeURIComponent(days)}`));
-    const data = await res.json();
-    allJournalTrades = data.trades || [];
-    populateJournalFilterOptions(allJournalTrades);
-    if (allJournalTrades.length === 0) {
-      document.getElementById('journal-summary').innerHTML = '';
-      list.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — pas d\'historique disponible.' : 'Aucun trade clôturé sur cette fenêtre.'}</div>`;
-      return;
-    }
-    renderJournalList();
-  } catch (err) {
-    list.innerHTML = `<div class="err">Erreur de chargement du journal: ${err.message}</div>`;
-  }
-}
-
-// Rebuilds the symbol/strategy <select> OPTIONS from the trades ACTUALLY
-// present in the current window - not a list hardcoded in this file, so a
-// newly-activated symbol or strategy (Judas Swing/EURUSD, NWOG before it...)
-// shows up here automatically instead of needing a matching update. Keeps
-// the current selection if it's still a valid choice.
-function populateJournalFilterOptions(trades) {
-  const symbolSel = document.getElementById('filter-symbol');
-  const sourceSel = document.getElementById('filter-source');
-  const rebuild = (sel, values, allLabel) => {
-    const prev = sel.value;
-    sel.innerHTML = `<option value="">${allLabel}</option>` +
-      values.map((v) => `<option value="${v}"${v === prev ? ' selected' : ''}>${v}</option>`).join('');
-  };
-  rebuild(symbolSel, [...new Set(trades.map((t) => t.symbol))].sort(), 'Tous symboles');
-  rebuild(sourceSel, [...new Set(trades.map((t) => sourceLabel(t)))].sort(), 'Toutes stratégies');
-}
-
-function filteredJournalTrades() {
-  const symbolFilter = document.getElementById('filter-symbol').value;
-  const sourceFilter = document.getElementById('filter-source').value;
-  return allJournalTrades.filter((t) =>
-    (!symbolFilter || t.symbol === symbolFilter) && (!sourceFilter || sourceLabel(t) === sourceFilter)
-  );
-}
-
-function renderJournalList() {
-  const list = document.getElementById('journal-list');
-  const summaryEl = document.getElementById('journal-summary');
-  const filtered = filteredJournalTrades();
-
-  if (filtered.length === 0) {
-    summaryEl.innerHTML = '';
-    list.innerHTML = '<div class="meta">Aucun trade ne correspond à ces filtres.</div>';
-    return;
-  }
-
-  const wins = filtered.filter((t) => t.pnl >= 0).length;
-  const netPnl = filtered.reduce((sum, t) => sum + t.pnl, 0);
-  const netWin = netPnl >= 0;
-  summaryEl.innerHTML = `
-    <div class="stat-row"><span class="label">Trades</span><span>${filtered.length}</span></div>
-    <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt((wins / filtered.length) * 100, 0)}% (${wins}/${filtered.length})</span></div>
-    <div class="stat-row"><span class="label">P&amp;L net</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(netPnl)}</span></div>
-  `;
-
-  list.innerHTML = filtered.map((t) => {
-    const d = priceDecimals(t.symbol);
-    const win = t.pnl >= 0;
-    return `
-      <div class="journal-item">
-        <div class="journal-head">
-          <span><span class="dir-${t.direction}">${t.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</span> ${t.symbol} <span class="meta">[${sourceLabel(t)}]</span> · ${fmtTime(t.entryTime)} → ${fmtTime(t.exitTime)}</span>
-          <span class="journal-pnl ${win ? 'win' : 'loss'}">${win ? '+' : ''}${fmt(t.pnl)}</span>
-        </div>
-        ${renderTradeChart(t, d)}
-      </div>
-    `;
-  }).join('');
-}
-
-// CSV of whatever's CURRENTLY DISPLAYED (i.e. respects the active filters) -
-// exporting "everything regardless of filters" would be a silent surprise
-// (the button next to a filtered view exporting unfiltered data).
-function exportJournalCsv() {
-  const filtered = filteredJournalTrades();
-  if (filtered.length === 0) return;
-
-  const escapeCsv = (v) => {
-    const s = String(v ?? '');
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const headers = ['symbole', 'direction', 'stratégie', 'entrée', 'sortie', 'prix_entrée', 'prix_sortie', 'pnl'];
-  const rows = filtered.map((t) => [
-    t.symbol,
-    t.direction === 'bullish' ? 'achat' : 'vente',
-    sourceLabel(t),
-    new Date(t.entryTime).toISOString(),
-    new Date(t.exitTime).toISOString(),
-    t.entryPrice,
-    t.exitPrice,
-    t.pnl,
-  ]);
-  const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `journal-trading-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-document.getElementById('filter-days').addEventListener('change', refreshTradeHistory);
-document.getElementById('filter-symbol').addEventListener('change', renderJournalList);
-document.getElementById('filter-source').addEventListener('change', renderJournalList);
-document.getElementById('export-csv-btn').addEventListener('click', exportJournalCsv);
 
 // Réglages - risque % (2026-09). Pre-fills the input ONCE per account switch
 // from the current /api/accounts/:id/status response (not re-synced on
@@ -1169,16 +1348,14 @@ function startDashboardForAccount(accountId) {
   prefillRiskInput();
   refreshStatus();
   refreshSignals();
-  refreshTradeHistory();
   refreshRecentPerformance();
   refreshTradeLog();
   refreshAccount();
   refreshOrderLog();
   liveStreamHandle = startLiveStream();
   dashboardPollIntervals = [
-    setInterval(refreshTradeHistory, 60000), // each call fetches deal history + a chart's worth of candles per trade from the broker - no need for the 3s cadence the lighter endpoints use
     setInterval(refreshRecentPerformance, 120000), // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
-    setInterval(refreshTradeLog, 60000), // grows one row per resolved trade, no meaningful reason to poll faster
+    setInterval(refreshTradeLog, 60000), // grows one row per resolved trade, no meaningful reason to poll faster - only feeds the hero strip now, see its own comment
     setInterval(refreshAccount, 30000), // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
     setInterval(refreshOrderLog, 30000), // in-memory log, grows only on a real order outcome - no need for a faster cadence than the account card next to it
   ];
@@ -1220,10 +1397,24 @@ function renderAccountOverview(accounts) {
   body.innerHTML = visible.map((a) => {
     const g = a.guardrail;
     const modeLabel = a.accountMode === 'live' ? 'LIVE' : 'CHALLENGE';
-    const connLabel = a.mode === 'live' ? '● connecté' : '○ démo/déconnecté';
+    // 2026-09-15 (Esdras, confuse par "cti-freetrial" affichant un pill OK
+    // vert et un solde qui bouge alors qu'elle ne se souvenait pas que ce
+    // compte fonctionnait réellement) - a.mode === 'demo' couvre 2 cas très
+    // différents que l'ancien pill ne distinguait pas : "pas de credentials
+    // configurés du tout" ET "credentials configurés mais la connexion
+    // réelle a échoué, repli silencieux sur mockDataSource.js" (le cas de
+    // cti-freetrial : login Match-Trader bloqué par un challenge Cloudflare
+    // - voir server.js's bootAccount). Dans les deux cas, TOUT ce que le
+    // compte affiche (prix, trades, solde qui bouge) est 100% simulé - un
+    // pill vert "OK" à côté donnait l'impression trompeuse d'un compte réel
+    // qui va bien. Le pill "SIMULÉ" prime maintenant sur "BLOQUÉ"/"OK".
+    const connLabel = a.mode === 'live' ? '● connecté' : '○ démo — données 100% simulées, pas de connexion réelle';
+    const statusPill = a.mode !== 'live'
+      ? '<span class="pill simulated">SIMULÉ</span>'
+      : (g.blocked ? '<span class="pill blocked">BLOQUÉ</span>' : '<span class="pill ok">OK</span>');
     return `
       <div class="account-overview-row${a.id === currentAccountId ? ' active' : ''}" data-account-id="${a.id}">
-        <div class="aor-top"><strong>${a.label}</strong> ${g.blocked ? '<span class="pill blocked">BLOQUÉ</span>' : '<span class="pill ok">OK</span>'}</div>
+        <div class="aor-top"><strong>${a.label}</strong> ${statusPill}</div>
         <div class="meta">${modeLabel}${a.programLabel ? ' · ' + a.programLabel : (a.propFirmProgramId ? ' · ' + a.propFirmProgramId : '')}</div>
         <div class="meta">${connLabel} · solde ${fmt(a.balance)}</div>
       </div>
