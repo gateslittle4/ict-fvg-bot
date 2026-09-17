@@ -4501,3 +4501,15 @@ Bougies M15 réellement conservées par le bot (récupérées via `/api/candles`
 `npm test` : 618/618 (scripts d'analyse seuls, aucun code de production touché).
 
 **Fichiers** : `scripts/runComboWeeklyTradeFrequencyAnalysis.js`, `scripts/runComboForwardTestThisWeek.js` (nouveaux), `data/real-data-2026-09-17/` (nouveau, bougies réelles + README de provenance).
+
+## Bug de rendu réel trouvé et corrigé : zones FVG dessinées au-delà de la dernière vraie bougie — 2026-09-17
+
+Esdras a envoyé une capture d'écran EURUSD montrant des petits traits flottants après ~12h, sans aucune bougie de prix dessous. Première explication donnée (fausse, corrigée après qu'Esdras insiste "regarde bien, les bougies n'apparaissent plus") : ce n'était PAS juste l'accumulation normale de zones FVG multi-contact pendant une tendance — la vraie cause est un bug de rendu dans `public/chart.html`.
+
+**Cause réelle** : `FvgZonesPrimitive._draw()` (le composant qui dessine les rectangles FVG sur le graphique lightweight-charts) dessinait toute zone encore "watching" (`endTime: null`, c'est-à-dire jamais remplie) jusqu'au bord DROIT DU CANEVAS (`widthPx`) — pas jusqu'à la dernière vraie bougie. Or lightweight-charts réserve toujours une marge vide à droite de la dernière bougie (pour que la prochaine puisse s'y dessiner). Résultat : les zones encore actives débordaient visuellement DANS cette marge vide, où il n'y a aucune donnée de prix — exactement les "tirets flottants sans bougie" observés.
+
+**Correction** : nouveau `setLastBarTime(sec)` sur `FvgZonesPrimitive`, appelé depuis `renderOverlays()` avec le timestamp de la dernière vraie bougie chargée. `_draw()` calcule maintenant la coordonnée x de cette dernière bougie et l'utilise comme bord droit réel pour toute zone encore ouverte, au lieu du bord du canevas. Repli sur l'ancien comportement (bord du canevas) uniquement si cette coordonnée est introuvable (bougie scrollée hors écran), pour ne jamais faire disparaître une zone plutôt que de risquer de mal l'afficher.
+
+`npm test` : 618/618 (fichier client seul, aucun test existant pour `chart.html`).
+
+**Fichiers** : `public/chart.html` (corrigé).

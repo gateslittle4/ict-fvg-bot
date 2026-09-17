@@ -264,6 +264,16 @@ class FvgZonesPrimitive {
     this._series = null;
     this._requestUpdate = null;
     this._visible = true;
+    // 2026-09-17, Esdras: "les bougies napparaissent plus dans la charte" -
+    // a still-open zone (endTime null) used to run all the way to the
+    // canvas's right edge (widthPx below), which on a chart with any
+    // trailing empty margin (lightweight-charts reserves a few bars' worth
+    // by default so new candles have room to print) drew the zone's box
+    // INTO that empty, candle-less margin - exactly the "floating dashes
+    // past the last real candle" reported. Clamped to the last real bar's
+    // own x-coordinate instead (see setLastBarTime()) so an open zone never
+    // visually extends past actual price data.
+    this._lastBarSec = null;
     this._paneViews = [{ renderer: () => ({ draw: (target) => this._draw(target) }) }];
   }
 
@@ -278,6 +288,7 @@ class FvgZonesPrimitive {
 
   setZones(zones) { this._zones = zones || []; this._requestUpdate?.(); }
   setVisible(visible) { this._visible = visible; this._requestUpdate?.(); }
+  setLastBarTime(sec) { this._lastBarSec = sec; this._requestUpdate?.(); }
 
   _draw(target) {
     if (!this._visible || !this._chart || !this._series || this._zones.length === 0) return;
@@ -288,6 +299,15 @@ class FvgZonesPrimitive {
       const hRatio = scope.horizontalPixelRatio;
       const vRatio = scope.verticalPixelRatio;
       const widthPx = scope.bitmapSize.width;
+      // The real right boundary for an "still open" zone is the LAST REAL
+      // CANDLE's own x-coordinate, not the canvas width - the canvas is
+      // wider than that whenever the chart has any trailing empty margin
+      // (see this._lastBarSec's own comment above). Falls back to widthPx
+      // only if the last bar's coordinate can't be resolved (e.g. it has
+      // scrolled off-screen to the left), which just reproduces the old
+      // (safe, if occasionally too-wide) behavior rather than hiding the zone.
+      const lastBarX = this._lastBarSec != null ? timeScale.timeToCoordinate(this._lastBarSec) : null;
+      const openZoneRightEdgePx = lastBarX !== null ? lastBarX * hRatio : widthPx;
 
       for (const zone of this._zones) {
         const yTop = this._series.priceToCoordinate(zone.top);
@@ -295,13 +315,14 @@ class FvgZonesPrimitive {
         if (yTop === null || yBottom === null) continue; // price off the visible scale
 
         // A zone that has not ended yet (or ends past the last bar) runs to
-        // the right edge; one that starts before the first visible bar is
+        // the last REAL candle (openZoneRightEdgePx above), not the canvas's
+        // own right edge; one that starts before the first visible bar is
         // clamped to the left edge instead of being dropped, so a box you're
         // zoomed inside of still shows.
         const xStart = timeScale.timeToCoordinate(zone.startTime);
         const xEnd = zone.endTime === null ? null : timeScale.timeToCoordinate(zone.endTime);
         const x1 = xStart === null ? 0 : xStart * hRatio;
-        const x2 = xEnd === null ? widthPx : xEnd * hRatio;
+        const x2 = xEnd === null ? openZoneRightEdgePx : xEnd * hRatio;
         if (x2 <= 0 || x1 >= widthPx) continue; // entirely off-screen
 
         const top = Math.min(yTop, yBottom) * vRatio;
@@ -490,6 +511,7 @@ function renderOverlays(overlays, decimals) {
       return { ...z, startTime, endTime };
     })
     .filter(Boolean);
+  zonesPrimitive.setLastBarTime(lastBarSec);
   zonesPrimitive.setZones(zones);
 
   const markers = [];
