@@ -4553,3 +4553,27 @@ Esdras, après la checklist étendue aux 7 mécanismes : "tu mets le même check
 `npm test` : 632/632 (631 + 1 nouveau, régression sur le cas `source: null`).
 
 **Fichiers** : `src/dataSources/tradeCompliance.js`, `test/tradeCompliance.test.js`.
+
+## Suivi live des 7 mécanismes sur la page graphique — 2026-09-17
+
+Esdras : "Je te parler de ces checklist dans la page graphique, ils doivent être ajoute pourquon puisse le suivre de façon live." (précision après une confusion initiale avec la checklist du journal, qui est post-hoc, pas live).
+
+**État avant** : le widget "Checklist pour trade" de `chart.html` n'a toujours montré que FVG. Pire que documenté jusqu'ici : `getPendingZoneChecklists()` retournait carrément `{zones: [], reason: 'not an FVG-strategy symbol'}` pour EURUSD/GER40 (aucune config FVG sur ces symboles) — donc RIEN ne s'affichait du tout pour deux des cinq symboles réels, alors qu'ils portent à eux deux 4 des 7 mécanismes (Judas Swing sur EURUSD ; NWOG, Weekly Sweep, Breaker Block, Silver Bullet sur GER40).
+
+**Nuance posée avant de construire, confirmée par Esdras ("Oui")** : contrairement à FVG (une zone qui reste "en surveillance" des heures, 4 critères qui peuvent chacun être vrai/faux indépendamment), la plupart des mécanismes se déclenchent sur UNE SEULE bougie — rien à observer "se construire" avant l'entrée. Deux familles honnêtement différentes, pas une checklist uniforme forcée partout :
+- **Breaker Block et Silver Bullet** : une vraie machine à états à plusieurs phases (BOS détecté → order block cassé → retest → entrée imminente pour Breaker Block ; zone formée dans la killzone → mitigation → entrée pour Silver Bullet) — une vraie progression à suivre, comme FVG.
+- **NWOG, Judas Swing, Weekly Sweep, Divergence** : statut simple (aucun signal actif, avec les niveaux de référence PDH/PDL, PWH/PWL ou z-score affichés à titre informatif même sans signal ; ou signal actif avec entrée déjà ouverte ou imminente).
+
+**Refactor préalable** : `computeBreakerBlockCandidates()`/`computeSilverBulletCandidates()` (déjà extraites de `liveStrategyEngine.js` plus tôt cette session) ne retournaient que la liste des candidats déjà RÉSOLUS — pas l'état COURANT. Ajout de `runBreakerBlockStateMachine()`/`runSilverBulletStateMachine()` qui retournent en plus la phase actuelle (`idle`/`watchBreak`/`watchRetest`/`pendingEntry` pour Breaker Block ; `idle`/`active`/`pendingEntry` pour Silver Bullet) — les deux fonctions `compute*Candidates()` existantes deviennent de simples alias, comportement inchangé et revérifié (tests existants toujours verts avant d'ajouter quoi que ce soit).
+
+**Nouveau `src/backtest/liveMechanismStatus.js`** : une fonction par mécanisme (`nwogLiveStatus`, `judasSwingLiveStatus`, `weeklySweepLiveStatus`, `breakerBlockLiveStatus`, `silverBulletLiveStatus`, `divergenceLiveStatus`), même discipline que partout ailleurs — réutilise les vraies fonctions de détection de production, jamais une réimplémentation. Divergence est le seul cas qui a besoin des DEUX symboles de la paire — pas de fetch supplémentaire nécessaire, `store.strategyEngine.getHistory()` garde déjà l'historique de tous les symboles en mémoire.
+
+**`getPendingZoneChecklists()`** (`cTraderDataSource.js`) : le early-return FVG-only a disparu. Un nouveau champ `mechanisms` couvre chaque mécanisme réellement configuré pour le symbole demandé (NWOG/Judas Swing/Weekly Sweep/Breaker Block/Silver Bullet/Divergence, selon `CONFIG.<mécanisme>.symbols`/`.pair`), en plus de `zones` qui reste le comportement FVG existant inchangé.
+
+**`chart.html`** : affiche maintenant TOUTES les cartes ensemble (la carte FVG existante, si applicable, plus une carte par mécanisme de `data.mechanisms`) — contrairement à FVG qui reste volontairement limité à une seule zone à la fois (décision explicite d'Esdras du 2026-09-15, non remise en cause ici, juste pas étendue aux autres mécanismes qui n'ont qu'un seul statut courant de toute façon, pas plusieurs zones à filtrer).
+
+**13 nouveaux tests** (`test/liveMechanismStatus.test.js`), fixtures réutilisées des tests existants par mécanisme.
+
+`npm test` : 645/645 (632 + 13 nouveaux).
+
+**Fichiers** : `src/backtest/liveMechanismStatus.js` (nouveau), `src/backtest/breakerBlock.js`, `src/backtest/silverBullet.js`, `src/dataSources/cTraderDataSource.js`, `public/chart.html`, `test/liveMechanismStatus.test.js` (nouveau).
