@@ -4283,3 +4283,70 @@ Suite directe d'UKX (rejeté sur toute la ligne) : Esdras a fourni un 2e indice 
 **Conclusion : AUX rejeté.** Pas ajouté à `config.js` — recherche uniquement.
 
 **Fichiers** : `data/backtest-input/AUX.csv` (nouveau, 142 590 bougies M15, 2019-2025), `src/backtest/transactionCosts.js` (ajout `AUX: 1.0`), `data/backtest-input/aux-train-test-validation.md` (nouveau), 13 scripts `scripts/run*StrategyAnalysis.js` (`AUX` ajouté à `SYMBOLS`, gardé de façon permanente). `npm test` : 567/567 (inchangé).
+
+## 4 nouveaux concepts ICT jamais testés — EQH/EQL, Silver Bullet autonome, Mitigation Block, Power of Three complet — 2026-09-17
+
+Après le rejet de 6 nouveaux instruments (GBPUSD limité, USDCAD/NZDJPY/AUDUSD/UKX/AUX rejetés), Esdras a demandé s'il restait des concepts ICT jamais regardés ("IL y a des concept ict qu'on a pas regarde"). 4 concepts identifiés comme genuinement non testés (par opposition aux ~30 déjà tentés dans ce fichier) : Equal Highs/Equal Lows (EQH/EQL), Silver Bullet en tant que mécanisme AUTONOME (pas juste le filtre de session déjà en prod), Mitigation Block, et le modèle Power of Three/AMD complet à 3 sessions séparées (par opposition à Asian Range Fade, une version plus étroite déjà testée). Esdras : "Teste les." Même discipline que partout dans ce fichier : conventions décidées avant tout résultat, code déjà validé réutilisé au maximum, tests unitaires avec fixtures vérifiées à la main (via des scripts `node -e` jetables, jamais des valeurs devinées), backtest sur les 12 instruments disponibles (les 8 historiques + NZDJPY/AUDUSD/UKX/AUX, gardés en circulation même après leur propre rejet comme convention établie), et vérification systématique achat/vente + valeurs exactes non arrondies avant de croire un "✅ tient" mécanique.
+
+### 1. Equal Highs / Equal Lows (EQH/EQL) — `src/backtest/equalHighsLows.js`, `test/equalHighsLows.test.js` (15 tests), `scripts/runEqualHighsLowsStrategyAnalysis.js`
+
+Distinct de Judas Swing/Weekly Sweep (qui balaient l'extrême unique le plus récent) : ici il faut DEUX pivots de swing à moins de 0.1% l'un de l'autre (convention scanner EQH/EQL publiée, fixée avant tout test) — doctrine ICT selon laquelle ce double niveau concentre plus de liquidité qu'un extrême seul. Réutilise `detectSwingPoints` (lookback=5) tel quel, même mécanique wick-puis-reclaim que Judas Swing.
+
+| Symbole | Train | Test | Verdict |
+|---|---|---|---|
+| US100 | +0.036 | +0.147 | ✅ tient (vérifié : achat ET vente positifs des deux côtés) |
+| US500 | +0.013 | +0.041 | ✅ mécanique mais **faux positif** — vente négative en test (-0.093R) |
+| XAUUSD | +0.047 | +0.064 | ✅ mécanique mais **faux positif** — vente négative en test (-0.039R) |
+| GER40 | +0.012 | +0.053 | ✅ mécanique mais **faux positif** — vente négative en train (-0.022R sur n=1335) |
+| EURUSD/GBPUSD/USDCAD/NZDJPY/AUDUSD | négatif | négatif | ❌ |
+| USDJPY/UKX | négatif | positif | ⚠️ affaibli |
+| AUX | négatif | négatif | ❌ |
+
+**Conclusion : EQH/EQL tient uniquement sur US100** (espérance train 0.0358R exacte, PF 1.045, n=2935 — nettement au-dessus du seuil "indiscernable de zéro" ~0.002-0.005R déjà identifié pour les faux positifs RSI Connors/Bollinger Squeeze), avec un edge symétrique confirmé des deux côtés dans les deux fenêtres. US500/XAUUSD/GER40 rejetés après vérification malgré leur verdict mécanique positif.
+
+### 2. Silver Bullet autonome — `src/backtest/silverBullet.js`, `test/silverBullet.test.js` (11 tests), `scripts/runSilverBulletStrategyAnalysis.js`
+
+**Le résultat le plus net de toute cette session de recherche.** Le `SILVER_BULLET_WINDOW` déjà en prod (`config.js`) n'est qu'un filtre de session sur un FVG déjà existant (peu importe quand il s'est formé) ; la vraie recette ICT exige que le FVG se FORME dans le créneau 10h-11h NY ET soit dans le sens d'un break of structure actif à ce moment (réutilise `buildStructureBiasSeries`/`makeStructureBiasLookup` tel quel). Stop = bord du gap + buffer 10% (convention `computeStop` 'fvg-edge' déjà existante).
+
+| Symbole | Train | Test | Verdict |
+|---|---|---|---|
+| **US100** | +0.32 (PF 1.52, n=1288) | +0.27 (PF 1.45) | ✅ tient — achat ET vente positifs, magnitudes comparables, les deux fenêtres |
+| **GER40** | +0.28 (PF 1.45) | +0.36 (PF 1.63) | ✅ tient — même signature propre |
+| **US500** | +0.28 (PF 1.44) | +0.17 (PF 1.28) | ✅ tient — vente plus faible en test (+0.07R) mais toujours positive |
+| XAUUSD | +0.06 | +0.19 | ✅ plus marginal — vente quasi nulle en test (-0.01R, PF 0.985), pas une confirmation franche |
+| GBPUSD | +0.06 | +0.02 | ⚠️ **signal instable** — le côté qui marche s'inverse entre train (achat) et test (vente), signature du bruit |
+| USDJPY | +0.06 | +0.25 | ⚠️ **unidirectionnel** — achat négatif en train (-0.08R), tout l'edge vient de la vente seule |
+| EURUSD/USDCAD/UKX/AUX/NZDJPY/AUDUSD | — | négatif | ❌ |
+
+**Conclusion : US100, US500 et GER40 tiennent avec un edge symétrique et solide (PF 1.28-1.63 des deux côtés)** — nettement le résultat le plus fort de toutes les stratégies exploratoires testées dans ce projet. Note de méthode : cette architecture recoupe une config FVG+structure+session déjà validée en prod sur US500 (avant l'élargissement 8h-12h) — la vraie nouveauté testée ici (le GAP doit se FORMER dans la fenêtre, pas seulement être validé) explique en partie pourquoi les chiffres ressemblent à ceux d'une config déjà en prod.
+
+### 3. Mitigation Block — `src/backtest/mitigationBlock.js`, `test/mitigationBlock.test.js` (12 tests), `scripts/runMitigationBlockStrategyAnalysis.js`
+
+Distinct de l'Order Block et du Breaker Block (les deux exigent un BOS réussi) : ici le signal vient d'un ÉCHEC à casser la structure (une "failure swing" : plus haut plus bas, ou plus bas plus haut, que le précédent), sans BOS ni cassure ultérieure requis. Le bloc = la dernière bougie de couleur opposée avant le mouvement échoué, en réutilisant `findOrderBlock` (de `breakerBlock.js`) sans le modifier — juste ancré sur le pivot de la failure swing plutôt que sur un BOS.
+
+| Symbole | Train | Test | Verdict |
+|---|---|---|---|
+| **GER40** | +0.088 (PF 1.116, n=3844) | +0.089 (PF 1.118) | ✅ tient — achat ET vente positifs des deux côtés (vente plus faible : +0.023R en test) |
+| Tous les 11 autres | négatif ou quasi nul | négatif (sauf US100/NZDJPY ⚠️ affaibli) | ❌ |
+
+**Conclusion : Mitigation Block tient sur GER40 uniquement** — même profil que Breaker Block (déjà validé GER40 seul). GER40 reste, dans ce projet, l'instrument où les mécanismes de retournement de structure ICT tiennent le mieux.
+
+### 4. Power of Three / AMD complet (3 sessions séparées) — `src/backtest/powerOfThree.js`, `test/powerOfThree.test.js` (10 tests), `scripts/runPowerOfThreeStrategyAnalysis.js`
+
+Distinct d'Asian Range Fade déjà testé (qui confond Manipulation et Distribution en une seule fenêtre continue, entrée immédiate après le reclaim) : ici la Manipulation (balayage-puis-reclaim de la range asiatique pendant le killzone de Londres 02h-05h NY, réutilise `LONDON_KILLZONE_WINDOW` de `judasSwing.js`) doit avoir eu lieu AVANT que la Distribution ne commence — entrée différée à la première bougie du killzone NY AM (08h-11h NY), une session plus tard.
+
+| Symbole | Train | Test | Verdict |
+|---|---|---|---|
+| GER40 | +0.027 (n=143, le + petit échantillon du lot) | +0.095 | ✅ mécanique mais **rejeté après vérification** — train vente négative (-0.103R, n=57) qui devient positive en test (+0.113R, n=56) : retournement de signe non reproductible, pas une confirmation |
+| XAUUSD/AUX | négatif | positif | ⚠️ affaibli |
+| Tous les 9 autres | négatif | négatif | ❌ |
+
+**Conclusion : le modèle Power of Three à 3 sessions complet ne tient sur AUCUN des 12 instruments.** Contrairement à Asian Range Fade (qui tenait sur GER40/US500 en version plus étroite), imposer la séparation stricte Manipulation/Distribution dégrade le résultat plutôt que de le renforcer — le délai lui-même (attendre la bonne session avant d'entrer) ne capture pas mieux le mouvement réel de la journée que d'agir dès le reclaim.
+
+### Bilan des 4 concepts
+
+**Silver Bullet autonome (US100/US500/GER40) est de loin la découverte la plus significative de cette session de recherche** — un edge symétrique, PF 1.28-1.63, confirmé sur les deux fenêtres et les deux directions sur 3 instruments majeurs. EQH/EQL apporte une confirmation plus modeste (US100 seul). Mitigation Block confirme le profil déjà connu de GER40 comme terrain favorable aux retournements de structure ICT. Power of Three complet ne tient nulle part — sa version plus simple (Asian Range Fade) reste la seule à avoir montré un signe de vie sur ce thème.
+
+**Aucun de ces 4 modules n'est branché en production** (`config.js` inchangé) — recherche uniquement, comme pour tout ce qui précède dans ce fichier. `npm test` : 615/615 (567 + 15 EQH/EQL + 11 Silver Bullet + 12 Mitigation Block + 10 Power of Three).
+
+**Fichiers** : `src/backtest/equalHighsLows.js`, `silverBullet.js`, `mitigationBlock.js`, `powerOfThree.js` (nouveaux) ; `test/equalHighsLows.test.js`, `silverBullet.test.js`, `mitigationBlock.test.js`, `powerOfThree.test.js` (nouveaux) ; `scripts/runEqualHighsLowsStrategyAnalysis.js`, `runSilverBulletStrategyAnalysis.js`, `runMitigationBlockStrategyAnalysis.js`, `runPowerOfThreeStrategyAnalysis.js` (nouveaux) ; `data/backtest-input/equal-highs-lows-strategy-analysis.md`, `silver-bullet-strategy-analysis.md`, `mitigation-block-strategy-analysis.md`, `power-of-three-strategy-analysis.md` (nouveaux).

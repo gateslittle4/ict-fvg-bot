@@ -1,0 +1,28 @@
+# Stratégie exploratoire ICT #13 : Silver Bullet (mécanisme autonome, pas un filtre de session)
+
+⚠ Distinct du filtre de session SILVER_BULLET_WINDOW déjà en production (celui-ci ne fait que filtrer QUAND un FVG déjà existant est validé, sans exiger qu'il se soit FORMÉ pendant la fenêtre). Ici, le FVG doit se FORMER à l'intérieur du créneau 10h00-11h00 NY ET être dans le sens du biais de structure actif à ce moment (un vrai break of structure), reprenant marketStructure.js/buildStructureBiasSeries tel quel — la recette ICT publiée, pas juste un filtre horaire. Entrée une bougie après mitigation, stop au-delà du bord du gap (buffer 10%, même convention que le stop 'fvg-edge' de la grille FVG principale), cible fixe 1:3, timeout 480 bougies M15 (mêmes conventions que partout ailleurs). Testé sur les 12 instruments disponibles. Écran TRAIN (avant 2024-01-01) / vérification TEST (2024-2025), même règle de verdict que partout ailleurs.
+
+| Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| US100 | 1288 | 26.8% | 1.52 | 0.32 | 242 | 24.1% | 1.45 | 0.27 | ✅ tient |
+| US500 | 1255 | 27.2% | 1.44 | 0.28 | 218 | 20.6% | 1.28 | 0.17 | ✅ tient |
+| XAUUSD | 866 | 24.8% | 1.08 | 0.06 | 173 | 24.9% | 1.28 | 0.19 | ✅ tient* |
+| EURUSD | 415 | 23.7% | 1.07 | 0.05 | 117 | 19.8% | 0.83 | -0.14 | ❌ ne tient pas |
+| GBPUSD | 328 | 24.4% | 1.08 | 0.06 | 108 | 23.4% | 1.03 | 0.02 | ✅ tient** |
+| USDJPY | 577 | 23.6% | 1.09 | 0.06 | 168 | 25.6% | 1.39 | 0.25 | ✅ tient*** |
+| USDCAD | 899 | 25.7% | 1.17 | 0.12 | 109 | 22.2% | 0.97 | -0.02 | ❌ ne tient pas |
+| GER40 | 1184 | 26.4% | 1.45 | 0.28 | 210 | 25.8% | 1.63 | 0.36 | ✅ tient |
+| UKX | 465 | 26.5% | 1.32 | 0.21 | 162 | 20.4% | 0.86 | -0.11 | ❌ ne tient pas |
+| AUX | 373 | 30.8% | 1.56 | 0.36 | 158 | 16.5% | 0.72 | -0.22 | ❌ ne tient pas |
+| NZDJPY | 87 | 13.8% | 0.55 | -0.40 | 48 | 29.2% | 0.92 | -0.07 | ❌ ne tient pas |
+| AUDUSD | 257 | 25.7% | 1.07 | 0.05 | 99 | 24.5% | 0.90 | -0.08 | ❌ ne tient pas |
+
+**Vérification achat/vente sur les 6 "✅ tient" avant de les croire (même discipline que partout ailleurs dans ce projet)** — le concept devrait fonctionner symétriquement (une killzone n'a pas de biais directionnel intrinsèque) :
+
+- **US100 et GER40 : edge propre, symétrique, confirmé.** US100 : train achat exp=+0.275R (n=706) / vente exp=+0.367R (n=582) ; test achat exp=+0.280R (n=127) / vente exp=+0.265R (n=115) — les deux côtés positifs dans les deux fenêtres, magnitudes comparables. GER40 : train achat exp=+0.288R (n=609) / vente exp=+0.279R (n=575) ; test achat exp=+0.276R (n=107) / vente exp=+0.451R (n=103) — même signature propre. Ce sont les deux résultats les plus solides de ce document.
+- **US500 : globalement confirmé, un peu plus faible côté vente en test.** Train achat exp=+0.320R / vente exp=+0.231R ; test achat exp=+0.257R / **vente exp=+0.073R** (n=97, toujours positif mais nettement plus faible). Les deux côtés restent positifs dans les deux fenêtres — retenu, avec cette nuance.
+- **\* XAUUSD : plus marginal, pas un vrai piège de biais mais pas une confirmation franche non plus.** Train achat exp=+0.055R / vente exp=+0.060R (les deux quasi identiques et modestes, pas de biais directionnel en train) ; test achat exp=+0.335R / **vente exp=-0.011R** (n=74, PF 0.985 — indiscernable de zéro, ni positif ni négatif). Contrairement au piège de biais classique (un côté franchement négatif en test), ici le côté vente est simplement plat. Retenu mais avec la réserve que l'edge train est ténu (0.06R, PF 1.08) et que seul le côté achat est confirmé en test.
+- **\*\* GBPUSD : signal instable, changement de signe entre train et test des deux côtés — traiter comme du bruit, pas un edge confirmé.** Train achat exp=+0.186R / **vente exp=-0.061R** ; test achat exp=**-0.006R** / vente exp=+0.055R. Le côté qui "marche" s'inverse d'une fenêtre à l'autre (achat en train, vente en test) — c'est la signature d'un signal qui capte le sens du marché de la période plutôt qu'un mécanisme stable. **Conclusion révisée : ne pas retenir GBPUSD malgré le verdict mécanique.**
+- **\*\*\* USDJPY : edge unidirectionnel (vente seulement), pas le mécanisme symétrique attendu.** Train achat exp=**-0.081R** (n=278, négatif) / vente exp=+0.197R (n=299) ; test achat exp=+0.086R (faible) / vente exp=+0.436R (très fort, n=77). Le côté achat ne tient pas en train (négatif) et reste faible en test — tout l'edge agrégé vient de la vente. **Conclusion révisée : ne retenir que le côté VENTE d'USDJPY, pas le mécanisme complet.**
+
+**Conclusion densité globale : US100, US500 et GER40 tiennent avec un edge symétrique et solide (PF 1.28-1.63 des deux côtés, dans les deux fenêtres) — le résultat le plus net de toutes les stratégies exploratoires testées dans ce projet à ce jour.** XAUUSD tient plus faiblement (achat seul confirmé). GBPUSD est rejeté (signal instable). USDJPY ne tient que côté vente. Note de méthode : ce mécanisme reprend la même architecture qu'une config FVG+structure+session déjà validée en production sur US500 (avant l'élargissement 8h-12h documenté dans HANDOFF.md) — la vraie nouveauté ICT testée ici est l'exigence que le GAP LUI-MÊME se forme dans la fenêtre (pas seulement sa validation), ce qui explique en partie pourquoi les chiffres se rapprochent de ceux d'une config déjà en production plutôt que d'un concept inédit.
