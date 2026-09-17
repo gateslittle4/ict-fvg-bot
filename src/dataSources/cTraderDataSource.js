@@ -296,6 +296,14 @@ export class CTraderDataSource {
     // trade-history view already uses, not a second, independently-guessed
     // outcome.
     this.openPositionInfoByPositionId = new Map();
+    // 2026-09-17, real incident: a connection can silently degrade into
+    // still receiving spot/candle ticks (so the dashboard looks fine) while
+    // no longer delivering ProtoOAExecutionEvent pushes at all - two real
+    // auto-execute orders got no confirmation for 6+ hours before a reboot
+    // (triggered by an unrelated deploy) silently fixed it. Tracked here so
+    // _submitOrder can force a clean restart once this repeats (see there),
+    // rather than running in that undetectable half-broken state for hours.
+    this._consecutiveOrderConfirmationTimeouts = 0;
   }
 
   async start() {
@@ -1593,7 +1601,19 @@ export class CTraderDataSource {
   // captured evidence shows ~300ms between them, ample time for the awaited
   // orderId to reach _handleAutoExecuteEntry/_handlePyramidOrderRequested
   // and register the pending entry before any terminal event follows.
-  _waitForOrderIdBySymbol(symbolId, timeoutMs = 10000) {
+  // timeoutMs was 10000 (2026-09-17, real incident: two auto-execute orders
+  // silently got no broker confirmation for 6+ hours on a connection that
+  // kept receiving spot/candle ticks fine - see HANDOFF.md's "connexion
+  // zombie" writeup). This only ever waits for ORDER_ACCEPTED (the order
+  // now exists broker-side), not ORDER_FILLED - a resting LIMIT/STOP order
+  // gets its ACCEPTED just as fast as a MARKET order's, confirmed live via
+  // /admin/test-order-cycle: ~220ms from submission to ORDER_ACCEPTED. 10s
+  // was pure slack with no upside on a healthy connection (the promise
+  // still resolves the instant the event arrives, whatever the ceiling is)
+  // and meant a degraded connection took 10s per attempt to even start
+  // being detectable - shortened so _handleAutoExecuteEntry's reconnect
+  // trigger (see there) fires quickly instead of being an afterthought.
+  _waitForOrderIdBySymbol(symbolId, timeoutMs = 3000) {
     return new Promise((resolve) => {
       let uuid;
       const safeRemove = () => {
@@ -1691,8 +1711,42 @@ export class CTraderDataSource {
     // "corrige le pipeline" work was about closing.
     console.log(`[_submitOrder] ${payload.orderType} ${payload.tradeSide} sent for symbolId=${symbolId}, rawRes=${JSON.stringify(res)}`);
     const syncOrderId = res?.order?.orderId ?? res?.orderId ?? null;
-    if (syncOrderId != null) return syncOrderId; // some future response shape DOES carry it directly - trust it, no need to wait for the event
-    return orderIdFromEvent;
+    if (syncOrderId != null) {
+      // some future response shape DOES carry it directly - trust it, no need to wait for the event
+      this._consecutiveOrderConfirmationTimeouts = 0;
+      return syncOrderId;
+    }
+    const resolvedOrderId = await orderIdFromEvent;
+    if (resolvedOrderId != null) {
+      this._consecutiveOrderConfirmationTimeouts = 0;
+    } else {
+      // 2026-09-17, see this._consecutiveOrderConfirmationTimeouts' own
+      // constructor comment: a connection can silently stop delivering
+      // ProtoOAExecutionEvent while still ticking spot/candle data fine, so
+      // "no confirmation" here is NOT distinguishable from "the process
+      // itself is fine but this one order was slow" on a single occurrence
+      // (already documented as happening once, harmlessly, on 2026-09-14).
+      // Only treated as a real connection problem worth a restart once it
+      // repeats on the VERY NEXT order attempt - a genuinely degraded
+      // connection fails every subsequent attempt, a one-off blip doesn't.
+      this._consecutiveOrderConfirmationTimeouts += 1;
+      console.error(
+        `[_submitOrder] no execution confirmation within timeout for symbolId=${symbolId} ` +
+          `(${this._consecutiveOrderConfirmationTimeouts} consecutive unconfirmed order(s))`
+      );
+      if (this._consecutiveOrderConfirmationTimeouts >= 2) {
+        console.error(
+          '[_submitOrder] 2 consecutive orders with no broker confirmation - the connection is likely ' +
+            'degraded (still receiving spot/candle ticks but not execution events, exactly the 2026-09-17 ' +
+            'incident - see HANDOFF.md). Forcing a clean process exit so the platform restarts with a fresh ' +
+            'connection rather than continuing to submit orders no one can confirm.'
+        );
+        // Let the two console.error lines above actually reach the log
+        // backend before the process dies.
+        setTimeout(() => process.exit(1), 500);
+      }
+    }
+    return resolvedOrderId;
   }
 
   /**

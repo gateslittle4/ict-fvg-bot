@@ -4631,3 +4631,23 @@ Esdras, suite directe : "Tu fais la même chose pour les deux années de test?" 
 `npm test` : inchangé, 645/645.
 
 **Fichiers** : `scripts/runFtmo1StepFullComboTestYearsCycle.js` (nouveau), `data/backtest-input/ftmo-1step-full-combo-test-years-cycle.md` (nouveau, généré).
+
+## Bug critique trouvé et corrigé : connexion "zombie" qui reçoit les prix mais plus les confirmations d'ordres — 2026-09-17
+
+Esdras : "Le bot ne fonctionne pas? Regarde, IL y des signaux mais aucun trade n'est envoyé."
+
+**Diagnostic, avec preuves concrètes (pas une supposition)** : vérifié via les logs Render que 2 vrais signaux aujourd'hui (Divergence/US500 à 14h00 UTC, Silver Bullet/US100 à 15h15 UTC) ont bien envoyé un `ProtoOANewOrderReq` au broker (confirmé : `[_submitOrder] MARKET BUY sent...`), mais **aucun `ProtoOAExecutionEvent` n'est jamais revenu pour aucun des deux** — recherché le log `[execution-event]` (qui s'affiche pour CHAQUE événement reçu, filled/rejected/peu importe) sur les 6+ heures de vie du processus précédent (démarré 11h38) : zéro résultat. Pendant ce temps, les prix/bougies continuaient d'arriver normalement (le graphique semblait fonctionner). `/api/account` confirme `realOpenCount: 0` sur les 5 symboles — aucune position réelle n'a été ouverte.
+
+**Vérifié avec `/admin/test-order-cycle`** (à la demande d'Esdras, jeton fourni) : un ordre de test sur la connexion ACTUELLE (redémarrée entre-temps) a réussi parfaitement — `ORDER_ACCEPTED` puis `ORDER_FILLED` en ~220ms, position ouverte puis fermée. Ça confirme que le pipeline fonctionne quand la connexion est saine ; le problème est spécifiquement une dégradation silencieuse de la connexion précédente qui a duré des heures sans que rien ne le détecte.
+
+**Cause de fond** : rien dans le code ne surveillait "la connexion reçoit-elle encore les confirmations d'ordres" séparément de "reçoit-elle encore les prix" — une connexion peut se dégrader partiellement (moitié morte) sans déclencher aucune erreur/déconnexion visible.
+
+**Corrections apportées** :
+1. **Timeout de confirmation réduit de 10s à 3s** (`_waitForOrderIdBySymbol`) — ce délai n'attend que l'accusé de réception `ORDER_ACCEPTED` (pas le remplissage réel), qui arrive en ~220ms même pour un ordre LIMIT/STOP en attente (vérifié en direct). 10s n'apportait aucun bénéfice sur une connexion saine (la promesse se résout dès que l'événement arrive, peu importe le plafond) et ralentissait la détection d'une connexion dégradée.
+2. **Redémarrage forcé après 2 échecs consécutifs de confirmation** (`_submitOrder`, compteur `this._consecutiveOrderConfirmationTimeouts`, partagé par `_handleAutoExecuteEntry` ET `_handlePyramidOrderRequested` puisque les deux passent par `_submitOrder`) : remis à zéro à chaque confirmation réussie ; à 2 échecs d'affilée, log critique explicite puis `process.exit(1)` pour laisser Render redémarrer proprement avec une connexion fraîche — déjà observé plusieurs fois aujourd'hui que ça répare le problème. Seuil à 2 (pas 1) délibérément : un vrai raté isolé déjà documenté (2026-09-14, BTCUSD) ne s'est PAS reproduit sur l'ordre suivant — 2 consécutifs distingue une connexion réellement dégradée (qui rate TOUT ordre suivant) d'un simple aléa ponctuel.
+
+Pas de nouveau test unitaire : `_submitOrder`/`_waitForOrderIdBySymbol` nécessitent une vraie connexion WebSocket et n'ont jamais eu de couverture unitaire dans ce projet (seules les fonctions pures exportées de `cTraderDataSource.js` le sont, voir `test/cTraderDataSource.test.js`) — même convention conservée ici plutôt que de construire un faux harnais de mock pour cette seule modification.
+
+`npm test` : 645/645 (inchangé - modification du chemin live uniquement).
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`.
