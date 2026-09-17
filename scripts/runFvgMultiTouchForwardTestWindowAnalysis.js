@@ -24,6 +24,23 @@
 // is still nowhere near enough trades for a statistically meaningful
 // verdict either way. Read as "what actually happened", not "proof of
 // which window is better".
+//
+// ⚠ TIME-ZONE FIX (2026-09-17, found while forward-testing Silver Bullet -
+// see HANDOFF.md): this script originally fed the exported CSV straight
+// into isInNySessionWindow() without converting it first. getHistoricalCandles()
+// (src/dataSources/cTraderDataSource.js) exports candles in GENUINE UTC (see
+// that file's own comment on _trendbarToCandle: "Do NOT feed this straight
+// into the strategy engine — see _toEngineCandle()"), but isInNySessionWindow
+// (used here by buildMultiTouchFilterPredicate's session-window check)
+// assumes the historical CSVs' fixed-EST-as-UTC convention (nySession.js's
+// own header: ".time is always exactly 5h BEHIND true UTC"). The live bot
+// itself converts real UTC candles via _toEngineCandle() before ever
+// handing them to the strategy engine - this script now applies the SAME
+// conversion before backtesting, so 8h-12h/10h-11h are evaluated against
+// the correct real NY hour. The ORIGINAL (buggy) run of this script is
+// still referenced from HANDOFF.md's "8h-12h n'est-il pas un meilleur
+// compromis ?" section - re-run after this fix to see whether its
+// conclusion changes.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,6 +48,7 @@ import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
 import { runBacktest, summarizeTrades } from '../src/backtest/backtestEngine.js';
 import { MultiTouchFvgEngine, buildMultiTouchFilterPredicate } from '../src/backtest/fvgMultiTouch.js';
 import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
+import { FIXED_EST_TO_UTC_OFFSET_MS } from '../src/backtest/nySession.js';
 import { CONFIG } from '../src/config.js';
 
 const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
@@ -60,9 +78,16 @@ function main() {
   const dir = process.argv[2];
   if (!dir) { console.error('Usage: node scripts/runFvgMultiTouchForwardTestWindowAnalysis.js <forward-test-dir>'); process.exit(1); }
 
-  const { candles } = loadCandlesFromCsv(path.join(dir, `${SYMBOL}.csv`));
-  const firstTime = candles[0]?.time;
-  const lastTime = candles[candles.length - 1]?.time;
+  const { candles: rawCandles } = loadCandlesFromCsv(path.join(dir, `${SYMBOL}.csv`));
+  // Real calendar range for display - from the ORIGINAL genuine-UTC candles,
+  // not the shifted engine-time ones below (shifting by 5h would misstate
+  // the displayed start/end date by up to a day at the edges).
+  const firstTime = rawCandles[0]?.time;
+  const lastTime = rawCandles[rawCandles.length - 1]?.time;
+  // Genuine UTC (cTrader export) -> engine time (fixed-EST-as-UTC) - see this
+  // file's own time-zone-fix header comment. Used for the actual backtest/
+  // session-window evaluation below.
+  const candles = rawCandles.map((c) => ({ ...c, time: c.time - FIXED_EST_TO_UTC_OFFSET_MS }));
 
   const md = [];
   md.push('# US100 multi-contact — 8h-12h vs 10h-11h vs journée entière, sur les 7 mois RÉELS de forward-test');
@@ -111,7 +136,9 @@ function main() {
     md.push('| Entrée | Direction | Résultat | R |');
     md.push('|---|---|---|---|');
     for (const t of trades) {
-      md.push(`| ${fmtDate(t.entryTime)} | ${t.direction === 'bullish' ? 'achat' : 'vente'} | ${t.outcome} | ${t.rMultiple >= 0 ? '+' : ''}${fmtNum(t.rMultiple)} |`);
+      // +FIXED_EST_TO_UTC_OFFSET_MS: t.entryTime is engine time (shifted -5h
+      // for the backtest above) - shift back to real UTC for display.
+      md.push(`| ${fmtDate(t.entryTime + FIXED_EST_TO_UTC_OFFSET_MS)} | ${t.direction === 'bullish' ? 'achat' : 'vente'} | ${t.outcome} | ${t.rMultiple >= 0 ? '+' : ''}${fmtNum(t.rMultiple)} |`);
     }
     md.push('');
   }

@@ -4406,3 +4406,31 @@ Esdras : "on les met en mode auto execute, ensuite corrige le bug" — même fas
 **Statut : Silver Bullet EST maintenant réellement live sur US100/US500/GER40, ET le bug Weekly Sweep/Breaker Block est corrigé — les deux tournent enfin réellement, ~2 jours après avoir été "documentés" comme actifs.** Prochaine étape : surveiller les premiers signaux réels (dashboard/journal) pour confirmer que tout se déclenche comme attendu avant d'oublier ce déploiement.
 
 **Fichiers** : `src/liveStrategyEngine.js`, `src/accountRuntime.js`, `src/accountRegistry.js`, `src/config.js`, `src/dataSources/dealPairing.js`, `src/dataSources/cTraderDataSource.js`, `src/dataSources/matchTraderDataSource.js`, `public/index.html`, `public/journal.html` (tous modifiés) ; `test/liveStrategyEngine.test.js`, `test/accountRegistry.test.js` (tests ajoutés).
+
+## Correction du bug de fuseau horaire dans le forward-test 8h-12h vs 10h-11h — 2026-09-17
+
+Suite du signalement fait pendant le forward-test de Silver Bullet ci-dessus : `scripts/runFvgMultiTouchForwardTestWindowAnalysis.js` (la comparaison "8h-12h vs 10h-11h vs journée entière" sur les 7 mois réels de `data/forward-test-2026/`, HANDOFF.md du 2026-09-12) nourrissait les bougies cTrader exportées (UTC réel) directement dans `isInNySessionWindow()` sans les convertir en "heure moteur" (UTC-5 fixe) — même bug que celui déjà corrigé pour Silver Bullet, présent ici depuis l'origine. Corrigé de la même façon (`time - FIXED_EST_TO_UTC_OFFSET_MS` avant tout backtest, valeurs ré-affichées en UTC réel dans le tableau détaillé des trades).
+
+**Ancien résultat (buggy), pour référence** :
+
+| Fenêtre | Trades | Win rate | Espérance (R) | R total | Drawdown max (R) |
+|---|---|---|---|---|---|
+| 08h-12h | 26 | 34.6% | 0.99 | 25.74 | 6.39 |
+| 10h-11h (production) | 9 | 44.4% | 1.56 | 14.06 | 2.23 |
+| toute la journée | 133 | 24.8% | 0.41 | 54.55 | 11.78 |
+
+**Nouveau résultat (corrigé)** :
+
+| Fenêtre | Trades | Win rate | Espérance (R) | R total | Drawdown max (R) |
+|---|---|---|---|---|---|
+| 08h-12h | 76 | 26.3% | 0.52 | 39.64 | 14.92 |
+| 10h-11h (production) | 32 | 21.9% | 0.25 | 7.87 | 7.16 |
+| toute la journée | 137 | 25.5% | 0.48 | 65.50 | 9.44 |
+
+L'écart confirme que le bug était réel et significatif (les horodatages des trades affichés glissent d'environ 5h — ex. une entrée listée à "08:00" dans l'ancienne version correspondait en fait à une bougie ~13:00 UTC réel, pas 08:00 NY). Le nombre de trades par fenêtre change du tout au tout (26→76 pour 8h-12h), preuve que la MAUVAISE plage horaire était filtrée avant.
+
+**Conclusion révisée** : sur ces 7 mois réels corrigés, c'est maintenant **"toute la journée" (sans filtre de session) qui a le R total le plus haut (65.50R)**, suivi de 8h-12h (39.64R) puis 10h-11h (7.87R) — un classement différent de la version buggy (qui plaçait déjà 8h-12h devant 10h-11h, mais avec "toute la journée" nettement plus faible). **Ceci NE change PAS la décision de production actuelle** (8h-12h reste la config `US100` dans `config.js`) : cette comparaison a toujours été un test secondaire, informatif, avec son propre avertissement déjà présent dans le fichier ("un seul trade suffit à faire basculer ce classement... voir plutôt `ftmo-1step-us100-only-8to12-account-impact.md` sur 7 ANNÉES" pour la vraie base de la décision) — la décision 8h-12h repose sur le backtest historique 7 ans, jamais sur ce forward-test de 7 mois. Mais le chiffre lui-même était faux et est maintenant corrigé pour quiconque relit ce fichier plus tard.
+
+`npm test` : 618/618 (script d'analyse seul, aucun code de production touché).
+
+**Fichiers** : `scripts/runFvgMultiTouchForwardTestWindowAnalysis.js` (bug corrigé), `data/forward-test-2026/fvg-multi-touch-forward-test-window-analysis.md` (régénéré avec les bonnes valeurs).
