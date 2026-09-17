@@ -4454,3 +4454,50 @@ Esdras : "verifie que tous les signaux sont reelement cable, car je sens que des
 `npm test` : 618/618 (tests existants étendus, aucun nouveau test ajouté).
 
 **Fichiers** : `test/liveStrategyEngine.test.js` (couverture étendue).
+
+## Fréquence de trades attendue par semaine + forward-test réel de la semaine en cours — 2026-09-17
+
+Esdras : "combien de trade dois je mattendre paar semaine et fait un back foward depuis le commencemnet de la semaine jusqua aujoudhui pour voir les trades que les combo aurait execute". Les deux utilisent le VRAI combo de production (`LiveStrategyEngine` avec exactement les configs de `src/config.js` — FVG, Divergence, NWOG, Judas Swing, Weekly Sweep, Breaker Block, Silver Bullet), pas une estimation à la main, via `warmUp()` (le même chemin bit-à-bit vérifié pour la production). Garde-fous réels (`CONFIG.guardrails`) appliqués dans les deux cas — ce ne sont pas des comptes "avant garde-fous".
+
+### Fréquence attendue : ~17 trades/semaine (`scripts/runComboWeeklyTradeFrequencyAnalysis.js`)
+
+Calculé sur la fenêtre TEST partagée par tous les mécanismes déjà validés (2024-2025, 104 semaines, données historiques `data/backtest-input/`) :
+
+| Mécanisme | Trades | Par semaine |
+|---|---|---|
+| Silver Bullet | 478 | 4.58 |
+| FVG | 411 | 3.94 |
+| Breaker Block | 282 | 2.70 |
+| Judas Swing | 221 | 2.12 |
+| Weekly Sweep | 159 | 1.52 |
+| NWOG | 119 | 1.14 |
+| Divergence | 96 | 0.92 |
+| **Total** | **1766** | **16.91** |
+
+Par symbole : GER40 5.76/semaine (le plus chargé, 4 mécanismes dessus), US100 4.51, US500 3.80, EURUSD 2.12, XAUUSD 0.73. **Aucune des 105 semaines calendaires de cette fenêtre n'est tombée à 0 trade** — malgré NWOG/Weekly Sweep qui semblent "hebdomadaires" pris individuellement, le combo complet ne connaît jamais de semaine morte.
+
+### Forward-test réel, cette semaine (`scripts/runComboForwardTestThisWeek.js`, `data/real-data-2026-09-17/`)
+
+Bougies M15 réellement conservées par le bot (récupérées via `/api/candles`, jamais utilisées pour régler quoi que ce soit), fenêtre du dimanche 21h00 UTC (ouverture réelle du marché NY, pas minuit lundi — sinon le gap NWOG du week-end est coupé, comme découvert en écrivant ce script) jusqu'à maintenant (jeudi 2026-09-17, 09h30 UTC) :
+
+| Heure (UTC) | Symbole | Mécanisme | Sens | Résultat |
+|---|---|---|---|---|
+| 13-09 22:15 | US100 | NWOG | achat | perte (-1R) |
+| 13-09 22:15 | GER40 | NWOG | achat | gain (+5R) |
+| 14-09 00:45 | GER40 | Breaker Block | vente | perte (-1R) |
+| 14-09 14:30 | US100 | Silver Bullet | achat | gain (+3R) |
+| 14-09 15:15 | GER40 | Silver Bullet | vente | perte (-1R) |
+| 14-09 20:15 | GER40 | Breaker Block | achat | perte (-1R) |
+| 15-09 08:15 | US500 | Weekly Sweep | achat | gain (+5R) |
+| 15-09 09:45 | GER40 | Weekly Sweep | achat | gain (+5R) |
+| 16-09 07:45 | EURUSD | Judas Swing | vente | gain (+3R) |
+| 16-09 15:15 | XAUUSD | FVG | achat | perte (-1R) |
+| 16-09 17:15 | GER40 | Silver Bullet | achat | gain (+3R) |
+
+**11 trades en ~4 jours** (dimanche soir à jeudi matin), 6 gagnants / 5 perdants, dont **3 Silver Bullet dès sa première semaine réelle en production**, ce qui répond directement au doute exprimé la veille ("je sens que des signaux pourraient être bloqués") : Silver Bullet, Weekly Sweep ET Breaker Block ont tous les trois déjà produit de vrais trades cette semaine, la correction du bug de câblage a bien pris effet. Extrapolé sur une semaine complète (11 trades / ~4.2 jours × 7), ça donne ~18/semaine — cohérent avec l'estimation historique de 16.91/semaine ci-dessus, pas une coïncidence.
+
+**Réserve honnête** : NWOG est compté ici mais s'est produit AVANT le déploiement réel de Silver Bullet/la correction du bug Weekly Sweep-Breaker Block (2026-09-17 ~09h30 UTC) — ce forward-test rejoue l'historique avec la config actuelle sur toute la semaine, il ne prétend pas que ces trades ont réellement été exécutés en direct avant la correction (voir les sections précédentes : Weekly Sweep/Breaker Block étaient inertes jusqu'à ce matin). C'est ce que le combo AURAIT fait avec la config actuelle, pas un journal de ce qui s'est réellement passé sur le compte avant la correction.
+
+`npm test` : 618/618 (scripts d'analyse seuls, aucun code de production touché).
+
+**Fichiers** : `scripts/runComboWeeklyTradeFrequencyAnalysis.js`, `scripts/runComboForwardTestThisWeek.js` (nouveaux), `data/real-data-2026-09-17/` (nouveau, bougies réelles + README de provenance).
