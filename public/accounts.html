@@ -235,6 +235,25 @@
       </div>
       <div class="msg" id="restart-msg"></div>
     </div>
+
+    <div class="card">
+      <h2>Tester la connexion broker</h2>
+      <p class="hint">Passe un ordre minimal (plus petit lot possible) pour vérifier que les ordres arrivent vraiment au broker. L'ordre sera ouvert puis fermé immédiatement.</p>
+      <div>
+        <label for="test-symbol">Symbole à tester</label>
+        <select id="test-symbol">
+          <option value="US100">US100</option>
+          <option value="US500">US500</option>
+          <option value="XAUUSD">XAUUSD</option>
+          <option value="EURUSD">EURUSD</option>
+          <option value="GER40">GER40</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button class="primary" id="test-order-btn">Passer un ordre de test</button>
+      </div>
+      <div class="msg" id="test-order-msg"></div>
+    </div>
   </div>
 
 <script>
@@ -354,6 +373,26 @@ document.getElementById('restart-btn').addEventListener('click', async () => {
     showMsg(restartMsg, result.note, true);
   } catch (err) {
     showMsg(restartMsg, 'Erreur: ' + err.message, false);
+  }
+});
+
+document.getElementById('test-order-btn').addEventListener('click', async () => {
+  const symbol = document.getElementById('test-symbol').value;
+  const testOrderMsg = document.getElementById('test-order-msg');
+  const btn = document.getElementById('test-order-btn');
+
+  btn.disabled = true;
+  try {
+    const result = await api(`/api/admin/test-order-cycle?symbol=${encodeURIComponent(symbol)}`, { method: 'POST' });
+    if (result.ok) {
+      showMsg(testOrderMsg, `✅ Succès! Ordre ${symbol} passé et fermé. PnL: ${result.closePnl || 'N/A'}`, true);
+    } else {
+      showMsg(testOrderMsg, `⚠️ ${result.note || 'Erreur lors du test'}`, false);
+    }
+  } catch (err) {
+    showMsg(testOrderMsg, '❌ Erreur: ' + err.message, false);
+  } finally {
+    btn.disabled = false;
   }
 });
 
