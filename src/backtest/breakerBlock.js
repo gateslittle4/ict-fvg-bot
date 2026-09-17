@@ -97,6 +97,87 @@ export function findOrderBlock(candles, bosIndex, direction, searchLookback) {
   return null;
 }
 
+/**
+ * Position-agnostic candidate detector - the watchBreak/watchRetest/
+ * pendingEntry state machine, extracted verbatim from liveStrategyEngine.js's
+ * own `_computeBreakerBlockCandidates()` (2026-09-17, moved here so
+ * tradeCompliance.js's checklist reconstruction and the live engine share
+ * ONE implementation instead of two copies that could silently drift -
+ * same discipline as detectNwogEvents/detectJudasSwingEvents/
+ * detectWeeklySweepEvents already being the single source of truth for
+ * their own mechanisms). Same shape as those: {direction, entryTime,
+ * stopReference}[], one entry per candidate, at the OPEN of the candle
+ * after the retest triggers - not gated on "is a trade currently open"
+ * (that's the shared netting layer's job, not this detector's).
+ * @returns {Array<{direction:'bullish'|'bearish', entryTime:number, stopReference:number}>}
+ */
+export function computeBreakerBlockCandidates(candles) {
+  const bosEvents = detectBosEvents(candles);
+  const bosByIndex = new Map(bosEvents.map((e) => [e.index, e]));
+  const candidates = [];
+
+  let watchBreak = null; // { obDirection, zoneLow, zoneHigh, mid, bosIndex, expireIndex }
+  let watchRetest = null; // { breakerDirection, zoneLow, zoneHigh, mid, expireIndex }
+  let pendingEntry = null; // { direction, stopPrice, readyAtIndex }
+
+  for (let i = 0; i < candles.length; i++) {
+    const candle = candles[i];
+
+    if (pendingEntry && pendingEntry.readyAtIndex === i) {
+      candidates.push({ direction: pendingEntry.direction, entryTime: candle.time, stopReference: pendingEntry.stopPrice });
+      pendingEntry = null;
+    }
+
+    if (!pendingEntry && watchRetest) {
+      if (i > watchRetest.expireIndex) {
+        watchRetest = null;
+      } else {
+        // Same retest-side convention as runBreakerBlockBacktest(): a
+        // bullish breaker (originally bearish OB, broken through upward) is
+        // now support, retested from ABOVE; a bearish breaker is now
+        // resistance, retested from BELOW.
+        const bullish = watchRetest.breakerDirection === 'bullish';
+        const touched = bullish ? candle.low <= watchRetest.mid : candle.high >= watchRetest.mid;
+        if (touched) {
+          const stopPrice = bullish ? watchRetest.zoneLow : watchRetest.zoneHigh;
+          pendingEntry = { direction: watchRetest.breakerDirection, stopPrice, readyAtIndex: i + 1 };
+          watchRetest = null;
+        }
+      }
+    }
+
+    if (!pendingEntry && !watchRetest && watchBreak) {
+      if (i > watchBreak.expireIndex) {
+        watchBreak = null;
+      } else if (i > watchBreak.bosIndex) {
+        const obBullish = watchBreak.obDirection === 'bullish';
+        const brokenThrough = obBullish ? candle.low < watchBreak.zoneLow : candle.high > watchBreak.zoneHigh;
+        if (brokenThrough) {
+          watchRetest = {
+            breakerDirection: obBullish ? 'bearish' : 'bullish', // polarity flips
+            zoneLow: watchBreak.zoneLow,
+            zoneHigh: watchBreak.zoneHigh,
+            mid: watchBreak.mid,
+            expireIndex: i + BREAKER_MAX_AGE_CANDLES,
+          };
+          watchBreak = null;
+        }
+      }
+    }
+
+    if (!pendingEntry && !watchRetest && !watchBreak) {
+      const bos = bosByIndex.get(i);
+      if (bos) {
+        const zone = findOrderBlock(candles, i, bos.direction, OB_SEARCH_LOOKBACK);
+        if (zone) {
+          watchBreak = { obDirection: bos.direction, zoneLow: zone.low, zoneHigh: zone.high, mid: zone.mid, bosIndex: i, expireIndex: i + BREAKER_MAX_AGE_CANDLES };
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
 /** @returns {Array} raw (pre-cost) trades */
 export function runBreakerBlockBacktest(candles, opts = {}) {
   const {

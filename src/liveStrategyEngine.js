@@ -132,8 +132,8 @@ import { computeAtrSeries } from './backtest/rsiDivergence.js';
 import { detectNwogEvents } from './backtest/nwog.js';
 import { detectJudasSwingEvents } from './backtest/judasSwing.js';
 import { detectWeeklySweepEvents } from './backtest/weeklyLiquiditySweep.js';
-import { detectBosEvents, findOrderBlock, OB_SEARCH_LOOKBACK, BREAKER_MAX_AGE_CANDLES } from './backtest/breakerBlock.js';
-import { detectSilverBulletFvgs, FVG_MAX_AGE_CANDLES as SILVER_BULLET_FVG_MAX_AGE_CANDLES, FVG_EDGE_BUFFER_PCT as SILVER_BULLET_FVG_EDGE_BUFFER_PCT } from './backtest/silverBullet.js';
+import { computeBreakerBlockCandidates } from './backtest/breakerBlock.js';
+import { computeSilverBulletCandidates } from './backtest/silverBullet.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
@@ -1069,89 +1069,20 @@ export class LiveStrategyEngine {
 
   /**
    * Pure computation of every Breaker Block entry candidate implied by one
-   * symbol's full candle history - reuses detectBosEvents()/findOrderBlock()
-   * (src/backtest/breakerBlock.js) UNCHANGED for the structural detection
-   * (BOS -> Order Block -> break-through -> retest), replaying the SAME
-   * watchBreak/watchRetest/pendingEntry state machine as
-   * runBreakerBlockBacktest()'s own stages 3-5 - only the TRADE MANAGEMENT
-   * half of that function (its stage 1 "resolve an open position", and the
-   * position-opening side of its stage 2) is left out, because that's
-   * already handled by this engine's own shared openPositions/netting
-   * (_resolveOpenPosition/_blockReason), exactly like every other source
-   * here. Deliberately does NOT gate the state machine on "is a trade
-   * currently open" the way the standalone backtest does (that variable
-   * tracked ONLY Breaker Block's own position there, with nothing else
-   * competing for the symbol) - same reasoning as
-   * _computeNwogCandidates()/_computeJudasSwingCandidates() above: this
-   * function stays a pure, position-agnostic detector, and the shared
-   * netting layer is what actually decides whether a detected candidate
-   * gets to open a real position.
+   * symbol's full candle history - now a thin alias for
+   * computeBreakerBlockCandidates() (src/backtest/breakerBlock.js), which
+   * holds the actual watchBreak/watchRetest/pendingEntry state machine
+   * (extracted 2026-09-17 so tradeCompliance.js's checklist reconstruction
+   * and this engine share ONE implementation instead of two copies that
+   * could silently drift - same discipline as detectNwogEvents/
+   * detectJudasSwingEvents/detectWeeklySweepEvents already being the single
+   * source of truth for their own mechanisms). See that function's own doc
+   * comment for the full behavior description (position-agnostic detector,
+   * not gated on "is a trade currently open" - the shared netting layer
+   * decides that).
    */
   _computeBreakerBlockCandidates(candles) {
-    const bosEvents = detectBosEvents(candles);
-    const bosByIndex = new Map(bosEvents.map((e) => [e.index, e]));
-    const candidates = [];
-
-    let watchBreak = null; // { obDirection, zoneLow, zoneHigh, mid, bosIndex, expireIndex }
-    let watchRetest = null; // { breakerDirection, zoneLow, zoneHigh, mid, expireIndex }
-    let pendingEntry = null; // { direction, stopPrice, readyAtIndex }
-
-    for (let i = 0; i < candles.length; i++) {
-      const candle = candles[i];
-
-      if (pendingEntry && pendingEntry.readyAtIndex === i) {
-        candidates.push({ direction: pendingEntry.direction, entryTime: candle.time, stopReference: pendingEntry.stopPrice });
-        pendingEntry = null;
-      }
-
-      if (!pendingEntry && watchRetest) {
-        if (i > watchRetest.expireIndex) {
-          watchRetest = null;
-        } else {
-          const bullish = watchRetest.breakerDirection === 'bullish';
-          // Same retest-side convention as runBreakerBlockBacktest(): a
-          // bullish breaker (originally bearish OB, broken through upward)
-          // is now support, retested from ABOVE; a bearish breaker is now
-          // resistance, retested from BELOW.
-          const touched = bullish ? candle.low <= watchRetest.mid : candle.high >= watchRetest.mid;
-          if (touched) {
-            const stopPrice = bullish ? watchRetest.zoneLow : watchRetest.zoneHigh;
-            pendingEntry = { direction: watchRetest.breakerDirection, stopPrice, readyAtIndex: i + 1 };
-            watchRetest = null;
-          }
-        }
-      }
-
-      if (!pendingEntry && !watchRetest && watchBreak) {
-        if (i > watchBreak.expireIndex) {
-          watchBreak = null;
-        } else if (i > watchBreak.bosIndex) {
-          const obBullish = watchBreak.obDirection === 'bullish';
-          const brokenThrough = obBullish ? candle.low < watchBreak.zoneLow : candle.high > watchBreak.zoneHigh;
-          if (brokenThrough) {
-            watchRetest = {
-              breakerDirection: obBullish ? 'bearish' : 'bullish', // polarity flips
-              zoneLow: watchBreak.zoneLow,
-              zoneHigh: watchBreak.zoneHigh,
-              mid: watchBreak.mid,
-              expireIndex: i + BREAKER_MAX_AGE_CANDLES,
-            };
-            watchBreak = null;
-          }
-        }
-      }
-
-      if (!pendingEntry && !watchRetest && !watchBreak) {
-        const bos = bosByIndex.get(i);
-        if (bos) {
-          const zone = findOrderBlock(candles, i, bos.direction, OB_SEARCH_LOOKBACK);
-          if (zone) {
-            watchBreak = { obDirection: bos.direction, zoneLow: zone.low, zoneHigh: zone.high, mid: zone.mid, bosIndex: i, expireIndex: i + BREAKER_MAX_AGE_CANDLES };
-          }
-        }
-      }
-    }
-    return candidates;
+    return computeBreakerBlockCandidates(candles);
   }
 
   _detectBreakerBlockSignal(symbol, candle, guardrailNow = candle.time) {
@@ -1240,68 +1171,17 @@ export class LiveStrategyEngine {
 
   /**
    * Pure computation of every Silver Bullet entry candidate implied by one
-   * symbol's full candle history - reuses detectSilverBulletFvgs()
-   * (src/backtest/silverBullet.js) UNCHANGED for the eligibility test (FVG
-   * formed inside the killzone window AND agreeing with the active
-   * structure bias - not reimplemented here), replaying the SAME
-   * active-zone/mitigation state machine as runSilverBulletBacktest()'s own
-   * stages 2-4 - only the TRADE MANAGEMENT half (its stage 1 "resolve an
-   * open position", and the position-opening side of its stage 4's `!open`
-   * guard) is left out, because that's already handled by this engine's own
-   * shared openPositions/netting (_resolveOpenPosition/_blockReason), exactly
-   * like _computeBreakerBlockCandidates() above. Deliberately does NOT gate
-   * the state machine on "is a trade currently open" the way the standalone
-   * backtest does (that variable tracked ONLY Silver Bullet's own position
-   * there, with nothing else competing for the symbol) - same reasoning as
-   * every other _computeXCandidates() here: this function stays a pure,
-   * position-agnostic detector, and the shared netting layer is what
-   * actually decides whether a detected candidate gets to open a real
-   * position.
+   * symbol's full candle history - now a thin alias for
+   * computeSilverBulletCandidates() (src/backtest/silverBullet.js), which
+   * holds the actual active-zone/mitigation state machine (extracted
+   * 2026-09-17, same reasoning as _computeBreakerBlockCandidates() above:
+   * tradeCompliance.js's checklist reconstruction and this engine now
+   * share ONE implementation instead of two copies that could silently
+   * drift). See that function's own doc comment for the full behavior
+   * description.
    */
   _computeSilverBulletCandidates(candles) {
-    const eligibleFvgs = detectSilverBulletFvgs(candles);
-    const fvgsByFormedIndex = new Map();
-    for (const f of eligibleFvgs) {
-      if (!fvgsByFormedIndex.has(f.formedIndex)) fvgsByFormedIndex.set(f.formedIndex, []);
-      fvgsByFormedIndex.get(f.formedIndex).push(f);
-    }
-
-    const candidates = [];
-    let active = []; // { direction, zone, candlesSinceFormed }
-
-    for (let i = 0; i < candles.length; i++) {
-      const candle = candles[i];
-
-      const stillActive = [];
-      let mitigated = null;
-      for (const fvg of active) {
-        fvg.candlesSinceFormed += 1;
-        const enteredZone = fvg.direction === 'bullish' ? candle.low <= fvg.zone.top : candle.high >= fvg.zone.bottom;
-        if (enteredZone) {
-          if (!mitigated) mitigated = fvg; // only ever act on the first one this candle
-          continue; // consumed either way - mitigated zones aren't re-tradeable
-        }
-        if (fvg.candlesSinceFormed < SILVER_BULLET_FVG_MAX_AGE_CANDLES) stillActive.push(fvg);
-      }
-      active = stillActive;
-
-      if (mitigated) {
-        const entryIndex = i + 1;
-        if (entryIndex < candles.length) {
-          const bullish = mitigated.direction === 'bullish';
-          const zoneHeight = mitigated.zone.top - mitigated.zone.bottom;
-          const buffer = zoneHeight * SILVER_BULLET_FVG_EDGE_BUFFER_PCT;
-          const stopReference = bullish ? mitigated.zone.bottom - buffer : mitigated.zone.top + buffer;
-          candidates.push({ direction: mitigated.direction, entryTime: candles[entryIndex].time, stopReference });
-        }
-      }
-
-      const newlyFormed = fvgsByFormedIndex.get(i);
-      if (newlyFormed) {
-        for (const f of newlyFormed) active.push({ direction: f.direction, zone: f.zone, candlesSinceFormed: 0 });
-      }
-    }
-    return candidates;
+    return computeSilverBulletCandidates(candles);
   }
 
   _detectSilverBulletSignal(symbol, candle, guardrailNow = candle.time) {

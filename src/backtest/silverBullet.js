@@ -80,6 +80,65 @@ export function detectSilverBulletFvgs(candles, { sessionWindow = SILVER_BULLET_
   return eligible;
 }
 
+/**
+ * Position-agnostic candidate detector - the "wait for mitigation, entry
+ * next candle" walk over detectSilverBulletFvgs()'s own eligible zones,
+ * extracted verbatim from liveStrategyEngine.js's own
+ * `_computeSilverBulletCandidates()` (2026-09-17, moved here so
+ * tradeCompliance.js's checklist reconstruction and the live engine share
+ * ONE implementation instead of two copies that could silently drift - same
+ * discipline as detectNwogEvents/detectJudasSwingEvents/
+ * detectWeeklySweepEvents/computeBreakerBlockCandidates already being the
+ * single source of truth for their own mechanisms). Same shape as those:
+ * {direction, entryTime, stopReference}[].
+ * @returns {Array<{direction:'bullish'|'bearish', entryTime:number, stopReference:number}>}
+ */
+export function computeSilverBulletCandidates(candles) {
+  const eligibleFvgs = detectSilverBulletFvgs(candles);
+  const fvgsByFormedIndex = new Map();
+  for (const f of eligibleFvgs) {
+    if (!fvgsByFormedIndex.has(f.formedIndex)) fvgsByFormedIndex.set(f.formedIndex, []);
+    fvgsByFormedIndex.get(f.formedIndex).push(f);
+  }
+
+  const candidates = [];
+  let active = []; // { direction, zone, candlesSinceFormed }
+
+  for (let i = 0; i < candles.length; i++) {
+    const candle = candles[i];
+
+    const stillActive = [];
+    let mitigated = null;
+    for (const fvg of active) {
+      fvg.candlesSinceFormed += 1;
+      const enteredZone = fvg.direction === 'bullish' ? candle.low <= fvg.zone.top : candle.high >= fvg.zone.bottom;
+      if (enteredZone) {
+        if (!mitigated) mitigated = fvg; // only ever act on the first one this candle
+        continue; // consumed either way - mitigated zones aren't re-tradeable
+      }
+      if (fvg.candlesSinceFormed < FVG_MAX_AGE_CANDLES) stillActive.push(fvg);
+    }
+    active = stillActive;
+
+    if (mitigated) {
+      const entryIndex = i + 1;
+      if (entryIndex < candles.length) {
+        const bullish = mitigated.direction === 'bullish';
+        const zoneHeight = mitigated.zone.top - mitigated.zone.bottom;
+        const buffer = zoneHeight * FVG_EDGE_BUFFER_PCT;
+        const stopReference = bullish ? mitigated.zone.bottom - buffer : mitigated.zone.top + buffer;
+        candidates.push({ direction: mitigated.direction, entryTime: candles[entryIndex].time, stopReference });
+      }
+    }
+
+    const newlyFormed = fvgsByFormedIndex.get(i);
+    if (newlyFormed) {
+      for (const f of newlyFormed) active.push({ direction: f.direction, zone: f.zone, candlesSinceFormed: 0 });
+    }
+  }
+  return candidates;
+}
+
 /** @returns {Array} raw (pre-cost) trades, on M15 candles */
 export function runSilverBulletBacktest(candles, opts = {}) {
   const {

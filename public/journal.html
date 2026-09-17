@@ -917,8 +917,16 @@ function sessionChecklistItem(entryTime) {
   return { key: 'session', applicable: true, ok: true, label: 'Session', detail: `${label} (heure UTC)` };
 }
 function renderComplianceChecklist(trade) {
-  const byKey = Object.fromEntries((trade.checklist || []).map((i) => [i.key, i]));
-  const items = [byKey.zone, byKey.bias, byKey.stop, guardrailChecklistItem(), byKey.risk, sessionChecklistItem(trade.entryTime)].filter(Boolean);
+  // 2026-09-17: was a hardcoded [zone, bias, stop, ..., risk] pick by key -
+  // only ever showed something real for 'fvg' trades, since every other
+  // source's server-side checklist used to be all "non applicable" filler.
+  // Now that tradeCompliance.js's buildComplianceChecklist() builds a real
+  // checklist per mechanism (signal/stop/session/direction-filter/etc, see
+  // its own header), render EVERY item the server actually sent, in the
+  // order it sent them, instead of picking 4 fixed keys that only existed
+  // for FVG - the 2 client-only items (guardrail, ICT session bucket) still
+  // apply to every source, so they stay appended at the end unchanged.
+  const items = [...(trade.checklist || []), guardrailChecklistItem(), sessionChecklistItem(trade.entryTime)];
   const rows = items.map((it) => {
     const icon = !it.applicable ? '—' : (it.ok ? '✔' : '⚠');
     const iconClass = !it.applicable ? '' : (it.ok ? 'ok' : 'warn');
