@@ -4501,3 +4501,29 @@ Bougies M15 réellement conservées par le bot (récupérées via `/api/candles`
 `npm test` : 618/618 (scripts d'analyse seuls, aucun code de production touché).
 
 **Fichiers** : `scripts/runComboWeeklyTradeFrequencyAnalysis.js`, `scripts/runComboForwardTestThisWeek.js` (nouveaux), `data/real-data-2026-09-17/` (nouveau, bougies réelles + README de provenance).
+
+## Checklist de conformité étendue aux 7 mécanismes, pas juste FVG — 2026-09-17
+
+Esdras, après avoir vu le trade Judas Swing/EURUSD montré en détail : "on a plusieurs combo et le checklist affiché n'affiche surement pas tous, combien de combo on a et combien de checklist on pourrait faire apparaitre?" puis, après explication, "Tous".
+
+**État avant** : `tradeCompliance.js` ne construisait une vraie checklist (zone FVG, distance stop, biais H4/H1) que pour la source `'fvg'` — documenté honnêtement dans son propre en-tête comme "a real gap, not hidden". Les 6 autres mécanismes (Divergence, NWOG, Judas Swing, Weekly Sweep, Breaker Block, Silver Bullet) n'affichaient que l'item générique "risque appliqué", tout le reste marqué "non applicable" — le dashboard (`journal.html`) ne rendait de toute façon que 4 clés fixes (`zone`, `bias`, `stop`, `risk`), ignorant silencieusement tout item d'une autre clé.
+
+**Refactor préalable, découvert nécessaire en creusant** : `computeBreakerBlockCandidates()` et `computeSilverBulletCandidates()` n'existaient QUE comme méthodes privées de `liveStrategyEngine.js` — pour que la checklist reconstruise le VRAI signal sans dupliquer cette logique une deuxième fois, elles ont été extraites vers `src/backtest/breakerBlock.js`/`silverBullet.js` (le moteur live devient un simple alias d'une ligne vers la fonction partagée). Même discipline que `detectNwogEvents`/`detectJudasSwingEvents`/`detectWeeklySweepEvents`, qui étaient déjà la seule source de vérité pour leurs mécanismes respectifs. Comportement vérifié inchangé (tests existants toujours verts avant d'ajouter quoi que ce soit).
+
+**Nouvelle checklist par mécanisme** (`tradeCompliance.js`, dispatcher `buildComplianceChecklist`) :
+- **NWOG** : signal (gap de réouverture de semaine détecté) + distance stop, plus un item "achat seul" quand le symbole est dans `longOnlySymbols`.
+- **Judas Swing** : signal (balayage veille + reclaim) + distance stop, plus un item confirmant la fenêtre killzone Londres (2h-5h NY).
+- **Weekly Sweep** : signal (balayage semaine précédente + reclaim) + distance stop.
+- **Breaker Block** : signal (order block cassé puis retesté) + distance stop.
+- **Silver Bullet** : signal (zone formée dans la killzone + structure agréée) + distance stop, plus un item de chronologie.
+- **Divergence** : règle "toujours acheteur du retardataire" (vraie par construction, vérifiable directement) + distance stop basée sur l'ATR — l'écart z-score lui-même reste honnêtement "non vérifiable" : il nécessite l'historique du symbole PARTENAIRE (US100/US500), jamais récupéré pour l'affichage d'un seul trade. Limite disclosed, pas cachée — même discipline que le reste de ce fichier.
+
+**Problème de contexte trouvé et corrigé en cours de route** : les 5 mécanismes événementiels ont besoin de voir bien plus loin en arrière que les 30 bougies de marge déjà utilisées pour le mini-graphique (une journée ou semaine complète précédente, ou un lookback order-block/mitigation de plusieurs dizaines à centaines de bougies) — `requiredPreEntryContextCandles(source)` (nouveau) renvoie combien de bougies supplémentaires récupérer, et `cTraderDataSource.js` fait un **second fetch séparé**, jamais fusionné dans `trade.candles` (qui reste exactement ce qu'affiche le mini-graphique — le fusionner aurait rendu le graphique d'un trade Weekly Sweep illisible, ~10 jours de bougies majoritairement hors-sujet au lieu d'une vue focalisée).
+
+**Dashboard** : `journal.html`'s `renderComplianceChecklist()` affiche maintenant TOUS les items envoyés par le serveur, dans l'ordre, au lieu de ne piocher que les 4 clés historiquement réservées à FVG.
+
+**13 nouveaux tests** (`test/tradeCompliance.test.js`) — fixtures reprises directement des tests existants par mécanisme (`test/nwog.test.js`, `test/judasSwing.test.js`, `test/weeklyLiquiditySweep.test.js`, la fixture Breaker Block à paramètres de production par défaut de `test/liveStrategyEngine.test.js`, `test/silverBullet.test.js`) plutôt que d'en inventer de nouvelles — ces tests vérifient la logique d'ENROBAGE (décalage vers la bougie d'entrée, appariement du candidat, construction des items), pas la détection elle-même déjà couverte ailleurs.
+
+`npm test` : 631/631 (618 + 13 nouveaux).
+
+**Fichiers** : `src/backtest/breakerBlock.js`, `src/backtest/silverBullet.js`, `src/dataSources/tradeCompliance.js`, `src/dataSources/cTraderDataSource.js`, `src/liveStrategyEngine.js`, `public/journal.html`, `test/tradeCompliance.test.js`.
