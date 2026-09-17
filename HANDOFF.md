@@ -4213,3 +4213,39 @@ Les 5 meilleures configurations sur 168 sont TOUTES positives en train (contrair
 **Reste ouvert** : GBPJPY toujours reçu seulement pour 2025 (inutilisable) — même famille (cross JPY) que NZDJPY déjà rejeté, donc priorité plus basse si Esdras veut compléter son historique.
 
 **Fichiers** : `data/backtest-input/AUDUSD.csv` (nouveau, 171 014 bougies M15, 2019-2025), `src/backtest/transactionCosts.js` (ajout `AUDUSD: 0.00015`), `data/backtest-input/audusd-train-test-validation.md` (nouveau). Pas de nouveau code de production — recherche uniquement. `npm test` : 567/567 (inchangé).
+
+## UKX (FTSE 100, 9e instrument) — grille FVG standard ET les 13 mécanismes déjà testés ailleurs — rejeté sur toute la ligne, contrairement à GER40 — 2026-09-17
+
+Suite de "on reste sur les indices" : après avoir découvert qu'US30/Dow Jones n'existe pas sur HistData, Esdras a envoyé une capture d'écran du catalogue complet du site et repéré `UKX/GBP` (FTSE 100, disponible depuis 2010) — un vrai indice, correspondant exactement à sa consigne, plutôt que WTI (matière première, confirmé tradable sur les challenges FTMO/GoatFundedTrader via recherche web en direct, mais une catégorie d'actif jamais testée ici).
+
+**Conversion** : 8 années HistData M1 (2018-2025, la plus longue série fournie cette session) fusionnées via `scripts/convertHistData.js` → `data/backtest-input/UKX.csv`, 170 351 bougies M15. Vérifié avant tout test : 4 écarts au-delà de 100h, tous confirmés comme de vrais jours fériés du marché londonien (Pâques 2018/2021/2023, Noël 2020) — aucun problème de qualité de données. Spread ajouté avant de lancer quoi que ce soit : `UKX: 1.0` (même convention indicative que l'estimation initiale de GER40, un indice européen majeur comparable).
+
+**Étape 1 — grille FVG standard (168 configurations, `runTrainTestValidation.js`, isolé sur UKX)** : même les 5 meilleures configurations sur 168 sont quasi nulles en train (0.00R à 0.01R, PF 1.01-1.02) — pas un vrai edge, juste du bruit à peine positif — et tombent légèrement négatives en test. Contrairement à GER40 (où le FVG seul avait déjà donné un premier signal, certes fragile), UKX ne montre RIEN dès la première étape.
+
+**Étape 2 — mêmes 13 mécanismes qui avaient révélé 6 candidats sur GER40 (aucun nouveau réglage)** : `UKX` ajouté aux tableaux `SYMBOLS` déjà existants de Judas Swing, NWOG, NDOG, Breaker Block, Asian Range Breakout, Asian Range Fade, Weekly Liquidity Sweep, MACD Trend, DMI Trend, RSI Divergence classique, Gap Continuation (x2 variantes), Unicorn Model, Star Patterns (x2 variantes) — 16 vérifications au total.
+
+| Mécanisme | Train | Test | Verdict |
+|---|---|---|---|
+| Judas Swing | -0.00 | -0.05 | ❌ |
+| NWOG | -0.01 | +0.02 | ⚠️ affaibli (quasi nul des deux côtés) |
+| NDOG | -0.21 | -0.17 | ❌ |
+| Breaker Block | +0.02 | -0.09 | ❌ |
+| Asian Range Breakout | -0.02 | -0.21 | ❌ |
+| Asian Range Fade | -0.12 | +0.06 | ⚠️ affaibli |
+| **Weekly Liquidity Sweep** (le candidat qui avait le mieux tenu sur GER40) | **-0.14** | +0.13 (n=88) | ⚠️ affaibli — train NÉGATIF ici, contrairement à GER40 où train était +0.14R |
+| MACD Trend | +0.05 (n=131) | -0.23 | ❌ |
+| DMI Trend | +0.22 (n=15) | -0.09 (n=11) | ❌ (échantillon très mince des deux côtés) |
+| RSI Divergence classique | -0.12 (n=23) | -0.14 (n=7) | ❓ pas assez de trades |
+| Gap Continuation (quotidien) | -0.33 | -0.50 | ❌ |
+| Gap Continuation (hebdo) | -0.14 | -0.56 | ❌ |
+| Unicorn Model | +0.03 | -0.14 | ❌ |
+| Star | -0.09 | -0.12 | ❌ |
+| Doji Star | -0.05 | -0.08 | ❌ |
+
+**Aucun des 16 tests ne tient.** C'est le contraste le plus net trouvé cette session : GER40 avait produit 6 candidats sur 13 dès ce même ensemble de mécanismes (dont Weekly Liquidity Sweep, robuste sur 12 années sur 16). UKX, malgré être un indice boursier européen majeur tout aussi liquide, n'en produit AUCUN — et le mécanisme qui avait le mieux tenu ailleurs (Weekly Liquidity Sweep) a même un train NÉGATIF ici, l'inverse exact de GER40.
+
+**Conclusion importante, qui nuance le schéma établi plus tôt cette session** : "les indices tiennent, le forex échoue" était trop simple. GER40 fonctionne, US100/US500 fonctionnent, mais UKX — un indice tout aussi major — échoue aussi nettement que la plupart des paires forex testées. L'edge de ce système n'est donc pas lié à la catégorie "indice" en général, mais à des marchés spécifiques (probablement liés à la dynamique de session NY/US, dont le DAX profite indirectement via son horaire de chevauchement européen, mais pas le FTSE dont la session est structurellement différente).
+
+**Conclusion : UKX rejeté, sur toute la ligne.** Pas ajouté à `config.js` — recherche uniquement.
+
+**Fichiers** : `data/backtest-input/UKX.csv` (nouveau, 170 351 bougies M15, 2018-2025), `src/backtest/transactionCosts.js` (ajout `UKX: 1.0`), `data/backtest-input/ukx-train-test-validation.md` (nouveau), 13 scripts `scripts/run*StrategyAnalysis.js` (`UKX` ajouté à `SYMBOLS`, gardé de façon permanente dans le tableau comme convention établie pour tout symbole déjà vérifié). `npm test` : 567/567 (inchangé).

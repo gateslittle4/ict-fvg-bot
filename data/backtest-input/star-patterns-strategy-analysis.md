@@ -8,14 +8,15 @@ Version la plus large - n'importe quel petit corps compte comme "étoile".
 
 | Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |
 |---|---|---|---|---|---|---|---|---|---|
-| US100 | 1227 | 25.4% | 0.96 | -0.03 | 466 | 26.8% | 1.05 | 0.04 | ⚠️ affaibli |
-| US500 | 1468 | 25.7% | 0.94 | -0.04 | 531 | 26.0% | 0.97 | -0.02 | ❌ ne tient pas |
-| XAUUSD | 1201 | 27.8% | 0.94 | -0.05 | 516 | 25.3% | 0.90 | -0.08 | ❌ ne tient pas |
+| US100 | 3517 | 24.9% | 0.87 | -0.11 | 466 | 26.8% | 1.05 | 0.04 | ⚠️ affaibli |
+| US500 | 3953 | 25.9% | 0.91 | -0.07 | 531 | 26.0% | 0.97 | -0.02 | ❌ ne tient pas |
+| XAUUSD | 3198 | 26.3% | 0.87 | -0.11 | 516 | 25.3% | 0.90 | -0.08 | ❌ ne tient pas |
 | EURUSD | 1636 | 24.8% | 0.81 | -0.17 | 587 | 22.8% | 0.72 | -0.26 | ❌ ne tient pas |
 | GBPUSD | 1344 | 26.0% | 0.87 | -0.11 | 527 | 26.0% | 0.84 | -0.14 | ❌ ne tient pas |
 | USDJPY | 2212 | 25.4% | 0.84 | -0.14 | 624 | 24.6% | 0.84 | -0.13 | ❌ ne tient pas |
 | USDCAD | 3443 | 23.0% | 0.73 | -0.24 | 495 | 26.1% | 0.82 | -0.16 | ❌ ne tient pas |
 | GER40 | 2568 | 26.0% | 0.99 | -0.00 | 524 | 29.9% | 1.25 | 0.18 | ⚠️ affaibli |
+| UKX | 1482 | 25.5% | 0.89 | -0.09 | 508 | 25.4% | 0.86 | -0.12 | ❌ ne tient pas |
 
 ## Variante 2 : Doji Star (bougie 2 doit AUSSI être un vrai doji - corps ≤ 10% de sa propre amplitude)
 
@@ -23,11 +24,12 @@ Version plus stricte - filtre la variante 1 pour ne garder que les vrais doji co
 
 | Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |
 |---|---|---|---|---|---|---|---|---|---|
-| US100 | 819 | 25.7% | 0.97 | -0.02 | 319 | 26.3% | 1.02 | 0.02 | ⚠️ affaibli |
-| US500 | 1078 | 26.0% | 0.95 | -0.04 | 384 | 27.1% | 1.02 | 0.02 | ⚠️ affaibli |
-| XAUUSD | 811 | 28.1% | 0.96 | -0.04 | 354 | 26.4% | 0.96 | -0.04 | ❌ ne tient pas |
+| US100 | 2372 | 24.2% | 0.83 | -0.14 | 319 | 26.3% | 1.02 | 0.02 | ⚠️ affaibli |
+| US500 | 2836 | 25.8% | 0.89 | -0.09 | 384 | 27.1% | 1.02 | 0.02 | ⚠️ affaibli |
+| XAUUSD | 2188 | 25.6% | 0.83 | -0.14 | 354 | 26.4% | 0.96 | -0.04 | ❌ ne tient pas |
 | EURUSD | 1152 | 23.6% | 0.76 | -0.22 | 413 | 22.0% | 0.68 | -0.30 | ❌ ne tient pas |
 | GBPUSD | 916 | 24.9% | 0.82 | -0.16 | 358 | 25.1% | 0.80 | -0.18 | ❌ ne tient pas |
 | USDJPY | 1532 | 25.1% | 0.82 | -0.16 | 429 | 21.5% | 0.70 | -0.26 | ❌ ne tient pas |
 | USDCAD | 2360 | 23.6% | 0.75 | -0.23 | 336 | 28.9% | 0.94 | -0.05 | ❌ ne tient pas |
 | GER40 | 1782 | 26.6% | 1.02 | 0.02 | 377 | 30.0% | 1.23 | 0.17 | ✅ tient |
+| UKX | 1034 | 26.8% | 0.94 | -0.05 | 345 | 26.4% | 0.91 | -0.08 | ❌ ne tient pas |

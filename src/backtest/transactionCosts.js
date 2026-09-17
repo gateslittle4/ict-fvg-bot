@@ -54,6 +54,18 @@ export const DEFAULT_SPREADS = {
   // so reusing their exact convention (~1.5 pips) rather than NZDJPY's
   // wider cross-pair estimate.
   AUDUSD: 0.00015, // ~1.5 pips — INDICATIVE, matching EURUSD/GBPUSD/USDCAD's convention for a major pair, never confirmed against a real broker spec
+  // 2026-09-17, Esdras uploaded real HistData UKXGBP M1 (2018-2025) -
+  // Esdras's own choice, sticking to indices ("on reste sur les indices")
+  // after 3 forex pairs (GBPUSD RR-limited, USDCAD/NZDJPY/AUDUSD rejected)
+  // this same session, and confirmed live via WebSearch that UK100 is a
+  // real major CFD index offered by the prop firms already researched here
+  // (FTMO/GoatFundedTrader). Checked BEFORE running anything, same
+  // discipline as NZDJPY/AUDUSD above - a missing entry here silently
+  // prices every trade at zero cost. No live broker quote available -
+  // indicative estimate matching GER40's own convention (another major
+  // European equity index of comparable liquidity), not a guess at the
+  // tight end.
+  UKX: 1.0, // 1.0 point — INDICATIVE, matching GER40's original estimate for a major European index, never confirmed against a real broker spec
   US100: 0.6, // Sell 29074.45 / Buy 29075.05 — was 1.0, a 67% overestimate
   US500: 0.25, // Sell 7605.47 / Buy 7605.72 — was 0.4, a 60% overestimate
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec
