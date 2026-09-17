@@ -46,6 +46,14 @@ export const DEFAULT_SPREADS = {
   // the tight end - INDICATIVE, verify against a real broker spec before
   // ever trusting a thin edge here.
   NZDJPY: 0.04, // ~4 pips — INDICATIVE, conservative estimate for a JPY cross, never confirmed against a real broker spec
+  // 2026-09-17, Esdras uploaded real HistData AUDUSD M1 (2019-2025) -
+  // checked BEFORE running anything, same discipline as NZDJPY just above
+  // (a missing entry here silently prices every trade at zero cost via the
+  // `?? 0` fallback - the exact bug already found for USDJPY). AUDUSD is a
+  // MAJOR pair, not a cross - comparable liquidity to EURUSD/GBPUSD/USDCAD,
+  // so reusing their exact convention (~1.5 pips) rather than NZDJPY's
+  // wider cross-pair estimate.
+  AUDUSD: 0.00015, // ~1.5 pips — INDICATIVE, matching EURUSD/GBPUSD/USDCAD's convention for a major pair, never confirmed against a real broker spec
   US100: 0.6, // Sell 29074.45 / Buy 29075.05 — was 1.0, a 67% overestimate
   US500: 0.25, // Sell 7605.47 / Buy 7605.72 — was 0.4, a 60% overestimate
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec

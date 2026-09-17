@@ -4185,3 +4185,31 @@ Suite du choix d'Esdras d'ajouter un nouvel instrument après le retrait de GBPU
 **Reste ouvert** : GBPJPY et AUDUSD ont été reçus mais seulement pour 2025 (1 an, inutilisable) — pas encore testés. Si Esdras fournit 2019-2024 pour l'une des deux, même traitement à appliquer.
 
 **Fichiers** : `data/backtest-input/NZDJPY.csv` (nouveau, 170 939 bougies M15, 2019-2025), `src/backtest/transactionCosts.js` (ajout `NZDJPY: 0.04`), `data/backtest-input/nzdjpy-train-test-validation.md` (nouveau, résultat complet). Pas de nouveau code de production — recherche uniquement, même outils déjà existants. `npm test` : 567/567 (inchangé, une seule constante ajoutée).
+
+## AUDUSD — 2e nouvel instrument fourni par Esdras (2019-2025) — edge réel en train, s'effondre entièrement en test, rejeté — 2026-09-17
+
+Suite directe de NZDJPY (rejeté, voir entrée précédente) et de la découverte qu'US30/Dow Jones n'existe simplement pas sur le catalogue HistData.com (erreur de ma part de l'avoir recommandé sans vérifier — déjà noté dans ce même fichier pour GER40 : "pas de Dow Jones/US30 sur leur catalogue"). Recommandation révisée : AUDUSD plutôt que GBPJPY, car c'est une PAIRE MAJEURE (pas un cross comme NZDJPY/GBPJPY, tous deux dans la même famille déjà rejetée), un vrai point de données distinct plutôt qu'une redite.
+
+**Conversion** : mêmes 7 fichiers HistData M1 (2019-2025, le fichier 2025 déjà fourni précédemment) fusionnés via `scripts/convertHistData.js` → `data/backtest-input/AUDUSD.csv`, 171 014 bougies M15. Vérifié avant tout test : aucun écart de données anormal (plus grand écart 72h, passage 2020→2021, rien au-delà du seuil de 100h).
+
+**Bug évité, encore une fois avant de lancer un seul test** : AUDUSD absent de `DEFAULT_SPREADS` — même vérification systématique que pour NZDJPY. Ajouté `AUDUSD: 0.00015` (~1.5 pips, même convention qu'EURUSD/GBPUSD/USDCAD — une paire majeure, pas un cross, donc le spread plus large de NZDJPY ne s'applique pas).
+
+**Méthode réutilisée telle quelle** : `scripts/runTrainTestValidation.js`, isolé sur AUDUSD seul (même dossier temporaire que NZDJPY, pour ne pas relancer inutilement la grille sur les symboles déjà en production).
+
+**Résultat : contrairement à NZDJPY (jamais positif nulle part), AUDUSD montre un VRAI edge en train — mais qui s'effondre entièrement en test.**
+
+| # | Config | Train | Test |
+|---|---|---|---|
+| 1 | H1_EMA200/fvg-edge/1:3 | **+0.07R** (PF 1.09) | **-0.09R** |
+| 2 | H1_EMA200/fvg-edge/1:3 | +0.06R (PF 1.08) | -0.09R |
+| 3 | H4_EMA20/fvg-edge/1:3 | +0.05R (PF 1.07) | -0.18R |
+| 4 | H4_EMA50/fvg-edge/1:3 | +0.05R (PF 1.06) | -0.12R |
+| 5 | H1_EMA50/fvg-edge/1:3 | +0.04R (PF 1.05) | -0.13R |
+
+Les 5 meilleures configurations sur 168 sont TOUTES positives en train (contrairement à NZDJPY) mais TOUTES négatives en test, sans exception — le même profil que USDCAD (edge apparent en train qui ne généralise pas hors-échantillon), pas la variante "train déjà négatif" de NZDJPY.
+
+**Conclusion : rejeté.** Deuxième paire forex majeure sur trois testées cette session à échouer proprement (avec GBPUSD limité en RR et USDCAD déjà rejeté avant). Renforce encore le schéma déjà documenté : les indices tiennent, le forex échoue presque systématiquement dans ce système — AUDUSD, malgré être une paire majeure liquide et un point de données génuinement distinct des cross déjà testés, ne fait pas exception.
+
+**Reste ouvert** : GBPJPY toujours reçu seulement pour 2025 (inutilisable) — même famille (cross JPY) que NZDJPY déjà rejeté, donc priorité plus basse si Esdras veut compléter son historique.
+
+**Fichiers** : `data/backtest-input/AUDUSD.csv` (nouveau, 171 014 bougies M15, 2019-2025), `src/backtest/transactionCosts.js` (ajout `AUDUSD: 0.00015`), `data/backtest-input/audusd-train-test-validation.md` (nouveau). Pas de nouveau code de production — recherche uniquement. `npm test` : 567/567 (inchangé).
