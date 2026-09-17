@@ -514,6 +514,19 @@ export class LiveStrategyEngine {
     return pyramid || null;
   }
 
+  /**
+   * Call when a pyramid add-on order is now VERIFIED to have never reached
+   * the broker (no push confirmation AND a reconcile query found nothing
+   * real - see _handlePyramidOrderRequested's no-confirmation branch in
+   * cTraderDataSource.js). Without this, a 'requested' slot left stuck
+   * forever would silently block every later pyramid attempt on this
+   * symbol (getPyramidPending would keep returning a belief nothing real
+   * backs).
+   */
+  clearPyramidPending(symbol) {
+    this.pyramidPositions.set(symbol, null);
+  }
+
   getPyramidPending(symbol) {
     return this.pyramidPositions.get(symbol) || null;
   }

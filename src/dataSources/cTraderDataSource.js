@@ -1521,6 +1521,8 @@ export class CTraderDataSource {
         stopPrice: e.stopPrice,
         symbolSpec: spec,
       });
+      const orderLabel = `pyramid-add-${symbolName}`;
+      const submittedAtMs = Date.now();
       const brokerOrderId = await this._submitOrder({
         symbolId,
         orderType: 'STOP',
@@ -1530,12 +1532,49 @@ export class CTraderDataSource {
         price: e.entryPrice, // the order's OWN trigger price - NOT the protective stop-loss below
         stopLoss: e.stopPrice,
         takeProfit: e.targetPrice,
-        label: `pyramid-add-${symbolName}`,
+        label: orderLabel,
       });
+      console.log(`[pyramid] _submitOrder resolved for ${symbolName}: brokerOrderId=${brokerOrderId}`);
       if (brokerOrderId != null) {
         store.strategyEngine.markPyramidOrderPlaced(symbolName, brokerOrderId);
         this.pyramidOrderSymbolByOrderId.set(brokerOrderId, symbolName);
         this._notifyText(`🔺 Pyramide auto : ordre stop programmé sur ${symbolName} (entrée ${e.entryPrice}, stop ${e.stopPrice}, cible ${e.targetPrice}, ${sizing.lots} lots)`);
+      } else {
+        // 2026-09-17: same gap already fixed on the entry path (see
+        // _handleAutoExecuteEntry) existed here too, and arguably worse - a
+        // real pyramid position filled with NO confirmation used to leave
+        // this.pyramidPositions[symbol] stuck at 'requested' forever (no
+        // brokerOrderId ever recorded to cancel), the broker position itself
+        // completely untracked (no entry in pyramidOrderSymbolByOrderId or
+        // openPositionInfoByPositionId), and total silence - not even a log
+        // line, since this branch used to just do nothing. Ask the broker
+        // directly instead of assuming, exactly like the entry path.
+        let verified = null;
+        try {
+          verified = await this._findRealOrderOrPositionForLabel({ symbolId, label: orderLabel, submittedAtMs });
+        } catch (verifyErr) {
+          console.error(`[pyramid] order verification failed for ${symbolName}:`, verifyErr.message);
+        }
+
+        if (verified?.orderId != null) {
+          store.strategyEngine.markPyramidOrderPlaced(symbolName, verified.orderId);
+          this.pyramidOrderSymbolByOrderId.set(verified.orderId, symbolName);
+          console.warn(`[pyramid] no push confirmation for ${symbolName}, but reconcile found the REAL working order orderId=${verified.orderId} - adopted.`);
+          this._notifyText(`🔺 Pyramide auto : ordre stop bien programmé sur ${symbolName} (confirmé en interrogeant le courtier, message de confirmation perdu)`);
+        } else if (verified?.positionId != null) {
+          // The STOP already triggered and filled by the time we asked - no
+          // orderId left to track, but a real broker-managed bracket
+          // position now exists and needs the SAME close-attribution
+          // bookkeeping the push-confirmed fill path sets up.
+          const filled = store.strategyEngine.markPyramidOrderFilled(symbolName);
+          this.pyramidPositionIdBySymbol.set(symbolName, verified.positionId);
+          console.warn(`[pyramid] no push confirmation for ${symbolName}, but reconcile found a REAL OPEN POSITION positionId=${verified.positionId} - adopted.`);
+          this._notifyText(`🔺 Pyramide auto : 2e unité déjà REMPLIE sur ${symbolName} (confirmé en interrogeant le courtier) à ${filled?.entryPrice ?? e.entryPrice}`);
+        } else {
+          store.strategyEngine.clearPyramidPending(symbolName);
+          console.warn(`[pyramid] no orderId within timeout for ${symbolName} AND reconcile found nothing real - order never reached the broker, clearing pending pyramid.`);
+          this._notifyText(`⚠️ Pyramide auto : aucune confirmation du courtier sur ${symbolName} et aucun ordre/position réels trouvés (vérifié) - ordre abandonné.`);
+        }
       }
     } catch (err) {
       console.warn(`[pyramid] failed to place add-on order for ${symbolName}:`, err.message);

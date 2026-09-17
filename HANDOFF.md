@@ -4673,4 +4673,21 @@ Esdras, juste après le correctif de la connexion zombie : "Comment peut on s'as
 
 `npm test` : 645/645 (chemin live uniquement, même convention que le correctif précédent : `_submitOrder`/`_waitForOrderIdBySymbol`/`_findRealOrderOrPositionForLabel` exigent une vraie connexion WebSocket et n'ont jamais eu de couverture unitaire dans ce projet).
 
+## Audit du chemin d'exécution : le même trou existait sur les ordres pyramide, en pire — 2026-09-17
+
+Esdras : "cherche d'autres bugs d'exécution à corriger". En relisant `_handlePyramidOrderRequested` (l'ordre STOP de la 2e unité pyramide) juste après avoir corrigé la même faille sur `_handleAutoExecuteEntry` (voir section précédente), j'ai trouvé exactement la même faille, MAIS sans même le filet de sécurité minimal que l'entrée avait : la branche "pas de confirmation" ne faisait STRICTEMENT RIEN — pas de log, pas de notification, pas de tracking. Concrètement, si le push de confirmation se perdait (le même incident "connexion zombie" documenté plus haut) :
+
+- **`this.pyramidPositions[symbol]` restait bloqué à `'requested'` pour toujours** (aucune méthode existante pour le nettoyer sans un `brokerOrderId` qu'on n'avait jamais reçu) — `getPyramidPending()` aurait continué de croire indéfiniment qu'un ajout pyramide était en cours sur ce symbole, potentiellement bloquant un futur ajout légitime.
+- **Si l'ordre avait réellement été rempli chez le broker**, la position résultante n'était tracée NULLE PART (ni `pyramidOrderSymbolByOrderId`, ni `pyramidPositionIdBySymbol`) — une position réelle, avec du vrai argent dessus, totalement invisible pour le reste du bot : pas de fermeture suivie, pas de PnL enregistré, pas de notification.
+- Silence total dans les logs Render — impossible même de savoir après coup qu'un problème avait eu lieu.
+
+**Corrigé de la même façon que `_handleAutoExecuteEntry`** : la branche "pas de confirmation" appelle maintenant `_findRealOrderOrPositionForLabel()` (déjà écrit pour l'entrée, réutilisé tel quel avec le label `pyramid-add-<symbole>`) et se répartit sur 3 cas :
+- **ordre STOP réel encore en attente** → adopté dans `pyramidOrderSymbolByOrderId` + `markPyramidOrderPlaced()`, notification 🔺 ;
+- **position réelle déjà remplie** (le STOP s'est déclenché avant qu'on vérifie) → `markPyramidOrderFilled()` appelé directement (récupère entrée/stop/cible connus de l'engine) + `pyramidPositionIdBySymbol` peuplée pour que la fermeture future soit attribuée correctement, notification 🔺 ;
+- **vraiment rien chez le broker** → nouvelle méthode `LiveStrategyEngine.clearPyramidPending()` (ajoutée, il n'en existait aucune) pour débloquer proprement le slot `'requested'`, notification ⚠️.
+
+Un `console.log` inconditionnel du résultat de `_submitOrder` a aussi été ajouté (`[pyramid] _submitOrder resolved for ...`), sur le même principe que celui déjà présent sur le chemin d'entrée : un `brokerOrderId` null sans exception ne doit plus jamais être silencieux dans les logs.
+
+`npm test` : 645/645. **Fichiers** : `src/dataSources/cTraderDataSource.js` (`_handlePyramidOrderRequested`), `src/liveStrategyEngine.js` (nouvelle méthode `clearPyramidPending`).
+
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/accountRuntime.js` (doc de `recordOrderOutcome` mise à jour : deux sources de vérité broker maintenant, pas une).
