@@ -4370,3 +4370,23 @@ Esdras : "doit on integrer silver bullet de facon autonome si les pairs fontionn
 **Recommandation : le chevauchement n'est pas un obstacle à l'intégration.** Reste cependant les étapes habituelles avant tout déploiement réel (jamais sautées pour un mécanisme live jusqu'ici) : observation-only avant auto-execute (comme NWOG/Judas Swing/Weekly Sweep/Breaker Block à leurs débuts), et un forward-test réel avant d'engager du capital, vu qu'un seul découpage historique train/test a validé Silver Bullet jusqu'ici.
 
 **Fichiers** : `scripts/runSilverBulletOverlapAnalysis.js` (nouveau), `data/backtest-input/silver-bullet-overlap-analysis.md` (nouveau). Pas de changement à `config.js` — Silver Bullet reste en recherche, pas déployé.
+
+## Forward-test Silver Bullet autonome sur vraies données cTrader — confirmation nette — 2026-09-17
+
+Suite directe de l'analyse de chevauchement ci-dessus : Esdras, "faisons un forward test alors pour voir." Utilisé `data/real-data-2026-02-to-09/` (vraies bougies M15 exportées du compte cTrader en production, 2026-02-10 → 2026-09-16, ~7 mois, US100/US500/GER40 disponibles) — jamais utilisées pour choisir un seul paramètre de Silver Bullet.
+
+**Bug de fuseau horaire détecté et corrigé au passage, absent des scripts de forward-test précédents** : `getHistoricalCandles()` (`cTraderDataSource.js`) exporte en UTC RÉEL, mais tout filtre de fenêtre de session dans ce projet (`isInNySessionWindow`) suppose la convention "EST fixe" des CSV historiques (`.time` toujours exactement 5h derrière l'UTC réel — voir `nySession.js`). Le bot live convertit lui-même via `_toEngineCandle()` avant de nourrir le moteur de stratégie ; ce script applique la même conversion (`time - FIXED_EST_TO_UTC_OFFSET_MS`) avant tout backtest. **`scripts/runFvgMultiTouchForwardTestWindowAnalysis.js` (comparaison 8h-12h vs 10h-11h sur les 7 mois réels, HANDOFF.md plus haut) n'appliquait PAS cette conversion** — sa comparaison de fenêtres a probablement évalué les mauvaises heures NY (décalage de plusieurs heures). Signalé ici, pas corrigé dans cette session (hors périmètre de la demande actuelle) — à refaire si la conclusion "8h-12h" doit un jour être re-questionnée.
+
+| Symbole | Trades | Win rate | R total | PF | Espérance (R) | Chevauchement production |
+|---|---|---|---|---|---|---|
+| US100 | 78 | 29.5% | +25.74R | 1.52 | +0.33R | 14/78 (17.9%) |
+| US500 | 68 | 29.4% | +28.71R | 1.72 | +0.42R | 13/68 (19.1%) |
+| GER40 | 55 | 23.6% | +12.74R | 1.37 | +0.23R | 5/55 (9.1%) |
+
+**Vérification achat/vente sur les 3 symboles avant de croire ce résultat, même discipline que partout** : US100 achat exp=+0.414R (n=46, PF 1.69) / vente exp=+0.209R (n=32, PF 1.31) ; US500 achat exp=+0.234R (n=47, PF 1.38) / vente exp=+0.844R (n=21, PF 2.67) ; GER40 achat exp=+0.068R (n=27, PF 1.10, plus faible mais positif) / vente exp=+0.390R (n=28, PF 1.70). **Les 6 sous-groupes (3 symboles × 2 sens) sont POSITIFS, aucune inversion de signe, aucun côté qui plombe le résultat agrégé.**
+
+**Conclusion : confirmation nette, sur des données jamais vues, jamais utilisées pour régler quoi que ce soit.** L'espérance sur cette fenêtre réelle est même LÉGÈREMENT SUPÉRIEURE à celle mesurée sur la période test historique (2024-2025) pour US100/US500 (+0.33R/+0.42R contre +0.27R/+0.17R), et dans le même ordre de grandeur pour GER40 (+0.23R contre +0.36R). Chevauchement avec la production sur cette même fenêtre réelle (9-19%) cohérent avec l'analyse de chevauchement historique (17-24%) — confirme que l'essentiel des trades Silver Bullet resterait une exposition nouvelle.
+
+**Recommandation mise à jour : Silver Bullet autonome a maintenant deux validations indépendantes (historique 2019-2025 train/test ET 7 mois de données broker réelles jamais vues) — le candidat le mieux confirmé de toute cette recherche de nouvelles stratégies.** Prochaine étape logique si Esdras veut avancer vers la production : le déployer en mode observation/alerte seule d'abord (comme NWOG/Judas Swing/Weekly Sweep/Breaker Block à leurs débuts), jamais en auto-execute direct.
+
+**Fichiers** : `scripts/runSilverBulletForwardTestAnalysis.js` (nouveau), `data/real-data-2026-02-to-09/silver-bullet-forward-test.md` (nouveau). Pas de changement à `config.js` — toujours en recherche.
