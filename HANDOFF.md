@@ -4690,4 +4690,14 @@ Un `console.log` inconditionnel du résultat de `_submitOrder` a aussi été ajo
 
 `npm test` : 645/645. **Fichiers** : `src/dataSources/cTraderDataSource.js` (`_handlePyramidOrderRequested`), `src/liveStrategyEngine.js` (nouvelle méthode `clearPyramidPending`).
 
+## Audit (suite) : le filet de sécurité "take-profit" du correctif de stop manquant ne s'est jamais déclenché — 2026-09-17
+
+En continuant l'audit sur `_clearStaleBeliefsAgainstBroker` (le sweep toutes les 5 minutes + au boot qui redemande un stop-loss manquant à une position réelle, voir la section du 2026-09-14 plus haut) : `computeMissingStopFixes()` (accountReconciliation.js) attend un callback `getTrackedStopPrice` retournant `{stopPrice, takeProfit}`, mais l'objet réellement stocké dans `openPositionInfoByPositionId` n'a jamais eu de propriété `takeProfit` — seulement `targetPrice` (voir `_handleAutoExecuteEntry`/`_handleExecutionEvent`). Le callback retournait donc `info` tel quel, avec `takeProfit` toujours `undefined`.
+
+Conséquence : le commentaire du code affirme resoumettre le take-profit "en second filet de sécurité, au cas où l'hypothèse [que l'omettre laisse le take-profit intact] serait fausse" — sauf que ce filet n'a JAMAIS pu se déclencher, `fix.takeProfit` étant toujours `null` par ce bug, donc la clé `takeProfit` toujours omise de `ProtoOAAmendPositionSLTPReq`. Sans gravité concrète jusqu'ici (omettre la clé est le comportement DOCUMENTÉ pour laisser le take-profit intact côté broker — donc pas de perte réelle), mais un filet de sécurité explicitement ajouté qui ne s'active jamais sur toute la durée du projet manque son but.
+
+**Corrigé** : `getTrackedStopPrice` fait maintenant le mapping explicite `{stopPrice: info.stopPrice, takeProfit: info.targetPrice}` au lieu de retourner l'objet brut.
+
+`npm test` : 645/645. **Fichier** : `src/dataSources/cTraderDataSource.js` (`_clearStaleBeliefsAgainstBroker`).
+
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/accountRuntime.js` (doc de `recordOrderOutcome` mise à jour : deux sources de vérité broker maintenant, pas une).

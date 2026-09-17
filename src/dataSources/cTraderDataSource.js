@@ -1157,7 +1157,20 @@ export class CTraderDataSource {
     const toFix = computeMissingStopFixes({
       realPositions: res.position || [],
       pendingOrders: res.order || [],
-      getTrackedStopPrice: (positionId) => this.openPositionInfoByPositionId.get(positionId) || null,
+      getTrackedStopPrice: (positionId) => {
+        const info = this.openPositionInfoByPositionId.get(positionId);
+        // Bug found 2026-09-17 (execution-path audit): this used to return
+        // `info` as-is, which has NO `takeProfit` property (it's stored as
+        // `targetPrice` - see _handleAutoExecuteEntry/_handleExecutionEvent
+        // above) - so computeMissingStopFixes' `tracked.takeProfit` was
+        // always undefined, and the "second safety net" the comment below
+        // describes (resubmitting takeProfit alongside stopLoss) has never
+        // once actually fired. Harmless in practice so far (omitting the
+        // key is the DOCUMENTED way to leave takeProfit untouched), but a
+        // deliberately-added safety net silently being dead code defeats
+        // its own purpose.
+        return info ? { stopPrice: info.stopPrice, takeProfit: info.targetPrice } : null;
+      },
     });
     for (const fix of toFix) {
       try {
