@@ -4746,3 +4746,17 @@ Deuxième bug du même genre, trouvé au passage : ni l'un ni l'autre ne recevai
 Un test existant (`buildChartOverlays: signals carry entry/stop...`) affirmait `source` limité à `['fvg', 'divergence']` — mis à jour pour couvrir les 7 sources réelles possibles (l'échec de ce test après le fix confirme que le fix change bien un comportement réel, pas cosmétique).
 
 `npm test` : 645/645. **Fichiers** : `src/backtest/chartOverlays.js`, `src/backtest/forwardTest.js`, `test/chartOverlays.test.js`.
+
+## Test automatisé (faux courtier) pour l'incident de connexion zombie — 2026-09-17
+
+Esdras : "comment vérifie-t-on que ça marche à 100%". Réponse honnête donnée d'abord : aucun système qui parle à un vrai courtier sur Internet ne peut être garanti à 100%, mais on peut fermer l'écart entre "je crois que ça marche" et "je peux le prouver, et le re-prouver à chaque futur changement". `test/cTraderDataSource.test.js` a une convention explicite et jusqu'ici jamais remise en question : "only the pure pieces are unit-tested here... everything else is network I/O against an unverified live API". Cassée volontairement, une seule fois, pour verrouiller exactement le mécanisme le plus critique corrigé aujourd'hui.
+
+**Nouveau fichier `test/cTraderDataSourceOrderSubmission.test.js`** : une fausse connexion WebSocket minimale (juste `sendCommand`/`on`/`removeEventListener`, l'API réelle de `ctrader-layer`, pas un `EventEmitter` standard) reproduit exactement l'incident de ce matin sans toucher au marché réel :
+- Une confirmation qui arrive bien → resout le vrai orderId, remet le compteur d'échecs à 0.
+- Aucune confirmation dans le délai → résout `null`, incrémente le compteur, **ne redémarre PAS** sur un seul raté (comportement voulu, cf. l'incident isolé du 2026-09-14).
+- **2 échecs consécutifs → `process.exit(1)` bien appelé** (mocké, jamais un vrai arrêt du process de test) — reproduit littéralement l'incident réel de ce matin (Divergence US500 14h00, Silver Bullet US100 15h15).
+- `_findRealOrderOrPositionForLabel` (la vérification par requête) : trouve un ordre encore en attente, trouve une position déjà remplie, **ignore bien une position PLUS ANCIENNE portant le même label** (la garde anti-orpheline `SLACK_MS`), garde le match quand `openTimestamp` est absent, et retourne `matched:false` quand il n'y a vraiment rien.
+
+**Preuve que ces tests ont vraiment des dents, pas juste "verts par hasard"** : j'ai temporairement cassé la garde `SLACK_MS` (`return true` au lieu de la comparaison réelle), relancé les tests → le test "position plus ancienne" échoue bien (8/9), confirmant qu'il aurait attrapé cette régression précise. Fichier restauré ensuite, diff vérifié identique à l'original, tests repassés à 9/9.
+
+`npm test` : 654/654 (645 + 9 nouveaux). **Fichier** : `test/cTraderDataSourceOrderSubmission.test.js` (nouveau).
