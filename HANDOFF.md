@@ -4143,3 +4143,27 @@ Suite directe de l'extension RSI(2) Connors ci-dessus (rejetée) — à la deman
 **Conclusion : rejeté partout, y compris GER40 une fois le biais retiré.** Deux tentatives disciplinées de diversification cette session (réutiliser RSI(2) Connors sur de nouveaux symboles, puis chercher un mécanisme réellement nouveau) — aucune des deux n'a payé, mais toutes deux ont été vérifiées jusqu'au bout (faux positifs mécaniques attrapés dans les deux cas) avant d'être présentées comme un résultat. C'est le fonctionnement normal de cette discipline, pas un échec de la session — la plupart des concepts testés dans ce document ont fini rejetés.
 
 **Fichiers** : `src/backtest/bollingerSqueeze.js` (nouveau, 12 tests), `test/bollingerSqueeze.test.js`, `scripts/runBollingerSqueezeStrategyAnalysis.js` (nouveau), `data/backtest-input/bollinger-squeeze-strategy-analysis.md` (avec la note de mise en garde sur le biais GER40). **Non activé en production** — recherche uniquement. `npm test` : 567/567 (555 + 12 nouveaux).
+
+## GBPUSD retiré, puis retesté à RR étendu (1:4/1:5) à la demande d'Esdras — confirme que RR=3 est son vrai point d'équilibre, pas une limite arbitraire — 2026-09-17
+
+Suite directe de l'ajout de GBPUSD ce même jour (voir entrée précédente) : Esdras l'a retiré immédiatement ("j'aime pas gbpusd, on va le remplacer car il ne donne pas bcp de rrr"). Vérifié d'abord s'il existait un 3e instrument déjà validé à substituer : **non** — sur les 8 instruments avec 17 ans d'historique disponibles, USDCAD (rejeté franchement, aucune config ne survit hors-échantillon) et USDJPY (son seul edge apparent, Asian Range Breakout, déjà démasqué comme 73% concentré sur une seule fenêtre de 5 mois) sont les deux seuls autres, et tous deux déjà disqualifiés pour de vraies raisons — pas des substituts honnêtes. Trois options présentées : retester GBPUSD à RR étendu (même méthode que US100/US500/XAUUSD), fournir de vraies données pour un instrument jamais testé, ou s'arrêter à 5 symboles. **Choix d'Esdras : retester GBPUSD à RR étendu.**
+
+**Méthode réutilisée telle quelle** : `scripts/runExtendedTargetAnalysis.js` (déjà utilisé pour valider 1:4/1:5 sur US100/US500 et 1:4 sur XAUUSD) — config GBPUSD ajoutée à `BASE_CONFIG` (H4_EMA20, stop swing, structure ON, session 7h-10h, sweep OFF — copiée verbatim de la recherche déjà documentée), RR testé de 1:3 à 1:7.
+
+**Résultat, sans ambiguïté** :
+
+| Cible | Train (n / exp / PF) | Test (n / exp / PF) | Verdict mécanique |
+|---|---|---|---|
+| 1:3 | 486 / **0.08R** / 1.11 | 166 / 0.09R / 1.13 | ✅ tient (réel) |
+| 1:4 | 449 / **0.015R** / 1.02 | 154 / 0.22R / 1.30 | ✅ tient (faux positif) |
+| 1:5 | 423 / **-0.03R** / 0.96 | 152 / 0.35R / 1.47 | ⚠️ affaibli |
+| 1:6 | 411 / -0.01R / 0.98 | 147 / 0.45R / 1.60 | ⚠️ affaibli |
+| 1:7 | 402 / -0.08R / 0.91 | 144 / 0.35R / 1.45 | ⚠️ affaibli |
+
+Le train se dégrade de façon MONOTONE et cohérente à mesure que le RR augmente (0.08 → 0.015 → -0.03 → -0.01 → -0.08), pendant que le test grimpe dans l'autre sens (0.09 → 0.22 → 0.35 → 0.45). C'est l'exact opposé du schéma sain vu sur US100/US500 (où train ET test montent ensemble jusqu'à 1:5) — ici c'est la signature "train qui casse, test qui s'envole par chance" déjà rencontrée et traitée comme du bruit ailleurs dans ce document, mais de façon encore plus nette qu'avant (train tourne franchement négatif, pas juste plat). **Le "✅ tient" mécanique à 1:4 est un faux positif vérifié** : espérance train exacte 0.0146R, PF 1.018 — le même genre de valeur quasi nulle déjà attrapée deux fois plus tôt aujourd'hui (RSI Connors/XAUUSD, Bollinger Squeeze/GER40).
+
+**Conclusion : RR=3 n'était pas une limite arbitraire du grid-search — c'est le VRAI point d'équilibre de GBPUSD.** Contrairement à US100/US500 (où étendre la cible révèle plus d'edge, l'inverse de ce qu'on pourrait croire) et comme XAUUSD (qui plafonne à 1:4), l'edge de GBPUSD est concentré dans les trades qui se résolvent autour de 3R — au-delà, le mécanisme cesse structurellement de fonctionner. Retester à RR plus élevé confirme donc GBPUSD tel qu'il était, ne le sauve pas.
+
+**Statut : GBPUSD reste hors production.** Il n'a jamais été remis en config.js — cette recherche répond uniquement à la question posée, pour la trace. Pas de nouveau symbole ajouté cette session au final ; les options restantes (nouvel instrument avec données réelles à fournir, ou s'arrêter à 5 symboles) restent ouvertes.
+
+**Fichiers** : `scripts/runExtendedTargetAnalysis.js` (GBPUSD ajouté à `BASE_CONFIG`), `data/backtest-input/extended-target-analysis.md` (régénéré, section GBPUSD ajoutée). Script exploratoire, aucune logique testée touchée. `npm test` : 567/567 (inchangé).
