@@ -4760,3 +4760,21 @@ Esdras : "comment vérifie-t-on que ça marche à 100%". Réponse honnête donn�
 **Preuve que ces tests ont vraiment des dents, pas juste "verts par hasard"** : j'ai temporairement cassé la garde `SLACK_MS` (`return true` au lieu de la comparaison réelle), relancé les tests → le test "position plus ancienne" échoue bien (8/9), confirmant qu'il aurait attrapé cette régression précise. Fichier restauré ensuite, diff vérifié identique à l'original, tests repassés à 9/9.
 
 `npm test` : 654/654 (645 + 9 nouveaux). **Fichier** : `test/cTraderDataSourceOrderSubmission.test.js` (nouveau).
+
+## Réduire encore l'écart : preuve réelle du redémarrage Render + test de `_handleAutoExecuteEntry` en entier — 2026-09-17
+
+Esdras : "quoi d'autre à faire pour réduire l'écart" puis "fais dans l'ordre que tu as recommandé" (vérifier le redémarrage Render → tester `_handleAutoExecuteEntry` → tester `_handleExecutionEvent`).
+
+**1. Preuve réelle (pas supposée) que Render redémarre bien un processus planté** : tout le correctif d'aujourd'hui repose sur l'hypothèse que `process.exit(1)` → Render relance le service. Vérifié en fouillant les vrais logs Render du 2026-09-12 (un crash non lié, `TypeError: ds.connection.off is not a function`, déjà documenté dans le code) : le processus a planté à 21:11:14, Render a relancé `npm start` à 21:11:20 (6 secondes après), le bot était de nouveau pleinement opérationnel (reconnecté au courtier, symboles rechargés) à 21:11:37 — puis EXACTEMENT LE MÊME SCÉNARIO s'est reproduit à 21:11:52 (même bug, pas encore corrigé à l'époque) et Render a de nouveau redémarré proprement. Deux redémarrages automatiques réels, sur ce même service, confirmés par les logs bruts — pas une hypothèse.
+
+**2. Nouveau fichier `test/cTraderDataSourceAutoExecuteEntry.test.js`** : teste `_handleAutoExecuteEntry` dans son ensemble (pas juste ses briques internes déjà testées) — la fonction que TOUT signal réel traverse. 4 scénarios, avec un faux compte (spies sur `clearBelievedPosition`/`recordOrderOutcome`) :
+- confirmation reçue → suivi dans `pendingEntryOrderByOrderId`, rien d'autre déclenché ;
+- pas de confirmation, reconcile trouve l'ordre encore en attente → adopté ;
+- pas de confirmation, reconcile trouve une position déjà remplie → **exactement l'incident réel de ce matin, reproduit** : adopté dans `openPositionInfoByPositionId`, `recordOrderOutcome` appelé avec `executionType:'RECONCILE_VERIFIED'` ;
+- pas de confirmation, reconcile ne trouve rien → `clearBelievedPosition` appelé, aucune position inventée.
+
+En construisant le faux compte, découvert (pas un bug — comportement voulu et déjà documenté) : `_specFor()` retombe sur `getDefaultSpec()` (forme `pointSize`/`valuePerPointPerLot`) quand le courtier n'a pas encore répondu, mais `_submitOrder()` refuse ce format (pas de `lotSize`/`rawVolume`) plutôt que de deviner un volume — donc le faux compte doit fournir un spec au format broker réel, exactement comme `_loadSymbolSpecs()` le ferait après un vrai boot.
+
+**Preuve que ces tests attrapent vraiment une régression** : désactivé temporairement la branche "ordre encore en attente trouvé" (`if (verified?.orderId != null)` → `if (false)`), relancé → le test correspondant échoue bien (3/4), les 3 autres restent verts. Fichier restauré, diff vérifié identique, 4/4 de nouveau.
+
+`npm test` : 658/658 (654 + 4 nouveaux). **Fichier** : `test/cTraderDataSourceAutoExecuteEntry.test.js` (nouveau). Reste à faire (étape 3 de l'ordre demandé) : le même traitement pour `_handleExecutionEvent`, l'autre moitié de la boucle (confirmation d'un fill/annulation/rejet réel).
