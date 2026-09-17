@@ -96,7 +96,7 @@ export const CONFIG = {
   // (the most credible finding of that session: real spread confirmed 0.5
   // via Esdras's own cTrader screenshot, bidirectional, robust across 2-year
   // blocks - but only ONE train/test split, never observed live before now).
-  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40', 'GBPUSD'],
+  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'],
   timeframe: 'M15',
   accountMode: ACCOUNT_MODE, // 'challenge' | 'live' - see ACCOUNT_MODE comment above
   risk: {
@@ -235,47 +235,17 @@ export const CONFIG = {
         sessionWindow: XAUUSD_WINDOW,
         liquiditySweepEnabled: true,
       },
-      // GBPUSD added 2026-09-17, Esdras: "un autre instrument [...] tu me
-      // dis lequel prendre" - picked over USDJPY (its one "tient" mechanism,
-      // Asian Range Breakout, was later found to have 73% of its test
-      // profit concentrated in a single 5-month window - explicitly
-      // concluded "NE PAS activer" in HANDOFF.md) and USDCAD (flatly
-      // rejected - no train config survives out of sample). GBPUSD is the
-      // only one of the three with a real, checked edge: found via the
-      // SAME grid-search tool that validated the other symbols
-      // (runTrainTestValidation.js), then explicitly stress-tested beyond
-      // the standard single train/test split - 3 different train/test cuts
-      // (2022/2023/2024) all positive, and 6 of 7 individual years positive
-      // (2023 the lone exception, roughly breakeven at -0.03R) - a
-      // materially stronger robustness bar than most candidates in this
-      // file clear. Config below is copied VERBATIM from that research
-      // (HANDOFF.md, "Recherche GBPUSD/USDCAD"), not re-tuned here.
-      //
-      // sessionWindow reuses LONDON_NY_OVERLAP_WINDOW (7h-10h NY) - the
-      // SAME constant XAUUSD's own window used before being widened to
-      // 8h-12h, left unused since then. GBPUSD's own research tested this
-      // exact window (not the wider one) and structureEnabled ON (unlike
-      // the first, weaker GBPUSD grid survivor which had it off) - the
-      // combination that produced the robustness result above.
-      //
-      // The one real caveat, carried over from research rather than
-      // resolved here: full-account simulation showed trailing drawdown of
-      // 13-16%, over a 10% trailing cap (FTMO/GoatFundedTrader 1-Step) but
-      // fine under a STATIC cap (FTMO 2-Step, FundingPips). Not currently a
-      // live constraint - this account runs no prop-firm program yet
-      // (accountMode 'live' on a demo cTrader connection, propFirmProgramId
-      // null, no maxDrawdownType enforced) - but revisit this symbol's
-      // place in the combo before ever pointing it at a real trailing-cap
-      // challenge account.
-      GBPUSD: {
-        variant: 'H4_EMA20',
-        stopMode: 'swing',
-        rrMultiple: 3,
-        structureEnabled: true,
-        sessionEnabled: true,
-        sessionWindow: LONDON_NY_OVERLAP_WINDOW,
-        liquiditySweepEnabled: false,
-      },
+      // GBPUSD was here 2026-09-17, briefly - added, then removed the SAME
+      // day at Esdras's explicit request ("j'aime pas gbpusd, on va le
+      // remplacer car il ne donne pas bcp de rrr"): its validated config
+      // used rrMultiple: 3 (the grid-search survivor, not re-tuned), well
+      // below US100/US500's 5 and XAUUSD's 4. Removed rather than bumped to
+      // a bigger RR on the spot - GBPUSD's own research (HANDOFF.md,
+      // "Recherche GBPUSD/USDCAD") never tested it above RR 3, and picking
+      // a bigger number now, right after being told the current one is
+      // unwelcome, would be exactly the after-the-fact parameter choice
+      // this project's discipline exists to avoid. See HANDOFF.md's
+      // "GBPUSD retiré" entry for the options considered instead.
       // BTCUSD's entry lived here (2026-09-13 to 2026-09-16) - raw baseline
       // FVG on M1, no filters, never train/test split. Removed with the
       // symbol itself; see the `symbols` array comment above for why.
