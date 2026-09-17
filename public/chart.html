@@ -92,8 +92,31 @@
   .price-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
   .price-header .last { font-size: 26px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .price-header .meta { color: var(--muted); font-size: 12px; }
-  .chart-wrap { position: relative; }
+  /* 2026-09-17 (Esdras: "met un endroit à droite du chart qui permet de
+     retirer tous les graphes... genre turn on turn off") - #chart-loading's
+     `position:absolute; inset:0` used to cover the whole of .chart-wrap,
+     which was fine when .chart-wrap had exactly one child (the canvas). Now
+     that a toggle panel sits beside it, the loading overlay is scoped to a
+     new inner wrapper (.chart-canvas-wrap) instead, so it only ever covers
+     the canvas, not the panel. flex-wrap lets the panel drop below the
+     chart on a narrow/mobile viewport rather than squeezing it. */
+  .chart-wrap { display: flex; gap: 10px; flex-wrap: wrap; }
+  .chart-canvas-wrap { position: relative; flex: 1 1 480px; min-width: 0; }
   #chart { width: 100%; height: 460px; }
+  .overlay-toggles {
+    flex: 0 0 152px;
+    background: var(--panel-2);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    align-self: flex-start;
+  }
+  .overlay-toggles-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 1px; }
+  .overlay-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); cursor: pointer; user-select: none; }
+  .overlay-toggle input { accent-color: var(--blue); width: 15px; height: 15px; cursor: pointer; margin: 0; flex-shrink: 0; }
   #chart-loading {
     position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 10px; background: #0e141b; border-radius: 6px; z-index: 5;
@@ -177,9 +200,6 @@
         <button data-timeframe="D1">D1</button>
       </div>
       <div class="group">
-        <button id="toggle-overlays" class="active">Zones FVG + signaux</button>
-      </div>
-      <div class="group">
         <button id="focus-price" title="Recadrer le graphique sur le prix actuel">⌖ Prix actuel</button>
       </div>
     </div>
@@ -194,10 +214,18 @@
 
     <div class="ohlc-readout" id="ohlc-readout"></div>
     <div class="chart-wrap">
-      <div id="chart"></div>
-      <div id="chart-loading">
-        <div class="spinner"></div>
-        <div class="label">Le bot se reconnecte au courtier (démarrage à froid, quelques secondes)…</div>
+      <div class="chart-canvas-wrap">
+        <div id="chart"></div>
+        <div id="chart-loading">
+          <div class="spinner"></div>
+          <div class="label">Le bot se reconnecte au courtier (démarrage à froid, quelques secondes)…</div>
+        </div>
+      </div>
+      <div class="overlay-toggles" id="overlay-toggles">
+        <div class="overlay-toggles-title">Calques</div>
+        <label class="overlay-toggle"><input type="checkbox" id="toggle-zones" checked /><span>Zones FVG</span></label>
+        <label class="overlay-toggle"><input type="checkbox" id="toggle-signals" checked /><span>Signaux</span></label>
+        <label class="overlay-toggle"><input type="checkbox" id="toggle-position-lines" checked /><span>Entrée / Stop / Cible</span></label>
       </div>
     </div>
 
@@ -239,7 +267,41 @@ let priceLines = [];
 let lastCandles = [];
 let zonesPrimitive = null;
 let markersPlugin = null;
-let overlaysVisible = true;
+
+// 2026-09-17 (Esdras: "un endroit à droite du chart... turn on turn off") -
+// one flag per distinct layer actually drawn on the canvas (the zones
+// primitive, the signal markers plugin, the entry/stop/target price lines),
+// replacing the old single "Zones FVG + signaux" button that could only
+// hide both together. Persisted in localStorage - a per-viewer convenience
+// (which layers THIS browser likes to see), never anything the server or
+// another viewer needs to know about - wrapped in try/catch since it can
+// throw or come back empty in a private window/blocked storage.
+function loadOverlayToggleState() {
+  try {
+    const raw = localStorage.getItem('chartOverlayToggles');
+    if (!raw) return { zones: true, signals: true, positionLines: true };
+    const parsed = JSON.parse(raw);
+    return {
+      zones: parsed.zones !== false,
+      signals: parsed.signals !== false,
+      positionLines: parsed.positionLines !== false,
+    };
+  } catch {
+    return { zones: true, signals: true, positionLines: true };
+  }
+}
+function saveOverlayToggleState() {
+  try {
+    localStorage.setItem('chartOverlayToggles', JSON.stringify({ zones: zonesVisible, signals: signalsVisible, positionLines: positionLinesVisible }));
+  } catch {
+    // Private window / blocked storage - the toggles still work for this
+    // session, they just won't be remembered next time. Not worth surfacing.
+  }
+}
+const initialToggleState = loadOverlayToggleState();
+let zonesVisible = initialToggleState.zones;
+let signalsVisible = initialToggleState.signals;
+let positionLinesVisible = initialToggleState.positionLines;
 
 // Lightweight Charts wants seconds-since-epoch, not milliseconds, and it
 // wants each bar's time strictly increasing. Our API already returns sorted
@@ -533,15 +595,19 @@ function renderOverlays(overlays, decimals) {
   }
   // Markers must be handed over in chronological order.
   markers.sort((a, b) => a.time - b.time);
-  markersPlugin.setMarkers(overlaysVisible ? markers : []);
-  zonesPrimitive.setVisible(overlaysVisible);
+  markersPlugin.setMarkers(signalsVisible ? markers : []);
+  zonesPrimitive.setVisible(zonesVisible);
 
   const counts = document.getElementById('overlay-counts');
   if (counts) {
+    const maskedParts = [];
+    if (!zonesVisible) maskedParts.push('zones masquées');
+    if (!signalsVisible) maskedParts.push('signaux masqués');
+    const maskedSuffix = maskedParts.length ? ` (${maskedParts.join(', ')})` : '';
     counts.textContent = overlays.reason
       ? overlays.reason
       : `${zones.length} zone${zones.length > 1 ? 's' : ''} FVG · ${markers.length} ${markers.length > 1 ? 'signaux' : 'signal'} sur cette fenêtre`
-        + (overlaysVisible ? '' : ' (masqués)');
+        + maskedSuffix;
   }
 }
 
@@ -666,7 +732,7 @@ async function loadChart({ keepView = false } = {}) {
 
     const symbolStatus = (statusData.symbols || []).find((s) => s.symbol === currentSymbol);
     const openPosition = symbolStatus ? symbolStatus.openPosition : null;
-    setPositionLines(openPosition, decimals);
+    setPositionLines(positionLinesVisible ? openPosition : null, decimals);
 
     renderOverlays(overlaysData, decimals);
     refreshPendingChecklist(); // not awaited - its own try/catch, must never block or fail the chart itself
@@ -697,9 +763,22 @@ function wireGroup(groupId, dataKey, onPick) {
 }
 
 buildChart();
-document.getElementById('toggle-overlays').addEventListener('click', (e) => {
-  overlaysVisible = !overlaysVisible;
-  e.currentTarget.classList.toggle('active', overlaysVisible);
+document.getElementById('toggle-zones').checked = zonesVisible;
+document.getElementById('toggle-signals').checked = signalsVisible;
+document.getElementById('toggle-position-lines').checked = positionLinesVisible;
+document.getElementById('toggle-zones').addEventListener('change', (e) => {
+  zonesVisible = e.currentTarget.checked;
+  saveOverlayToggleState();
+  loadChart({ keepView: true });
+});
+document.getElementById('toggle-signals').addEventListener('change', (e) => {
+  signalsVisible = e.currentTarget.checked;
+  saveOverlayToggleState();
+  loadChart({ keepView: true });
+});
+document.getElementById('toggle-position-lines').addEventListener('change', (e) => {
+  positionLinesVisible = e.currentTarget.checked;
+  saveOverlayToggleState();
   loadChart({ keepView: true });
 });
 document.getElementById('focus-price').addEventListener('click', focusOnCurrentPrice);

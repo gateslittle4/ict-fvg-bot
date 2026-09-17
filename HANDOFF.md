@@ -4700,4 +4700,19 @@ Conséquence : le commentaire du code affirme resoumettre le take-profit "en sec
 
 `npm test` : 645/645. **Fichier** : `src/dataSources/cTraderDataSource.js` (`_clearStaleBeliefsAgainstBroker`).
 
+## Panneau de calques à droite du graphique (turn on/turn off) — 2026-09-17
+
+Esdras : "met un endroit à droite du chart qui permet de retirer tous les graphes qui sont présents dans la charte, genre turn on turn off". L'ancien bouton unique "Zones FVG + signaux" de la barre d'outils masquait/affichait zones ET signaux ensemble, sans distinction, et rien ne contrôlait les lignes de prix Entrée/Stop/Cible.
+
+**Remplacé par un panneau à droite du graphique** (`#overlay-toggles`), avec une case à cocher par calque réellement dessiné sur le canvas :
+- **Zones FVG** (`FvgZonesPrimitive.setVisible`)
+- **Signaux** (les marqueurs ▲▼/○ du plugin de markers)
+- **Entrée / Stop / Cible** (les lignes de prix posées par `setPositionLines`, qui n'avaient jusqu'ici AUCUN contrôle de visibilité)
+
+**État persisté côté navigateur** (`localStorage`, clé `chartOverlayToggles`) — une préférence par appareil/navigateur, jamais partagée ni lue par le serveur, protégée par un `try/catch` (peut échouer en navigation privée). `.chart-wrap` est passé en `flex` avec `flex-wrap` : sur mobile, le panneau descend proprement sous le graphique plutôt que de l'écraser (vérifié à 420px de large via Playwright + capture d'écran — voir aussi la capture à 1200px avec tout coché, puis tout décoché : les zones/marqueurs disparaissent bien du canvas et le texte sous le graphique affiche "(zones masquées, signaux masqués)").
+
+`#chart-loading` (l'overlay de chargement "le bot se reconnecte...") était positionné en `absolute; inset:0` à l'intérieur de `.chart-wrap` — en ajoutant le panneau comme second enfant flex, il aurait couvert aussi le panneau. Scindé dans un nouveau `.chart-canvas-wrap` interne (position:relative) pour rester cantonné au seul canvas.
+
+`npm test` : 645/645 (fichier front-end pur, aucun test unitaire concerné). Vérifié en lançant le serveur en mode démo (aucun credential broker configuré → `startMockDataSource`) et en pilotant la page avec Playwright/Chromium : aucune erreur console, les 3 cases fonctionnent indépendamment, le panneau s'adapte à un viewport mobile. **Fichier** : `public/chart.html`.
+
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/accountRuntime.js` (doc de `recordOrderOutcome` mise à jour : deux sources de vérité broker maintenant, pas une).
