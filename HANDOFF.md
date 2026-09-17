@@ -4350,3 +4350,23 @@ Distinct d'Asian Range Fade déjà testé (qui confond Manipulation et Distribut
 **Aucun de ces 4 modules n'est branché en production** (`config.js` inchangé) — recherche uniquement, comme pour tout ce qui précède dans ce fichier. `npm test` : 615/615 (567 + 15 EQH/EQL + 11 Silver Bullet + 12 Mitigation Block + 10 Power of Three).
 
 **Fichiers** : `src/backtest/equalHighsLows.js`, `silverBullet.js`, `mitigationBlock.js`, `powerOfThree.js` (nouveaux) ; `test/equalHighsLows.test.js`, `silverBullet.test.js`, `mitigationBlock.test.js`, `powerOfThree.test.js` (nouveaux) ; `scripts/runEqualHighsLowsStrategyAnalysis.js`, `runSilverBulletStrategyAnalysis.js`, `runMitigationBlockStrategyAnalysis.js`, `runPowerOfThreeStrategyAnalysis.js` (nouveaux) ; `data/backtest-input/equal-highs-lows-strategy-analysis.md`, `silver-bullet-strategy-analysis.md`, `mitigation-block-strategy-analysis.md`, `power-of-three-strategy-analysis.md` (nouveaux).
+
+## Silver Bullet autonome — chevauchement avec ce qui est déjà en production sur US100/US500/GER40 — 2026-09-17
+
+Esdras : "doit on integrer silver bullet de facon autonome si les pairs fontionne deja de 8hr a 12hr?" — question légitime avant d'intégrer une nouvelle stratégie sur des symboles déjà tradés : est-ce une vraie diversification, ou juste un double comptage du même mouvement de marché ?
+
+**Correction utile avant l'analyse : les 3 symboles ne tournent PAS tous sur 8h-12h.** US100 (grille FVG, fenêtre 8h-12h) oui, mais US500 (grille FVG) tourne en réalité sur SILVER_BULLET_WINDOW lui-même (10h-11h, jamais élargi — voir `config.js`), et GER40 n'est PAS DU TOUT dans la grille FVG : il tourne uniquement sur NWOG + Weekly Liquidity Sweep + Breaker Block.
+
+**Méthode** (`scripts/runSilverBulletOverlapAnalysis.js`) : reconstruit les VRAIS mécanismes en production pour chaque symbole avec le même code que le bot live (`buildFilteredEngine`/`MultiTouchFvgEngine` pour la grille FVG, `runNwogBacktest`/`runWeeklySweepBacktest`/`runBreakerBlockBacktest` pour les mécanismes GER40 — mêmes `rrMultiple:5`, mêmes filtres, NWOG/US100 filtré long-only comme en prod), puis pour chaque trade Silver Bullet vérifie si sa période de détention [entrée, sortie] chevauche celle d'un trade déjà pris en production sur le même symbole (chevauchement même sens = double exposition, sens opposé = contradiction entre mécanismes).
+
+| Symbole | Trades Silver Bullet | Chevauchement (tout) | Même sens | Sens opposé | Aucun chevauchement |
+|---|---|---|---|---|---|
+| US100 | 1784 | 423 (23.7%) | 324 (18.2%) | 101 (5.7%) | **1361 (76.3%)** |
+| US500 | 1777 | 300 (16.9%) | 197 (11.1%) | 119 (6.7%) | **1477 (83.1%)** |
+| GER40 | 1539 | 312 (20.3%) | 189 (12.3%) | 145 (9.4%) | **1227 (79.7%)** |
+
+**Conclusion : le chevauchement est réel mais minoritaire — 76 à 83% des trades Silver Bullet ne recoupent AUCUN trade déjà en production sur le même symbole.** L'intégrer ajouterait donc une exposition majoritairement NOUVELLE, pas un simple doublement du risque déjà pris. La part qui chevauche (17-24%) se répartit entre double exposition au même mouvement (11-18%) et contradiction directe entre mécanismes (6-9%) — à surveiller pour le dimensionnement/garde-fous si Silver Bullet est un jour déployé, mais pas un facteur bloquant vu la proportion.
+
+**Recommandation : le chevauchement n'est pas un obstacle à l'intégration.** Reste cependant les étapes habituelles avant tout déploiement réel (jamais sautées pour un mécanisme live jusqu'ici) : observation-only avant auto-execute (comme NWOG/Judas Swing/Weekly Sweep/Breaker Block à leurs débuts), et un forward-test réel avant d'engager du capital, vu qu'un seul découpage historique train/test a validé Silver Bullet jusqu'ici.
+
+**Fichiers** : `scripts/runSilverBulletOverlapAnalysis.js` (nouveau), `data/backtest-input/silver-bullet-overlap-analysis.md` (nouveau). Pas de changement à `config.js` — Silver Bullet reste en recherche, pas déployé.
