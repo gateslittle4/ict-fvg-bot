@@ -573,6 +573,33 @@
     <div id="calc-result"></div>
   </div>
 
+  <!-- 2026-09-17 (Esdras: "met [le bouton de test broker] dans le dashboard,
+       ne le mets pas dans accounts") - déplacé depuis accounts.html (qui
+       reste, lui, verrouillé derrière le token admin le temps de toute la
+       page). Ce tableau de bord n'a lui-même AUCUNE porte token - juste ce
+       petit encart réutilise la même clé localStorage ('apexfvg_admin_token')
+       qu'accounts.html/journal.html pour ne pas redemander le token si déjà
+       saisi ailleurs, et demande une saisie inline sinon (jamais toute la
+       page bloquée pour une seule action). -->
+  <div class="card" id="test-order-card">
+    <h2>Tester la connexion broker</h2>
+    <p class="meta">Passe un ordre minimal (plus petit lot possible) pour vérifier que les ordres arrivent vraiment au broker. L'ordre sera ouvert puis fermé immédiatement — un VRAI ordre, qui compte dans le quota quotidien du garde-fou (max 3 trades/jour) : à utiliser avec parcimonie.</p>
+    <div id="test-order-token-row" class="journal-toolbar">
+      <input type="password" id="test-order-token" class="filter-select" placeholder="ADMIN_EXPORT_TOKEN" autocomplete="off" />
+    </div>
+    <div class="journal-toolbar" style="margin-top:8px;">
+      <select id="test-order-symbol" class="filter-select">
+        <option value="US100">US100</option>
+        <option value="US500">US500</option>
+        <option value="XAUUSD">XAUUSD</option>
+        <option value="EURUSD">EURUSD</option>
+        <option value="GER40">GER40</option>
+      </select>
+      <button type="button" id="test-order-btn" class="btn-ghost">Passer un ordre de test</button>
+    </div>
+    <div class="meta" id="test-order-msg" style="margin-top:8px;"></div>
+  </div>
+
 <script>
 // Multi-account routing (2026-09, Phase 3 of the multi-account rollout -
 // see HANDOFF.md "Multi-compte"). Every fetch/EventSource in this file goes
@@ -1269,6 +1296,52 @@ document.getElementById('calc-form').addEventListener('submit', async (e) => {
     `;
   } catch (err) {
     resultEl.innerHTML = `<div class="err">${err.message}</div>`;
+  }
+});
+
+// Test de connexion broker (2026-09-17, déplacé depuis accounts.html - voir
+// le commentaire HTML de la carte pour le pourquoi). Reprend le token admin
+// déjà saisi ailleurs sur le site (même clé localStorage), ou en demande un
+// ici-même si aucun n'est encore connu - jamais besoin de "déverrouiller"
+// toute une page pour cette seule action.
+const TEST_ORDER_TOKEN_KEY = 'apexfvg_admin_token';
+(function initTestOrderToken() {
+  let saved = '';
+  try { saved = localStorage.getItem(TEST_ORDER_TOKEN_KEY) || ''; } catch {}
+  if (saved) document.getElementById('test-order-token').value = saved;
+})();
+
+document.getElementById('test-order-btn').addEventListener('click', async () => {
+  const tokenInput = document.getElementById('test-order-token');
+  const token = tokenInput.value.trim();
+  const symbol = document.getElementById('test-order-symbol').value;
+  const msgEl = document.getElementById('test-order-msg');
+  const btn = document.getElementById('test-order-btn');
+
+  if (!token) {
+    msgEl.innerHTML = '<span class="err">Token admin requis (même token que la page Comptes).</span>';
+    return;
+  }
+  try { localStorage.setItem(TEST_ORDER_TOKEN_KEY, token); } catch {}
+
+  btn.disabled = true;
+  msgEl.textContent = 'Envoi en cours…';
+  try {
+    const url = new URL('/api/admin/test-order-cycle', location.origin);
+    url.searchParams.set('token', token);
+    url.searchParams.set('symbol', symbol);
+    const res = await fetch(url, { method: 'POST' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    // /admin/test-order-cycle's real response has `closed`/`closePnl` on
+    // success (no `ok` field) - see HANDOFF.md's write-up of the same bug
+    // on accounts.html's original copy of this button, fixed there and kept
+    // fixed here from the start.
+    msgEl.innerHTML = `<span style="color:var(--green)">✅ Succès ! Ordre ${symbol} passé et fermé. PnL: ${body.closePnl ?? 'N/A'}</span>`;
+  } catch (err) {
+    msgEl.innerHTML = `<span class="err">❌ Erreur: ${err.message}</span>`;
+  } finally {
+    btn.disabled = false;
   }
 });
 

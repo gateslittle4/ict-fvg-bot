@@ -4726,3 +4726,23 @@ Esdras a signalé qu'une autre branche (`challenge/fundingpips-zero`, un autre c
 Rappel pour Esdras : ce bouton passe un VRAI ordre minimal (plus petit lot) qui compte dans le quota quotidien du garde-fou (max 3 trades/jour) — à utiliser avec parcimonie, pas comme un simple "ping".
 
 `npm test` : 645/645 (fichier front-end pur). **Fichier** : `public/accounts.html`.
+
+## Bouton de test déplacé sur le dashboard — 2026-09-17
+
+Esdras : "met dans le dashboard, ne le mets pas dans account". Retiré de `public/accounts.html` (qui reste verrouillé derrière le token admin pour toute la page) et ajouté dans `public/index.html`, section "Outils & réglages", juste après le calculateur de lot. Le dashboard lui-même n'a aucune porte token globale — la carte réutilise juste la même clé `localStorage` (`apexfvg_admin_token`) qu'accounts.html/journal.html, pré-remplie si déjà saisie ailleurs, avec une saisie inline sinon (jamais besoin de déverrouiller toute la page pour cette seule action). Vérifié avec Playwright contre le serveur en mode démo : aucune erreur console, le message d'erreur inline ("Token admin requis") s'affiche correctement sans token.
+
+**Fichiers** : `public/index.html` (nouvelle carte + JS), `public/accounts.html` (carte et JS retirés).
+
+## Bug réel trouvé et corrigé : le graphique et les rapports ignoraient 5 des 7 mécanismes live — 2026-09-17
+
+Esdras : "plusieurs signaux ont été identifiés alors identifie le problème et corrige-le" (aucun trade placé malgré des signaux visibles). En creusant, j'ai d'abord confirmé que les 2 vrais signaux de ce matin (Divergence US500 14h00, Silver Bullet US100 15h15) avaient échoué à cause de la connexion zombie déjà diagnostiquée et corrigée plus tôt aujourd'hui (voir plus haut) — rien de nouveau à ce niveau, aucun signal réel n'a d'ailleurs été émis depuis le déploiement du correctif (17h47 UTC).
+
+**Mais en comparant `/api/overlays` (ce que le graphique affiche) aux vrais logs Render**, j'ai trouvé une incohérence : un signal Divergence marqué "netting" par le rejeu (`buildChartOverlays`) avait pourtant bien atteint `_handleAutoExecuteEntry` en direct. Cause réelle, confirmée en lisant `accountRuntime.js` (où le VRAI moteur live est construit) contre `chartOverlays.js`/`forwardTest.js` (les moteurs jetables du graphique et du rapport forward-test) : ces deux derniers construisaient leur `LiveStrategyEngine` avec SEULEMENT `fvgConfig`/`divergenceConfig` — les 5 mécanismes ajoutés depuis (NWOG, Judas Swing, Weekly Sweep, Breaker Block, Silver Bullet — tous LIVE et auto-exécutés, voir `accountRuntime.js`) n'étaient JAMAIS transmis. `ingestCandle()` garde chaque mécanisme derrière `if (this.nwogConfig && ...)` etc. — sans la config, le mécanisme entier est silencieusement sauté. Concrètement : **le graphique n'a jamais pu afficher une seule zone/signal Silver Bullet, Breaker Block, NWOG, Judas Swing ou Weekly Sweep** — exactement la classe de signaux qui a réellement tradé aujourd'hui (Silver Bullet sur US100). Vu depuis le graphique, ça ressemble exactement à "des signaux existent (notifications, logs) mais rien ne s'affiche/se passe".
+
+Deuxième bug du même genre, trouvé au passage : ni l'un ni l'autre ne recevait `spreads` — `recentPerformanceReport.js` avait déjà reçu ce correctif le 2026-09-14 ("on fait tout de façon honnête") mais `chartOverlays.js`/`forwardTest.js` n'avaient jamais été mis à jour. Sans spread réel, `_blockReason` ne peut JAMAIS retourner 'spread-too-tight' (spread traité comme 0), donc un signal réellement bloqué par un spread trop large en direct pouvait s'afficher à tort comme non bloqué sur le graphique.
+
+**Corrigé** : `chartOverlays.js` et `forwardTest.js` construisent maintenant leur moteur avec les 5 configs manquantes (`nwogConfig`, `judasSwingConfig`, `weeklySweepConfig`, `breakerBlockConfig`, `silverBulletConfig`) ET `spreads: DEFAULT_SPREADS`, exactement comme le vrai moteur live. Vérifié concrètement (pas juste en théorie) : un script direct contre les vraies données US100 confirme que le rejeu détecte maintenant des signaux `nwog`/`silverbullet` en plus de `fvg`, là où il n'en trouvait jamais avant.
+
+Un test existant (`buildChartOverlays: signals carry entry/stop...`) affirmait `source` limité à `['fvg', 'divergence']` — mis à jour pour couvrir les 7 sources réelles possibles (l'échec de ce test après le fix confirme que le fix change bien un comportement réel, pas cosmétique).
+
+`npm test` : 645/645. **Fichiers** : `src/backtest/chartOverlays.js`, `src/backtest/forwardTest.js`, `test/chartOverlays.test.js`.

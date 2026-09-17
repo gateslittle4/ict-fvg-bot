@@ -65,7 +65,13 @@ test('buildChartOverlays: signals carry entry/stop and a resolved outcome where 
   const { signals } = buildChartOverlays(history(), { symbol: 'US100' });
   assert.ok(signals.length > 0, 'expected at least one signal in this window');
   for (const s of signals) {
-    assert.ok(['fvg', 'divergence'].includes(s.source));
+    // 2026-09-17: was ['fvg', 'divergence'] only, from before the engine's
+    // other 5 live mechanisms existed - buildChartOverlays() used to build
+    // its replay engine without their configs at all (a real bug, now
+    // fixed: see chartOverlays.js's own comment), so this window could never
+    // have produced anything else. Full list matches every `source: '...'`
+    // a 'validated' event can carry in liveStrategyEngine.js.
+    assert.ok(['fvg', 'divergence', 'nwog', 'judaswing', 'weeklysweep', 'breakerblock', 'silverbullet'].includes(s.source));
     assert.ok(s.outcome === null || ['win', 'loss', 'timeout'].includes(s.outcome));
     if (s.outcome !== null) assert.ok(s.exitTime >= s.time, 'a trade cannot close before it opened');
     // An unblocked signal is one the bot acted on, so it must carry a real entry.

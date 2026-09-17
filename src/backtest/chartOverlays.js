@@ -18,6 +18,7 @@
 import { LiveStrategyEngine } from '../liveStrategyEngine.js';
 import { GuardrailEngine } from '../engines/guardrailEngine.js';
 import { CONFIG } from '../config.js';
+import { DEFAULT_SPREADS } from './transactionCosts.js';
 
 // The FvgEngine drops an unmitigated zone after this many candles (its own
 // DEFAULT_MAX_AGE_CANDLES). Note CONFIG.fvg.maxAgeCandles exists and holds
@@ -44,11 +45,33 @@ function lastCandleTime(candles) {
  */
 export function buildChartOverlays(historyBySymbol, { symbol, timeOffsetMs = 0, maxZones = 60, maxSignals = 200 } = {}) {
   const guardrail = new GuardrailEngine({});
+  // BUG FOUND 2026-09-17 (Esdras: "plusieurs signaux ont été identifiés,
+  // pourtant aucun trade n'a été placé" - the chart showed nothing for
+  // them): this engine used to be built with ONLY fvgConfig/divergenceConfig
+  // - the 5 mechanisms added since (NWOG, Judas Swing, Weekly Sweep, Breaker
+  // Block, Silver Bullet - all LIVE and auto-executed, see accountRuntime.js)
+  // were never wired in here, so ingestCandle()'s own guards
+  // (`if (this.nwogConfig && ...)` etc.) skipped them ENTIRELY in this
+  // replay - the chart's zones/signals overlay could only ever show FVG and
+  // Divergence activity, silently omitting the majority of what the live
+  // bot actually does (confirmed live: a real Silver Bullet entry on US100
+  // today had zero representation here, even though it reached
+  // _handleAutoExecuteEntry and was logged/notified elsewhere). Also missing
+  // `spreads` - recentPerformanceReport.js got this exact fix on 2026-09-14
+  // ("on fait tout de façon honnête") but chartOverlays.js was never updated
+  // to match, so a real spread-blocked signal here would incorrectly show
+  // as unblocked (this.spreads[symbol] ?? 0 always evaluates spread as 0).
   const engine = new LiveStrategyEngine({
     symbols: CONFIG.symbols,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
+    nwogConfig: CONFIG.nwog,
+    judasSwingConfig: CONFIG.judasSwing,
+    weeklySweepConfig: CONFIG.weeklySweep,
+    breakerBlockConfig: CONFIG.breakerBlock,
+    silverBulletConfig: CONFIG.silverBullet,
     guardrail,
+    spreads: DEFAULT_SPREADS,
   });
 
   const zonesById = new Map();

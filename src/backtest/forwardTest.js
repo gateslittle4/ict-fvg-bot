@@ -12,6 +12,7 @@
 import { LiveStrategyEngine } from '../liveStrategyEngine.js';
 import { GuardrailEngine } from '../engines/guardrailEngine.js';
 import { CONFIG } from '../config.js';
+import { DEFAULT_SPREADS } from './transactionCosts.js';
 
 /**
  * Replay strategy on a specific candle slice and return trade summary.
@@ -19,11 +20,24 @@ import { CONFIG } from '../config.js';
  */
 async function replayOnSlice(historyBySymbol, startMs, endMs) {
   const guardrail = new GuardrailEngine({});
+  // Same gap found and fixed in chartOverlays.js on 2026-09-17: missing the
+  // 5 mechanisms added since this was written (NWOG/Judas Swing/Weekly
+  // Sweep/Breaker Block/Silver Bullet - all LIVE, see accountRuntime.js) and
+  // missing `spreads` (recentPerformanceReport.js got that fix on
+  // 2026-09-14, this file didn't) - meant a forward-test comparison silently
+  // ignored 5 of 7 live mechanisms and never blocked a spread-too-tight
+  // candidate the real engine would have blocked.
   const engine = new LiveStrategyEngine({
     symbols: CONFIG.symbols,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
+    nwogConfig: CONFIG.nwog,
+    judasSwingConfig: CONFIG.judasSwing,
+    weeklySweepConfig: CONFIG.weeklySweep,
+    breakerBlockConfig: CONFIG.breakerBlock,
+    silverBulletConfig: CONFIG.silverBullet,
     guardrail,
+    spreads: DEFAULT_SPREADS,
   });
 
   const sliced = {};
