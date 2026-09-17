@@ -30,7 +30,7 @@ function createFakeAccount() {
         clearBelievedPositionCalls.push({ symbol, signalId });
       },
       markPyramidOrderFilled(symbol) {
-        return { entryPrice: 100, stopPrice: 95, targetPrice: 115 };
+        return { direction: 'bullish', entryPrice: 100, stopPrice: 95, targetPrice: 115, riskAmount: 50 };
       },
     },
     // A real GuardrailEngine, not a fake - it's already independently unit
@@ -99,6 +99,64 @@ test('_handleExecutionEvent: a pyramid add-on order FILLING (opening, not closin
 
   assert.equal(ds.pyramidOrderSymbolByOrderId.has(6001), false, 'consumed once filled');
   assert.equal(ds.pyramidPositionIdBySymbol.get('US100'), 41700000, 'the resulting position must be tracked for its eventual close');
+});
+
+// BUG FOUND 2026-09-17 (execution-path audit, continuing "réduire l'écart"):
+// a pyramid leg used to be tracked ONLY in pyramidPositionIdBySymbol (a
+// close-time notification only) - never in openPositionInfoByPositionId,
+// which is what BOTH the periodic missing-stop-loss resubmission sweep
+// (computeMissingStopFixes' getTrackedStopPrice) and the durable Supabase
+// journal (logClosedTrade) read from. A dropped stop-loss on a pyramid leg
+// (the same failure mode as the real 2026-09-14 BTCUSD incident, just on a
+// different code path) would have been silently unprotected forever.
+test('_handleExecutionEvent: a pyramid add-on FILL is also tracked in openPositionInfoByPositionId (stop-loss safety net + durable journal, not just a notification)', () => {
+  const account = createFakeAccount();
+  const ds = makeDataSource(account);
+  ds.pyramidOrderSymbolByOrderId.set(6002, 'US100');
+
+  ds._handleExecutionEvent({
+    executionType: 'ORDER_FILLED',
+    order: { orderId: 6002 },
+    position: { positionId: 41700001 },
+  });
+
+  const info = ds.openPositionInfoByPositionId.get('41700001');
+  assert.ok(info, 'a pyramid leg must be tracked exactly like a normal entry, or the missing-stop-loss sweep silently skips it');
+  assert.equal(info.source, 'pyramid');
+  assert.equal(info.stopPrice, 95);
+  assert.equal(info.targetPrice, 115);
+  assert.equal(info.riskAmount, 50);
+});
+
+test('_handleExecutionEvent: a pyramid leg CLOSING (now tracked) updates balance/guardrail and logs to the journal, same as any other position', () => {
+  const account = createFakeAccount();
+  const ds = makeDataSource(account);
+  ds.openPositionInfoByPositionId.set('41700001', {
+    symbolName: 'US100',
+    source: 'pyramid',
+    signalId: null,
+    direction: 'bullish',
+    entryPrice: 100,
+    riskAmount: 50,
+    entryTime: Date.now() - 30000,
+  });
+
+  ds._handleExecutionEvent({
+    executionType: 'ORDER_FILLED',
+    deal: {
+      positionId: '41700001',
+      symbolId: 213,
+      closePositionDetail: { grossProfit: '2000', balance: '1200000', moneyDigits: 2 },
+    },
+  });
+
+  assert.equal(account.balance, 12000);
+  assert.equal(ds.openPositionInfoByPositionId.has('41700001'), false, 'a closed pyramid leg must stop being tracked as open');
+  // clearBelievedPosition(symbol, null) is called (same code path every
+  // close goes through) but must be a safe no-op here - a pyramid leg was
+  // never registered in openPositions under any id.
+  assert.equal(account._clearBelievedPositionCalls.length, 1);
+  assert.equal(account._clearBelievedPositionCalls[0].signalId, null);
 });
 
 test('_handleExecutionEvent: a tracked auto-execute entry order FILLS -> adopted into openPositionInfoByPositionId, outcome recorded', () => {

@@ -470,6 +470,16 @@ export function buildComplianceChecklist({ trade, candles, cfg, h1Candles, expec
     case 'breakerblock': items.push(...buildBreakerBlockChecklist(trade, candles)); break;
     case 'silverbullet': items.push(...buildSilverBulletChecklist(trade, candles)); break;
     case 'divergence': items.push(...buildDivergenceChecklist(trade, candles, cfg)); break;
+    // pyramid (2026-09-17, execution-path audit: pyramid legs only started
+    // reaching the durable journal/this checklist today - see
+    // cTraderDataSource.js's _handleExecutionEvent, openPositionInfoByPositionId
+    // comment). Not an independent signal - it's a scale-in add-on triggered
+    // by the ORIGINAL position moving +addAtR in its favor, so there is no
+    // separate entry criteria to verify here either, same reasoning as the
+    // manual-trade case just below.
+    case 'pyramid':
+      items.push({ key: 'signal', applicable: false, label: 'Critères du mécanisme', detail: "Unité pyramide (ajout sur position gagnante) — pas un signal indépendant, rien à vérifier ici" });
+      break;
     // null/undefined (2026-09-17, found live on the real account: a manual
     // Buy/Sell click has no order label at all, so parseSourceFromLabel()
     // already returns null for it upstream in dealPairing.js - a real,

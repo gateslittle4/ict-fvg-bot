@@ -2260,6 +2260,37 @@ export class CTraderDataSource {
         const positionId = event.position?.positionId ?? event.deal?.positionId;
         if (filled && positionId != null) {
           this.pyramidPositionIdBySymbol.set(symbolName, positionId);
+          // BUG FOUND 2026-09-17 (execution-path audit): a pyramid leg used
+          // to be tracked ONLY in pyramidPositionIdBySymbol (close-time
+          // notification only) - never in openPositionInfoByPositionId,
+          // which is what BOTH the periodic missing-stop-loss resubmission
+          // sweep (_clearStaleBeliefsAgainstBroker -> computeMissingStopFixes
+          // -> getTrackedStopPrice) AND the durable Supabase journal
+          // (logClosedTrade, below in the closePositionDetail branch) read
+          // from. Concretely: if the broker ever dropped a pyramid leg's
+          // stop-loss (the exact 2026-09-14 BTCUSD incident, which happened
+          // to an original entry, not a pyramid leg - but the code path is
+          // identical), the automatic resubmission would silently skip it
+          // ("never observed this position's own entry" - false, we did,
+          // just not here), and its eventual win/loss would never reach the
+          // durable journal either - both already flagged as "a known gap,
+          // not fixed tonight" in this file's own history, closed now with
+          // the one piece of data (filled.stopPrice/targetPrice/entryPrice)
+          // this method already has and the two consumers already read.
+          // signalId: null is safe - clearBelievedPosition (called below on
+          // close) only clears a REAL match by id, and a pyramid leg was
+          // never in `openPositions` under any id to begin with.
+          this.openPositionInfoByPositionId.set(String(positionId), {
+            symbolName,
+            source: 'pyramid',
+            signalId: null,
+            direction: filled.direction,
+            entryPrice: filled.entryPrice,
+            riskAmount: filled.riskAmount,
+            stopPrice: filled.stopPrice,
+            targetPrice: filled.targetPrice,
+            entryTime: Date.now(),
+          });
           this._notifyText(`🔺 Pyramide auto : 2e unité REMPLIE sur ${symbolName} à ${filled.entryPrice} (stop ${filled.stopPrice}, cible ${filled.targetPrice})`);
         }
       }

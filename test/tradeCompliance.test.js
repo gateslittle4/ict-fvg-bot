@@ -363,3 +363,18 @@ test('buildComplianceChecklist: a null source (manual trade) gets a clear "trade
   assert.doesNotMatch(signal.detail, /null/i);
   assert.match(signal.detail, /manuel/i);
 });
+
+// 2026-09-17 (execution-path audit): pyramid legs only started reaching the
+// durable journal/this checklist today (cTraderDataSource.js's
+// _handleExecutionEvent now populates openPositionInfoByPositionId for them
+// too, not just the original entry) - without this case, a pyramid leg's
+// trade-history entry would have fallen into the generic "unknown mechanism"
+// branch and printed `Mécanisme "pyramid" inconnu de cette checklist`.
+test('buildComplianceChecklist: a pyramid source gets a clear "unité pyramide" message, not "unknown mechanism"', () => {
+  const trade = { source: 'pyramid', symbol: 'US100', direction: 'bullish', entryTime: 1, entryPrice: 100, stopPrice: 95, pnlUsd: 40, rMultiple: 2, balanceAfter: 10040 };
+  const { items } = buildComplianceChecklist({ trade, candles: [], cfg: null, h1Candles: null, expectedRiskPct: 0.5 });
+  const signal = items.find((i) => i.key === 'signal');
+  assert.equal(signal.applicable, false);
+  assert.doesNotMatch(signal.detail, /inconnu/i);
+  assert.match(signal.detail, /pyramide/i);
+});
