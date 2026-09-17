@@ -1408,3 +1408,86 @@ test('LiveStrategyEngine (Breaker Block): netting blocks the signal while an ear
   assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
+
+// --- Silver Bullet (ICT FVG formed inside the 10h-11h NY killzone AND
+// agreeing with the active structure bias - 2026-09-17, US100/US500/GER40,
+// LIVE auto-executed at the user's explicit request, see config.js's
+// `silverBullet` comment and HANDOFF.md). Same openPositions/netting/
+// auto-execute shared path as every other live source above. Fixture is
+// the SAME shape (and same January-dates-avoid-DST convention) as
+// test/silverBullet.test.js's own baseToFvg(): a swing high pivot at 110,
+// confirmed, then a BOS candle closing above it (bullish structure bias),
+// padded to 09:30 NY, then a 3-candle bullish FVG whose c3 lands at 10:00
+// NY (inside the killzone) - re-verified directly against
+// detectSilverBulletFvgs()/this engine's own _computeSilverBulletCandidates()
+// before writing this fixture into the test.
+
+const SILVERBULLET_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+
+function silverBulletBaseFixture() {
+  let t = Date.UTC(2024, 0, 1, 0, 0);
+  const candles = [];
+  for (let i = 0; i < 10; i++) { candles.push(c(t, 100, 100.2, 99.8, 100)); t += M15; }
+  candles.push(c(t, 105, 110, 104, 106)); t += M15; // swing high = 110
+  for (let i = 0; i < 5; i++) { candles.push(c(t, 100, 101, 99, 100)); t += M15; }
+  for (let i = 0; i < 10; i++) { candles.push(c(t, 100, 100.2, 99.8, 100)); t += M15; }
+  candles.push(c(t, 105, 112, 104, 111)); t += M15; // BOS: close 111 > 110 -> bullish structure bias
+  for (let i = 0; i < 5; i++) { candles.push(c(t, 108, 108.2, 107.8, 108)); t += M15; }
+  while (new Date(t).getUTCHours() < 9 || (new Date(t).getUTCHours() === 9 && new Date(t).getUTCMinutes() < 30)) {
+    candles.push(c(t, 108, 108.2, 107.8, 108)); t += M15;
+  }
+  candles.push(c(t, 108, 108.5, 107.5, 108)); t += M15; // c1, high=108.5
+  candles.push(c(t, 108, 109, 107, 108)); t += M15; // c2
+  candles.push(c(t, 109, 110, 108.9, 109.5)); t += M15; // c3 (10:00 NY) -> bullish FVG [108.5, 108.9]
+  return { candles, t };
+}
+
+test('LiveStrategyEngine (Silver Bullet): an FVG formed inside the killzone, agreeing with structure, fires a "validated" signal one candle after mitigation, entry = candle.open, and opens a REAL position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, silverBulletConfig: SILVERBULLET_CFG, guardrail, riskPctPerTrade: 1,
+  });
+
+  const { candles, t: t0 } = silverBulletBaseFixture();
+  let t = t0;
+  const mitigation = c(t, 109.3, 109.4, 108.7, 108.8); t += M15; // low 108.7 <= zone.top 108.9
+  const entry = c(t, 109.5, 109.6, 109.4, 109.5); t += M15; // entry candle, open=109.5
+
+  for (const candle of candles) engine.ingestCandle('TEST1', candle);
+  const mitigationEvents = engine.ingestCandle('TEST1', mitigation);
+  assert.equal(mitigationEvents.filter((e) => e.source === 'silverbullet').length, 0, 'the mitigation candle itself does not fire a signal - entry waits one more candle');
+
+  const entryEvents = engine.ingestCandle('TEST1', entry).filter((e) => e.source === 'silverbullet');
+  assert.equal(entryEvents.length, 1);
+  const sig = entryEvents[0];
+  assert.equal(sig.direction, 'bullish');
+  assert.equal(sig.suggestedSide, 'buy');
+  assert.equal(sig.entryPrice, 109.5);
+  assert.ok(Math.abs(sig.stopPrice - 108.46) < 1e-9); // zone.bottom(108.5) - 10% of zone height(0.4) buffer
+  assert.equal(sig.blockedReason, null);
+  assert.equal(engine.getOpenPosition('TEST1').source, 'silverbullet', 'a clean Silver Bullet signal now claims the REAL netting slot, same as FVG/Divergence/NWOG/Judas Swing/Weekly Sweep/Breaker Block');
+});
+
+test('LiveStrategyEngine: netting blocks a Silver Bullet signal on a symbol that already has an open position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, silverBulletConfig: SILVERBULLET_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake-open', direction: 'bearish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 200, targetPrice: 0, distance: 100, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const { candles, t: t0 } = silverBulletBaseFixture();
+  let t = t0;
+  const mitigation = c(t, 109.3, 109.4, 108.7, 108.8); t += M15;
+  const entry = c(t, 109.5, 109.6, 109.4, 109.5); t += M15;
+
+  for (const candle of candles) engine.ingestCandle('TEST1', candle);
+  engine.ingestCandle('TEST1', mitigation);
+  const entryEvents = engine.ingestCandle('TEST1', entry).filter((e) => e.source === 'silverbullet');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+});

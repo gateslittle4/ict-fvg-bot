@@ -732,6 +732,7 @@ export class MatchTraderDataSource {
         e.source === 'judaswing' ? 'Judas Swing (killzone Londres)' :
         e.source === 'weeklysweep' ? 'Weekly Liquidity Sweep (GER40)' :
         e.source === 'breakerblock' ? 'Breaker Block (GER40)' :
+        e.source === 'silverbullet' ? 'Silver Bullet (killzone 10h-11h NY)' :
         'FVG rempli';
       // Forward-test démo OBSERVATION ONLY (2026-09) - see cTraderDataSource.js's
       // own _notify() and accountRuntime.js's tagVolatilityObservation()/HANDOFF.md.

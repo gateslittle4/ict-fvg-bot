@@ -432,6 +432,43 @@ export const CONFIG = {
     rrMultiple: 5,
     maxHoldingM15Candles: 480,
   },
+  // Silver Bullet (ICT FVG formed inside the 10h-11h NY killzone AND
+  // agreeing with the active structure bias - NOT just a session filter on
+  // an already-existing FVG, see src/backtest/silverBullet.js's own header
+  // for the distinction from this project's older SILVER_BULLET_WINDOW
+  // constant) - LIVE, auto-executed (2026-09-17), straight to full
+  // auto-execute at Esdras's explicit request ("on les met en mode auto
+  // execute"), no alert-only observation phase first - same fast-track
+  // pattern as NWOG/Weekly Sweep/Breaker Block's own original rollout.
+  //
+  // Validated TWICE, independently: (1) train(<2024)/test(2024-2025) split
+  // on the 2019-2025 historical CSVs - US100/US500/GER40 all hold, PF
+  // 1.28-1.63, buy AND sell both positive in both windows (data/backtest-input/
+  // silver-bullet-strategy-analysis.md); (2) a forward-test on real cTrader
+  // candles (2026-02-10 -> 2026-09-16, never used to tune anything) -
+  // positive on all 3 symbols (PF 1.37-1.72), buy AND sell both positive on
+  // all 3 (6/6 subgroups, no sign flips) - see HANDOFF.md and
+  // data/real-data-2026-02-to-09/silver-bullet-forward-test.md. Checked for
+  // redundancy against what's already live on these same symbols before
+  // deploying: 76-83% of Silver Bullet's trades don't overlap in time with
+  // any already-open FVG/NWOG/Weekly Sweep/Breaker Block position on the
+  // same symbol (data/backtest-input/silver-bullet-overlap-analysis.md) -
+  // mostly new exposure, not double-counted risk.
+  //
+  // rrMultiple: 3 - the exact value both validations above were run at
+  // (silverBullet.js's own RR_MULTIPLE default), NOT re-tuned or extended to
+  // 5 the way FVG/NWOG/Weekly Sweep/Breaker Block eventually were elsewhere
+  // in this file - that extension was only ever tested for THOSE
+  // mechanisms, and picking a bigger number here now, never having tested
+  // it, would be exactly the after-the-fact parameter choice this project's
+  // discipline exists to avoid. No direction filter - validated bidirectional
+  // on all 3 symbols in both checks above, unlike US100/NWOG's genuine
+  // long-only edge.
+  silverBullet: {
+    symbols: ['US100', 'US500', 'GER40'],
+    rrMultiple: 3,
+    maxHoldingM15Candles: 480,
+  },
   // Pyramid add-on ("stops indépendants, sans breakeven" - see HANDOFF.md):
   // once an FVG position on `symbols` has moved `addAtR` in its favor, place
   // a SECOND, fully independent unit (own entry/stop/target - the original

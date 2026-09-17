@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildEffectiveConfig } from '../src/accountRegistry.js';
+import { CONFIG } from '../src/config.js';
 
 // Regression test for a real bug caught before it shipped (2026-09-13,
 // while adding CTI's 1-Step program, which has NO daily loss limit): a
@@ -41,6 +42,25 @@ test('buildEffectiveConfig: no propFirmProgramId means the account\'s own guardr
   const guardrails = { maxTradesPerDay: 5, cooldownMinutesAfterLoss: 15, dailyLossLimitPct: 1.5, dayBoundaryHourUTC: 0 };
   const effective = buildEffectiveConfig({ id: 'test-plain', propFirmProgramId: null, guardrails, riskPctPerTrade: 0.3 });
   assert.deepEqual(effective.guardrails, guardrails);
+});
+
+// Regression test for a real bug caught 2026-09-17 while wiring Silver
+// Bullet live: weeklySweep/breakerBlock were added to config.js and
+// accountRuntime.js ("LIVE, auto-executed") but never forwarded here -
+// AccountRuntime reads config.weeklySweep/config.breakerBlock directly, and
+// an omitted key is `undefined`, which LiveStrategyEngine's constructor
+// silently defaults back to null (disabled). Both mechanisms were inert in
+// production the entire time despite being documented as live. Every
+// live-mechanism config block must be forwarded, checked explicitly by name
+// so a future mechanism added to config.js but forgotten here fails loudly.
+test('buildEffectiveConfig: forwards every live-mechanism config block from CONFIG (nwog/judasSwing/weeklySweep/breakerBlock/silverBullet/pyramid), none silently dropped', () => {
+  const effective = buildEffectiveConfig({ id: 'test-plain', propFirmProgramId: null, guardrails: {}, riskPctPerTrade: 0.3 });
+  assert.equal(effective.nwog, CONFIG.nwog);
+  assert.equal(effective.judasSwing, CONFIG.judasSwing);
+  assert.equal(effective.weeklySweep, CONFIG.weeklySweep);
+  assert.equal(effective.breakerBlock, CONFIG.breakerBlock);
+  assert.equal(effective.silverBullet, CONFIG.silverBullet);
+  assert.equal(effective.pyramid, CONFIG.pyramid);
 });
 
 // --- DISABLED_ACCOUNT_IDS -------------------------------------------------

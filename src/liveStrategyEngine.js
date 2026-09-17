@@ -133,6 +133,7 @@ import { detectNwogEvents } from './backtest/nwog.js';
 import { detectJudasSwingEvents } from './backtest/judasSwing.js';
 import { detectWeeklySweepEvents } from './backtest/weeklyLiquiditySweep.js';
 import { detectBosEvents, findOrderBlock, OB_SEARCH_LOOKBACK, BREAKER_MAX_AGE_CANDLES } from './backtest/breakerBlock.js';
+import { detectSilverBulletFvgs, FVG_MAX_AGE_CANDLES as SILVER_BULLET_FVG_MAX_AGE_CANDLES, FVG_EDGE_BUFFER_PCT as SILVER_BULLET_FVG_EDGE_BUFFER_PCT } from './backtest/silverBullet.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
@@ -181,6 +182,16 @@ export class LiveStrategyEngine {
     // defaulted so the three backtest/report engines don't silently start
     // folding it in.
     breakerBlockConfig = null,
+    // Same opt-in-only pattern as nwogConfig/judasSwingConfig/weeklySweepConfig/
+    // breakerBlockConfig above (2026-09-17, US100/US500/GER40 - Esdras's
+    // explicit "on les met en mode auto execute" request, straight to full
+    // auto-execute, no alert-only observation phase first - see HANDOFF.md
+    // for the research this was validated against: a train/test split on
+    // 2019-2025 historical CSVs AND a confirming forward-test on real
+    // cTrader candles never used to tune anything, both positive and
+    // symmetric buy/sell on all 3 symbols). Not defaulted so the three
+    // backtest/report engines don't silently start folding it in.
+    silverBulletConfig = null,
     guardrail,
     riskPctPerTrade = CONFIG.risk.riskPctPerTrade,
     spreads = {},
@@ -194,6 +205,7 @@ export class LiveStrategyEngine {
     this.judasSwingConfig = judasSwingConfig || null;
     this.weeklySweepConfig = weeklySweepConfig || null;
     this.breakerBlockConfig = breakerBlockConfig || null;
+    this.silverBulletConfig = silverBulletConfig || null;
     this.guardrail = guardrail;
     this.riskPctPerTrade = riskPctPerTrade;
     this.spreads = spreads;
@@ -336,6 +348,10 @@ export class LiveStrategyEngine {
 
     if (this.breakerBlockConfig && this.breakerBlockConfig.symbols.includes(symbol)) {
       events.push(...this._detectBreakerBlockSignal(symbol, candle, guardrailNow));
+    }
+
+    if (this.silverBulletConfig && this.silverBulletConfig.symbols.includes(symbol)) {
+      events.push(...this._detectSilverBulletSignal(symbol, candle, guardrailNow));
     }
 
     return events;
@@ -1222,6 +1238,157 @@ export class LiveStrategyEngine {
     return signal;
   }
 
+  /**
+   * Pure computation of every Silver Bullet entry candidate implied by one
+   * symbol's full candle history - reuses detectSilverBulletFvgs()
+   * (src/backtest/silverBullet.js) UNCHANGED for the eligibility test (FVG
+   * formed inside the killzone window AND agreeing with the active
+   * structure bias - not reimplemented here), replaying the SAME
+   * active-zone/mitigation state machine as runSilverBulletBacktest()'s own
+   * stages 2-4 - only the TRADE MANAGEMENT half (its stage 1 "resolve an
+   * open position", and the position-opening side of its stage 4's `!open`
+   * guard) is left out, because that's already handled by this engine's own
+   * shared openPositions/netting (_resolveOpenPosition/_blockReason), exactly
+   * like _computeBreakerBlockCandidates() above. Deliberately does NOT gate
+   * the state machine on "is a trade currently open" the way the standalone
+   * backtest does (that variable tracked ONLY Silver Bullet's own position
+   * there, with nothing else competing for the symbol) - same reasoning as
+   * every other _computeXCandidates() here: this function stays a pure,
+   * position-agnostic detector, and the shared netting layer is what
+   * actually decides whether a detected candidate gets to open a real
+   * position.
+   */
+  _computeSilverBulletCandidates(candles) {
+    const eligibleFvgs = detectSilverBulletFvgs(candles);
+    const fvgsByFormedIndex = new Map();
+    for (const f of eligibleFvgs) {
+      if (!fvgsByFormedIndex.has(f.formedIndex)) fvgsByFormedIndex.set(f.formedIndex, []);
+      fvgsByFormedIndex.get(f.formedIndex).push(f);
+    }
+
+    const candidates = [];
+    let active = []; // { direction, zone, candlesSinceFormed }
+
+    for (let i = 0; i < candles.length; i++) {
+      const candle = candles[i];
+
+      const stillActive = [];
+      let mitigated = null;
+      for (const fvg of active) {
+        fvg.candlesSinceFormed += 1;
+        const enteredZone = fvg.direction === 'bullish' ? candle.low <= fvg.zone.top : candle.high >= fvg.zone.bottom;
+        if (enteredZone) {
+          if (!mitigated) mitigated = fvg; // only ever act on the first one this candle
+          continue; // consumed either way - mitigated zones aren't re-tradeable
+        }
+        if (fvg.candlesSinceFormed < SILVER_BULLET_FVG_MAX_AGE_CANDLES) stillActive.push(fvg);
+      }
+      active = stillActive;
+
+      if (mitigated) {
+        const entryIndex = i + 1;
+        if (entryIndex < candles.length) {
+          const bullish = mitigated.direction === 'bullish';
+          const zoneHeight = mitigated.zone.top - mitigated.zone.bottom;
+          const buffer = zoneHeight * SILVER_BULLET_FVG_EDGE_BUFFER_PCT;
+          const stopReference = bullish ? mitigated.zone.bottom - buffer : mitigated.zone.top + buffer;
+          candidates.push({ direction: mitigated.direction, entryTime: candles[entryIndex].time, stopReference });
+        }
+      }
+
+      const newlyFormed = fvgsByFormedIndex.get(i);
+      if (newlyFormed) {
+        for (const f of newlyFormed) active.push({ direction: f.direction, zone: f.zone, candlesSinceFormed: 0 });
+      }
+    }
+    return candidates;
+  }
+
+  _detectSilverBulletSignal(symbol, candle, guardrailNow = candle.time) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeSilverBulletCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processSilverBulletCandidate(symbol, candle, candidate, guardrailNow)];
+  }
+
+  /**
+   * Shared tail of Silver Bullet signal handling - same shape and same
+   * openPositions/netting/auto-execute participation as
+   * _processNwogCandidate()/_processJudasSwingCandidate()/
+   * _processWeeklySweepCandidate()/_processBreakerBlockCandidate() above
+   * (2026-09-17, US100/US500/GER40 - see config.js's `silverBullet` comment
+   * and HANDOFF.md). No direction filter - validated bidirectional on all 3
+   * symbols (buy AND sell positive, both the 2019-2025 train/test split and
+   * the real cTrader forward-test), unlike US100/NWOG's genuine long-only
+   * edge. Same validStopSide guard as every other source here
+   * (smtDivergence.js's lesson).
+   */
+  _processSilverBulletCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
+    const cfg = this.silverBulletConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // silverBullet.js: "Entry at the open of the candle after mitigation"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `silverbullet-${symbol}-${candle.time}`;
+    const suggestedSide = bullish ? 'buy' : 'sell';
+
+    if (distance <= 0 || !validStopSide) {
+      return {
+        type: 'validated',
+        source: 'silverbullet',
+        symbol,
+        id,
+        direction: candidate.direction,
+        suggestedSide,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
+
+    const signal = {
+      type: 'validated',
+      source: 'silverbullet',
+      symbol,
+      id,
+      direction: candidate.direction,
+      suggestedSide,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'silverbullet',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
+  }
+
   // -------------------------------------------------------------------------
   // Bulk warm-up (2026-09): reconstructs this engine's state (history,
   // openPositions, pyramidPositions, formationIndexBySymbol) from a full
@@ -1326,6 +1493,15 @@ export class LiveStrategyEngine {
         ? this._computeBreakerBlockCandidates(candles)
         : null;
 
+    // Silver Bullet candidates (2026-09-17, US100/US500/GER40 - see
+    // config.js's `silverBullet` comment and HANDOFF.md). Same shape as
+    // NWOG/Judas Swing/Weekly Sweep/Breaker Block's own precomputation
+    // above: only needs this symbol's own final history.
+    const silverBulletCandidates =
+      this.silverBulletConfig && this.silverBulletConfig.symbols.includes(symbol)
+        ? this._computeSilverBulletCandidates(candles)
+        : null;
+
     for (let i = 0; i < candles.length; i++) {
       const candle = candles[i];
       if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
@@ -1387,6 +1563,14 @@ export class LiveStrategyEngine {
         const candidate = breakerBlockCandidates.find((cd) => cd.entryTime === candle.time);
         if (candidate) {
           const signal = this._processBreakerBlockCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (silverBulletCandidates) {
+        const candidate = silverBulletCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processSilverBulletCandidate(symbol, candle, candidate);
           if (onEvent) onEvent(signal, candle);
         }
       }

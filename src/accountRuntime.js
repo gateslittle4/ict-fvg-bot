@@ -89,6 +89,9 @@ export class AccountRuntime {
       // LIVE, auto-executed (2026-09-16, GER40) - see config.js's
       // `breakerBlock` comment. Same opt-in-only pattern as nwogConfig above.
       breakerBlockConfig: config.breakerBlock,
+      // LIVE, auto-executed (2026-09-17, US100/US500/GER40) - see config.js's
+      // `silverBullet` comment. Same opt-in-only pattern as nwogConfig above.
+      silverBulletConfig: config.silverBullet,
       guardrail: this.guardrail,
       riskPctPerTrade: config.risk.riskPctPerTrade,
       spreads,
