@@ -1613,6 +1613,66 @@ export class CTraderDataSource {
   // and meant a degraded connection took 10s per attempt to even start
   // being detectable - shortened so _handleAutoExecuteEntry's reconnect
   // trigger (see there) fires quickly instead of being an afterthought.
+  /**
+   * "Did this order actually reach the broker?" - answered by ASKING
+   * (ProtoOAReconcileReq, a request/response round-trip) instead of waiting
+   * for a push that may never come.
+   *
+   * This is the whole point (2026-09-17, Esdras: "comment peut on s'assurer
+   * à 100% que l'ordre passe"): the connection that failed today was only
+   * HALF broken - it stopped delivering ProtoOAExecutionEvent pushes while
+   * still answering every request/response command perfectly (the 5-minute
+   * balance refresh kept succeeding right through the 6-hour outage, and
+   * ProtoOANewOrderReq itself still got its - empty - reply). So a reconcile
+   * query is exactly the channel that still works when the push channel is
+   * dead, which makes it the only trustworthy way to find out what really
+   * happened to an order we got no confirmation for.
+   *
+   * Matching is by symbolId AND our own `label` (set at submission: e.g.
+   * `auto-silverbullet-US100`) - the broker echoes it back in
+   * position.tradeData.label / order.tradeData.label (confirmed live in the
+   * raw fill dump of /admin/test-order-cycle). `openTimestamp` narrows it
+   * further when present, so an OLDER position carrying the same label
+   * (same mechanism, same symbol, earlier signal) is never adopted by
+   * mistake; when the field is absent the label+symbol match stands alone
+   * rather than silently discarding a real match.
+   *
+   * Returns { orderId, positionId, matched } - either id may be null:
+   * a still-working LIMIT/STOP shows up as an order, a filled MARKET order
+   * as a position (its order is no longer in the working list by then).
+   */
+  async _findRealOrderOrPositionForLabel({ symbolId, label, submittedAtMs }) {
+    const res = await sendCommandWithTimeout(this.connection, 'ProtoOAReconcileReq', {
+      ctidTraderAccountId: Number(this.accountId),
+    });
+    // Dumped raw on purpose: this path only runs when something already went
+    // wrong, and this file's own history (the null-orderId bug, the
+    // `order.symbolId` that never existed) is a long list of broker payload
+    // shapes that were GUESSED rather than observed. One log line here is
+    // what makes the next diagnosis factual.
+    console.log(`[order-verify] reconcile for symbolId=${symbolId} label=${label}: ${JSON.stringify(res)}`);
+
+    const SLACK_MS = 5000; // submission -> broker-side timestamp, generously
+    const isOurs = (tradeData) => {
+      if (tradeData?.label !== label) return false;
+      if (Number(tradeData?.symbolId) !== Number(symbolId)) return false;
+      const openedAt = Number(tradeData?.openTimestamp);
+      // Absent/unparseable timestamp: keep the match (label+symbol is
+      // already specific) rather than throwing away a real position.
+      if (!Number.isFinite(openedAt) || openedAt <= 0) return true;
+      return openedAt >= submittedAtMs - SLACK_MS;
+    };
+
+    const order = (res.order || []).find((o) => isOurs(o?.tradeData) && o?.orderId != null);
+    const position = (res.position || []).find((p) => isOurs(p?.tradeData) && p?.positionId != null);
+
+    return {
+      orderId: order?.orderId ?? null,
+      positionId: position?.positionId ?? null,
+      matched: Boolean(order || position),
+    };
+  }
+
   _waitForOrderIdBySymbol(symbolId, timeoutMs = 3000) {
     return new Promise((resolve) => {
       let uuid;
@@ -1741,9 +1801,18 @@ export class CTraderDataSource {
             'incident - see HANDOFF.md). Forcing a clean process exit so the platform restarts with a fresh ' +
             'connection rather than continuing to submit orders no one can confirm.'
         );
-        // Let the two console.error lines above actually reach the log
-        // backend before the process dies.
-        setTimeout(() => process.exit(1), 500);
+        // 2s, not a token delay: the CALLER
+        // (_handleAutoExecuteEntry's no-confirmation branch) still has a
+        // reconcile query in flight to find out whether this order actually
+        // reached the broker, plus the ntfy notification that reports what
+        // it found. Exiting under it would throw away exactly the answer
+        // this incident made necessary. Anything it does manage to record is
+        // in-memory and lost on restart anyway, but the notification (and
+        // the log line) are what a human actually sees.
+        // Restarting with a position open is safe by design: stop-loss and
+        // take-profit are attached to the order itself at submission, so the
+        // broker keeps enforcing them while this process is down.
+        setTimeout(() => process.exit(1), 2000);
       }
     }
     return resolvedOrderId;
@@ -1851,6 +1920,15 @@ export class CTraderDataSource {
       const expirationTimestamp =
         isFvg && lastCandle ? lastCandle.time + FVG_LIMIT_EXPIRY_CANDLES * candleDurationMs : undefined;
 
+      // Source in the label so it's identifiable directly in cTrader's own
+      // order/position list, not just in the ntfy push below - the user
+      // explicitly asked to be able to "voir et vérifier" each execution,
+      // and the broker's own UI is the most durable place to check that
+      // (survives even if a push notification is missed/dismissed).
+      // Also what _findRealOrderOrPositionForLabel() matches on when no
+      // confirmation arrives - see the else-branch below.
+      const orderLabel = `auto-${signal.source}-${symbolName}`;
+      const submittedAtMs = Date.now();
       const brokerOrderId = await this._submitOrder({
         symbolId,
         orderType: isFvg ? 'LIMIT' : 'MARKET',
@@ -1860,12 +1938,7 @@ export class CTraderDataSource {
         price: isFvg ? signal.entryPrice : undefined,
         stopLoss: signal.stopPrice,
         takeProfit: signal.targetPrice,
-        // Source in the label so it's identifiable directly in cTrader's own
-        // order/position list, not just in the ntfy push below - the user
-        // explicitly asked to be able to "voir et vérifier" each execution,
-        // and the broker's own UI is the most durable place to check that
-        // (survives even if a push notification is missed/dismissed).
-        label: `auto-${signal.source}-${symbolName}`,
+        label: orderLabel,
         expirationTimestamp,
       });
       // Logged unconditionally (null included) - a null brokerOrderId with
@@ -1903,25 +1976,88 @@ export class CTraderDataSource {
           `🤖 [${signal.source.toUpperCase()}] Entrée auto envoyée sur ${symbolName} (${signal.suggestedSide.toUpperCase()}, entrée ${signal.entryPrice}, stop ${signal.stopPrice}, cible ${signal.targetPrice}, ${sizing.lots} lots)`
         );
       } else {
-        // 2026-09-14 (found live, monitoring BTCUSD's M1 cadence: a
-        // _waitForOrderIdBySymbol timeout - no ProtoOAExecutionEvent within
-        // 10s - left the engine's 'validated'-time belief stuck open with
-        // NOTHING ever able to clear it, since pendingEntryOrderByOrderId
-        // was never populated for this signal - every later signal on this
-        // symbol was rejected as 'netting' until someone manually called
-        // /admin/clear-believed-position. Clearing it here immediately is
-        // the same judgment call that route already makes (never touch a
-        // CONFIRMED position) applied one step earlier: this branch by
-        // definition never learned a real orderId, so there is nothing to
-        // confirm against either way - leaving the belief stuck helps
-        // nobody. The rare case where the broker actually DID accept this
-        // order despite the timeout isn't silently lost: real-vs-believed
-        // reconciliation (/api/account) still flags it 'real-only' the
-        // moment it's checked, exactly the safety net already built for
-        // this.
-        store.strategyEngine.clearBelievedPosition(symbolName, signal.id);
-        console.warn(`[auto-execute] no orderId within timeout for ${symbolName} - clearing believed-open so future signals aren't netting-blocked.`);
-        this._notifyText(`⚠️ [${signal.source.toUpperCase()}] Aucune confirmation du courtier sur ${symbolName} (délai dépassé) - signal abandonné, croyance nettoyée.`);
+        // No push confirmation. This used to ASSUME nothing had happened and
+        // clear the belief (2026-09-14 reasoning, kept below for the case it
+        // still covers) - which is a coin flip in both directions: if the
+        // order actually DID reach the broker, that assumption leaves a real,
+        // untracked position running with nobody watching it here.
+        //
+        // 2026-09-17 (Esdras: "comment peut on s'assurer à 100% que l'ordre
+        // passe"): stop assuming, go ASK. ProtoOAReconcileReq is a
+        // request/response round-trip, and request/response is precisely
+        // what kept working through today's 6-hour push-channel outage - so
+        // this answers the question on exactly the connection state that
+        // breaks the push path. ~200ms, only on this already-abnormal path.
+        let verified = null;
+        try {
+          verified = await this._findRealOrderOrPositionForLabel({ symbolId, label: orderLabel, submittedAtMs });
+        } catch (verifyErr) {
+          // Verification itself failed (connection fully down, not just its
+          // push channel) - fall through to the old clear-the-belief path
+          // rather than leaving the signal in limbo.
+          console.error(`[auto-execute] order verification failed for ${symbolName}:`, verifyErr.message);
+        }
+
+        if (verified?.orderId != null) {
+          // The order is REAL and still working (a LIMIT/STOP that hasn't
+          // triggered yet) - only its confirmation push was lost. Track it
+          // exactly as the confirmed path does, so its eventual fill/expiry
+          // still resolves normally if the push channel recovers.
+          this.pendingEntryOrderByOrderId.set(verified.orderId, {
+            symbolName,
+            source: signal.source,
+            signalId: signal.id,
+            direction: signal.suggestedSide === 'buy' ? 'bullish' : 'bearish',
+            entryPrice: signal.entryPrice,
+            riskAmount: sizing.actualRiskAmount,
+            stopPrice: signal.stopPrice,
+            targetPrice: signal.targetPrice,
+          });
+          console.warn(
+            `[auto-execute] no push confirmation for ${symbolName}, but reconcile found the REAL working order ` +
+              `orderId=${verified.orderId} - adopted, belief kept.`
+          );
+          this._notifyText(
+            `🟡 [${signal.source.toUpperCase()}] Ordre bien placé sur ${symbolName} (confirmé en interrogeant le courtier, le message de confirmation s'est perdu) - ordre en attente, suivi normalement.`
+          );
+        } else if (verified?.positionId != null) {
+          // The order FILLED (a MARKET order, already a real position by the
+          // time we asked) - its order is gone from the working list, so
+          // there is no orderId to track, but the position itself is what
+          // matters: register it directly in the map the fill event would
+          // have populated, so the eventual real close still writes a
+          // durable journal row with a real R-multiple.
+          this.openPositionInfoByPositionId.set(String(verified.positionId), {
+            symbolName,
+            source: signal.source,
+            signalId: signal.id,
+            direction: signal.suggestedSide === 'buy' ? 'bullish' : 'bearish',
+            entryPrice: signal.entryPrice,
+            riskAmount: sizing.actualRiskAmount,
+            stopPrice: signal.stopPrice,
+            targetPrice: signal.targetPrice,
+            entryTime: Date.now(),
+          });
+          store.recordOrderOutcome({ symbol: symbolName, source: signal.source, signalId: signal.id, outcome: 'filled', executionType: 'RECONCILE_VERIFIED' });
+          console.warn(
+            `[auto-execute] no push confirmation for ${symbolName}, but reconcile found a REAL OPEN POSITION ` +
+              `positionId=${verified.positionId} - adopted, belief kept (this is the orphan case the old ` +
+              'assume-nothing-happened branch used to create).'
+          );
+          this._notifyText(
+            `🟢 [${signal.source.toUpperCase()}] Position RÉELLEMENT ouverte sur ${symbolName} (confirmé en interrogeant le courtier, le message de confirmation s'est perdu) - suivie normalement.`
+          );
+        } else {
+          // Genuinely nothing at the broker - now VERIFIED, not assumed.
+          // 2026-09-14 reasoning still applies here: leaving the belief
+          // stuck would reject every later signal on this symbol as
+          // 'netting' until someone manually called
+          // /admin/clear-believed-position, and there is nothing real to
+          // protect, so clear it.
+          store.strategyEngine.clearBelievedPosition(symbolName, signal.id);
+          console.warn(`[auto-execute] no orderId within timeout for ${symbolName} AND reconcile found nothing real - order never reached the broker, clearing believed-open.`);
+          this._notifyText(`⚠️ [${signal.source.toUpperCase()}] Aucune confirmation du courtier sur ${symbolName} et aucun ordre/position réels trouvés (vérifié) - signal abandonné, croyance nettoyée.`);
+        }
       }
     } catch (err) {
       console.warn(`[auto-execute] failed to submit entry for ${symbolName}:`, err.message);

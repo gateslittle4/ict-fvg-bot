@@ -237,10 +237,17 @@ export class AccountRuntime {
 
   /**
    * Record the REAL outcome of an order this account's data source actually
-   * submitted to the broker, learned from a real ProtoOAExecutionEvent (see
-   * cTraderDataSource.js's _handleExecutionEvent) - never from the engine's
-   * own belief. `outcome` is 'filled' (a real position opened) or 'unfilled'
-   * (cancelled/expired/rejected - no real position ever existed).
+   * submitted to the broker - never from the engine's own belief. `outcome`
+   * is 'filled' (a real position opened) or 'unfilled' (cancelled/expired/
+   * rejected - no real position ever existed).
+   *
+   * Two real sources feed this, both broker ground truth: a
+   * ProtoOAExecutionEvent push (cTraderDataSource.js's
+   * _handleExecutionEvent, the normal path), and - since 2026-09-17, when a
+   * connection spent 6 hours delivering no pushes at all - a
+   * ProtoOAReconcileReq query that found the real position anyway
+   * (_handleAutoExecuteEntry's no-confirmation branch, `executionType:
+   * 'RECONCILE_VERIFIED'`).
    */
   recordOrderOutcome({ symbol, source, signalId, outcome, executionType }) {
     this.orderOutcomeLog.push({ symbol, source, signalId, outcome, executionType, at: Date.now() });

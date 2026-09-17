@@ -4651,3 +4651,26 @@ Pas de nouveau test unitaire : `_submitOrder`/`_waitForOrderIdBySymbol` nécessi
 `npm test` : 645/645 (inchangé - modification du chemin live uniquement).
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js`.
+
+## Certitude à 100% qu'un ordre est passé : vérification par requête au lieu d'attendre un push — 2026-09-17
+
+Esdras, juste après le correctif de la connexion zombie : "Comment peut on s'assurer à 100% que l'ordre passe car on est en market order, le bot ne peut pas perdre 1 seconde."
+
+**Malentendu levé d'abord** : l'attente de confirmation ne retarde l'ordre d'AUCUNE milliseconde. `sendCommand('ProtoOANewOrderReq')` part immédiatement et le broker exécute au marché tout de suite ; les 3 secondes s'écoulent APRÈS l'envoi, uniquement pour apprendre l'orderId de notre côté. Réduire 10s→3s n'accélère donc pas l'exécution, seulement la détection d'une connexion cassée.
+
+**L'insight qui donne la certitude** : la connexion défaillante d'aujourd'hui n'était qu'À MOITIÉ cassée — plus aucun push `ProtoOAExecutionEvent` pendant 6h, mais TOUTES les requêtes/réponses continuaient de marcher (le rafraîchissement du solde a réussi à 15h19 en pleine panne, et `ProtoOANewOrderReq` recevait bien sa réponse). Donc une **requête** `ProtoOAReconcileReq` est exactement le canal qui fonctionne encore quand le canal push est mort — c'est la seule façon fiable de savoir ce qui est réellement arrivé à un ordre non confirmé.
+
+**Le risque non couvert, plus grave que celui soulevé** : jusqu'ici, sans confirmation, le code SUPPOSAIT que rien n'était passé et effaçait sa croyance. Si l'ordre était en fait passé, ça créait une **position réelle orpheline** — ouverte chez le broker, ignorée par le bot, jamais suivie ni fermée par lui. Ce matin `realOpenCount: 0` donc pas d'orpheline, mais par chance, pas par logique.
+
+**Implémenté** :
+1. **`_findRealOrderOrPositionForLabel()`** (nouveau) : interroge `ProtoOAReconcileReq` et cherche notre ordre/position par `symbolId` + notre propre `label` (`auto-<source>-<symbole>`, que le broker renvoie dans `tradeData.label` — confirmé en direct dans le dump de `/admin/test-order-cycle`), avec `openTimestamp` comme garde supplémentaire pour ne jamais adopter une position PLUS ANCIENNE portant le même label. Réponse brute loggée (chemin rare, et l'historique de ce fichier est une longue liste de formes de payload devinées plutôt qu'observées).
+2. **Branche "aucune confirmation" de `_handleAutoExecuteEntry` réécrite** — on ne suppose plus, on demande :
+   - **ordre réel trouvé** (LIMIT/STOP encore en attente) → adopté dans `pendingEntryOrderByOrderId`, croyance conservée, notification 🟡 ;
+   - **position réelle trouvée** (MARKET déjà rempli, son ordre a quitté la liste des ordres actifs) → adoptée directement dans `openPositionInfoByPositionId` (la map que l'événement de remplissage aurait remplie), croyance conservée, `recordOrderOutcome(outcome:'filled', executionType:'RECONCILE_VERIFIED')`, notification 🟢 ;
+   - **vraiment rien** → maintenant VÉRIFIÉ et non plus supposé → croyance nettoyée comme avant, notification ⚠️ explicite ("aucun ordre/position réels trouvés (vérifié)").
+   - Si la vérification elle-même échoue (connexion totalement morte, pas juste son canal push) → repli sur l'ancien comportement plutôt que de laisser le signal en limbes.
+3. **Délai avant `process.exit(1)` porté de 500ms à 2s** — la requête de vérification (~200ms) et sa notification doivent pouvoir aboutir avant que le processus ne meure. Redémarrer avec une position ouverte reste sûr par construction : stop-loss et take-profit sont attachés à l'ordre à la soumission, donc le broker continue de les appliquer même processus éteint.
+
+`npm test` : 645/645 (chemin live uniquement, même convention que le correctif précédent : `_submitOrder`/`_waitForOrderIdBySymbol`/`_findRealOrderOrPositionForLabel` exigent une vraie connexion WebSocket et n'ont jamais eu de couverture unitaire dans ce projet).
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/accountRuntime.js` (doc de `recordOrderOutcome` mise à jour : deux sources de vérité broker maintenant, pas une).
