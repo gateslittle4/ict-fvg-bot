@@ -57,7 +57,15 @@ const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
 // instrument with room in netting. Zero parameters changed for this
 // addition - every rule above is copied from Connors' published system,
 // unchanged; this only adds a third loop iteration.
-const SYMBOLS = ['US100', 'US500', 'GBPUSD', 'USDJPY'];
+//
+// XAUUSD/EURUSD/GER40 added 2026-09-17, Esdras: "je veux diversifier" - same
+// reasoning as GBPUSD above, extended to the THREE symbols currently in
+// live production (CONFIG.symbols) that this mechanism had never been run
+// against, since RSI(2) Connors is single-instrument mean-reversion, a
+// genuinely different mechanism family from every ICT-pattern concept
+// already running there (FVG/NWOG/Judas Swing/Weekly Sweep/Breaker Block).
+// Zero parameters changed here either.
+const SYMBOLS = ['US100', 'US500', 'GBPUSD', 'USDJPY', 'XAUUSD', 'EURUSD', 'GER40'];
 
 function computeSma(values, period) {
   const sma = new Array(values.length).fill(null);

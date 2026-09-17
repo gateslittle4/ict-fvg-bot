@@ -4117,3 +4117,15 @@ Une position BTCUSD était ouverte au moment du retrait (0,39 BTC vendeuse), pro
 3. Le compte tourne en **démo** (`isDemo: true`) — rien n'est en risque aujourd'hui, ce qui est la bonne place pour laisser tourner le forward-test.
 
 L'infrastructure, elle, est solide et vérifiée en live : connexion/reconnexion, warm-up, netting, garde-fous, reset journalier, nettoyage des croyances périmées, synchronisation du solde, et maintenant le dimensionnement des ordres. `npm test` : **549/549**.
+
+## RSI(2) Connors testé sur XAUUSD/EURUSD/GER40 (les 3 symboles réels non couverts) — rejeté, faux positif du verdict mécanique — 2026-09-17
+
+À la demande explicite d'Esdras ("je veux diversifier"), après lui avoir présenté les options (nouveau concept, nouvel instrument, ou étendre un mécanisme déjà validé) — il a choisi la 3e voie, la plus disciplinée : RSI(2) Connors est le seul mécanisme non-ICT déjà validé du projet (US100/US500), explicitement réservé "pour un futur nouvel instrument" plutôt que d'être empilé sur des symboles déjà occupés. Testé sur GBPUSD/USDJPY (affaibli sur les deux), jamais sur XAUUSD/EURUSD/GER40 — les 3 symboles réellement en production aujourd'hui. Zéro paramètre modifié, même script (`scripts/runRsiMeanReversionAnalysis.js`), juste `SYMBOLS` étendu.
+
+**Résultat brut, verdict mécanique** : EURUSD ⚠️ affaibli (train -0.05R, cohérent avec GBPUSD/USDJPY). XAUUSD et GER40 étiquetés "✅ tient" par la règle automatique.
+
+**Ces deux "✅ tient" sont un faux positif, vérifié avant de les croire** — la règle (`trainExp > 0` suffit à valider) ne distingue pas un vrai edge d'un bruit statistique. Espérances train EXACTES (non arrondies) : XAUUSD **0.0019R** (PF train 1.007 — un pile ou face qui couvre à peine ses coûts), GER40 **0.0045R** (PF train 1.018) — indiscernables de zéro. Le test XAUUSD affiche +0.20R, ce qui a l'air excellent, mais avec un train quasi nul, c'est exactement la signature "train ne passe pas la barre, test flatteur" que ce document traite systématiquement comme du bruit ailleurs (même remarque que pour GBPUSD RSI plus haut) — pas un edge qui a fait ses preuves.
+
+**Conclusion : RSI(2) Connors reste limité à US100/US500. Aucun des 3 nouveaux symboles ne tient.** Pas de nouvelle stratégie déployée cette session — la piste la plus disciplinée disponible (réutiliser un mécanisme déjà prouvé plutôt qu'en inventer un nouveau) n'a pas payé, mais elle valait la peine d'être vérifiée avant d'en tenter une plus incertaine (nouveau concept ICT ou nouvel instrument, les deux autres options présentées à Esdras).
+
+**Fichiers** : `scripts/runRsiMeanReversionAnalysis.js` (SYMBOLS étendu à 7), `data/backtest-input/rsi-mean-reversion-analysis.md` (régénéré + note de mise en garde sur le faux positif). Aucune nouvelle logique testée — script exploratoire ponctuel. `npm test` : 555/555 (inchangé).
