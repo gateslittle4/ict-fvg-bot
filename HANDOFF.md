@@ -4777,4 +4777,12 @@ En construisant le faux compte, découvert (pas un bug — comportement voulu et
 
 **Preuve que ces tests attrapent vraiment une régression** : désactivé temporairement la branche "ordre encore en attente trouvé" (`if (verified?.orderId != null)` → `if (false)`), relancé → le test correspondant échoue bien (3/4), les 3 autres restent verts. Fichier restauré, diff vérifié identique, 4/4 de nouveau.
 
-`npm test` : 658/658 (654 + 4 nouveaux). **Fichier** : `test/cTraderDataSourceAutoExecuteEntry.test.js` (nouveau). Reste à faire (étape 3 de l'ordre demandé) : le même traitement pour `_handleExecutionEvent`, l'autre moitié de la boucle (confirmation d'un fill/annulation/rejet réel).
+`npm test` : 658/658 (654 + 4 nouveaux). **Fichier** : `test/cTraderDataSourceAutoExecuteEntry.test.js` (nouveau).
+
+**3. Nouveau fichier `test/cTraderDataSourceExecutionEvent.test.js`** — dernière étape de l'ordre demandé : `_handleExecutionEvent`, l'AUTRE moitié de la boucle. Les deux fichiers précédents vérifient "l'ordre est-il vraiment arrivé chez le courtier" (le cas dégradé) ; celui-ci vérifie que, quand la confirmation arrive NORMALEMENT (connexion saine), la croyance du moteur est bien mise à jour — un bug ici casserait le suivi d'une position même un jour sans aucun problème réseau. Cette fonction est synchrone et ne touche ni la connexion ni aucun timer, donc aucun faux courtier/horloge nécessaire, juste un faux compte + un objet événement brut. 7 scénarios : une vraie clôture (solde/garde-fou mis à jour, croyance nettoyée, position retirée du suivi), un ordre pyramide qui se remplit (pas confondu avec une clôture), une entrée auto-execute qui se remplit réellement (adoptée, `recordOrderOutcome` appelé), les 3 variantes CANCELLED/EXPIRED/REJECTED (croyance nettoyée, aucune position fantôme créée), et un événement pour un orderId qu'on ne suit pas du tout (ex. un trade manuel) — sans effet, sans planter.
+
+**Preuve** : cassé temporairement l'appel `clearBelievedPosition` du chemin de clôture réelle → le test correspondant échoue bien (6/7) ; restauré, diff identique, 7/7 de nouveau.
+
+`npm test` : 665/665 (658 + 7 nouveaux). **Fichier** : `test/cTraderDataSourceExecutionEvent.test.js` (nouveau).
+
+Les 3 étapes demandées sont maintenant faites : preuve réelle du redémarrage Render, et les 3 fonctions les plus critiques du chemin d'exécution (`_submitOrder`/`_findRealOrderOrPositionForLabel`, `_handleAutoExecuteEntry`, `_handleExecutionEvent`) ont chacune une suite de tests avec un faux courtier, prouvées capables d'attraper une vraie régression (testé en cassant volontairement chaque fichier puis en restaurant).
