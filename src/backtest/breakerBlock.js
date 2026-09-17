@@ -112,6 +112,21 @@ export function findOrderBlock(candles, bosIndex, direction, searchLookback) {
  * @returns {Array<{direction:'bullish'|'bearish', entryTime:number, stopReference:number}>}
  */
 export function computeBreakerBlockCandidates(candles) {
+  return runBreakerBlockStateMachine(candles).candidates;
+}
+
+/**
+ * Same state machine as computeBreakerBlockCandidates(), but also returns
+ * the TRAILING state after the last candle - i.e. "what is this mechanism
+ * currently watching for, right now" (2026-09-17, Esdras: "je veux le
+ * suivre de façon live" - the live chart page's own pending-signal widget).
+ * A pendingEntry left dangling at the end (its readyAtIndex never reached
+ * because candles ran out) is real and worth surfacing too - "entry is
+ * about to fire on the very next candle" is exactly what a live viewer
+ * wants to see.
+ * @returns {{candidates: Array, phase: 'idle'|'watchBreak'|'watchRetest'|'pendingEntry', detail: object|null}}
+ */
+export function runBreakerBlockStateMachine(candles) {
   const bosEvents = detectBosEvents(candles);
   const bosByIndex = new Map(bosEvents.map((e) => [e.index, e]));
   const candidates = [];
@@ -175,7 +190,11 @@ export function computeBreakerBlockCandidates(candles) {
       }
     }
   }
-  return candidates;
+
+  if (pendingEntry) return { candidates, phase: 'pendingEntry', detail: pendingEntry };
+  if (watchRetest) return { candidates, phase: 'watchRetest', detail: watchRetest };
+  if (watchBreak) return { candidates, phase: 'watchBreak', detail: watchBreak };
+  return { candidates, phase: 'idle', detail: null };
 }
 
 /** @returns {Array} raw (pre-cost) trades */

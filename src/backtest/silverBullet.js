@@ -94,6 +94,21 @@ export function detectSilverBulletFvgs(candles, { sessionWindow = SILVER_BULLET_
  * @returns {Array<{direction:'bullish'|'bearish', entryTime:number, stopReference:number}>}
  */
 export function computeSilverBulletCandidates(candles) {
+  return runSilverBulletStateMachine(candles).candidates;
+}
+
+/**
+ * Same active-zone/mitigation walk as computeSilverBulletCandidates(), but
+ * also returns the TRAILING state after the last candle - "what is this
+ * mechanism currently watching, right now" (2026-09-17, Esdras: "je veux le
+ * suivre de façon live"). A zone mitigated on the very LAST candle produces
+ * no candidate yet (its entry needs a candle that hasn't printed), so
+ * computeSilverBulletCandidates() alone would silently drop it - here it
+ * surfaces as phase 'pendingEntry' instead, exactly the "entry about to
+ * fire" moment a live viewer wants to see.
+ * @returns {{candidates: Array, phase: 'idle'|'active'|'pendingEntry', detail: object|Array|null}}
+ */
+export function runSilverBulletStateMachine(candles) {
   const eligibleFvgs = detectSilverBulletFvgs(candles);
   const fvgsByFormedIndex = new Map();
   for (const f of eligibleFvgs) {
@@ -103,6 +118,7 @@ export function computeSilverBulletCandidates(candles) {
 
   const candidates = [];
   let active = []; // { direction, zone, candlesSinceFormed }
+  let pendingMitigation = null; // set when the LAST candle mitigates a zone with no next candle yet to enter on
 
   for (let i = 0; i < candles.length; i++) {
     const candle = candles[i];
@@ -128,6 +144,9 @@ export function computeSilverBulletCandidates(candles) {
         const buffer = zoneHeight * FVG_EDGE_BUFFER_PCT;
         const stopReference = bullish ? mitigated.zone.bottom - buffer : mitigated.zone.top + buffer;
         candidates.push({ direction: mitigated.direction, entryTime: candles[entryIndex].time, stopReference });
+        pendingMitigation = null;
+      } else {
+        pendingMitigation = mitigated; // mitigated on the last candle available - entry fires on the NEXT one, not printed yet
       }
     }
 
@@ -136,7 +155,10 @@ export function computeSilverBulletCandidates(candles) {
       for (const f of newlyFormed) active.push({ direction: f.direction, zone: f.zone, candlesSinceFormed: 0 });
     }
   }
-  return candidates;
+
+  if (pendingMitigation) return { candidates, phase: 'pendingEntry', detail: pendingMitigation };
+  if (active.length > 0) return { candidates, phase: 'active', detail: active };
+  return { candidates, phase: 'idle', detail: null };
 }
 
 /** @returns {Array} raw (pre-cost) trades, on M15 candles */

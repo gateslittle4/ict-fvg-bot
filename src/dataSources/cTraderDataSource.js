@@ -41,6 +41,14 @@ import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTrade
 import { buildComplianceChecklist, requiredH1LookbackCandles, requiredPreEntryContextCandles } from './tradeCompliance.js';
 import { buildChartOverlays } from '../backtest/chartOverlays.js';
 import { evaluateLiveFilters } from '../backtest/liveFvgFilterStatus.js';
+import {
+  nwogLiveStatus,
+  judasSwingLiveStatus,
+  weeklySweepLiveStatus,
+  breakerBlockLiveStatus,
+  silverBulletLiveStatus,
+  divergenceLiveStatus,
+} from '../backtest/liveMechanismStatus.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -924,6 +932,19 @@ export class CTraderDataSource {
    * per-criterion check, both already-real production logic, nothing
    * reimplemented here.
    *
+   * EXTENDED (2026-09-17, Esdras, sur le chart: "je veux le suivre de façon
+   * live") - `zones` below stays FVG-only exactly as before (a real gap in
+   * the checklist coverage: EURUSD/GER40 have no FVG config at all, so this
+   * used to return `{zones: [], reason: 'not an FVG-strategy symbol'}` and
+   * show NOTHING for them). Now also builds `mechanisms`: one live-status
+   * entry per OTHER mechanism actually configured for this symbol (NWOG/
+   * Judas Swing/Weekly Sweep/Breaker Block/Silver Bullet/Divergence - see
+   * liveMechanismStatus.js for why these need a different shape than FVG's
+   * own multi-criterion checklist: most of them fire on a single candle,
+   * nothing to watch build up beforehand). The early FVG-only return is
+   * GONE - a symbol with no FVG config (EURUSD/GER40) now still gets a
+   * real response via `mechanisms`.
+   *
    * Time convention, easy to get backwards (see liveFvgFilterStatus.js's
    * own header): `candles` here is store.strategyEngine's OWN retained
    * history, already in ENGINE time (real UTC - 5h, see _toEngineCandle()) -
@@ -933,66 +954,86 @@ export class CTraderDataSource {
    * OWN bias check (for a closed trade) doesn't need this shift - it compares
    * two real-UTC values against each other - but that trick doesn't apply
    * here since atTime is forced into engine time by where it comes from.
+   * liveMechanismStatus.js's own functions don't touch H1 bias at all, so
+   * this same shift concern doesn't apply to them - they only ever compare
+   * a symbol's own M15 history against itself (or, for Divergence, against
+   * the partner's own M15 history, same engine-time convention on both
+   * sides since both come from the same store.strategyEngine.getHistory()).
    */
   async getPendingZoneChecklists(symbol) {
     const store = this.account;
     const cfg = CONFIG.fvg.perSymbol[symbol];
-    if (!cfg) return { symbol, zones: [], reason: 'not an FVG-strategy symbol' };
 
     const historyBySymbol = {};
     for (const s of CONFIG.symbols) historyBySymbol[s] = store.strategyEngine.getHistory(s);
     const candles = historyBySymbol[symbol];
-    if (!candles || candles.length === 0) return { symbol, zones: [], reason: 'no candle history yet' };
-
-    const { zones } = buildChartOverlays(historyBySymbol, { symbol });
-    const watching = zones.filter((z) => z.status === 'watching');
-    if (watching.length === 0) return { symbol, zones: [] };
+    if (!candles || candles.length === 0) return { symbol, zones: [], mechanisms: [], reason: 'no candle history yet' };
 
     const atTime = candles[candles.length - 1].time;
 
-    let h1Candles = null;
-    const lookback = requiredH1LookbackCandles(cfg.variant);
-    if (lookback > 0) {
-      try {
-        const symbolId = this.symbolIdByName.get(symbol);
-        const nowRealUtc = Date.now();
-        // count REQUIRED alongside fromTimestamp/toTimestamp - see
-        // _attachComplianceChecklists()'s own comment on this same mistake,
-        // found live via this exact endpoint: omitted, the broker silently
-        // caps the response far short of `lookback`, too little history to
-        // seed the EMA, and every bias reading below degrades to 'unknown'
-        // without ever throwing (so the catch below never caught it either).
-        const res = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
-          ctidTraderAccountId: Number(this.accountId),
-          fromTimestamp: nowRealUtc - lookback * TIMEFRAME_DURATION_MS.H1,
-          toTimestamp: nowRealUtc,
-          symbolId,
-          period: 'H1',
-          count: lookback,
-        });
-        h1Candles = (res.trendbar || [])
-          .map((bar) => this._trendbarToCandle(bar))
-          .sort((a, b) => a.time - b.time)
-          .map((bar) => ({ ...bar, time: bar.time - FIXED_EST_TO_UTC_OFFSET_MS })); // real UTC -> engine time, matching atTime
-      } catch (err) {
-        console.warn(
-          `[cTrader] pending zone checklist: HTF bias H1 fetch failed for ${symbol} (bias item will read "non vérifiable"):`,
-          err.message || JSON.stringify(err)
-        );
-      }
-    }
+    let zones = [];
+    if (cfg) {
+      const { zones: allZones } = buildChartOverlays(historyBySymbol, { symbol });
+      const watching = allZones.filter((z) => z.status === 'watching');
 
-    return {
-      symbol,
-      zones: watching.map((z) => ({
+      let h1Candles = null;
+      const lookback = requiredH1LookbackCandles(cfg.variant);
+      if (watching.length > 0 && lookback > 0) {
+        try {
+          const symbolId = this.symbolIdByName.get(symbol);
+          const nowRealUtc = Date.now();
+          // count REQUIRED alongside fromTimestamp/toTimestamp - see
+          // _attachComplianceChecklists()'s own comment on this same mistake,
+          // found live via this exact endpoint: omitted, the broker silently
+          // caps the response far short of `lookback`, too little history to
+          // seed the EMA, and every bias reading below degrades to 'unknown'
+          // without ever throwing (so the catch below never caught it either).
+          const res = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
+            ctidTraderAccountId: Number(this.accountId),
+            fromTimestamp: nowRealUtc - lookback * TIMEFRAME_DURATION_MS.H1,
+            toTimestamp: nowRealUtc,
+            symbolId,
+            period: 'H1',
+            count: lookback,
+          });
+          h1Candles = (res.trendbar || [])
+            .map((bar) => this._trendbarToCandle(bar))
+            .sort((a, b) => a.time - b.time)
+            .map((bar) => ({ ...bar, time: bar.time - FIXED_EST_TO_UTC_OFFSET_MS })); // real UTC -> engine time, matching atTime
+        } catch (err) {
+          console.warn(
+            `[cTrader] pending zone checklist: HTF bias H1 fetch failed for ${symbol} (bias item will read "non vérifiable"):`,
+            err.message || JSON.stringify(err)
+          );
+        }
+      }
+
+      zones = watching.map((z) => ({
         id: z.id,
         direction: z.direction,
         top: z.top,
         bottom: z.bottom,
         formedAt: z.formedAt,
         checklist: evaluateLiveFilters({ candles, h1Candles, cfg, direction: z.direction, atTime }),
-      })),
-    };
+      }));
+    }
+
+    const mechanisms = [];
+    if (CONFIG.nwog.symbols.includes(symbol)) mechanisms.push(nwogLiveStatus(candles, { longOnlySymbols: CONFIG.nwog.longOnlySymbols, symbol }));
+    if (CONFIG.judasSwing.symbols.includes(symbol)) mechanisms.push(judasSwingLiveStatus(candles));
+    if (CONFIG.weeklySweep.symbols.includes(symbol)) mechanisms.push(weeklySweepLiveStatus(candles));
+    if (CONFIG.breakerBlock.symbols.includes(symbol)) mechanisms.push(breakerBlockLiveStatus(candles));
+    if (CONFIG.silverBullet.symbols.includes(symbol)) mechanisms.push(silverBulletLiveStatus(candles));
+    if (CONFIG.divergence.pair.includes(symbol)) {
+      const [symA, symB] = CONFIG.divergence.pair;
+      const partnerSymbol = symbol === symA ? symB : symA;
+      const partnerCandles = historyBySymbol[partnerSymbol];
+      if (partnerCandles && partnerCandles.length > 0) {
+        mechanisms.push(divergenceLiveStatus(symbol, candles, partnerCandles, CONFIG.divergence));
+      }
+    }
+
+    return { symbol, zones, mechanisms };
   }
 
   /**
