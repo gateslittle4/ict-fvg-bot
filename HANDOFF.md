@@ -4818,3 +4818,15 @@ Esdras : "on doit tous coder, continue de chercher des bugs". En écrivant enfin
 **Preuve** : cassé le nouveau `.set()` (`if (false)` au lieu de `if (filled)`), le test correspondant échoue bien (3/4), restauré, diff identique, 4/4 de nouveau.
 
 `npm test` : 676/676 (672 + 4 nouveaux). **Fichiers** : `src/dataSources/cTraderDataSource.js` (`_handlePyramidOrderRequested`), `test/cTraderDataSourcePyramidOrderRequested.test.js` (nouveau).
+
+## Bug n°4 : la seule comparaison positionId/orderId du fichier sans protection contre le mismatch string/number — 2026-09-17
+
+Esdras : "continue". Cherché un pattern précis qui avait déjà causé un bug ce soir (le mismatch de type sur les champs int64 de ce courtier, sérialisés parfois en string, parfois en number selon le message) — grep systématique de toutes les comparaisons `positionId ===`/`orderId ===` dans `cTraderDataSource.js`. Résultat : **une seule** comparaison sur tout le fichier n'était PAS protégée par `Number(...)`, alors que absolument toutes les autres le sont (`_findRealOrderOrPositionForLabel`, `_waitForOrderIdBySymbol`, `_loadBalance`, `dealPairing.js`) — exactement pour cette raison documentée à répétition dans ce même fichier.
+
+**La comparaison fautive** : le nettoyage de `pyramidPositionIdBySymbol` à la clôture d'une jambe pyramide (`if (trackedId === positionId)`). `trackedId` peut venir de deux sources différentes (l'événement de remplissage direct, OU la vérification par reconciliation ajoutée aujourd'hui — `verified.positionId` lu depuis `ProtoOAReconcileReq`), et rien ne garantit qu'il soit du même type que le `positionId` de l'événement de clôture. Impact réel si ça arrive : pas de risque sur l'argent (la position est déjà correctement fermée/journalisée par le code juste au-dessus, indépendant de cette map) — mais `pyramidPositionIdBySymbol` resterait polluée pour toujours et la notification de clôture pyramide ne partirait jamais.
+
+**Corrigé** : `Number(trackedId) === Number(positionId)`, même convention que partout ailleurs dans ce fichier.
+
+**Nouveau test** (`cTraderDataSourceExecutionEvent.test.js`) : jambe pyramide suivie avec un positionId STRING, événement de clôture avec le MÊME positionId en NUMBER — doit quand même matcher et nettoyer. Cassé (retour à `===` brut), le test échoue bien, restauré, 677/677.
+
+`npm test` : 677/677 (676 + 1 nouveau). **Fichiers** : `src/dataSources/cTraderDataSource.js`, `test/cTraderDataSourceExecutionEvent.test.js`.

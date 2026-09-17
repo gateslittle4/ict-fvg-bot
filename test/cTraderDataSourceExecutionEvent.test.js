@@ -101,6 +101,37 @@ test('_handleExecutionEvent: a pyramid add-on order FILLING (opening, not closin
   assert.equal(ds.pyramidPositionIdBySymbol.get('US100'), 41700000, 'the resulting position must be tracked for its eventual close');
 });
 
+// BUG FOUND 2026-09-17 (execution-path audit): pyramidPositionIdBySymbol's
+// match-on-close used a bare `===`, the only positionId/orderId comparison
+// in this whole file not wrapped in Number(...) - everywhere else is,
+// specifically because this broker is confirmed to sometimes serialize the
+// same conceptual int64 field as a string and sometimes as a number
+// depending on which message it came from (a STOP order's fill event vs a
+// ProtoOAReconcileReq position). trackedId (set at pyramid-fill time, or via
+// the reconcile-verified path) and the closing event's own positionId are
+// never guaranteed to agree on that.
+test('_handleExecutionEvent: a pyramid position CLOSE matches by numeric value, not strict type (string vs number positionId)', () => {
+  const account = createFakeAccount();
+  const ds = makeDataSource(account);
+  // Simulates the reconcile-verified pyramid-fill path, which reads
+  // positionId straight off a ProtoOAReconcileReq response - a string on
+  // this broker.
+  ds.pyramidPositionIdBySymbol.set('US100', '41900001');
+
+  ds._handleExecutionEvent({
+    executionType: 'ORDER_FILLED',
+    deal: {
+      // The closing event's own positionId, here a NUMBER - deliberately the
+      // opposite type from what's tracked above.
+      positionId: 41900001,
+      symbolId: 213,
+      closePositionDetail: { grossProfit: '100', balance: '1010000', moneyDigits: 2 },
+    },
+  });
+
+  assert.equal(ds.pyramidPositionIdBySymbol.has('US100'), false, 'must match and clean up despite the string/number type difference');
+});
+
 // BUG FOUND 2026-09-17 (execution-path audit, continuing "réduire l'écart"):
 // a pyramid leg used to be tracked ONLY in pyramidPositionIdBySymbol (a
 // close-time notification only) - never in openPositionInfoByPositionId,

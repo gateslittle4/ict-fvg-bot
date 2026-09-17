@@ -2261,8 +2261,25 @@ export class CTraderDataSource {
       // side-map. Its win/loss is ALREADY counted above like any other
       // trade; this is bookkeeping only, not a second pnl application.
       const positionId = event.deal.positionId ?? event.position?.positionId;
+      // BUG FOUND 2026-09-17 (execution-path audit): this was a bare `===`,
+      // the ONLY positionId/orderId comparison anywhere in this file NOT
+      // wrapped in Number(...) - every other one is (see
+      // _findRealOrderOrPositionForLabel/_waitForOrderIdBySymbol/_loadBalance/
+      // dealPairing.js), specifically because this broker is confirmed to
+      // sometimes serialize the SAME conceptual int64 field as a JSON string
+      // and sometimes as a number depending on the message type. `trackedId`
+      // here can come from event.position?.positionId at pyramid-fill time
+      // OR from a ProtoOAReconcileReq position.positionId (the
+      // reconcile-verified fill path) - two different message shapes from
+      // two different call sites, never guaranteed to agree on string vs
+      // number with THIS event's own `positionId`. A silent mismatch would
+      // leave pyramidPositionIdBySymbol never cleaned up (a small, permanent
+      // leak) AND skip the pyramid-close notification - no safety impact
+      // (the position itself is already correctly closed/journaled above,
+      // independent of this map), but real, matching this file's own
+      // established discipline everywhere else.
       for (const [symbolName, trackedId] of this.pyramidPositionIdBySymbol) {
-        if (trackedId === positionId) {
+        if (Number(trackedId) === Number(positionId)) {
           this.pyramidPositionIdBySymbol.delete(symbolName);
           this._notifyText(`🔺 Pyramide auto : unité ajoutée sur ${symbolName} clôturée (résultat ${pnl >= 0 ? 'gagnant' : 'perdant'}, ${pnl.toFixed(2)}$)`);
           break;
