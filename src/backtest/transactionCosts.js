@@ -66,6 +66,13 @@ export const DEFAULT_SPREADS = {
   // European equity index of comparable liquidity), not a guess at the
   // tight end.
   UKX: 1.0, // 1.0 point — INDICATIVE, matching GER40's original estimate for a major European index, never confirmed against a real broker spec
+  // 2026-09-17, Esdras uploaded real HistData AUXAUD M1 (2019-2025) -
+  // another index spotted in the same HistData catalog screenshot as UKX
+  // above (Australia 200/ASX200, quoted in AUD). Checked BEFORE running
+  // anything, same discipline as every symbol above. No live broker quote -
+  // indicative estimate, same order of magnitude as GER40/UKX (a major
+  // single-country equity index).
+  AUX: 1.0, // 1.0 point — INDICATIVE, matching GER40/UKX's convention for a major single-country index, never confirmed against a real broker spec
   US100: 0.6, // Sell 29074.45 / Buy 29075.05 — was 1.0, a 67% overestimate
   US500: 0.25, // Sell 7605.47 / Buy 7605.72 — was 0.4, a 60% overestimate
   XAUUSD: 0.30, // 0.30 (30 cents) — INDICATIVE typical retail/prop spot-gold spread, verify against FundingPips cTrader spec

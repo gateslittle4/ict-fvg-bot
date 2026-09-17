@@ -17,6 +17,7 @@ Version la plus large - n'importe quel petit corps compte comme "étoile".
 | USDCAD | 3443 | 23.0% | 0.73 | -0.24 | 495 | 26.1% | 0.82 | -0.16 | ❌ ne tient pas |
 | GER40 | 2568 | 26.0% | 0.99 | -0.00 | 524 | 29.9% | 1.25 | 0.18 | ⚠️ affaibli |
 | UKX | 1482 | 25.5% | 0.89 | -0.09 | 508 | 25.4% | 0.86 | -0.12 | ❌ ne tient pas |
+| AUX | 1241 | 25.5% | 0.88 | -0.10 | 504 | 24.2% | 0.83 | -0.15 | ❌ ne tient pas |
 
 ## Variante 2 : Doji Star (bougie 2 doit AUSSI être un vrai doji - corps ≤ 10% de sa propre amplitude)
 
@@ -33,3 +34,4 @@ Version plus stricte - filtre la variante 1 pour ne garder que les vrais doji co
 | USDCAD | 2360 | 23.6% | 0.75 | -0.23 | 336 | 28.9% | 0.94 | -0.05 | ❌ ne tient pas |
 | GER40 | 1782 | 26.6% | 1.02 | 0.02 | 377 | 30.0% | 1.23 | 0.17 | ✅ tient |
 | UKX | 1034 | 26.8% | 0.94 | -0.05 | 345 | 26.4% | 0.91 | -0.08 | ❌ ne tient pas |
+| AUX | 883 | 25.3% | 0.86 | -0.12 | 356 | 25.6% | 0.89 | -0.09 | ❌ ne tient pas |

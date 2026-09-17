@@ -24,7 +24,7 @@ import { runGapContinuationBacktest, DAILY_GAP_HOURS, WEEKLY_GAP_HOURS } from '.
 const TRAIN_CUTOFF = new Date('2024-01-01T00:00:00Z').getTime();
 const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
 const MIN_TRADES_FOR_VERDICT = 10;
-const SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCAD', 'GER40', 'UKX'];
+const SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCAD', 'GER40', 'UKX', 'AUX'];
 const SCALES = [['Quotidien (1-3h)', DAILY_GAP_HOURS], ['Hebdomadaire (20-100h)', WEEKLY_GAP_HOURS]];
 
 function withCosts(trades, symbol) {

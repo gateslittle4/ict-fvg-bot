@@ -4249,3 +4249,37 @@ Suite de "on reste sur les indices" : après avoir découvert qu'US30/Dow Jones 
 **Conclusion : UKX rejeté, sur toute la ligne.** Pas ajouté à `config.js` — recherche uniquement.
 
 **Fichiers** : `data/backtest-input/UKX.csv` (nouveau, 170 351 bougies M15, 2018-2025), `src/backtest/transactionCosts.js` (ajout `UKX: 1.0`), `data/backtest-input/ukx-train-test-validation.md` (nouveau), 13 scripts `scripts/run*StrategyAnalysis.js` (`UKX` ajouté à `SYMBOLS`, gardé de façon permanente dans le tableau comme convention établie pour tout symbole déjà vérifié). `npm test` : 567/567 (inchangé).
+
+## AUX (ASX 200 australien, 10e instrument) — même vérification complète que UKX, même conclusion : rejeté, indices non-DAX/US confirmés comme une impasse — 2026-09-17
+
+Suite directe d'UKX (rejeté sur toute la ligne) : Esdras a fourni un 2e indice repéré dans la même capture d'écran du catalogue HistData, `AUX/AUD` (ASX 200 australien, coté en AUD). 7 années réelles (2019-2025), converties via `scripts/convertHistData.js` → `data/backtest-input/AUX.csv`, 142 590 bougies M15. Vérifié avant tout test : 12 écarts au-delà de 100h, tous parfaitement cohérents (un par Pâques, un par Noël/Nouvel An, chaque année 2019-2025) — vraies fermetures de l'ASX, aucun problème de qualité. Spread ajouté : `AUX: 1.0`, même convention que GER40/UKX.
+
+**Étape 1 — grille FVG standard, isolée sur AUX** : contrairement à UKX (quasi nul dès le départ), AUX montre un signal train plus visible — meilleure config train **+0.18R** (PF 1.23, H4_EMA50/fvg-edge/1:3, structure+session ON) — mais s'effondre en test (-0.05R). Aucune des 5 meilleures configs sur 168 ne passe la barre.
+
+**Étape 2 — mêmes 13 mécanismes** (`AUX` ajouté aux 13 scripts `SYMBOLS`, aucun nouveau réglage) :
+
+| Mécanisme | Train | Test | Verdict |
+|---|---|---|---|
+| Judas Swing | -0.22 | +0.25 | ⚠️ affaibli — schéma suspect (train très négatif, test qui s'envole) |
+| NWOG | 0.00 | +0.20 | ⚠️ affaibli — même schéma suspect |
+| NDOG | -0.03 | +0.13 | ⚠️ affaibli — même schéma suspect |
+| Breaker Block | -0.18 | -0.08 | ❌ |
+| Asian Range Breakout | -0.03 | -0.13 | ❌ |
+| Asian Range Fade | -0.14 | 0.00 | ❌ |
+| Weekly Liquidity Sweep | **+0.10** (n=203) | -0.12 | ❌ — edge train réel, ne généralise pas (même profil qu'AUDUSD/USDCAD) |
+| MACD Trend | +0.02 (n=111) | -0.17 | ❌ |
+| DMI Trend | -0.22 (n=23) | -0.17 (n=3) | ❓ pas assez de trades |
+| RSI Divergence classique | +0.14 (n=24) | -0.08 (n=5) | ❓ pas assez de trades |
+| Gap Continuation (quotidien) | +0.10 (n=816) | -0.01 | ❌ — edge train réel, ne généralise pas |
+| Gap Continuation (hebdo) | +0.20 (n=194) | -0.10 | ❌ — edge train réel, ne généralise pas |
+| Unicorn Model | -0.02 | +0.13 | ⚠️ affaibli — même schéma suspect |
+| Star | -0.10 | -0.15 | ❌ |
+| Doji Star | -0.12 | -0.09 | ❌ |
+
+**Aucun des 16 tests ne tient**, malgré un signal FVG initial plus prometteur qu'UKX. Deux profils d'échec bien distincts et tous deux déjà documentés comme non-fiables ailleurs dans ce fichier : (a) train négatif, test qui s'envole par chance (Judas Swing, NWOG, NDOG, Unicorn Model — la signature "bruit" classique), et (b) edge train réellement positif qui ne survit pas au test (Weekly Liquidity Sweep, Gap Continuation x2 — le même profil qu'AUDUSD/USDCAD).
+
+**Conclusion qui confirme UKX plutôt que de la nuancer** : deux indices boursiers majeurs (FTSE, ASX) testés avec la même rigueur que GER40 (13 mécanismes, jamais moins), et aucun des deux ne reproduit ce qui fonctionne sur GER40/US100/US500. L'edge de ce système reste concentré sur un petit nombre de marchés spécifiques — probablement liés à la session NY et son chevauchement horaire (GER40 en profite via l'Europe, ni le FTSE ni l'ASX de la même façon) — pas une propriété générale de "être un indice actions".
+
+**Conclusion : AUX rejeté.** Pas ajouté à `config.js` — recherche uniquement.
+
+**Fichiers** : `data/backtest-input/AUX.csv` (nouveau, 142 590 bougies M15, 2019-2025), `src/backtest/transactionCosts.js` (ajout `AUX: 1.0`), `data/backtest-input/aux-train-test-validation.md` (nouveau), 13 scripts `scripts/run*StrategyAnalysis.js` (`AUX` ajouté à `SYMBOLS`, gardé de façon permanente). `npm test` : 567/567 (inchangé).
