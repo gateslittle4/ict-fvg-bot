@@ -348,3 +348,18 @@ test('buildComplianceChecklist: a signal not found in the available candles degr
   assert.equal(byKey.signal.applicable, false);
   assert.equal(byKey.stop.applicable, false);
 });
+
+// Found live (2026-09-17): the real account's one trade this week was a
+// manual Buy/Sell click (no order label -> parseSourceFromLabel() returns
+// null upstream) and the checklist literally printed 'Mécanisme "null"
+// inconnu de cette checklist' - a real, expected case (not a data error),
+// so it gets its own clear message instead of falling into the generic
+// unknown-mechanism branch.
+test('buildComplianceChecklist: a null source (manual trade) gets a clear "trade manuel" message, never the literal string "null"', () => {
+  const trade = { source: null, symbol: 'GER40', direction: 'bullish', entryTime: 1, entryPrice: 100, stopPrice: 99, pnlUsd: 10, rMultiple: 1, balanceAfter: 10010 };
+  const { items } = buildComplianceChecklist({ trade, candles: [], cfg: null, h1Candles: null, expectedRiskPct: 0.5 });
+  const signal = items.find((i) => i.key === 'signal');
+  assert.equal(signal.applicable, false);
+  assert.doesNotMatch(signal.detail, /null/i);
+  assert.match(signal.detail, /manuel/i);
+});

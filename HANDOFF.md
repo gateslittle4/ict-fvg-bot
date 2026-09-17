@@ -4541,3 +4541,15 @@ Commentaire obsolète dans `journal.html` corrigé au passage (disait encore "ce
 `npm test` : 631/631 (inchangé — chemin réseau uniquement, pas de test unitaire sur cette logique par convention établie).
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `public/journal.html`.
+
+## Vérification de la diversité des checklists + bug trouvé sur les trades manuels — 2026-09-17
+
+Esdras, après la checklist étendue aux 7 mécanismes : "tu mets le même checklist pour tous les pairs, ou moins de checklist? IL y a different checklist pour chaque combo et chaque pair non?"
+
+**Vérifié concrètement, pas en théorie** : script ad hoc rejouant `buildComplianceChecklist()` sur les 7 vrais trades réels de cette semaine (`data/real-data-2026-09-17/`, mêmes trades déjà rapportés dans "Fréquence de trades attendue"), mécanismes et symboles différents. Confirmé : la checklist **diffère bien** structurellement (NWOG/US100 affiche l'item "achat seul", NWOG/GER40 non — Silver Bullet a son item de chronologie, Judas Swing son item killzone) et numériquement (distance de stop réelle différente à chaque trade : 40.95 pour NWOG/US100, 16.00 pour NWOG/GER40, etc.). Pas un bug de "checklist identique partout".
+
+**Mais un vrai bug trouvé en vérifiant sur le compte réel** : l'unique trade du compte production cette semaine a `source: null` — un trade MANUEL (clic Achat/Vente à la main, aucune étiquette d'ordre donc `parseSourceFromLabel()` renvoie `null` en amont dans `dealPairing.js`, un cas réel et attendu, pas une erreur de données). La checklist affichait littéralement `Mécanisme "null" inconnu de cette checklist` — technique­ment correct mais moche et confus. Corrigé : un cas `null`/`undefined` dédié dans le dispatcher, message clair "Trade manuel — aucun mécanisme automatique associé, rien à vérifier ici".
+
+`npm test` : 632/632 (631 + 1 nouveau, régression sur le cas `source: null`).
+
+**Fichiers** : `src/dataSources/tradeCompliance.js`, `test/tradeCompliance.test.js`.

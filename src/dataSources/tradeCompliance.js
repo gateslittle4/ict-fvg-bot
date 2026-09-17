@@ -470,6 +470,16 @@ export function buildComplianceChecklist({ trade, candles, cfg, h1Candles, expec
     case 'breakerblock': items.push(...buildBreakerBlockChecklist(trade, candles)); break;
     case 'silverbullet': items.push(...buildSilverBulletChecklist(trade, candles)); break;
     case 'divergence': items.push(...buildDivergenceChecklist(trade, candles, cfg)); break;
+    // null/undefined (2026-09-17, found live on the real account: a manual
+    // Buy/Sell click has no order label at all, so parseSourceFromLabel()
+    // already returns null for it upstream in dealPairing.js - a real,
+    // expected case, not a data error) gets its own clear message rather
+    // than falling into the generic "unknown mechanism" branch below, which
+    // used to literally interpolate the string "null" into the label.
+    case null:
+    case undefined:
+      items.push({ key: 'signal', applicable: false, label: 'Critères du mécanisme', detail: "Trade manuel — aucun mécanisme automatique associé, rien à vérifier ici" });
+      break;
     default:
       items.push({ key: 'signal', applicable: false, label: 'Critères du mécanisme', detail: `Mécanisme "${trade.source}" inconnu de cette checklist` });
   }
