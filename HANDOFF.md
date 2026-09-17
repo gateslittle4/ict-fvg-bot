@@ -4577,3 +4577,31 @@ Esdras : "Je te parler de ces checklist dans la page graphique, ils doivent êtr
 `npm test` : 645/645 (632 + 13 nouveaux).
 
 **Fichiers** : `src/backtest/liveMechanismStatus.js` (nouveau), `src/backtest/breakerBlock.js`, `src/backtest/silverBullet.js`, `src/dataSources/cTraderDataSource.js`, `public/chart.html`, `test/liveMechanismStatus.test.js` (nouveau).
+
+## Combien de fois +10% en 7 mois réels, combo complet — simulation cycle FTMO 1-Step — 2026-09-17
+
+Esdras : "Tu as des données de 7 mois en live. Dis moi combien de fois j'aurais atteint 10% avec bcp de detail ... Fais comme si on passait le challenge ftmo 1 step."
+
+**Nouveau script `scripts/runFtmo1StepFullComboReal7MonthsCycle.js`**, extension directe de `runFtmoAllLiveStrategiesCycleAccountImpact.js` (même logique "reset à +10%/-10%", voir sa doc) avec 2 changements : (1) données = les VRAIES bougies M15 `data/real-data-2026-02-to-09/` (2026-02-10 → 2026-09-16, ~7 mois, exportées du broker en production) au lieu du CSV historique 2019-2025 ; (2) scope = les 7 mécanismes RÉELLEMENT en production aujourd'hui (FVG, Divergence, NWOG, Judas Swing, Weekly Sweep, Breaker Block, Silver Bullet — les 3 derniers manquaient au script précédent, écrit avant leur déploiement), priorité entre sources identique à `ingestCandle()`. Guardrail réel (`GuardrailEngine(CONFIG.guardrails)` : 3 trades/jour, cooldown 30min après perte, perte quotidienne max 2%).
+
+**Risque par trade : 0.5%, pas 0.3%** — point vérifié explicitement pour ne pas répéter une confusion : `CONFIG.risk.riskPctPerTrade` dépend de `ACCOUNT_MODE` (voir sa doc dans `src/config.js`) : 0.5%/trade en mode "challenge" (cible à atteindre vite, validé), 0.3%/trade en mode "live"/financé (pas de cible à rusher). Le compte démo réellement en ligne aujourd'hui tourne en mode "live" (0.3%, visible sur `/api/status`) parce qu'il fait du forward-test, PAS une vraie tentative de challenge — donc pas le bon chiffre pour répondre à cette question précise. Le script utilise le 0.5% "challenge", documenté dans le rapport pour que ça ne soit pas pris pour une contradiction avec `/api/status`.
+
+**Résultat sur les 7 mois réels disponibles (2026-02-10 → 2026-09-16)** : **6 challenges réussis (+10% atteint), 1 raté (-10% touché)**, un 8e cycle encore en cours à la fin de la fenêtre (+1.44%, ni pass ni bust). 349 trades au total. Détail :
+
+| Cycle | Période | Durée | Trades | Win rate | Résultat |
+|---|---|---|---|---|---|
+| 1 | 2026-02-10 → 2026-04-01 | 49j | 76 | 25.0% | ✅ réussi |
+| 2 | 2026-04-01 → 2026-04-14 | 14j | 17 | 41.2% | ✅ réussi |
+| 3 | 2026-04-14 → 2026-05-01 | 17j | 21 | 38.1% | ✅ réussi |
+| 4 | 2026-05-01 → 2026-07-07 | 67j | 118 | 24.6% | ✅ réussi |
+| 5 | 2026-07-07 → 2026-07-13 | 6j | 10 | 70.0% | ✅ réussi |
+| 6 | 2026-07-13 → 2026-08-21 | 39j | 62 | 14.5% | ❌ raté (DD 10.4%) |
+| 7 | 2026-08-21 → 2026-09-14 | 23j | 42 | 31.0% | ✅ réussi |
+
+Temps moyen pour réussir un challenge (cycles gagnés seulement) : 29 jours. Rapport complet trade-par-trade (349 lignes, entrée/clôture/symbole/mécanisme/sens/R/P&L/solde/progression) : `data/real-data-2026-02-to-09/ftmo-1step-full-combo-7months-cycle.md`.
+
+**Mises en garde honnêtes, incluses dans le rapport** : (1) fenêtre courte (7 mois pas 7 ans) — les filtres à warm-up long (biais H4 EMA200, structure ICT) n'ont eu que quelques semaines de chauffe en février-mars 2026, donc les tout premiers signaux sont un peu moins fiables ; (2) échantillon petit (7-8 cycles) — ce résultat montre ce que la config d'AUJOURD'HUI aurait fait sur CES 7 mois précis, pas une garantie statistique — le backtest 2019-2025 (7 ans) reste la base la plus large pour la décision de production ; (3) simplification assumée identique au script dont celui-ci dérive : au moment où un cycle se termine, toute position encore ouverte sur un AUTRE symbole est abandonnée (pas reportée sur le nouveau compte à $10k), comme ce qui se passerait réellement.
+
+`npm test` : inchangé, 645/645 (aucun code de production touché, seulement un nouveau script d'analyse + son rapport généré).
+
+**Fichiers** : `scripts/runFtmo1StepFullComboReal7MonthsCycle.js` (nouveau), `data/real-data-2026-02-to-09/ftmo-1step-full-combo-7months-cycle.md` (nouveau, généré).
