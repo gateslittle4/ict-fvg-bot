@@ -4513,3 +4513,121 @@ Esdras a envoyé une capture d'écran EURUSD montrant des petits traits flottant
 `npm test` : 618/618 (fichier client seul, aucun test existant pour `chart.html`).
 
 **Fichiers** : `public/chart.html` (corrigé).
+
+## Checklist de conformité étendue aux 7 mécanismes, pas juste FVG — 2026-09-17
+
+Esdras, après avoir vu le trade Judas Swing/EURUSD montré en détail : "on a plusieurs combo et le checklist affiché n'affiche surement pas tous, combien de combo on a et combien de checklist on pourrait faire apparaitre?" puis, après explication, "Tous".
+
+**État avant** : `tradeCompliance.js` ne construisait une vraie checklist (zone FVG, distance stop, biais H4/H1) que pour la source `'fvg'` — documenté honnêtement dans son propre en-tête comme "a real gap, not hidden". Les 6 autres mécanismes (Divergence, NWOG, Judas Swing, Weekly Sweep, Breaker Block, Silver Bullet) n'affichaient que l'item générique "risque appliqué", tout le reste marqué "non applicable" — le dashboard (`journal.html`) ne rendait de toute façon que 4 clés fixes (`zone`, `bias`, `stop`, `risk`), ignorant silencieusement tout item d'une autre clé.
+
+**Refactor préalable, découvert nécessaire en creusant** : `computeBreakerBlockCandidates()` et `computeSilverBulletCandidates()` n'existaient QUE comme méthodes privées de `liveStrategyEngine.js` — pour que la checklist reconstruise le VRAI signal sans dupliquer cette logique une deuxième fois, elles ont été extraites vers `src/backtest/breakerBlock.js`/`silverBullet.js` (le moteur live devient un simple alias d'une ligne vers la fonction partagée). Même discipline que `detectNwogEvents`/`detectJudasSwingEvents`/`detectWeeklySweepEvents`, qui étaient déjà la seule source de vérité pour leurs mécanismes respectifs. Comportement vérifié inchangé (tests existants toujours verts avant d'ajouter quoi que ce soit).
+
+**Nouvelle checklist par mécanisme** (`tradeCompliance.js`, dispatcher `buildComplianceChecklist`) :
+- **NWOG** : signal (gap de réouverture de semaine détecté) + distance stop, plus un item "achat seul" quand le symbole est dans `longOnlySymbols`.
+- **Judas Swing** : signal (balayage veille + reclaim) + distance stop, plus un item confirmant la fenêtre killzone Londres (2h-5h NY).
+- **Weekly Sweep** : signal (balayage semaine précédente + reclaim) + distance stop.
+- **Breaker Block** : signal (order block cassé puis retesté) + distance stop.
+- **Silver Bullet** : signal (zone formée dans la killzone + structure agréée) + distance stop, plus un item de chronologie.
+- **Divergence** : règle "toujours acheteur du retardataire" (vraie par construction, vérifiable directement) + distance stop basée sur l'ATR — l'écart z-score lui-même reste honnêtement "non vérifiable" : il nécessite l'historique du symbole PARTENAIRE (US100/US500), jamais récupéré pour l'affichage d'un seul trade. Limite disclosed, pas cachée — même discipline que le reste de ce fichier.
+
+**Problème de contexte trouvé et corrigé en cours de route** : les 5 mécanismes événementiels ont besoin de voir bien plus loin en arrière que les 30 bougies de marge déjà utilisées pour le mini-graphique (une journée ou semaine complète précédente, ou un lookback order-block/mitigation de plusieurs dizaines à centaines de bougies) — `requiredPreEntryContextCandles(source)` (nouveau) renvoie combien de bougies supplémentaires récupérer, et `cTraderDataSource.js` fait un **second fetch séparé**, jamais fusionné dans `trade.candles` (qui reste exactement ce qu'affiche le mini-graphique — le fusionner aurait rendu le graphique d'un trade Weekly Sweep illisible, ~10 jours de bougies majoritairement hors-sujet au lieu d'une vue focalisée).
+
+**Dashboard** : `journal.html`'s `renderComplianceChecklist()` affiche maintenant TOUS les items envoyés par le serveur, dans l'ordre, au lieu de ne piocher que les 4 clés historiquement réservées à FVG.
+
+**13 nouveaux tests** (`test/tradeCompliance.test.js`) — fixtures reprises directement des tests existants par mécanisme (`test/nwog.test.js`, `test/judasSwing.test.js`, `test/weeklyLiquiditySweep.test.js`, la fixture Breaker Block à paramètres de production par défaut de `test/liveStrategyEngine.test.js`, `test/silverBullet.test.js`) plutôt que d'en inventer de nouvelles — ces tests vérifient la logique d'ENROBAGE (décalage vers la bougie d'entrée, appariement du candidat, construction des items), pas la détection elle-même déjà couverte ailleurs.
+
+`npm test` : 631/631 (618 + 13 nouveaux).
+
+**Fichiers** : `src/backtest/breakerBlock.js`, `src/backtest/silverBullet.js`, `src/dataSources/tradeCompliance.js`, `src/dataSources/cTraderDataSource.js`, `src/liveStrategyEngine.js`, `public/journal.html`, `test/tradeCompliance.test.js`.
+
+## Trades BTCUSD retirés du journal — 2026-09-17
+
+Esdras : "Retire tous les trade btc du journal, pas besoin."
+
+BTCUSD (le smoke-test de connectivité temporaire, retiré du trading live le jour même de son lancement — voir `config.js`) laissait quand même ses vrais trades historiques apparaître dans le journal : `getTradeHistory()` rejoue simplement l'historique de deals réel du courtier, sans notion de "symbole encore actif".
+
+**Filtré côté serveur, AVANT la boucle d'enrichissement** (`cTraderDataSource.js`) — pas juste caché côté client : `pairDealsIntoTrades(...).filter((t) => t.symbolId !== btcusdId)`. Ça évite aussi les appels courtier inutiles (bougies de graphique, contexte de checklist) pour des trades que personne ne veut voir. `symbolIdByName.get('BTCUSD')` peut être `undefined` (compte jamais abonné au symbole) — la comparaison garde alors tous les trades, ce qui est correct.
+
+Commentaire obsolète dans `journal.html` corrigé au passage (disait encore "cette page affiche ses vrais trades historiques" — plus vrai depuis ce filtre).
+
+`npm test` : 631/631 (inchangé — chemin réseau uniquement, pas de test unitaire sur cette logique par convention établie).
+
+**Fichiers** : `src/dataSources/cTraderDataSource.js`, `public/journal.html`.
+
+## Vérification de la diversité des checklists + bug trouvé sur les trades manuels — 2026-09-17
+
+Esdras, après la checklist étendue aux 7 mécanismes : "tu mets le même checklist pour tous les pairs, ou moins de checklist? IL y a different checklist pour chaque combo et chaque pair non?"
+
+**Vérifié concrètement, pas en théorie** : script ad hoc rejouant `buildComplianceChecklist()` sur les 7 vrais trades réels de cette semaine (`data/real-data-2026-09-17/`, mêmes trades déjà rapportés dans "Fréquence de trades attendue"), mécanismes et symboles différents. Confirmé : la checklist **diffère bien** structurellement (NWOG/US100 affiche l'item "achat seul", NWOG/GER40 non — Silver Bullet a son item de chronologie, Judas Swing son item killzone) et numériquement (distance de stop réelle différente à chaque trade : 40.95 pour NWOG/US100, 16.00 pour NWOG/GER40, etc.). Pas un bug de "checklist identique partout".
+
+**Mais un vrai bug trouvé en vérifiant sur le compte réel** : l'unique trade du compte production cette semaine a `source: null` — un trade MANUEL (clic Achat/Vente à la main, aucune étiquette d'ordre donc `parseSourceFromLabel()` renvoie `null` en amont dans `dealPairing.js`, un cas réel et attendu, pas une erreur de données). La checklist affichait littéralement `Mécanisme "null" inconnu de cette checklist` — technique­ment correct mais moche et confus. Corrigé : un cas `null`/`undefined` dédié dans le dispatcher, message clair "Trade manuel — aucun mécanisme automatique associé, rien à vérifier ici".
+
+`npm test` : 632/632 (631 + 1 nouveau, régression sur le cas `source: null`).
+
+**Fichiers** : `src/dataSources/tradeCompliance.js`, `test/tradeCompliance.test.js`.
+
+## Suivi live des 7 mécanismes sur la page graphique — 2026-09-17
+
+Esdras : "Je te parler de ces checklist dans la page graphique, ils doivent être ajoute pourquon puisse le suivre de façon live." (précision après une confusion initiale avec la checklist du journal, qui est post-hoc, pas live).
+
+**État avant** : le widget "Checklist pour trade" de `chart.html` n'a toujours montré que FVG. Pire que documenté jusqu'ici : `getPendingZoneChecklists()` retournait carrément `{zones: [], reason: 'not an FVG-strategy symbol'}` pour EURUSD/GER40 (aucune config FVG sur ces symboles) — donc RIEN ne s'affichait du tout pour deux des cinq symboles réels, alors qu'ils portent à eux deux 4 des 7 mécanismes (Judas Swing sur EURUSD ; NWOG, Weekly Sweep, Breaker Block, Silver Bullet sur GER40).
+
+**Nuance posée avant de construire, confirmée par Esdras ("Oui")** : contrairement à FVG (une zone qui reste "en surveillance" des heures, 4 critères qui peuvent chacun être vrai/faux indépendamment), la plupart des mécanismes se déclenchent sur UNE SEULE bougie — rien à observer "se construire" avant l'entrée. Deux familles honnêtement différentes, pas une checklist uniforme forcée partout :
+- **Breaker Block et Silver Bullet** : une vraie machine à états à plusieurs phases (BOS détecté → order block cassé → retest → entrée imminente pour Breaker Block ; zone formée dans la killzone → mitigation → entrée pour Silver Bullet) — une vraie progression à suivre, comme FVG.
+- **NWOG, Judas Swing, Weekly Sweep, Divergence** : statut simple (aucun signal actif, avec les niveaux de référence PDH/PDL, PWH/PWL ou z-score affichés à titre informatif même sans signal ; ou signal actif avec entrée déjà ouverte ou imminente).
+
+**Refactor préalable** : `computeBreakerBlockCandidates()`/`computeSilverBulletCandidates()` (déjà extraites de `liveStrategyEngine.js` plus tôt cette session) ne retournaient que la liste des candidats déjà RÉSOLUS — pas l'état COURANT. Ajout de `runBreakerBlockStateMachine()`/`runSilverBulletStateMachine()` qui retournent en plus la phase actuelle (`idle`/`watchBreak`/`watchRetest`/`pendingEntry` pour Breaker Block ; `idle`/`active`/`pendingEntry` pour Silver Bullet) — les deux fonctions `compute*Candidates()` existantes deviennent de simples alias, comportement inchangé et revérifié (tests existants toujours verts avant d'ajouter quoi que ce soit).
+
+**Nouveau `src/backtest/liveMechanismStatus.js`** : une fonction par mécanisme (`nwogLiveStatus`, `judasSwingLiveStatus`, `weeklySweepLiveStatus`, `breakerBlockLiveStatus`, `silverBulletLiveStatus`, `divergenceLiveStatus`), même discipline que partout ailleurs — réutilise les vraies fonctions de détection de production, jamais une réimplémentation. Divergence est le seul cas qui a besoin des DEUX symboles de la paire — pas de fetch supplémentaire nécessaire, `store.strategyEngine.getHistory()` garde déjà l'historique de tous les symboles en mémoire.
+
+**`getPendingZoneChecklists()`** (`cTraderDataSource.js`) : le early-return FVG-only a disparu. Un nouveau champ `mechanisms` couvre chaque mécanisme réellement configuré pour le symbole demandé (NWOG/Judas Swing/Weekly Sweep/Breaker Block/Silver Bullet/Divergence, selon `CONFIG.<mécanisme>.symbols`/`.pair`), en plus de `zones` qui reste le comportement FVG existant inchangé.
+
+**`chart.html`** : affiche maintenant TOUTES les cartes ensemble (la carte FVG existante, si applicable, plus une carte par mécanisme de `data.mechanisms`) — contrairement à FVG qui reste volontairement limité à une seule zone à la fois (décision explicite d'Esdras du 2026-09-15, non remise en cause ici, juste pas étendue aux autres mécanismes qui n'ont qu'un seul statut courant de toute façon, pas plusieurs zones à filtrer).
+
+**13 nouveaux tests** (`test/liveMechanismStatus.test.js`), fixtures réutilisées des tests existants par mécanisme.
+
+`npm test` : 645/645 (632 + 13 nouveaux).
+
+**Fichiers** : `src/backtest/liveMechanismStatus.js` (nouveau), `src/backtest/breakerBlock.js`, `src/backtest/silverBullet.js`, `src/dataSources/cTraderDataSource.js`, `public/chart.html`, `test/liveMechanismStatus.test.js` (nouveau).
+
+## Combien de fois +10% en 7 mois réels, combo complet — simulation cycle FTMO 1-Step — 2026-09-17
+
+Esdras : "Tu as des données de 7 mois en live. Dis moi combien de fois j'aurais atteint 10% avec bcp de detail ... Fais comme si on passait le challenge ftmo 1 step."
+
+**Nouveau script `scripts/runFtmo1StepFullComboReal7MonthsCycle.js`**, extension directe de `runFtmoAllLiveStrategiesCycleAccountImpact.js` (même logique "reset à +10%/-10%", voir sa doc) avec 2 changements : (1) données = les VRAIES bougies M15 `data/real-data-2026-02-to-09/` (2026-02-10 → 2026-09-16, ~7 mois, exportées du broker en production) au lieu du CSV historique 2019-2025 ; (2) scope = les 7 mécanismes RÉELLEMENT en production aujourd'hui (FVG, Divergence, NWOG, Judas Swing, Weekly Sweep, Breaker Block, Silver Bullet — les 3 derniers manquaient au script précédent, écrit avant leur déploiement), priorité entre sources identique à `ingestCandle()`. Guardrail réel (`GuardrailEngine(CONFIG.guardrails)` : 3 trades/jour, cooldown 30min après perte, perte quotidienne max 2%).
+
+**Risque par trade : 0.5%, pas 0.3%** — point vérifié explicitement pour ne pas répéter une confusion : `CONFIG.risk.riskPctPerTrade` dépend de `ACCOUNT_MODE` (voir sa doc dans `src/config.js`) : 0.5%/trade en mode "challenge" (cible à atteindre vite, validé), 0.3%/trade en mode "live"/financé (pas de cible à rusher). Le compte démo réellement en ligne aujourd'hui tourne en mode "live" (0.3%, visible sur `/api/status`) parce qu'il fait du forward-test, PAS une vraie tentative de challenge — donc pas le bon chiffre pour répondre à cette question précise. Le script utilise le 0.5% "challenge", documenté dans le rapport pour que ça ne soit pas pris pour une contradiction avec `/api/status`.
+
+**Résultat sur les 7 mois réels disponibles (2026-02-10 → 2026-09-16)** : **6 challenges réussis (+10% atteint), 1 raté (-10% touché)**, un 8e cycle encore en cours à la fin de la fenêtre (+1.44%, ni pass ni bust). 349 trades au total. Détail :
+
+| Cycle | Période | Durée | Trades | Win rate | Résultat |
+|---|---|---|---|---|---|
+| 1 | 2026-02-10 → 2026-04-01 | 49j | 76 | 25.0% | ✅ réussi |
+| 2 | 2026-04-01 → 2026-04-14 | 14j | 17 | 41.2% | ✅ réussi |
+| 3 | 2026-04-14 → 2026-05-01 | 17j | 21 | 38.1% | ✅ réussi |
+| 4 | 2026-05-01 → 2026-07-07 | 67j | 118 | 24.6% | ✅ réussi |
+| 5 | 2026-07-07 → 2026-07-13 | 6j | 10 | 70.0% | ✅ réussi |
+| 6 | 2026-07-13 → 2026-08-21 | 39j | 62 | 14.5% | ❌ raté (DD 10.4%) |
+| 7 | 2026-08-21 → 2026-09-14 | 23j | 42 | 31.0% | ✅ réussi |
+
+Temps moyen pour réussir un challenge (cycles gagnés seulement) : 29 jours. Rapport complet trade-par-trade (349 lignes, entrée/clôture/symbole/mécanisme/sens/R/P&L/solde/progression) : `data/real-data-2026-02-to-09/ftmo-1step-full-combo-7months-cycle.md`.
+
+**Mises en garde honnêtes, incluses dans le rapport** : (1) fenêtre courte (7 mois pas 7 ans) — les filtres à warm-up long (biais H4 EMA200, structure ICT) n'ont eu que quelques semaines de chauffe en février-mars 2026, donc les tout premiers signaux sont un peu moins fiables ; (2) échantillon petit (7-8 cycles) — ce résultat montre ce que la config d'AUJOURD'HUI aurait fait sur CES 7 mois précis, pas une garantie statistique — le backtest 2019-2025 (7 ans) reste la base la plus large pour la décision de production ; (3) simplification assumée identique au script dont celui-ci dérive : au moment où un cycle se termine, toute position encore ouverte sur un AUTRE symbole est abandonnée (pas reportée sur le nouveau compte à $10k), comme ce qui se passerait réellement.
+
+`npm test` : inchangé, 645/645 (aucun code de production touché, seulement un nouveau script d'analyse + son rapport généré).
+
+**Fichiers** : `scripts/runFtmo1StepFullComboReal7MonthsCycle.js` (nouveau), `data/real-data-2026-02-to-09/ftmo-1step-full-combo-7months-cycle.md` (nouveau, généré).
+
+## Même simulation cycle FTMO 1-Step sur les 2 années de test (2024-2025) — 2026-09-17
+
+Esdras, suite directe : "Tu fais la même chose pour les deux années de test?" — "les deux années de test" = le split train(2019-2023)/test(2024-2025) déjà utilisé partout dans ce projet pour valider chaque mécanisme individuellement.
+
+**Nouveau script `scripts/runFtmo1StepFullComboTestYearsCycle.js`**, quasi-identique à `runFtmo1StepFullComboReal7MonthsCycle.js` (même logique de cycle, mêmes 7 mécanismes, même risque 0.5% "mode challenge", mêmes garde-fous réels), 2 différences seulement : (1) données = `data/backtest-input/` (l'historique CSV 2010-2025 déjà committé) filtré à la fenêtre 2024-01-01 → 2026-01-01 ; (2) comme les autres scripts "par année" de ce projet (`runFtmoAllLiveStrategiesAccountImpact.js`/`simulateYear()`), les candidats de chaque mécanisme sont calculés uniquement sur les bougies de la fenêtre test elle-même, sans warm-up sur 2019-2023 — même simplification déjà acceptée ailleurs, signalée honnêtement dans les mises en garde du rapport.
+
+**Résultat sur 2024-2025 (2 ans complets, jamais vus pendant le réglage d'aucun des 7 mécanismes)** : **24 challenges réussis, 5 ratés**, 1336 trades au total, temps moyen pour réussir un challenge : 24 jours. Proportionnellement cohérent avec le résultat des 7 mois réels de 2026 (6 réussis / 1 raté sur 349 trades) — le taux de réussite (~83% des cycles) et le rythme (24j vs 29j en moyenne pour passer) sont dans le même ordre de grandeur sur les deux fenêtres, ce qui renforce la confiance dans le résultat des 7 mois réels (pas un coup de chance isolé sur une petite fenêtre). Détail des 29 cycles complets + 1 cycle en cours dans le rapport complet, envoyé à Esdras.
+
+**Nuance honnête ajoutée** (signalée dans le rapport, pas cachée) : Weekly Sweep/Breaker Block/Silver Bullet ont chacun été validés SÉPARÉMENT sur ce même découpage train/test avant d'être ajoutés au combo — ce test-ci les combine pour la première fois avec du netting et des garde-fous PARTAGÉS entre les 7 mécanismes, ce qui reste un test différent (et c'est justement l'objectif ici) de leur validation individuelle d'origine.
+
+`npm test` : inchangé, 645/645.
+
+**Fichiers** : `scripts/runFtmo1StepFullComboTestYearsCycle.js` (nouveau), `data/backtest-input/ftmo-1step-full-combo-test-years-cycle.md` (nouveau, généré).

@@ -217,7 +217,7 @@
 
   <div class="card">
     <h1 style="font-size:14px; margin:0 0 4px;">Checklist pour trade</h1>
-    <div class="subtitle" style="margin-bottom:10px;">La zone FVG active la plus récente formée aujourd'hui sur ce symbole (encore "en surveillance", jamais une zone déjà validée/expirée), et où en est CHACUN des critères réels de la stratégie, en ce moment — pas juste le ✓/✗ combiné.</div>
+    <div class="subtitle" style="margin-bottom:10px;">Le statut EN CE MOMENT de chaque mécanisme actif sur ce symbole — la zone FVG active la plus récente formée aujourd'hui (encore "en surveillance", jamais une zone déjà validée/expirée) avec CHACUN de ses critères, et pour les autres mécanismes (NWOG/Judas Swing/Weekly Sweep/Breaker Block/Silver Bullet/Divergence), où ils en sont : aucun signal actif, ou signal détecté et entrée déjà ouverte/imminente.</div>
     <div id="pending-checklist-body"><div class="meta">Chargement…</div></div>
   </div>
 
@@ -561,6 +561,27 @@ function renderOverlays(overlays, decimals) {
 // display-side, same "local midnight" convention as renderOverlays()'s own
 // today-only filter just above, and same discipline (a real trading-logic
 // change would live in cTraderDataSource.js, not here).
+// 2026-09-17 (Esdras, sur cette même page: "je veux le suivre de façon
+// live") - le serveur (getPendingZoneChecklists) renvoie maintenant AUSSI
+// `data.mechanisms`: le statut live de chaque AUTRE mécanisme configuré sur
+// ce symbole (NWOG/Judas Swing/Weekly Sweep/Breaker Block/Silver
+// Bullet/Divergence - voir liveMechanismStatus.js), pas juste FVG. Rendu
+// avec le même langage visuel (check-row/check-icon) que la carte FVG
+// existante, une carte par mécanisme, toutes affichées ensemble (un
+// symbole comme GER40 a 4 mécanismes actifs en même temps - contrairement
+// à la carte FVG qui reste volontairement limitée à UNE zone à la fois,
+// à la demande explicite d'Esdras le 2026-09-15, rien ne justifie la même
+// limite ici : chaque mécanisme n'a qu'un seul statut courant, pas
+// plusieurs zones à filtrer).
+function renderMechanismCard(m) {
+  const rows = (m.items || []).map((it) => {
+    const icon = !it.applicable ? '—' : (it.ok ? '✔' : '✗');
+    const iconClass = !it.applicable ? '' : (it.ok ? 'ok' : 'pending');
+    return `<div class="check-row"><span class="check-icon ${iconClass}">${icon}</span><span><span class="label">${it.label}</span><span class="detail">${it.detail}</span></span></div>`;
+  }).join('');
+  return `<div class="pending-zone"><div class="pending-zone-title">${m.label}</div>${rows}</div>`;
+}
+
 function renderPendingChecklist(data) {
   const body = document.getElementById('pending-checklist-body');
   if (!body) return;
@@ -568,33 +589,39 @@ function renderPendingChecklist(data) {
     body.innerHTML = `<div class="meta">${data.reason === 'not connected to a live broker' ? 'Pas connecté au courtier — indisponible.' : data.reason}</div>`;
     return;
   }
+  const cards = [];
+
   const todayStartMs = new Date().setHours(0, 0, 0, 0);
   const todaysZones = (data.zones || []).filter((z) => z.formedAt >= todayStartMs);
-  if (todaysZones.length === 0) {
-    body.innerHTML = '<div class="meta">Aucune zone FVG active aujourd\'hui sur ce symbole en ce moment.</div>';
-    return;
-  }
-  // Une seule carte : la zone active la plus récente (formée le plus tard aujourd'hui).
-  const mostRecent = todaysZones.reduce((latest, z) => (z.formedAt > latest.formedAt ? z : latest));
-  const d = priceDecimals(currentSymbol);
-  body.innerHTML = `<div class="pending-zones">${[mostRecent].map((z) => {
-    const rows = (z.checklist || []).map((it) => {
+  if (todaysZones.length > 0) {
+    // Une seule carte FVG : la zone active la plus récente (formée le plus tard aujourd'hui) - comportement inchangé.
+    const mostRecent = todaysZones.reduce((latest, z) => (z.formedAt > latest.formedAt ? z : latest));
+    const d = priceDecimals(currentSymbol);
+    const rows = (mostRecent.checklist || []).map((it) => {
       const icon = !it.applicable ? '—' : (it.ok ? '✔' : '✗');
       const iconClass = !it.applicable ? '' : (it.ok ? 'ok' : 'pending');
       return `<div class="check-row"><span class="check-icon ${iconClass}">${icon}</span><span><span class="label">${it.label}</span><span class="detail">${it.detail}</span></span></div>`;
     }).join('');
-    const arrowColor = z.direction === 'bullish' ? 'var(--green)' : 'var(--red)';
-    return `
+    const arrowColor = mostRecent.direction === 'bullish' ? 'var(--green)' : 'var(--red)';
+    cards.push(`
       <div class="pending-zone">
         <div class="pending-zone-title">
-          <span style="color:${arrowColor}; font-weight:700;">${z.direction === 'bullish' ? '▲' : '▼'}</span>
-          Zone ${fmt(z.bottom, d)} – ${fmt(z.top, d)}
-          <span class="meta">Formée ${new Date(z.formedAt).toLocaleString('fr-FR')}</span>
+          <span style="color:${arrowColor}; font-weight:700;">${mostRecent.direction === 'bullish' ? '▲' : '▼'}</span>
+          FVG ${fmt(mostRecent.bottom, d)} – ${fmt(mostRecent.top, d)}
+          <span class="meta">Formée ${new Date(mostRecent.formedAt).toLocaleString('fr-FR')}</span>
         </div>
         ${rows}
       </div>
-    `;
-  }).join('')}</div>`;
+    `);
+  }
+
+  for (const m of data.mechanisms || []) cards.push(renderMechanismCard(m));
+
+  if (cards.length === 0) {
+    body.innerHTML = '<div class="meta">Aucune zone FVG active aujourd\'hui, et aucun autre mécanisme configuré sur ce symbole.</div>';
+    return;
+  }
+  body.innerHTML = `<div class="pending-zones">${cards.join('')}</div>`;
 }
 
 async function refreshPendingChecklist() {

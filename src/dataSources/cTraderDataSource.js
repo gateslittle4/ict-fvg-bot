@@ -38,9 +38,17 @@ import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
-import { buildFvgComplianceChecklist, requiredH1LookbackCandles } from './tradeCompliance.js';
+import { buildComplianceChecklist, requiredH1LookbackCandles, requiredPreEntryContextCandles } from './tradeCompliance.js';
 import { buildChartOverlays } from '../backtest/chartOverlays.js';
 import { evaluateLiveFilters } from '../backtest/liveFvgFilterStatus.js';
+import {
+  nwogLiveStatus,
+  judasSwingLiveStatus,
+  weeklySweepLiveStatus,
+  breakerBlockLiveStatus,
+  silverBulletLiveStatus,
+  divergenceLiveStatus,
+} from '../backtest/liveMechanismStatus.js';
 
 const HOST = process.env.CTRADER_HOST || 'demo.ctraderapi.com'; // use live.ctraderapi.com for a real (non-demo) account
 const PORT = 5035;
@@ -698,7 +706,22 @@ export class CTraderDataSource {
       console.warn('[cTrader] trade history: failed to fetch order labels (source will show as unknown):', err.message);
     }
 
-    const trades = pairDealsIntoTrades(res.deal || [], orderLabelsById).slice(0, maxTrades);
+    // BTCUSD (2026-09-17, Esdras: "retire tous les trade btc du journal, pas
+    // besoin") - the temporary M1 connectivity smoke-test was retired from
+    // live trading the same day it ran (see config.js/HANDOFF.md), but its
+    // real historical trades kept showing up here since getTradeHistory()
+    // just replays whatever the broker's own deal history returns, with no
+    // notion of "still an active symbol". Filtered out BEFORE the
+    // enrichment loop below (not just hidden client-side) so it also skips
+    // the chart-candle/checklist broker fetches for trades nobody wants to
+    // see - cheaper, not just tidier. symbolIdByName.get('BTCUSD') can be
+    // undefined (symbol never loaded, e.g. a fresh account never subscribed
+    // to it) - the `!== btcusdId` comparison then keeps every trade, which
+    // is correct (nothing to filter out).
+    const btcusdId = this.symbolIdByName.get('BTCUSD');
+    const trades = pairDealsIntoTrades(res.deal || [], orderLabelsById)
+      .filter((t) => t.symbolId !== btcusdId)
+      .slice(0, maxTrades);
 
     const enriched = [];
     for (const trade of trades) {
@@ -781,31 +804,60 @@ export class CTraderDataSource {
   }
 
   /**
+   * The trade's own CONFIG.<source> block - FVG stays per-symbol
+   * (CONFIG.fvg.perSymbol[symbol]), every other live mechanism has one
+   * shared config object (CONFIG.nwog/judasSwing/weeklySweep/breakerBlock/
+   * silverBullet/divergence). null for an unrecognized/missing source
+   * rather than throwing - buildComplianceChecklist() already degrades
+   * gracefully to "non vérifiable" items when cfg is null.
+   */
+  _configForSource(source, symbol) {
+    switch (source) {
+      case 'fvg': return CONFIG.fvg.perSymbol[symbol] || null;
+      case 'nwog': return CONFIG.nwog;
+      case 'judaswing': return CONFIG.judasSwing;
+      case 'weeklysweep': return CONFIG.weeklySweep;
+      case 'breakerblock': return CONFIG.breakerBlock;
+      case 'silverbullet': return CONFIG.silverBullet;
+      case 'divergence': return CONFIG.divergence;
+      default: return null;
+    }
+  }
+
+  /**
    * "Preuve visuelle de conformité" (2026-09-15, Esdras, after seeing a
-   * mockup: "donne tout, pour l'avoir dès le départ") - for each trade,
-   * reconstructs whether it actually followed the live strategy's own real
-   * procedure, reusing the SAME production functions (FvgEngine,
-   * computeStop, buildHtfBiasSeries) rather than a second implementation -
-   * see tradeCompliance.js's own header for the full reasoning and its
-   * honestly-scoped limits (only 'fvg'-source trades get the rich zone/
-   * stop/bias reconstruction; every trade gets the risk-% check, which
-   * needs only what's already in `trade` by this point).
+   * mockup: "donne tout, pour l'avoir dès le départ"; extended 2026-09-17,
+   * Esdras: "combien de checklist on pourrait faire apparaitre? ... Tous")
+   * - for each trade, reconstructs whether it actually followed the live
+   * strategy's own real procedure, reusing the SAME production functions
+   * per mechanism (FvgEngine/computeStop/buildHtfBiasSeries for FVG;
+   * detectNwogEvents/detectJudasSwingEvents/detectWeeklySweepEvents/
+   * computeBreakerBlockCandidates/computeSilverBulletCandidates for the
+   * other 5) rather than a second implementation - see
+   * tradeCompliance.js's own header for the full reasoning and its one
+   * remaining honestly-scoped gap (Divergence's z-score item needs the
+   * PARTNER symbol's history, never fetched here).
    *
-   * The HTF-bias item needs its OWN extra broker fetch (H1 candles far
-   * enough back to seed the configured EMA - requiredH1LookbackCandles) -
-   * unlike the chart-context candles above, this is NOT reused for
-   * anything else, so it's only fetched when a trade's symbol actually has
-   * a non-'baseline' bias variant configured. A failure here degrades to
-   * "non vérifiable" for that one item, never blocks the rest of the
-   * trade's history from loading.
+   * Two SEPARATE extra broker fetches, neither reused for anything else:
+   * - The HTF-bias item ('fvg' only) needs H1 candles far enough back to
+   *   seed the configured EMA (requiredH1LookbackCandles), unchanged from
+   *   before.
+   * - The 5 event-based mechanisms need MORE M15 history before entryTime
+   *   than the chart's own 30-candle margin gives (requiredPreEntryContextCandles)
+   *   - fetched into a SEPARATE `reconstructionCandles` array, never merged
+   *   into `trade.candles` (which stays exactly what the mini-chart
+   *   displays - widening that too would make a Weekly Sweep trade's chart
+   *   show ~10 days of mostly-irrelevant candles instead of a focused view).
+   * A failure in either fetch degrades that item to "non vérifiable", never
+   * blocks the rest of the trade's history from loading.
    */
   async _attachComplianceChecklists(trades, accountId) {
     const expectedRiskPct = this.account.strategyEngine?.riskPctPerTrade ?? null;
     const out = [];
     for (const trade of trades) {
-      const cfg = trade.source === 'fvg' ? CONFIG.fvg.perSymbol[trade.symbol] : null;
+      const cfg = this._configForSource(trade.source, trade.symbol);
       let h1Candles = null;
-      if (cfg) {
+      if (trade.source === 'fvg' && cfg) {
         const lookback = requiredH1LookbackCandles(cfg.variant);
         if (lookback > 0) {
           try {
@@ -834,7 +886,33 @@ export class CTraderDataSource {
           }
         }
       }
-      const { zone, items } = buildFvgComplianceChecklist({ trade, candles: trade.candles || [], cfg, h1Candles, expectedRiskPct });
+
+      let reconstructionCandles = trade.candles || [];
+      const extraLookback = requiredPreEntryContextCandles(trade.source);
+      if (extraLookback > 0) {
+        try {
+          const symbolTimeframe = resolveSymbolTimeframe(trade.symbol);
+          const period = PERIOD_BY_TIMEFRAME[symbolTimeframe] || 'M15';
+          const candleDurationMs = TIMEFRAME_DURATION_MS[symbolTimeframe] || TIMEFRAME_DURATION_MS.M15;
+          const history = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
+            ctidTraderAccountId: Number(accountId),
+            fromTimestamp: trade.entryTime - extraLookback * candleDurationMs,
+            toTimestamp: trade.entryTime,
+            symbolId: trade.symbolId,
+            period,
+            count: extraLookback,
+          });
+          reconstructionCandles = (history.trendbar || []).map((bar) => this._trendbarToCandle(bar)).sort((a, b) => a.time - b.time);
+        } catch (err) {
+          console.warn(
+            `[cTrader] trade history: reconstruction-context fetch failed for ${trade.symbol}/${trade.source} (checklist items will read "non vérifiable"):`,
+            err.message || JSON.stringify(err)
+          );
+          reconstructionCandles = trade.candles || []; // fall back to the (too-narrow) chart candles rather than an empty array - some items may still resolve
+        }
+      }
+
+      const { zone, items } = buildComplianceChecklist({ trade, candles: reconstructionCandles, cfg, h1Candles, expectedRiskPct });
       out.push({ ...trade, checklist: items, fvgZone: zone });
     }
     return out;
@@ -854,6 +932,19 @@ export class CTraderDataSource {
    * per-criterion check, both already-real production logic, nothing
    * reimplemented here.
    *
+   * EXTENDED (2026-09-17, Esdras, sur le chart: "je veux le suivre de façon
+   * live") - `zones` below stays FVG-only exactly as before (a real gap in
+   * the checklist coverage: EURUSD/GER40 have no FVG config at all, so this
+   * used to return `{zones: [], reason: 'not an FVG-strategy symbol'}` and
+   * show NOTHING for them). Now also builds `mechanisms`: one live-status
+   * entry per OTHER mechanism actually configured for this symbol (NWOG/
+   * Judas Swing/Weekly Sweep/Breaker Block/Silver Bullet/Divergence - see
+   * liveMechanismStatus.js for why these need a different shape than FVG's
+   * own multi-criterion checklist: most of them fire on a single candle,
+   * nothing to watch build up beforehand). The early FVG-only return is
+   * GONE - a symbol with no FVG config (EURUSD/GER40) now still gets a
+   * real response via `mechanisms`.
+   *
    * Time convention, easy to get backwards (see liveFvgFilterStatus.js's
    * own header): `candles` here is store.strategyEngine's OWN retained
    * history, already in ENGINE time (real UTC - 5h, see _toEngineCandle()) -
@@ -863,66 +954,86 @@ export class CTraderDataSource {
    * OWN bias check (for a closed trade) doesn't need this shift - it compares
    * two real-UTC values against each other - but that trick doesn't apply
    * here since atTime is forced into engine time by where it comes from.
+   * liveMechanismStatus.js's own functions don't touch H1 bias at all, so
+   * this same shift concern doesn't apply to them - they only ever compare
+   * a symbol's own M15 history against itself (or, for Divergence, against
+   * the partner's own M15 history, same engine-time convention on both
+   * sides since both come from the same store.strategyEngine.getHistory()).
    */
   async getPendingZoneChecklists(symbol) {
     const store = this.account;
     const cfg = CONFIG.fvg.perSymbol[symbol];
-    if (!cfg) return { symbol, zones: [], reason: 'not an FVG-strategy symbol' };
 
     const historyBySymbol = {};
     for (const s of CONFIG.symbols) historyBySymbol[s] = store.strategyEngine.getHistory(s);
     const candles = historyBySymbol[symbol];
-    if (!candles || candles.length === 0) return { symbol, zones: [], reason: 'no candle history yet' };
-
-    const { zones } = buildChartOverlays(historyBySymbol, { symbol });
-    const watching = zones.filter((z) => z.status === 'watching');
-    if (watching.length === 0) return { symbol, zones: [] };
+    if (!candles || candles.length === 0) return { symbol, zones: [], mechanisms: [], reason: 'no candle history yet' };
 
     const atTime = candles[candles.length - 1].time;
 
-    let h1Candles = null;
-    const lookback = requiredH1LookbackCandles(cfg.variant);
-    if (lookback > 0) {
-      try {
-        const symbolId = this.symbolIdByName.get(symbol);
-        const nowRealUtc = Date.now();
-        // count REQUIRED alongside fromTimestamp/toTimestamp - see
-        // _attachComplianceChecklists()'s own comment on this same mistake,
-        // found live via this exact endpoint: omitted, the broker silently
-        // caps the response far short of `lookback`, too little history to
-        // seed the EMA, and every bias reading below degrades to 'unknown'
-        // without ever throwing (so the catch below never caught it either).
-        const res = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
-          ctidTraderAccountId: Number(this.accountId),
-          fromTimestamp: nowRealUtc - lookback * TIMEFRAME_DURATION_MS.H1,
-          toTimestamp: nowRealUtc,
-          symbolId,
-          period: 'H1',
-          count: lookback,
-        });
-        h1Candles = (res.trendbar || [])
-          .map((bar) => this._trendbarToCandle(bar))
-          .sort((a, b) => a.time - b.time)
-          .map((bar) => ({ ...bar, time: bar.time - FIXED_EST_TO_UTC_OFFSET_MS })); // real UTC -> engine time, matching atTime
-      } catch (err) {
-        console.warn(
-          `[cTrader] pending zone checklist: HTF bias H1 fetch failed for ${symbol} (bias item will read "non vérifiable"):`,
-          err.message || JSON.stringify(err)
-        );
-      }
-    }
+    let zones = [];
+    if (cfg) {
+      const { zones: allZones } = buildChartOverlays(historyBySymbol, { symbol });
+      const watching = allZones.filter((z) => z.status === 'watching');
 
-    return {
-      symbol,
-      zones: watching.map((z) => ({
+      let h1Candles = null;
+      const lookback = requiredH1LookbackCandles(cfg.variant);
+      if (watching.length > 0 && lookback > 0) {
+        try {
+          const symbolId = this.symbolIdByName.get(symbol);
+          const nowRealUtc = Date.now();
+          // count REQUIRED alongside fromTimestamp/toTimestamp - see
+          // _attachComplianceChecklists()'s own comment on this same mistake,
+          // found live via this exact endpoint: omitted, the broker silently
+          // caps the response far short of `lookback`, too little history to
+          // seed the EMA, and every bias reading below degrades to 'unknown'
+          // without ever throwing (so the catch below never caught it either).
+          const res = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
+            ctidTraderAccountId: Number(this.accountId),
+            fromTimestamp: nowRealUtc - lookback * TIMEFRAME_DURATION_MS.H1,
+            toTimestamp: nowRealUtc,
+            symbolId,
+            period: 'H1',
+            count: lookback,
+          });
+          h1Candles = (res.trendbar || [])
+            .map((bar) => this._trendbarToCandle(bar))
+            .sort((a, b) => a.time - b.time)
+            .map((bar) => ({ ...bar, time: bar.time - FIXED_EST_TO_UTC_OFFSET_MS })); // real UTC -> engine time, matching atTime
+        } catch (err) {
+          console.warn(
+            `[cTrader] pending zone checklist: HTF bias H1 fetch failed for ${symbol} (bias item will read "non vérifiable"):`,
+            err.message || JSON.stringify(err)
+          );
+        }
+      }
+
+      zones = watching.map((z) => ({
         id: z.id,
         direction: z.direction,
         top: z.top,
         bottom: z.bottom,
         formedAt: z.formedAt,
         checklist: evaluateLiveFilters({ candles, h1Candles, cfg, direction: z.direction, atTime }),
-      })),
-    };
+      }));
+    }
+
+    const mechanisms = [];
+    if (CONFIG.nwog.symbols.includes(symbol)) mechanisms.push(nwogLiveStatus(candles, { longOnlySymbols: CONFIG.nwog.longOnlySymbols, symbol }));
+    if (CONFIG.judasSwing.symbols.includes(symbol)) mechanisms.push(judasSwingLiveStatus(candles));
+    if (CONFIG.weeklySweep.symbols.includes(symbol)) mechanisms.push(weeklySweepLiveStatus(candles));
+    if (CONFIG.breakerBlock.symbols.includes(symbol)) mechanisms.push(breakerBlockLiveStatus(candles));
+    if (CONFIG.silverBullet.symbols.includes(symbol)) mechanisms.push(silverBulletLiveStatus(candles));
+    if (CONFIG.divergence.pair.includes(symbol)) {
+      const [symA, symB] = CONFIG.divergence.pair;
+      const partnerSymbol = symbol === symA ? symB : symA;
+      const partnerCandles = historyBySymbol[partnerSymbol];
+      if (partnerCandles && partnerCandles.length > 0) {
+        mechanisms.push(divergenceLiveStatus(symbol, candles, partnerCandles, CONFIG.divergence));
+      }
+    }
+
+    return { symbol, zones, mechanisms };
   }
 
   /**
