@@ -4716,3 +4716,13 @@ Esdras : "met un endroit à droite du chart qui permet de retirer tous les graph
 `npm test` : 645/645 (fichier front-end pur, aucun test unitaire concerné). Vérifié en lançant le serveur en mode démo (aucun credential broker configuré → `startMockDataSource`) et en pilotant la page avec Playwright/Chromium : aucune erreur console, les 3 cases fonctionnent indépendamment, le panneau s'adapte à un viewport mobile. **Fichier** : `public/chart.html`.
 
 **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/accountRuntime.js` (doc de `recordOrderOutcome` mise à jour : deux sources de vérité broker maintenant, pas une).
+
+## Bouton "Tester la connexion broker" récupéré depuis challenge/fundingpips-zero — 2026-09-17
+
+Esdras a signalé qu'une autre branche (`challenge/fundingpips-zero`, un autre compte/challenge, sans service Render propre actuellement) avait divergé avec un ajout utile : un bouton dans `accounts.html` qui appelle `/api/admin/test-order-cycle` directement depuis le dashboard au lieu d'un curl manuel avec le token. Récupéré par `git cherry-pick` sur cette branche.
+
+**Bug trouvé en le récupérant, corrigé avant de pousser** : le code vérifiait `result.ok` puis affichait `result.note` en cas d'échec — mais la vraie réponse de `/admin/test-order-cycle` n'a NI `ok` NI `note` (seulement `closed`/`closePnl` en succès, `error` en échec), et `api()` (le helper existant de cette page) lève déjà une exception sur toute réponse non-2xx, attrapée par le `catch` du bouton. Résultat : la branche succès (`if (result.ok)`) n'était jamais atteignable — chaque test RÉUSSI aurait affiché un faux message "⚠️ Erreur lors du test" au lieu du vrai PnL. Corrigé pour afficher directement `result.closePnl` dès que l'appel réussit (puisque l'échec est déjà géré par le `catch`).
+
+Rappel pour Esdras : ce bouton passe un VRAI ordre minimal (plus petit lot) qui compte dans le quota quotidien du garde-fou (max 3 trades/jour) — à utiliser avec parcimonie, pas comme un simple "ping".
+
+`npm test` : 645/645 (fichier front-end pur). **Fichier** : `public/accounts.html`.
