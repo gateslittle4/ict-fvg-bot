@@ -5288,3 +5288,67 @@ Render accorde 750 h d'instance gratuites par mois **par compte**, partagées en
 
 Si le quota est épuisé, Render suspend les services gratuits — **et le bot tombe silencieusement**. C'est structurel : `keepAlive.js` ne peut que PRÉVENIR la mise en veille, jamais réveiller un process déjà mort (une fois le process tué, plus rien ne tourne pour envoyer un ping). C'est exactement l'argument en faveur d'une surveillance externe (être prévenu si le bot perd cTrader ou n'exécute plus rien), qui reste à faire.
 
+
+## Pourquoi aucun ordre ne passe : le courtier les REFUSE, et personne n'écoutait le motif — 2026-09-18 (suite)
+
+Barry : « Jusqu'à présent, aucune exécution du robot ? Pourquoi aucun ordre n'a été envoyé, est-ce parce qu'il n'y a pas de signal ou quoi ? »
+
+**Réponse : ce n'est pas un manque de signal. Les signaux sortent, les garde-fous les laissent passer, l'ordre part vers le courtier — et le courtier le refuse. 3 tentatives, 3 refus, 0 ordre réellement créé sur les symboles indices.**
+
+### Les faits, tirés des logs Render de `srv-dafkaav40ujc73bm3cl0`
+
+Depuis le retrait de BTCUSD (16/09), trois signaux ont été validés et ont atteint `_handleAutoExecuteEntry` :
+
+| Quand (UTC) | Symbole | Mécanisme | Résultat |
+|---|---|---|---|
+| 17/09 14:00 | US500 | divergence, achat | `brokerOrderId=null` |
+| 17/09 15:15 | US100 | silver bullet, achat | `brokerOrderId=null` |
+| 18/09 11:00 | US500 | divergence, achat | `brokerOrderId=null` |
+
+Les garde-fous n'ont rien bloqué (`/api/status` au moment de l'analyse : `blocked:false`, `blockReasons:[]`, 1 trade sur 3 autorisés, perte du jour 0,0001 % contre une limite de 2 %, `autoExecute.active:true`).
+
+Pour celui du 18/09, la séquence complète :
+
+```
+11:00:01  [auto-execute] entry signal received: US500 source=divergence side=buy id=div-US500-1789711200000
+11:00:01  [_submitOrder] MARKET BUY sent for symbolId=215, rawRes={}
+11:00:04  [_submitOrder] no execution confirmation within timeout for symbolId=215
+11:00:05  [order-verify] reconcile ... {"position":[],"order":[]}
+11:00:05  [auto-execute] no orderId within timeout ... order never reached the broker, clearing believed-open.
+```
+
+La ligne `reconcile` est décisive : interrogé en requête/réponse (le canal qui marchait pendant la « connexion zombie » du 17/09), le courtier répond **zéro position, zéro ordre**. L'ordre a donc été **refusé à la validation**, pas perdu sur un canal mort.
+
+### ⚠️ Piège : « 1 trade pris aujourd'hui » est un faux positif
+
+Le seul deal réel du 18/09 porte le label `connectivity-test-1789693654158` et le commentaire « connectivity test - opened then immediately closed by /admin/test-order-cycle ». C'est le test de connectivité : US100, volume 1, ouvert et refermé en 430 ms à 01:07:34 UTC, −0,01 $. `_loadClosedDeals` le rejoue dans le guardrail, qui le compte comme un trade du jour. **Aucun trade de stratégie n'a eu lieu.** Ne pas lire `tradesToday` comme « le bot a tradé ».
+
+### La cause racine du silence : deux angles morts, tous deux corrigés ici
+
+1. **`ProtoOAOrderErrorEvent` n'était abonné nulle part.** `ProtoOAExecutionEvent` ne décrit que des ordres qui EXISTENT (accepté, rempli, annulé, expiré, rejeté). Quand cTrader refuse un ordre à la validation, il n'en crée aucun : il n'envoie donc aucun execution event, et pousse à la place un `ProtoOAOrderErrorEvent` portant `errorCode`/`description`. Personne ne l'écoutait. Un refus était strictement indiscernable d'un silence — c'est ce qui a coûté des heures de mauvais diagnostic (« connexion dégradée ») sur trois refus parfaitement explicites.
+
+2. **`rawRes={}` n'a jamais voulu dire « le courtier n'a rien renvoyé ».** Cette ligne utilisait `JSON.stringify(res)`, exactement le piège déjà documenté dans ce fichier pour `ProtoOASpotEvent` le 2026-09-10 : la bibliothèque renvoie des objets dont le contenu réel est derrière des **getters de prototype** adossés à des champs privés, que `JSON.stringify` ne voit pas et rend en `{}`. Toutes les occurrences de `rawRes={}` dans l'historique des logs ne prouvent donc rien du tout sur la réponse — seulement qu'on la lisait mal. Le commentaire de `_submitOrder` qui affirmait « the synchronous response on THIS broker comes back as an EMPTY OBJECT » repose sur cette lecture, et reste à revérifier avec le nouveau log.
+
+### Ce qui a été fait (`src/dataSources/brokerPayload.js` + `cTraderDataSource.js`)
+
+- `describeBrokerPayload()` : rendu lisible de n'importe quel payload courtier, en parcourant la chaîne de prototypes pour évaluer les getters (ce que `util.inspect({getters:true})` seul ne fait pas, puisqu'il ne montre que les propriétés propres). Remplace `JSON.stringify` dans le log de `_submitOrder`.
+- `extractBrokerError()` : lit un refus où qu'il se trouve — sur un descripteur `ProtoOAOrderErrorEvent`, sur un `ProtoOAErrorRes` renvoyé à la place du `ProtoOANewOrderRes`, ou derrière le getter `descriptor` d'un wrapper d'événement.
+- `_registerBrokerEventListeners()` : les abonnements aux pushs courtier réunis en un seul endroit (extrait de `start()` aussi pour être armable contre une connexion mockée en test), avec `ProtoOAOrderErrorEvent` ajouté.
+- `_handleOrderError()` : enregistre le refus dans `lastOrderRejection`, le logge en `[order-error]` avec le payload brut, et le pousse sur ntfy — un refus est précisément ce qu'un humain doit apprendre tout de suite, puisqu'il signifie qu'un signal validé n'a produit aucun trade et n'en produira aucun tant que le motif n'est pas corrigé.
+- `_waitForOrderIdBySymbol()` s'arrête dès qu'un refus arrive au lieu de brûler ses 3 s. `ProtoOAOrderErrorEvent` ne porte **aucun `symbolId`** (seulement `errorCode`/`description` et, quand il existe, un `orderId` qu'on n'a par définition jamais reçu), donc il ne peut pas être apparié au symbole : tout refus tombant dans la fenêtre est attribué à la soumission en cours, ce qui est correct parce que chaque appelant `await` son `_submitOrder` — il n'y a jamais deux ordres en vol.
+- **Un refus ne compte plus vers le redémarrage forcé** (`_consecutiveOrderConfirmationTimeouts`). Cette escalade existe pour une connexion qui a cessé de parler ; une connexion qui vient de nous répondre « je refuse » parle très bien. Sans ce correctif, deux signaux refusés d'affilée faisaient redémarrer le bot — une boucle qui ne répare rien et le met à terre deux fois par paire de signaux.
+- Le message ntfy d'abandon de signal nomme désormais le motif du courtier (borné à la soumission en cours via `submittedAtMs`, pour ne pas imputer à un timeout d'aujourd'hui un refus d'il y a trois heures).
+
+`npm test` : **739/739** (726 + 13 nouveaux, dont un qui a attrapé un vrai bug pendant l'écriture : `{ ...payload }` réévalue les getters propres et refaisait exploser un getter que `readAccessors()` avait pourtant protégé).
+
+### Ce qui n'est PAS en cause — vérifié, ne pas y revenir
+
+**La conversion de volume `volume = lots × lotSize` est correcte.** Le fill du test de connectivité sur US100 (volume 1 à 29409, `usedMargin: 980` soit 9,80 $) confirme que 1 unité brute = 0,01 unité d'indice, donc 1 lot = 100 unités brutes = 1 unité d'indice — cohérent avec `lotSize=100` renvoyé par le courtier et avec `valuePerPointPerLot: 1`. Idem sur XAUUSD (volume 100 à 4344,43, marge 144,81 $ → 1 lot = 100 oz). Ce n'est pas la piste.
+
+### Hypothèse principale pour la suite, NON prouvée
+
+Ce qui marche et ce qui échoue diffèrent sur un point : les quatre tests de connectivité (17/09 17:38, 23:05, 23:10 et 18/09 01:07) passent en ~290 ms et partent **sans stop ni cible attachés** (`"stopLoss":null,"takeProfit":null` dans le dump brut). Les ordres de stratégie embarquent toujours un `stopLoss`/`takeProfit` en **prix absolus** dans la même requête. Or l'API cTrader attend `relativeStopLoss`/`relativeTakeProfit` sur un ordre MARKET, l'absolu étant réservé aux ordres en attente. Cela collerait aux 3 refus sur 3 — mais c'est une hypothèse : **le prochain signal donnera le motif exact dans `[order-error]`**, et c'est lui qui doit trancher, pas ce paragraphe.
+
+### Point annexe : les redéploiements coupent le bot
+
+4 déploiements le 18/09 entre 11:07 et 12:33, déclenchés par les commits des différentes sessions. Chacun coûte ~90 s d'indisponibilité plus la remise en chauffe des 5 symboles. Le boot de 11:46 n'a même jamais atteint `connected and live` avant d'être remplacé par celui de 11:59. Un signal dont la bougie M15 se ferme dans une de ces fenêtres est purement perdu. La convention `[skip render]` sur les commits documentaires existe pour ça — l'appliquer systématiquement.

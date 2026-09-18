@@ -34,6 +34,7 @@ import { CTraderConnection } from '@reiryoku/ctrader-layer';
 import { getDefaultAccount } from '../accountRegistry.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec, buildSpecFromBrokerSymbol } from '../engines/lotCalculator.js';
+import { describeBrokerPayload, extractBrokerError } from './brokerPayload.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
@@ -304,6 +305,95 @@ export class CTraderDataSource {
     // _submitOrder can force a clean restart once this repeats (see there),
     // rather than running in that undetectable half-broken state for hours.
     this._consecutiveOrderConfirmationTimeouts = 0;
+    // 2026-09-18, see _handleOrderError below and brokerPayload.js's header:
+    // the LAST refusal the broker told us about, kept so a human can read
+    // the real reason after the fact instead of inferring it from a silence.
+    // `_pendingOrderRejection` is the same thing scoped to one in-flight
+    // submission - armed (cleared) by _submitOrder just before it sends, and
+    // consumed by it once it knows no orderId came back.
+    this.lastOrderRejection = null;
+    this._pendingOrderRejection = null;
+  }
+
+  /**
+   * Every push the broker sends that this process acts on, subscribed in
+   * one place (2026-09-18) so "which broker messages are we actually
+   * listening to?" has a single, readable answer - the question behind
+   * today's diagnosis, where the answer turned out to be "not the one
+   * carrying order refusals".
+   *
+   * Extracted from start() rather than inlined there so the listeners can
+   * be armed against a mock connection in a unit test, which is the only
+   * safe way to exercise a refusal (no real order, no real money).
+   */
+  _registerBrokerEventListeners() {
+    // ROOT CAUSE FIX (2026-09-10): connection.on(name, listener) delivers a
+    // CTraderLayerEvent WRAPPER, not the raw decoded payload - see
+    // CTraderLayerEmitter.notifyListeners() (`new CTraderLayerEvent({ type,
+    // date, descriptor })`) and CTraderLayerEvent itself (#type/#date/
+    // #descriptor are private class fields, only reachable via getters).
+    // The actual message fields (executionType, deal, order, position, ...)
+    // live under event.descriptor, NOT on event directly - `event.foo` is
+    // always undefined. This was silently swallowing every single push
+    // event since this code was written: _handleExecutionEvent() below was
+    // reading event.executionType etc. off the wrapper and finding nothing,
+    // so guardrail P&L updates / pyramid fill tracking from REAL broker
+    // executions never fired (a genuinely serious bug: the bot has been
+    // "flying blind" on live trade confirmations). Confirmed by adding a
+    // diagnostic JSON.stringify(event) log for ProtoOASpotEvent (same bug,
+    // see _subscribeLiveCandles below) - it printed `{}` on every boot,
+    // which looked like "the event never fires" but actually meant "the
+    // event fires constantly, JSON.stringify just can't see private fields
+    // behind getters". console.log(event) directly (util.inspect, not
+    // JSON.stringify) would have shown the wrapper's shape correctly and
+    // caught this immediately - lesson for next time, and the lesson
+    // describeBrokerPayload() now applies everywhere a broker payload is
+    // logged.
+    this.connection.on('ProtoOAExecutionEvent', (event) => this._handleExecutionEvent(event.descriptor));
+    // 2026-09-18, THE missing subscription. ProtoOAExecutionEvent only ever
+    // describes an order that EXISTS - accepted, filled, cancelled,
+    // expired, rejected. When cTrader refuses an order at validation time
+    // it never creates one, so no execution event is ever sent: the
+    // refusal arrives here instead, and here alone, with the reason in
+    // errorCode/description. Nothing in this codebase subscribed to it,
+    // which is why three real refused orders (17/09 x2, 18/09 x1 - see
+    // brokerPayload.js's header for the full evidence) looked exactly like
+    // a dead connection and cost hours of the wrong diagnosis.
+    this.connection.on('ProtoOAOrderErrorEvent', (event) => this._handleOrderError(event.descriptor));
+  }
+
+  /**
+   * The broker refused an order outright. Records it, says so loudly in the
+   * durable Render logs, and pushes it to ntfy - a refusal is the one thing
+   * about auto-execution a human genuinely needs to hear about, since it
+   * means a validated signal produced no trade at all and will keep
+   * producing none until whatever it names is fixed.
+   *
+   * @param {object} descriptor - a ProtoOAOrderErrorEvent descriptor, or any
+   *   payload extractBrokerError() can read a refusal out of.
+   * @returns {object|null} the recorded rejection, or null if there was none.
+   */
+  _handleOrderError(descriptor) {
+    const error = extractBrokerError(descriptor);
+    if (!error) {
+      // Subscribed to this event and still could not read a reason out of
+      // it: dump it raw rather than drop it. That is the whole point of
+      // this path - never again answer "why did the order not go through?"
+      // with a shrug.
+      console.error(`[order-error] broker sent an order error this code could not parse - raw: ${describeBrokerPayload(descriptor)}`);
+      return null;
+    }
+    const rejection = { ...error, receivedAtMs: Date.now() };
+    this.lastOrderRejection = rejection;
+    this._pendingOrderRejection = rejection;
+    console.error(
+      `[order-error] broker REFUSED the order: errorCode=${rejection.errorCode} description=${rejection.description} ` +
+        `orderId=${rejection.orderId} positionId=${rejection.positionId} - raw: ${describeBrokerPayload(descriptor)}`
+    );
+    this._notifyText(
+      `⛔ Ordre REFUSÉ par le courtier : ${rejection.errorCode ?? 'motif sans code'} - ${rejection.description ?? 'aucune description'}. Aucune position ouverte.`
+    );
+    return rejection;
   }
 
   async start() {
@@ -443,27 +533,7 @@ export class CTraderDataSource {
       );
     }, 5 * 60 * 1000);
 
-    // ROOT CAUSE FIX (2026-09-10): connection.on(name, listener) delivers a
-    // CTraderLayerEvent WRAPPER, not the raw decoded payload - see
-    // CTraderLayerEmitter.notifyListeners() (`new CTraderLayerEvent({ type,
-    // date, descriptor })`) and CTraderLayerEvent itself (#type/#date/
-    // #descriptor are private class fields, only reachable via getters).
-    // The actual message fields (executionType, deal, order, position, ...)
-    // live under event.descriptor, NOT on event directly - `event.foo` is
-    // always undefined. This was silently swallowing every single push
-    // event since this code was written: _handleExecutionEvent() below was
-    // reading event.executionType etc. off the wrapper and finding nothing,
-    // so guardrail P&L updates / pyramid fill tracking from REAL broker
-    // executions never fired (a genuinely serious bug: the bot has been
-    // "flying blind" on live trade confirmations). Confirmed by adding a
-    // diagnostic JSON.stringify(event) log for ProtoOASpotEvent (same bug,
-    // see _subscribeLiveCandles below) - it printed `{}` on every boot,
-    // which looked like "the event never fires" but actually meant "the
-    // event fires constantly, JSON.stringify just can't see private fields
-    // behind getters". console.log(event) directly (util.inspect, not
-    // JSON.stringify) would have shown the wrapper's shape correctly and
-    // caught this immediately - lesson for next time.
-    this.connection.on('ProtoOAExecutionEvent', (event) => this._handleExecutionEvent(event.descriptor));
+    this._registerBrokerEventListeners();
 
     store.mode = 'live';
     console.log(`[cTrader:${store.id}] connected and live for account`, accountId);
@@ -1778,12 +1848,14 @@ export class CTraderDataSource {
 
   _waitForOrderIdBySymbol(symbolId, timeoutMs = 3000) {
     return new Promise((resolve) => {
-      let uuid;
+      const uuids = [];
       const safeRemove = () => {
-        try {
-          if (uuid != null) this.connection.removeEventListener(uuid);
-        } catch (err) {
-          console.error('[_submitOrder] removeEventListener failed (non-fatal):', err.message);
+        for (const uuid of uuids) {
+          try {
+            if (uuid != null) this.connection.removeEventListener(uuid);
+          } catch (err) {
+            console.error('[_submitOrder] removeEventListener failed (non-fatal):', err.message);
+          }
         }
       };
       const timer = setTimeout(() => {
@@ -1793,7 +1865,27 @@ export class CTraderDataSource {
         // by skipping tracking/notification rather than throwing.
         resolve(null);
       }, timeoutMs);
-      uuid = this.connection.on('ProtoOAExecutionEvent', (event) => {
+      // 2026-09-18: a refusal ends this wait just as definitively as a
+      // confirmation does, so stop burning the full timeout on it. Unlike
+      // ProtoOAExecutionEvent, ProtoOAOrderErrorEvent carries NO symbolId
+      // at all (only errorCode/description and, when one exists, an
+      // orderId we by definition never got), so it cannot be matched to
+      // this symbol. Treating any refusal that lands inside this window as
+      // this submission's own is sound because the window is the ~3s
+      // between one awaited sendCommand and its answer, and every caller
+      // (_handleAutoExecuteEntry, _handlePyramidOrderRequested) awaits
+      // _submitOrder before submitting anything else - so there is never a
+      // second order in flight to confuse it with. The permanent listener
+      // registered in _registerBrokerEventListeners() logs and records the
+      // refusal either way; this one only decides when to stop waiting.
+      uuids.push(
+        this.connection.on('ProtoOAOrderErrorEvent', () => {
+          clearTimeout(timer);
+          safeRemove();
+          resolve(null);
+        })
+      );
+      uuids.push(this.connection.on('ProtoOAExecutionEvent', (event) => {
         try {
           const d = event.descriptor;
           // Confirmed live (2026-09-13, raw event dump): the real field is
@@ -1815,7 +1907,7 @@ export class CTraderDataSource {
           safeRemove();
           resolve(null);
         }
-      });
+      }));
     });
   }
 
@@ -1859,6 +1951,10 @@ export class CTraderDataSource {
     // Registered BEFORE sendCommand so the listener is armed no matter how
     // quickly the broker replies - see _waitForOrderIdBySymbol's own
     // comment for why this exists at all.
+    // Cleared at the same moment (2026-09-18): anything _handleOrderError
+    // records from here on belongs to THIS submission, so the branch below
+    // can never adopt a refusal left over from an earlier one.
+    this._pendingOrderRejection = null;
     const orderIdFromEvent = this._waitForOrderIdBySymbol(symbolId);
     const res = await this.connection.sendCommand('ProtoOANewOrderReq', payload);
     // 2026-09-14: one real LIMIT order tonight (BTCUSD FVG signal) got zero
@@ -1872,7 +1968,19 @@ export class CTraderDataSource {
     // original throwaway diagnostic, since this exact gap (an order placed
     // with no confirmation either way) is precisely what this session's
     // "corrige le pipeline" work was about closing.
-    console.log(`[_submitOrder] ${payload.orderType} ${payload.tradeSide} sent for symbolId=${symbolId}, rawRes=${JSON.stringify(res)}`);
+    // describeBrokerPayload, not JSON.stringify (2026-09-18): every
+    // "rawRes={}" this line has ever logged proved nothing about the
+    // response, only that JSON.stringify cannot see through this library's
+    // prototype getters - the exact trap already documented in
+    // _registerBrokerEventListeners(). See brokerPayload.js.
+    console.log(`[_submitOrder] ${payload.orderType} ${payload.tradeSide} sent for symbolId=${symbolId}, rawRes=${describeBrokerPayload(res)}`);
+    // A refusal can also come back HERE, synchronously, as a ProtoOAErrorRes
+    // standing in for the expected ProtoOANewOrderRes - in which case no
+    // ProtoOAOrderErrorEvent is ever pushed and the subscription above would
+    // never see it. Same handler either way, so the reason gets logged,
+    // recorded and pushed exactly once whichever channel carried it.
+    const syncError = extractBrokerError(res);
+    if (syncError) this._handleOrderError(res);
     const syncOrderId = res?.order?.orderId ?? res?.orderId ?? null;
     if (syncOrderId != null) {
       // some future response shape DOES carry it directly - trust it, no need to wait for the event
@@ -1880,8 +1988,26 @@ export class CTraderDataSource {
       return syncOrderId;
     }
     const resolvedOrderId = await orderIdFromEvent;
+    const rejection = this._pendingOrderRejection;
+    this._pendingOrderRejection = null;
     if (resolvedOrderId != null) {
       this._consecutiveOrderConfirmationTimeouts = 0;
+    } else if (rejection) {
+      // 2026-09-18: the broker ANSWERED - it refused this order. That is a
+      // definitive outcome, not a missing confirmation, and the two must
+      // not be conflated: the restart escalation below exists for a
+      // connection that has stopped talking to us, and this connection just
+      // demonstrably did talk to us. Counting a refusal towards it would
+      // make the bot reboot itself every time it sent two orders the broker
+      // disagreed with - a loop that fixes nothing and takes the bot down
+      // twice per pair of signals. Reset rather than merely skipped, for the
+      // same reason: a refusal proves the push channel is alive.
+      this._consecutiveOrderConfirmationTimeouts = 0;
+      console.error(
+        `[_submitOrder] ${payload.orderType} ${payload.tradeSide} for symbolId=${symbolId} was REFUSED by the broker: ` +
+          `errorCode=${rejection.errorCode} description=${rejection.description} ` +
+          `(volume=${volume} stopLoss=${stopLoss} takeProfit=${takeProfit} label=${label}) - no order exists at the broker.`
+      );
     } else {
       // 2026-09-17, see this._consecutiveOrderConfirmationTimeouts' own
       // constructor comment: a connection can silently stop delivering
@@ -2158,8 +2284,27 @@ export class CTraderDataSource {
           // /admin/clear-believed-position, and there is nothing real to
           // protect, so clear it.
           store.strategyEngine.clearBelievedPosition(symbolName, signal.id);
-          console.warn(`[auto-execute] no orderId within timeout for ${symbolName} AND reconcile found nothing real - order never reached the broker, clearing believed-open.`);
-          this._notifyText(`⚠️ [${signal.source.toUpperCase()}] Aucune confirmation du courtier sur ${symbolName} et aucun ordre/position réels trouvés (vérifié) - signal abandonné, croyance nettoyée.`);
+          // 2026-09-18: name the refusal when the broker gave us one.
+          // "no orderId within timeout ... never reached the broker" is
+          // accurate but says nothing actionable, and it is what three real
+          // refused orders looked like while the reason went unread. When
+          // _submitOrder has just recorded a rejection for THIS submission
+          // (lastOrderRejection, set moments ago on the same await chain),
+          // the reason belongs in the line a human actually reads.
+          // Bounded to this submission on purpose: lastOrderRejection is
+          // the LAST refusal ever seen, so without this an unrelated
+          // refusal from hours ago would get blamed for today's timeout -
+          // a worse failure than saying nothing.
+          const lastRefusal = this.lastOrderRejection;
+          const refusal = lastRefusal && lastRefusal.receivedAtMs >= submittedAtMs ? lastRefusal : null;
+          const reason = refusal ? ` Motif du courtier : ${refusal.errorCode ?? 'sans code'} - ${refusal.description ?? 'aucune description'}.` : '';
+          console.warn(
+            `[auto-execute] no orderId within timeout for ${symbolName} AND reconcile found nothing real - order never reached the broker, clearing believed-open.` +
+              (refusal ? ` Broker refusal: errorCode=${refusal.errorCode} description=${refusal.description}` : '')
+          );
+          this._notifyText(
+            `⚠️ [${signal.source.toUpperCase()}] Aucune confirmation du courtier sur ${symbolName} et aucun ordre/position réels trouvés (vérifié) - signal abandonné, croyance nettoyée.${reason}`
+          );
         }
       }
     } catch (err) {
