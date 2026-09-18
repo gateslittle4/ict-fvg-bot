@@ -181,6 +181,34 @@
   .hero-tile .hero-sub { font-size: 10px; color: var(--faint); font-family: var(--mono); margin-top: 3px; }
   @media (max-width: 640px) { .hero-tile .hero-value { font-size: 19px; } }
 
+    /* Institutional control center: one compact operational readout assembled
+      from the same live status, account, and broker outcome data already used
+      elsewhere on the dashboard. */
+    .control-center { margin: 0 0 14px; border: 1px solid var(--panel-border-strong); background: var(--panel); }
+    .control-center-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; border-bottom: 1px solid var(--panel-border); }
+    .control-center-title { color: var(--text); font: 700 10.5px var(--mono); letter-spacing: 0.8px; text-transform: uppercase; }
+    .control-center-subtitle { color: var(--muted); font: 10px var(--mono); }
+    .control-pause-btn { margin: 0; padding: 5px 9px; border: 1px solid rgba(232, 93, 93, 0.5); border-radius: var(--radius); background: rgba(232, 93, 93, 0.08); color: var(--red); cursor: pointer; font: 700 10px var(--mono); }
+    .control-pause-btn:hover { background: rgba(232, 93, 93, 0.16); }
+    .control-center-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--panel-border); }
+    .control-cell { min-width: 0; padding: 10px 11px; background: var(--panel); }
+    .control-label { color: var(--muted); font: 9px var(--mono); letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 5px; }
+    .control-value { color: var(--text); font: 700 14px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .control-value.win { color: var(--green); }
+    .control-value.loss { color: var(--red); }
+    .control-detail { color: var(--faint); font: 10px var(--mono); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    @media (max-width: 900px) { .control-center-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 520px) { .control-center-grid { grid-template-columns: repeat(2, 1fr); } }
+    .operational-alerts { display: grid; gap: 1px; margin: -4px 0 14px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+    .operational-alert { padding: 8px 11px; background: var(--panel); color: var(--muted); font: 10.5px var(--mono); }
+    .operational-alert.warn { color: var(--amber); }
+    .operational-alert.critical { color: var(--red); }
+    .operational-alert.ok { color: var(--green); }
+    .risk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+    .risk-grid .metric-tile { min-width: 0; }
+    @media (max-width: 900px) { .risk-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 520px) { .risk-grid { grid-template-columns: repeat(2, 1fr); } }
+
   /* ---------- Layout ---------- */
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-bottom: 12px; background: var(--panel-border); border: 1px solid var(--panel-border); }
   .grid .card { margin-bottom: 0; border: none; }
@@ -434,6 +462,19 @@
        pas encore répondu. -->
   <div class="hero-strip" id="hero-strip"><div class="hero-tile"><div class="hero-label">Équité (réelle)</div><div class="hero-value">Chargement…</div></div></div>
 
+  <section class="control-center" aria-label="Centre de contrôle institutionnel">
+    <div class="control-center-head">
+      <span class="control-center-title">Institutional Control Center</span>
+      <span class="control-center-subtitle" id="control-center-actions">broker truth / execution state</span>
+    </div>
+    <div class="control-center-grid" id="control-center-grid">
+      <div class="control-cell"><div class="control-label">Connexion</div><div class="control-value">Chargement…</div></div>
+    </div>
+  </section>
+  <div class="operational-alerts" id="operational-alerts" aria-live="polite">
+    <div class="operational-alert">Surveillance opérationnelle en cours…</div>
+  </div>
+
   <!-- Le graphique N'EST PAS intégré ici (revenu en arrière le 2026-09,
        même session) - essayé un temps en <iframe> depuis chart.html, mais
        l'utilisatrice a explicitement demandé de le retirer de ce premier
@@ -507,6 +548,18 @@
     <h2>Ordres envoyés (résultat réel)</h2>
     <div class="meta" style="margin-bottom:8px;">Rempli/jamais rempli confirmé par le courtier (pas une supposition) — voir "Écart bot/courtier" plus haut pour l'explication d'un ordre jamais rempli.</div>
     <div id="order-log-body">—</div>
+  </div>
+
+  <div class="card" id="execution-audit-card">
+    <h2>Audit d'exécution récent</h2>
+    <div class="meta" style="margin-bottom:8px;">Chronologie opérationnelle en mémoire : signaux validés et confirmations broker reçues par cette instance.</div>
+    <div id="execution-audit-body">—</div>
+  </div>
+
+  <div class="card" id="risk-command-card">
+    <h2>Risk Command Center</h2>
+    <div class="meta" style="margin-bottom:8px;">Exposition calculée sur les positions réellement ouvertes et leurs protections broker.</div>
+    <div id="risk-command-body">Chargement des données de risque…</div>
   </div>
 
   <div class="section-title">Simulation (pas des trades réels)</div>
@@ -671,6 +724,7 @@ function recomputeLivePositions(symbolsData) {
 // renderHeroStrip() - jamais de second fetch dédié, uniquement des données
 // déjà récupérées ailleurs sur cette page.
 const heroState = { balance: null, dailyPnl: null, dailyLossPct: null, blocked: null, equityEstimate: null, totalR: null, winRatePct: null, totalTrades: null, freshestTickTime: null };
+const controlState = { status: null, account: null, health: null, latencyMs: null, orders: [], signals: [] };
 // Santé de connexion (2026-09-15, Esdras: liste d'idées demandée) - the
 // simplest honest signal that the live feed is actually alive: age of the
 // MOST RECENT candle across every subscribed symbol. Deliberately not
@@ -685,6 +739,112 @@ function connectionHealth(ageMs) {
   if (ageMs < 2 * 60 * 1000) return { label: `🟢 données fraîches (${Math.round(ageMs / 1000)}s)`, cls: 'win' };
   if (ageMs < 10 * 60 * 1000) return { label: `🟡 ralenti (${Math.round(ageMs / 60000)} min)`, cls: '' };
   return { label: `🔴 aucune donnée récente (${Math.round(ageMs / 60000)} min)`, cls: 'loss' };
+}
+function renderControlCenter() {
+  const el = document.getElementById('control-center-grid');
+  const data = controlState.status;
+  if (!el || !data) return;
+  const g = data.guardrail || {};
+  const auto = data.autoExecute || {};
+  const broker = data.broker || {};
+  const ageMs = heroState.freshestTickTime === null ? null : Math.max(0, Date.now() - heroState.freshestTickTime);
+  const health = connectionHealth(ageMs);
+  const liveLabel = data.liveConfigured ? (broker.isDemo === true ? 'LIVE / DÉMO' : 'LIVE / RÉEL') : 'MODE DÉMO';
+  const liveClass = data.liveConfigured ? 'win' : 'loss';
+  const filled = controlState.orders.filter((o) => o.outcome === 'filled').length;
+  const unfilled = controlState.orders.filter((o) => o.outcome !== 'filled').length;
+  const positionCount = lastKnownPositions.length;
+  const healthInfo = controlState.health;
+  const uptime = healthInfo?.uptimeSec == null ? '—' : formatUptime(healthInfo.uptimeSec);
+  const apiLatency = controlState.latencyMs == null ? '—' : `${Math.round(controlState.latencyMs)}ms`;
+  const actionsEl = document.getElementById('control-center-actions');
+  if (actionsEl) {
+    actionsEl.innerHTML = auto.active
+      ? '<button type="button" class="control-pause-btn" onclick="pauseAutoExecution()" title="Arrêter les nouvelles entrées automatiques">⏸ PAUSE AUTO-EXÉCUTION</button>'
+      : 'broker truth / execution state';
+  }
+  el.innerHTML = `
+    <div class="control-cell"><div class="control-label">Connexion broker</div><div class="control-value ${liveClass}">${liveLabel}</div><div class="control-detail">${broker.name || 'aucun broker'} · ${data.symbols?.length || 0} symboles</div></div>
+    <div class="control-cell"><div class="control-label">Processus / API</div><div class="control-value ${healthInfo?.ok ? 'win' : ''}">${healthInfo?.ok ? 'UP' : '—'} · ${apiLatency}</div><div class="control-detail">uptime ${uptime} · ${healthInfo?.accountsConnected ?? '—'} compte(s) connecté(s)</div></div>
+    <div class="control-cell"><div class="control-label">Exécution automatique</div><div class="control-value ${auto.active ? 'win' : ''}">${auto.active ? 'ACTIVE' : 'MANUELLE'}</div><div class="control-detail">${auto.active && auto.expiresAt ? `jusqu'à ${fmtTime(auto.expiresAt)}` : 'aucun ordre automatique'}</div></div>
+    <div class="control-cell"><div class="control-label">Flux marché</div><div class="control-value ${health.cls}">${health.label || '—'}</div><div class="control-detail">dernière bougie reçue</div></div>
+    <div class="control-cell"><div class="control-label">Risque opérationnel</div><div class="control-value ${g.blocked ? 'loss' : 'win'}">${g.blocked ? 'BLOQUÉ' : 'SOUS CONTRÔLE'}</div><div class="control-detail">${g.tradesToday || 0} / ${g.maxTradesPerDay || '—'} trades · ${fmt(data.riskPctPerTrade, 2)}%</div></div>
+    <div class="control-cell"><div class="control-label">Positions broker</div><div class="control-value">${positionCount}</div><div class="control-detail">réconciliées réellement</div></div>
+    <div class="control-cell"><div class="control-label">Ordres auto confirmés</div><div class="control-value ${filled > 0 ? 'win' : ''}">${filled} remplis</div><div class="control-detail">${unfilled} non rempli · journal courant</div></div>
+  `;
+}
+function auditSourceLabel(source) {
+  return sourceLabelShort[source] || source || 'inconnu';
+}
+function renderExecutionAudit() {
+  const el = document.getElementById('execution-audit-body');
+  if (!el) return;
+  const signals = controlState.signals.map((signal) => ({
+    time: signal.validatedAt || signal.loggedAt || 0,
+    symbol: signal.symbol,
+    source: auditSourceLabel(signal.source),
+    status: signal.actionable ? 'SIGNAL ACTIONNABLE' : `BLOQUÉ — ${signal.blockedReasons?.join(', ') || signal.blockedReason || 'filtre'}`,
+    cls: signal.actionable ? 'win' : 'loss',
+  }));
+  const orders = controlState.orders.map((order) => ({
+    time: order.at,
+    symbol: order.symbol,
+    source: auditSourceLabel(order.source),
+    status: order.outcome === 'filled' ? 'ORDRE REMPLI' : `ORDRE NON REMPLI — ${order.executionType || 'confirmation broker'}`,
+    cls: order.outcome === 'filled' ? 'win' : 'loss',
+  }));
+  const rows = [...signals, ...orders].sort((a, b) => Number(b.time || 0) - Number(a.time || 0)).slice(0, 12);
+  if (rows.length === 0) {
+    el.innerHTML = '<div class="meta">Aucun événement récent.</div>';
+    return;
+  }
+  el.innerHTML = `<table class="strategy-table"><thead><tr><th>Heure</th><th>Symbole</th><th>Source</th><th>Décision / résultat</th></tr></thead><tbody>${rows.map((row) => `
+    <tr><td>${fmtTime(row.time)}</td><td>${row.symbol || '—'}</td><td>${row.source}</td><td class="${row.cls}">${row.status}</td></tr>
+  `).join('')}</tbody></table>`;
+}
+function renderRiskCommandCenter() {
+  const el = document.getElementById('risk-command-body');
+  const data = controlState.account;
+  const status = controlState.status;
+  if (!el || !status) return;
+  if (!data) {
+    el.innerHTML = status.liveConfigured
+      ? '<div class="meta">Données de risque broker en attente de la réconciliation.</div>'
+      : '<div class="meta">Risque broker réel indisponible en mode démo — aucune position réelle à réconcilier.</div>';
+    return;
+  }
+  const positions = data.positions || [];
+  let totalRisk = 0;
+  let knownRiskCount = 0;
+  for (const position of positions) {
+    if (position.stopLoss === null || position.stopLoss === undefined || position.entryPrice === null || position.units === null) continue;
+    totalRisk += Math.abs(position.entryPrice - position.stopLoss) * position.units;
+    knownRiskCount++;
+  }
+  const riskPct = data.balance > 0 ? (totalRisk / data.balance) * 100 : null;
+  const pnl = data.floatingPnlEstimate;
+  const pnlClass = pnl > 0 ? 'win' : pnl < 0 ? 'loss' : '';
+  const riskClass = riskPct !== null && riskPct >= 1 ? 'loss' : riskPct !== null && riskPct >= 0.5 ? '' : 'win';
+  el.innerHTML = `
+    <div class="risk-grid">
+      <div class="metric-tile"><div class="metric-label">Solde broker</div><div class="metric-value">${fmt(data.balance)}</div></div>
+      <div class="metric-tile"><div class="metric-label">Équité estimée</div><div class="metric-value">${fmt(data.equityEstimate)}</div></div>
+      <div class="metric-tile"><div class="metric-label">P&amp;L flottant</div><div class="metric-value ${pnlClass}">${fmt(pnl)}</div></div>
+      <div class="metric-tile"><div class="metric-label">Marge utilisée</div><div class="metric-value">${fmt(data.marginUsedReal)}</div></div>
+      <div class="metric-tile"><div class="metric-label">Risque aux stops</div><div class="metric-value ${riskClass}">${riskPct === null ? '—' : fmt(totalRisk)} </div><div class="control-detail">${riskPct === null ? 'protection incomplète' : `${fmt(riskPct, 2)}% du solde`}</div></div>
+      <div class="metric-tile"><div class="metric-label">Perte journalière</div><div class="metric-value ${status.guardrail.dailyLossPct > 0 ? 'loss' : ''}">${fmt(status.guardrail.dailyLossPct, 3)}%</div><div class="control-detail">limite ${fmt(status.guardrail.dailyLossLimitPct, 1)}%</div></div>
+    </div>
+    <div class="meta" style="margin-top:8px;">${positions.length === 0 ? 'Aucune position réelle ouverte.' : `${positions.length} position${positions.length > 1 ? 's' : ''} ouverte${positions.length > 1 ? 's' : ''} · protections connues pour ${knownRiskCount}/${positions.length}.`}</div>
+  `;
+}
+function formatUptime(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (days > 0) return `${days}j ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 function renderHeroStrip() {
   const el = document.getElementById('hero-strip');
@@ -720,6 +880,43 @@ function renderHeroStrip() {
       <div class="hero-sub">bougie la plus récente, tous symboles</div>
     </div>
   `;
+  renderOperationalAlerts();
+}
+async function pauseAutoExecution() {
+  if (!confirm('Mettre en pause les nouvelles entrées automatiques ? Les positions déjà ouvertes ne seront pas fermées.')) return;
+  const actionsEl = document.getElementById('control-center-actions');
+  if (actionsEl) actionsEl.textContent = 'pause en cours…';
+  try {
+    const res = await fetch(acctUrl('/auto-execute'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    controlState.status = controlState.status ? { ...controlState.status, autoExecute: { ...data, active: false } } : controlState.status;
+    renderControlCenter();
+    renderOperationalAlerts();
+  } catch (err) {
+    if (actionsEl) actionsEl.textContent = `échec de la pause : ${err.message}`;
+  }
+}
+function renderOperationalAlerts() {
+  const el = document.getElementById('operational-alerts');
+  const data = controlState.status;
+  if (!el || !data) return;
+  const alerts = [];
+  const g = data.guardrail || {};
+  const auto = data.autoExecute || {};
+  const ageMs = heroState.freshestTickTime === null ? null : Math.max(0, Date.now() - heroState.freshestTickTime);
+  if (!data.liveConfigured || data.mode === 'demo') alerts.push({ cls: 'critical', text: '⚠ Connexion broker live inactive : les données et résultats peuvent être simulés.' });
+  else if (data.broker?.isDemo === true) alerts.push({ cls: 'warn', text: '⚠ Connexion cTrader active sur un compte DÉMO.' });
+  if (ageMs !== null && ageMs >= 10 * 60 * 1000) alerts.push({ cls: 'critical', text: `⚠ Flux marché silencieux depuis ${Math.round(ageMs / 60000)} minutes.` });
+  if (!auto.active) alerts.push({ cls: 'warn', text: '● Auto-exécution inactive : les signaux sont alertés mais aucun ordre automatique ne sera envoyé.' });
+  if (g.blocked) alerts.push({ cls: 'critical', text: `⛔ Garde-fous actifs : ${g.blockReasons?.join(', ') || 'nouvelles entrées bloquées'}.` });
+  if (lastKnownPositions.length > 0) alerts.push({ cls: 'ok', text: `● ${lastKnownPositions.length} position${lastKnownPositions.length > 1 ? 's' : ''} réelle${lastKnownPositions.length > 1 ? 's' : ''} suivie${lastKnownPositions.length > 1 ? 's' : ''} chez le broker.` });
+  if (alerts.length === 0) alerts.push({ cls: 'ok', text: '● Aucun incident opérationnel détecté.' });
+  el.innerHTML = alerts.map((alert) => `<div class="operational-alert ${alert.cls}">${alert.text}</div>`).join('');
 }
 // Re-render on its own clock, not just when new /api/status data arrives
 // (2026-09-15) - the whole point of a connection-health indicator is to
@@ -729,6 +926,7 @@ function renderHeroStrip() {
 // render time reveals that as a growing "il y a Xmin" instead of a frozen
 // number that looks fine at a glance).
 setInterval(renderHeroStrip, 5000);
+setInterval(renderOperationalAlerts, 5000);
 
 const fmt = (n, d=2) => (n === null || n === undefined || Number.isNaN(n)) ? '—' : Number(n).toFixed(d);
 const fmtTime = (t) => t ? new Date(t).toLocaleTimeString('fr-FR') : '—';
@@ -770,8 +968,23 @@ const sourceLabel = (s) => {
 // its own fetch - one rendering code path either way, see the SSE section
 // near the bottom of this script for why.
 async function refreshStatus() {
+  const startedAt = performance.now();
   const res = await fetch(acctUrl('/status'));
+  controlState.latencyMs = performance.now() - startedAt;
   renderStatus(await res.json());
+}
+
+async function refreshHealth() {
+  try {
+    const startedAt = performance.now();
+    const res = await fetch('/healthz');
+    controlState.health = await res.json();
+    controlState.latencyMs = performance.now() - startedAt;
+    renderControlCenter();
+  } catch {
+    controlState.health = { ok: false };
+    renderControlCenter();
+  }
 }
 
 // Progression du challenge (2026-09-15, Esdras: demande #1 de la liste
@@ -857,6 +1070,8 @@ function renderStatus(data) {
   const tickTimes = data.symbols.map((s) => s.lastCandleTime).filter((t) => t !== null && t !== undefined);
   heroState.freshestTickTime = tickTimes.length > 0 ? Math.max(...tickTimes) : null;
   renderHeroStrip();
+  controlState.status = data;
+  renderControlCenter();
 
   document.getElementById('prices-body').innerHTML = data.symbols.map((s) => {
     const prev = previousPrices[s.symbol];
@@ -1006,8 +1221,10 @@ async function refreshAccount() {
     const res = await fetch(acctUrl('/account'));
     const data = await res.json();
     if (data.reason) {
+      controlState.account = null;
       bodyEl.innerHTML = `<div class="meta">${data.reason}</div>`;
       if (openPositionsEl) openPositionsEl.innerHTML = `<div class="meta">${data.reason}</div>`;
+      renderRiskCommandCenter();
       return;
     }
     heroState.equityEstimate = data.equityEstimate;
@@ -1048,7 +1265,10 @@ async function refreshAccount() {
 
     lastKnownPositions = positions;
     lastKnownBalance = data.balance;
+    controlState.account = data;
     renderOpenPositions(positions);
+    renderControlCenter();
+    renderRiskCommandCenter();
 
     if (mismatches.length > 0) {
       html += mismatches.map((r) => `<div class="mismatch-alert"><strong>Écart bot/courtier</strong>${reconciliationExplanation(r)}</div>`).join('');
@@ -1068,6 +1288,9 @@ async function refreshOrderLog() {
     const res = await fetch(acctUrl('/order-log'));
     const data = await res.json();
     const orders = data.orders || [];
+    controlState.orders = orders;
+    renderControlCenter();
+    renderExecutionAudit();
     if (orders.length === 0) {
       bodyEl.innerHTML = '<div class="meta">Aucun ordre envoyé pour l\'instant.</div>';
       return;
@@ -1120,6 +1343,8 @@ async function refreshSignals() {
 }
 
 function renderSignals(data) {
+  controlState.signals = data.actionable || [];
+  renderExecutionAudit();
   const actionableList = document.getElementById('actionable-list');
   actionableList.innerHTML = data.actionable.length
     ? data.actionable.map((s) => {
@@ -1419,6 +1644,7 @@ function startDashboardForAccount(accountId) {
   renderAccountOverview(accountsCache);
 
   prefillRiskInput();
+  refreshHealth();
   refreshStatus();
   refreshSignals();
   refreshRecentPerformance();
@@ -1427,6 +1653,7 @@ function startDashboardForAccount(accountId) {
   refreshOrderLog();
   liveStreamHandle = startLiveStream();
   dashboardPollIntervals = [
+    setInterval(refreshHealth, 30000), // process health and API latency are cheap, but do not need a faster cadence
     setInterval(refreshRecentPerformance, 120000), // server-side cached for 15 min anyway - just needs to eventually pick up a cache refresh
     setInterval(refreshTradeLog, 60000), // grows one row per resolved trade, no meaningful reason to poll faster - only feeds the hero strip now, see its own comment
     setInterval(refreshAccount, 30000), // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
