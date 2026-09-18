@@ -5009,3 +5009,20 @@ Esdras, après le forward-test réel : **"Ce n'est pas la méthode. On étudie d
 **Bilan combiné avec le forward-test réel de la section précédente** : CBDR a maintenant été vérifié à la fois sur l'historique le plus profond disponible (jusqu'à 15 ans pour US100/GER40) ET sur des données broker réelles jamais touchées (2026-02→09) — les deux étapes de la méthode demandée. Le résultat mitigé du forward-test (US100/EURUSD tiennent, GER40 ne tient pas malgré son historique le plus fort) reste la question ouverte à trancher avec Esdras.
 
 **Fichiers** : `scripts/runCbdrStrategyAnalysis.js`, `data/backtest-input/cbdr-strategy-analysis.md`. Aucun changement de comportement live. `npm test` : 710/710 (inchangé, script d'analyse seulement).
+
+## Extension réelle de la profondeur EURUSD (2010-2025) — le seul symbole encore court parmi les candidats CBDR — 2026-09-18 (suite)
+
+Suite directe de la section précédente : `EURUSD.csv` était le seul des 4 symboles où CBDR tient (US100/EURUSD/GBPUSD/GER40) à démarrer réellement en 2018 plutôt qu'en 2010, donc son TRAIN CBDR (457 trades, 2018-2023) était nettement moins profond que US100/GER40 (~15 ans). Esdras a fourni les données brutes M1 HistData.com nécessaires pour corriger ça : 8 fichiers ZIP (2010-2016 + 2018), puis le fichier 2017 manquant envoyé séparément après que le trou ait été signalé.
+
+**Pipeline** : extraction des ZIP, conversion M1→M15 via l'outil existant `scripts/convertHistData.js` (déjà utilisé pour d'autres symboles, format HistData "Generic ASCII" — convention fuseau fixe EST-comme-UTC, cohérente avec le reste du dépôt). Fusion avec l'`EURUSD.csv` existant (qui démarrait le 2018-01-01) :
+- Vérifié d'abord que la portion 2018 des nouvelles données et le début de l'ancien fichier **coïncident exactement** (même timestamp, mêmes OHLC — même source HistData) avant de fusionner, pour ne dupliquer ni corrompre aucune bougie.
+- **Trou de 2017 découvert et signalé** avant toute fusion (l'upload initial sautait cette année) — pas comblé silencieusement. Esdras a envoyé le fichier 2017 séparément dans la foulée ; converti et inséré au bon endroit, continuité vérifiée (pas de doublon, pas de chevauchement, écarts de week-end normaux uniquement — un seul écart de ~367 jours existait avant l'insertion, exactement la taille du trou 2017, confirmant qu'aucune autre donnée ne manquait).
+- Résultat : `EURUSD.csv` couvre maintenant **2010-01-03 → 2025-12-31 en continu**, sans trou, comme US100/GER40/XAUUSD/USDCAD.
+
+**Effet sur le verdict CBDR EURUSD** (`data/backtest-input/cbdr-strategy-analysis.md` régénéré) :
+- Avant (TRAIN 2018-2023, 457 trades) : espérance train **+0.04R** → ✅ tient.
+- Après (TRAIN 2010-2023, 1228 trades) : espérance train **-0.06R** → **⚠️ affaibli** (le test reste positif à +0.13R sur 139 trades, mais le train n'est plus positif, donc la règle de verdict ne peut plus dire "tient").
+
+**Constat honnête** : ce n'est pas un cas ambigu de bruit statistique — l'échantillon a presque triplé (457→1228) et le signe de l'espérance train a changé. Le "tient" initial reposait sur une fenêtre 2018-2023 trop courte et probablement non représentative pour EURUSD spécifiquement. Sur les 4 symboles où CBDR tenait, il n'en reste donc que 3 sur la profondeur complète : **US100, GBPUSD (encore 2019 seulement, pas encore approfondi), GER40** — et GER40 est justement celui qui a échoué sur le forward-test réel (section précédente). EURUSD, lui, reste positif en test/forward-test réel (+0.13R historique, +0.73R forward-test) mais n'est plus "tient" au sens strict de la règle de verdict train/test.
+
+**Fichiers modifiés** : `data/backtest-input/EURUSD.csv` (394 891 lignes, 2010-01-03→2025-12-31, remplace l'ancien fichier 2018-2025 à 196 001 lignes), `data/backtest-input/cbdr-strategy-analysis.md` (régénéré). Aucun changement de code de stratégie ni de comportement live — recherche/backtest uniquement. `npm test` : 710/710 après l'extension des données.
