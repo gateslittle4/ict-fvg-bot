@@ -108,8 +108,19 @@
       <div class="form-field" style="flex: 0 0 auto; min-width: 0;">
         <button type="button" class="run-btn" id="lab-run-btn" onclick="runLab()">Lancer le backtest</button>
       </div>
+      <div class="form-field" style="flex: 0 0 auto; min-width: 0;">
+        <button type="button" class="run-btn" id="lab-screen-btn" onclick="runScreen()" style="background: var(--panel-border-strong); color: var(--text);">Comparer sur les 12 symboles</button>
+      </div>
     </div>
     <div class="meta" id="lab-meta-msg">Chargement des stratégies disponibles…</div>
+  </div>
+
+  <div id="lab-screen-results" hidden>
+    <div class="card">
+      <h2>Comparaison par symbole — <span id="lab-screen-strategy-name"></span></h2>
+      <div class="meta" style="margin-bottom:8px;">Trié par espérance (R moyen par trade) décroissante — le même filtre de coût de spread que le backtest individuel est appliqué à chaque symbole.</div>
+      <div id="lab-screen-table"></div>
+    </div>
   </div>
 
   <div id="lab-results" hidden>
@@ -254,6 +265,53 @@ async function runLab() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Lancer le backtest';
+  }
+}
+
+async function runScreen() {
+  const btn = document.getElementById('lab-screen-btn');
+  const strategyId = document.getElementById('lab-strategy').value;
+  const strategyLabel = document.getElementById('lab-strategy').selectedOptions[0]?.textContent || strategyId;
+  const screenResultsEl = document.getElementById('lab-screen-results');
+  const tableEl = document.getElementById('lab-screen-table');
+  document.getElementById('lab-screen-strategy-name').textContent = strategyLabel;
+  btn.disabled = true;
+  btn.textContent = 'Comparaison en cours (12 symboles)…';
+  try {
+    const res = await fetch('/api/lab/screen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategyId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    screenResultsEl.hidden = false;
+    const rows = data.results.map((r) => {
+      if (!r.ok) return `<tr><td>${r.symbol}</td><td colspan="5" class="err">${r.error}</td></tr>`;
+      const netWin = r.finalEquityR >= 0;
+      return `
+        <tr>
+          <td>${r.symbol}</td>
+          <td>${r.totalSignals}</td>
+          <td>${r.winRate === null ? '—' : fmt(r.winRate * 100, 0) + '%'}</td>
+          <td class="${r.expectancyR >= 0 ? 'win' : 'loss'}">${r.expectancyR === null ? '—' : (r.expectancyR >= 0 ? '+' : '') + fmt(r.expectancyR)}R</td>
+          <td class="${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(r.finalEquityR)}R</td>
+          <td>${fmt(r.profitFactor)}</td>
+        </tr>
+      `;
+    }).join('');
+    tableEl.innerHTML = `
+      <table class="strategy-table">
+        <thead><tr><th>Symbole</th><th>Trades</th><th>Taux</th><th>Espérance</th><th>Total R</th><th>Profit factor</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (err) {
+    screenResultsEl.hidden = false;
+    tableEl.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Comparer sur les 12 symboles';
   }
 }
 

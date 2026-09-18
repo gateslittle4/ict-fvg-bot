@@ -236,6 +236,36 @@ app.get('/api/lab/meta', (req, res) => {
   }
 });
 
+// Screener mode (2026-09-18, same feature request as /api/lab/run above,
+// added right after it): running one strategy on one symbol at a time
+// answers "does this work on US100?" - the more useful research question is
+// usually "which of these 12 symbols does this actually work on?". Reuses
+// the exact same pipeline per symbol, just returns summaries (not full
+// equity curves/trade lists - a ranking table doesn't need them, and this
+// keeps the response small even multiplied by 12 symbols).
+app.post('/api/lab/screen', (req, res) => {
+  const { strategyId } = req.body || {};
+  if (!strategyId || !LAB_STRATEGIES[strategyId]) {
+    return res.status(400).json({ error: `Stratégie inconnue: "${strategyId}"` });
+  }
+  try {
+    const symbols = listLabSymbols();
+    const results = symbols.map((symbol) => {
+      try {
+        const candles = loadLabCandles(symbol);
+        const { summary, droppedAsNonViable } = runLabBacktest(strategyId, candles, symbol);
+        return { symbol, ok: true, candleCount: candles.length, droppedAsNonViable, ...summary };
+      } catch (err) {
+        return { symbol, ok: false, error: err.message };
+      }
+    });
+    results.sort((a, b) => (b.expectancyR ?? -Infinity) - (a.expectancyR ?? -Infinity));
+    res.json({ strategyId, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/lab/run', (req, res) => {
   const { strategyId, symbol } = req.body || {};
   if (!strategyId || !LAB_STRATEGIES[strategyId]) {
