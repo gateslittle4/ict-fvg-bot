@@ -5432,3 +5432,89 @@ une protection nulle vaut une position non protégée.
 Ce qui reste ouvert : le second mode d'échec sur les ordres LIMIT (FVG), non
 touché par ce correctif, et toujours suspecté du côté de `timeInForce:
 'GOOD_TILL_DATE'`.
+
+## BUG RÉEL TROUVÉ, NON CORRIGÉ — un redémarrage pendant qu'une position est ouverte fait perdre au bot sa propre trace du trade (`status: 'real-only'`) — 2026-09-18 (suite)
+
+Repéré en vérifiant à la demande d'Esdras si le bot avait « tradé pour de
+vrai » après l'activation de CBDR. Une requête à `/api/accounts/default/account`
+(donc au broker réel, pas à l'état interne du bot) a montré une position
+GER40 bien réelle, ouverte, jamais vue dans `trade-history` (qui ne liste
+que les trades FERMÉS) :
+
+```
+positionId 41685618, GER40, bearish, 0.88 lot
+entrée 25330.75, SL 25367.95, TP 25219.15
+ouverte 2026-09-18T14:45:01.590Z
+```
+
+GER40 fait partie des 3 symboles de Silver Bullet (`silverBullet.symbols` =
+`['US100', 'US500', 'GER40']`, `src/config.js:468`) — direction/horaire
+cohérents avec une entrée Silver Bullet réelle, pas un test de connectivité
+(ceux-là s'ouvrent et se referment en <1s, voir plus bas).
+
+**Le vrai problème** : `/api/accounts/default/account` (implémenté par
+`reconcileAccount()` dans `src/dataSources/accountReconciliation.js:111-168`)
+classe cette position en statut **`'real-only'`** — la position existe chez
+le broker, mais `botBelievesOpen: false` et `source: null` : le bot ne sait
+plus qu'il a ouvert ce trade.
+
+**Cause reconstituée** : `LiveStrategyEngine.openPositions` (`src/liveStrategyEngine.js:230`)
+est un `Map` **en mémoire seulement**, jamais persisté. Deux commits sans
+rapport avec CBDR ont été poussés directement sur `claude/lire-handoff-hxisa5`
+par Esdras après l'activation de CBDR (PR #3 à 13:36 UTC, PR #4 à 15:51:45 UTC —
+« Round MARKET order protection onto the symbol's own price grid »), chacun
+provoquant un redéploiement Render donc un redémarrage complet du process.
+Le PR #4 (15:51:45 UTC) est arrivé **après** l'ouverture du trade GER40
+(14:45:01 UTC) → au redémarrage, `openPositions` repart vide, et rien ne
+réinjecte les positions réellement ouvertes chez le broker dedans.
+
+`_clearStaleBeliefsAgainstBroker()` (`src/dataSources/cTraderDataSource.js:406-428`,
+tournée une fois au boot puis toutes les 5 min) ne corrige que le sens
+inverse : une croyance du bot (« je crois avoir un trade ouvert ») sans
+position réelle derrière (`status: 'believed-only'`). Rien dans le code
+actuel ne fait l'inverse — adopter dans `openPositions` une position
+`'real-only'` trouvée par `ProtoOAReconcileReq` au boot ou pendant le sweep
+périodique. Cherché explicitement (`adopt`, `real-only`, `believedOpenBySymbol`
+dans `cTraderDataSource.js`/`liveStrategyEngine.js`) — aucun chemin de code
+ne le fait.
+
+**Risque concret tant que ce n'est pas corrigé** : `LiveStrategyEngine`
+n'ouvre une nouvelle position sur un symbole que si
+`!this.openPositions.has(symbol)` (`src/liveStrategyEngine.js:553`, logique
+de netting). Avec `openPositions` vide après un redémarrage, le bot croit
+GER40 libre et peut ouvrir un DEUXIÈME trade dessus (double exposition non
+voulue) tant que la position `real-only` reste ouverte chez le broker. Le
+compteur `tradesToday` du `GuardrailEngine` ne compte pas non plus ce trade
+(il ne l'a jamais vu). La position elle-même reste protégée par son
+SL/TP réel côté broker — ce n'est pas un risque de perte non bornée, mais
+un risque de double position et de garde-fous faussés.
+
+**Ce qu'il faudrait implémenter** (pas fait ici, documentation uniquement à
+la demande d'Esdras avant de passer à une autre session Claude) :
+- Au boot ET à chaque tick du sweep périodique existant
+  (`_clearStaleBeliefsAgainstBroker`, appelé toutes les 5 min), en plus de
+  nettoyer les croyances `believed-only`, adopter les positions `real-only`
+  trouvées dans `openPositions` — reconstruire entry/stop/target depuis les
+  champs réels du `ProtoOAReconcileReq` (`entryPrice`, `stopLoss`,
+  `takeProfit` sont déjà dans la réponse, voir `enrichRealPosition()` dans
+  `accountReconciliation.js`). `source` restera `null`/`'unknown'` puisque
+  le mécanisme d'origine n'est pas récupérable après coup — acceptable, le
+  but est seulement de bloquer le netting sur ce symbole, pas d'attribuer
+  le trade à un mécanisme pour les rapports.
+- Décider si `rrMultiple`/`maxHoldingM15Candles` par défaut suffisent pour
+  une position adoptée (elle n'aura pas de `maxHoldingCandles` calculé
+  depuis un `entryIndex` réel, puisque le bot n'a pas vu l'entrée se
+  former) — probablement se contenter de bloquer le slot jusqu'à la
+  fermeture réelle (SL/TP/manuelle), sans logique de sortie propre au bot
+  pour une position adoptée.
+- Étendre `test/accountReconciliation.test.js` et
+  `test/liveStrategyEngine.test.js` avec le scénario exact : position
+  ouverte avant un redémarrage (simulé par une nouvelle instance de
+  `LiveStrategyEngine`/`openPositions` vide), `getAccountReconciliation()`
+  renvoie `real-only`, puis vérifier qu'un signal sur le même symbole est
+  bloqué après adoption (et qu'il ne l'était PAS avant le correctif — test
+  de régression qui aurait attrapé ce bug).
+
+**Fichiers concernés** (aucun modifié ici) : `src/dataSources/accountReconciliation.js`,
+`src/dataSources/cTraderDataSource.js` (`_clearStaleBeliefsAgainstBroker`,
+ligne ~406), `src/liveStrategyEngine.js` (`openPositions`, ligne ~230).
