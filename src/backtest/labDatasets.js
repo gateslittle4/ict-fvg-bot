@@ -11,7 +11,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createAggregator, parseM1Text, candlesToCsv, parseDatasetCsv, isValidDatasetName, ImportError } from './m1Import.js';
+import { createAggregator, parseM1Text, readDatasetCsvInto, isValidDatasetName, ImportError } from './m1Import.js';
 import { chooseTrainTestCutoff } from './labRunner.js';
 import { DEFAULT_SPREADS } from './transactionCosts.js';
 
@@ -48,7 +48,17 @@ export function listDatasets(dir) {
 // half-written dataset that the next run would happily load.
 function writeAtomic(file, content) {
   const tmp = `${file}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, content);
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    // A string is written whole; an iterable (the aggregator's CSV chunks) piece by piece.
+    if (typeof content === 'string') fs.writeSync(fd, content);
+    else for (const piece of content) fs.writeSync(fd, piece);
+  } catch (err) {
+    fs.closeSync(fd);
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+  fs.closeSync(fd);
   fs.renameSync(tmp, file);
 }
 
@@ -96,11 +106,11 @@ export function importIntoDataset({ dir, name, symbol, spread = null, tz = 'est'
   const spreadSource = spread !== null ? 'saisi' : extending && existing.spread !== undefined ? existing.spreadSource : 'table du projet';
 
   const aggregator = createAggregator();
-  if (extending) for (const c of parseDatasetCsv(fs.readFileSync(existingCsv, 'utf8'))) aggregator.addCandle(c);
+  if (extending) readDatasetCsvInto(existingCsv, aggregator);
   const parsed = parseM1Text(text, aggregator, { tz });
 
-  const candles = aggregator.toCandles();
-  const { cutoff, kind } = chooseTrainTestCutoff(candles);
+  const { from, to } = aggregator.range();
+  const { cutoff, kind } = chooseTrainTestCutoff([{ time: from }, { time: to }]);
   const files = [...(extending ? existing.files || [] : []), {
     filename, format: parsed.format, rows: parsed.rows, skipped: parsed.skipped, stepMinutes: parsed.stepMinutes, at: now,
   }].slice(-MAX_FILE_HISTORY);
@@ -111,9 +121,9 @@ export function importIntoDataset({ dir, name, symbol, spread = null, tz = 'est'
     spread: effectiveSpread,
     spreadSource,
     tz,
-    candles: candles.length,
-    from: candles[0].time,
-    to: candles[candles.length - 1].time,
+    candles: aggregator.size,
+    from,
+    to,
     m1Rows: files.reduce((n, f) => n + f.rows, 0),
     stepMinutes: parsed.stepMinutes,
     trainCutoff: cutoff,
@@ -122,7 +132,7 @@ export function importIntoDataset({ dir, name, symbol, spread = null, tz = 'est'
     updatedAt: now,
   };
 
-  writeAtomic(csvPathFor(dir, name), candlesToCsv(candles));
+  writeAtomic(csvPathFor(dir, name), aggregator.csvChunks());
   writeAtomic(metaPathFor(dir, name), JSON.stringify(meta));
   return { file: files[files.length - 1], dataset: meta };
 }

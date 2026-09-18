@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAggregator, parseM1Text, parseFlexibleTime, detectMedianStepMinutes, candlesToCsv, parseDatasetCsv, isValidDatasetName, ImportError, BUCKET_MS } from '../src/backtest/m1Import.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createAggregator, parseM1Text, parseFlexibleTime, detectMedianStepMinutes, candlesToCsv, parseDatasetCsv, readDatasetCsvInto, isValidDatasetName, ImportError, BUCKET_MS } from '../src/backtest/m1Import.js';
 
 const MIN = 60000;
 const T0 = Date.UTC(2020, 0, 6, 10, 0); // a Monday, aligned to a 15-minute bucket
@@ -149,4 +152,24 @@ test('stored dataset csv round-trips, keeping first/last so a later upload can e
 test('isValidDatasetName: blocks path traversal and odd characters', () => {
   for (const ok of ['EURGBP', 'eur-gbp_2', 'A']) assert.equal(isValidDatasetName(ok), true);
   for (const bad of ['', '../etc', 'a/b', 'a b', '.hidden', 'x'.repeat(25), null, 5]) assert.equal(isValidDatasetName(bad), false);
+});
+
+test('compact aggregator: streamed csv chunks equal the classic csv, and reading it back into a fresh aggregator loses nothing', () => {
+  const agg = createAggregator();
+  // > 4096 buckets so the typed columns must grow at least once; rows shuffled.
+  const rows = [];
+  for (let i = 0; i < 5000; i++) rows.push(hd(T0 + i * BUCKET_MS + (i % 3) * MIN, 1 + i, 2 + i, 0.5 + i, 1.5 + i));
+  rows.reverse();
+  parseM1Text(rows.join('\n'), agg);
+  assert.equal(agg.size, 5000);
+  const streamed = [...agg.csvChunks()].join('');
+  assert.equal(streamed.trimEnd(), candlesToCsv(agg.toCandles()));
+  assert.deepEqual(agg.range(), { from: T0, to: T0 + 4999 * BUCKET_MS });
+
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'm1-')), 'd.csv');
+  fs.writeFileSync(file, streamed);
+  const again = createAggregator();
+  assert.equal(readDatasetCsvInto(file, again), 5000);
+  assert.deepEqual(again.toCandles(), agg.toCandles());
+  fs.rmSync(path.dirname(file), { recursive: true });
 });

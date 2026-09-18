@@ -5738,3 +5738,7 @@ job de 1 ms sur un thread chaud) rendu déterministe.
 labDatasets,m1Import}.js` (nouveaux), `src/alertHistory.js` (nouveau),
 `src/server.js`, `src/dataSources/{dealPairing,supabaseAccountStore,
 tradeCompliance,cTraderDataSource,matchTraderDataSource}.js`.
+
+## 2026-09-18 (nuit) — Import M1 : 15 ans d'un pair, et test réel en production
+
+Esdras a donné son token admin : import testé **en production** (2 fichiers M1 synthétiques dans le désordre, mauvais token → 403, mélange de fuseaux → 400, backtest sur le jeu importé → 200, suppression, `/healthz` 200 pendant tout ça). En posant la question « 15 ans d'un coup ? » j'ai mesuré en local sous le plafond du thread (160 Mo) : **l'ajout du ~8ᵉ fichier annuel plantait** (mémoire), car chaque bougie existait en ~4 copies d'objets JS pendant l'import. Corrigé : l'agrégateur stocke maintenant des colonnes `Float64Array` (`m1Import.js`), le CSV existant est relu par blocs de 1 Mo (`readDatasetCsvInto`) et réécrit par blocs (`csvChunks`). Mesuré : 15 fichiers de ~20 Mo (375 360 bougies M15, CSV 29 Mo) importés sans erreur sous 160 Mo, ~1 s par import ; comparaison des 21 stratégies dessus : 12,8 s en local (≈ 100 s attendues en prod à ×7,6, sous le délai de 420 s). Limite qui reste : 40 Mo par fichier (≈ 2 ans de M1 tiennent, une année par fichier est le bon découpage) et le disque de Render est effacé à chaque déploiement.

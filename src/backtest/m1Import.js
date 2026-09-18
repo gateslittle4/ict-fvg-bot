@@ -15,6 +15,7 @@
 // FIXED_EST_TO_UTC_OFFSET_MS exactly like scripts/run*RealData*.js do. The
 // caller says which one it is (`tz`); nothing is guessed.
 
+import fs from 'node:fs';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './nySession.js';
 
 export const BUCKET_MS = 15 * 60 * 1000;
@@ -37,18 +38,43 @@ export function isValidDatasetName(name) {
  *    "whichever file came last".
  */
 export function createAggregator(bucketMs = BUCKET_MS) {
-  const buckets = new Map(); // key -> { open, high, low, close, first, last }
+  // Compact storage: a Map from bucket key to a slot, and one Float64Array per
+  // field. 15 years of M15 is ~370k buckets; as one JS object per bucket that
+  // was ~4 copies x 370k objects and blew the Labo worker's 160 MB heap around
+  // year 8. Columns cost 48 bytes a bucket and nothing for the GC to trace.
+  const slotOf = new Map(); // bucket key -> slot
+  const keys = [];
+  const cols = { open: null, high: null, low: null, close: null, first: null, last: null };
+  let capacity = 0;
+
+  function grow() {
+    capacity = capacity === 0 ? 4096 : capacity * 2;
+    for (const name of Object.keys(cols)) {
+      const next = new Float64Array(capacity);
+      if (cols[name]) next.set(cols[name]);
+      cols[name] = next;
+    }
+  }
 
   function addSpan(key, open, high, low, close, first, last) {
-    const b = buckets.get(key);
-    if (!b) {
-      buckets.set(key, { open, high, low, close, first, last });
+    const slot = slotOf.get(key);
+    if (slot === undefined) {
+      if (keys.length === capacity) grow();
+      const i = keys.length;
+      slotOf.set(key, i);
+      keys.push(key);
+      cols.open[i] = open; cols.high[i] = high; cols.low[i] = low; cols.close[i] = close; cols.first[i] = first; cols.last[i] = last;
       return;
     }
-    if (high > b.high) b.high = high;
-    if (low < b.low) b.low = low;
-    if (first < b.first) { b.first = first; b.open = open; }
-    if (last > b.last) { b.last = last; b.close = close; }
+    if (high > cols.high[slot]) cols.high[slot] = high;
+    if (low < cols.low[slot]) cols.low[slot] = low;
+    if (first < cols.first[slot]) { cols.first[slot] = first; cols.open[slot] = open; }
+    if (last > cols.last[slot]) { cols.last[slot] = last; cols.close[slot] = close; }
+  }
+
+  /** Slots in chronological order. */
+  function sortedSlots() {
+    return Array.from({ length: keys.length }, (_, i) => i).sort((a, b) => keys[a] - keys[b]);
   }
 
   return {
@@ -60,11 +86,31 @@ export function createAggregator(bucketMs = BUCKET_MS) {
     addCandle(c) {
       addSpan(Math.floor(c.time / bucketMs), c.open, c.high, c.low, c.close, c.first ?? c.time, c.last ?? c.time);
     },
-    get size() { return buckets.size; },
+    get size() { return keys.length; },
+    /** Time of the first/last bucket, or null when empty. */
+    range() {
+      if (keys.length === 0) return null;
+      let lo = Infinity, hi = -Infinity;
+      for (const k of keys) { if (k < lo) lo = k; if (k > hi) hi = k; }
+      return { from: lo * bucketMs, to: hi * bucketMs };
+    },
     toCandles() {
-      return [...buckets.entries()]
-        .sort((a, b) => a[0] - b[0])
-        .map(([key, b]) => ({ time: key * bucketMs, open: b.open, high: b.high, low: b.low, close: b.close, first: b.first, last: b.last }));
+      return sortedSlots().map((i) => ({
+        time: keys[i] * bucketMs, open: cols.open[i], high: cols.high[i], low: cols.low[i], close: cols.close[i], first: cols.first[i], last: cols.last[i],
+      }));
+    },
+    /** The stored-dataset CSV (same text as candlesToCsv(toCandles())) in ~1 MB pieces, never all at once. */
+    *csvChunks() {
+      yield 'time,open,high,low,close,first,last\n';
+      let parts = [];
+      let size = 0;
+      for (const i of sortedSlots()) {
+        const line = `${keys[i] * bucketMs},${cols.open[i]},${cols.high[i]},${cols.low[i]},${cols.close[i]},${cols.first[i]},${cols.last[i]}\n`;
+        parts.push(line);
+        size += line.length;
+        if (size >= 1 << 20) { yield parts.join(''); parts = []; size = 0; }
+      }
+      if (parts.length) yield parts.join('');
     },
   };
 }
@@ -255,4 +301,35 @@ export function parseDatasetCsv(text) {
     out.push({ time, open: +f[1], high: +f[2], low: +f[3], close: +f[4], first: f[5] !== undefined ? +f[5] : time, last: f[6] !== undefined ? +f[6] : time });
   }
   return out;
+}
+
+/**
+ * Streams a stored dataset CSV (candlesToCsv format) into an aggregator in
+ * 1 MB reads - the whole file is never a string. Returns the rows read.
+ */
+export function readDatasetCsvInto(file, aggregator) {
+  const fd = fs.openSync(file, 'r');
+  const buf = Buffer.allocUnsafe(1 << 20);
+  let carry = '';
+  let n = 0;
+  const feed = (line) => {
+    if (!line || line.charCodeAt(0) === 116 /* 't' header */) return;
+    const f = line.split(',');
+    const time = +f[0];
+    if (!Number.isFinite(time)) return;
+    aggregator.addCandle({ time, open: +f[1], high: +f[2], low: +f[3], close: +f[4], first: f[5] !== undefined ? +f[5] : time, last: f[6] !== undefined ? +f[6] : time });
+    n++;
+  };
+  try {
+    for (let read = fs.readSync(fd, buf, 0, buf.length, null); read > 0; read = fs.readSync(fd, buf, 0, buf.length, null)) {
+      const chunk = carry + buf.toString('latin1', 0, read); // digits, commas, newlines only
+      const lines = chunk.split('\n');
+      carry = lines.pop();
+      for (const line of lines) feed(line);
+    }
+    feed(carry);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return n;
 }
