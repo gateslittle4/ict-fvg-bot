@@ -4830,3 +4830,26 @@ Esdras : "continue". Cherché un pattern précis qui avait déjà causé un bug 
 **Nouveau test** (`cTraderDataSourceExecutionEvent.test.js`) : jambe pyramide suivie avec un positionId STRING, événement de clôture avec le MÊME positionId en NUMBER — doit quand même matcher et nettoyer. Cassé (retour à `===` brut), le test échoue bien, restauré, 677/677.
 
 `npm test` : 677/677 (676 + 1 nouveau). **Fichiers** : `src/dataSources/cTraderDataSource.js`, `test/cTraderDataSourceExecutionEvent.test.js`.
+
+## Bug n°5 : le même trou de type string/number existait sur les deux maps indexées par orderId, jamais couvertes par le fix du n°4 — 2026-09-18
+
+Nouvelle session Claude Code (Sonnet 5), Esdras : "IL avait des test qu'on faisait. On Les continue?" → poursuite explicite de l'audit "on doit tous coder, continue de chercher des bugs". Repris le grep systématique `positionId ===`/`orderId ===` sur tout `src/` : plus aucune comparaison bare `===` trouvée (le n°4 avait bien fermé cette classe-là). Mais le n°4 n'avait corrigé QUE `pyramidPositionIdBySymbol` (positionId) — un examen complet de `openPositionInfoByPositionId` a montré qu'elle normalise déjà systématiquement ses clés avec `String(...)` à chaque `.set()`/`.get()`. En comparant avec les DEUX AUTRES maps indexées par un id du courtier, `pendingEntryOrderByOrderId` et `pyramidOrderSymbolByOrderId` (toutes deux indexées par **orderId**, pas positionId) : **aucune des deux ne normalise sa clé nulle part** — chaque `.set()`/`.get()`/`.has()`/`.delete()` utilise la valeur brute telle que reçue.
+
+**Pourquoi c'est réel, pas juste "par cohérence"** : `Map.get`/`.has` utilisent une égalité stricte (SameValueZero) — `map.has(7001)` et `map.has('7001')` ne sont PAS le même lookup. Ces deux maps peuvent être peuplées depuis **trois messages courtier différents** selon le chemin emprunté :
+- `_waitForOrderIdBySymbol` (écoute `ProtoOAExecutionEvent` ACCEPTED juste après soumission) ;
+- le chemin de secours "reconcile-verified" (`_findRealOrderOrPositionForLabel`, lit `orderId` directement dans un `ProtoOAReconcileRes.order[]`) — **le chemin construit spécifiquement pour survivre à une connexion dégradée** (toute la démarche "comment s'assurer à 100%" du 2026-09-17) ;
+- puis relues plus tard via un AUTRE `ProtoOAExecutionEvent` (FILLED/CANCELLED/etc) dans `_handleExecutionEvent`.
+
+Ce courtier est confirmé (4+ fois cette session déjà : solde, executionTimestamp, positionId×2) sérialiser le MÊME champ int64 tantôt en string, tantôt en number, selon le message d'origine. Rien ne garantit que `verified.orderId` (venant de `ProtoOAReconcileRes`) porte le même type que `event.order.orderId` (venant d'un `ProtoOAExecutionEvent` ultérieur) pour le même ordre réel.
+
+**Impact concret si ça se produit** : le chemin de secours reconcile-verified est précisément celui qui s'active quand la confirmation push a été perdue. Si son `orderId` adopté ne matche jamais la confirmation réelle qui arrive ensuite (`_handleExecutionEvent`), la position ne rejoint JAMAIS `openPositionInfoByPositionId` — désamorçant silencieusement à la fois le filet de sécurité stop-loss (`computeMissingStopFixes`) ET le journal Supabase durable, exactement sur l'état de connexion que ce chemin de secours existe pour couvrir.
+
+**Preuve avant correctif** : 2 nouveaux tests écrits d'abord (clé number posée, événement de confirmation avec orderId string) — confirmés en échec contre le code non corrigé (`not ok`).
+
+**Corrigé** : `String(...)` appliqué systématiquement à chaque `.set()`/`.get()`/`.has()`/`.delete()` des deux maps (11 points de contact dans `cTraderDataSource.js`), même convention que `openPositionInfoByPositionId`. Dans `_handleExecutionEvent`, la clé est calculée une fois (`pendingOrderKey = String(event.order?.orderId)`) et réutilisée pour éviter d'oublier un site.
+
+**Tests mis à jour** (les fixtures pré-existantes qui posaient une clé number à la main ne reflétaient que l'ancienne convention, pas un vrai scénario) : `cTraderDataSourceExecutionEvent.test.js` (2 nouveaux tests + 4 fixtures existantes passées en clé string), `cTraderDataSourceAutoExecuteEntry.test.js` (2 assertions), `cTraderDataSourcePyramidOrderRequested.test.js` (2 assertions).
+
+**Preuve que le diff final attrape bien la régression** (même discipline que tout le reste de cette série) : `git stash` du seul fichier source (tests + doc gardés) → 12 tests échouent sur les fichiers concernés → `git stash pop` → tout repasse au vert.
+
+`npm test` : 679/679 (677 + 2 nouveaux). **Fichiers** : `src/dataSources/cTraderDataSource.js`, `test/cTraderDataSourceExecutionEvent.test.js`, `test/cTraderDataSourceAutoExecuteEntry.test.js`, `test/cTraderDataSourcePyramidOrderRequested.test.js`.

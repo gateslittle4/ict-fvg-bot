@@ -89,7 +89,9 @@ test('_handleExecutionEvent: a real position CLOSE updates balance/guardrail, lo
 test('_handleExecutionEvent: a pyramid add-on order FILLING (opening, not closing) is tracked, not confused with a close', () => {
   const account = createFakeAccount();
   const ds = makeDataSource(account);
-  ds.pyramidOrderSymbolByOrderId.set(6001, 'US100');
+  // '6001' (a string) - matches this map's own set() convention now (see the
+  // 2026-09-18 fix below): every orderId key is normalized with String(...).
+  ds.pyramidOrderSymbolByOrderId.set('6001', 'US100');
 
   ds._handleExecutionEvent({
     executionType: 'ORDER_FILLED',
@@ -97,7 +99,7 @@ test('_handleExecutionEvent: a pyramid add-on order FILLING (opening, not closin
     position: { positionId: 41700000 },
   });
 
-  assert.equal(ds.pyramidOrderSymbolByOrderId.has(6001), false, 'consumed once filled');
+  assert.equal(ds.pyramidOrderSymbolByOrderId.has('6001'), false, 'consumed once filled');
   assert.equal(ds.pyramidPositionIdBySymbol.get('US100'), 41700000, 'the resulting position must be tracked for its eventual close');
 });
 
@@ -143,7 +145,7 @@ test('_handleExecutionEvent: a pyramid position CLOSE matches by numeric value, 
 test('_handleExecutionEvent: a pyramid add-on FILL is also tracked in openPositionInfoByPositionId (stop-loss safety net + durable journal, not just a notification)', () => {
   const account = createFakeAccount();
   const ds = makeDataSource(account);
-  ds.pyramidOrderSymbolByOrderId.set(6002, 'US100');
+  ds.pyramidOrderSymbolByOrderId.set('6002', 'US100'); // string key - see the map's own set() convention (2026-09-18 fix)
 
   ds._handleExecutionEvent({
     executionType: 'ORDER_FILLED',
@@ -193,7 +195,7 @@ test('_handleExecutionEvent: a pyramid leg CLOSING (now tracked) updates balance
 test('_handleExecutionEvent: a tracked auto-execute entry order FILLS -> adopted into openPositionInfoByPositionId, outcome recorded', () => {
   const account = createFakeAccount();
   const ds = makeDataSource(account);
-  ds.pendingEntryOrderByOrderId.set(7001, {
+  ds.pendingEntryOrderByOrderId.set('7001', { // string key - see the map's own set() convention (2026-09-18 fix)
     symbolName: 'US100',
     source: 'silverbullet',
     signalId: 'silverbullet-US100-456',
@@ -210,7 +212,7 @@ test('_handleExecutionEvent: a tracked auto-execute entry order FILLS -> adopted
     deal: { positionId: 41800000 },
   });
 
-  assert.equal(ds.pendingEntryOrderByOrderId.has(7001), false);
+  assert.equal(ds.pendingEntryOrderByOrderId.has('7001'), false);
   assert.ok(ds.openPositionInfoByPositionId.has('41800000'), 'the real fill must be adopted so its eventual close writes a real journal row');
   assert.equal(account._recordOrderOutcomeCalls.length, 1);
   assert.equal(account._recordOrderOutcomeCalls[0].outcome, 'filled');
@@ -221,7 +223,7 @@ for (const executionType of ['ORDER_CANCELLED', 'ORDER_EXPIRED', 'ORDER_REJECTED
   test(`_handleExecutionEvent: a tracked auto-execute entry order ${executionType} -> belief cleared, marked unfilled, no phantom position`, () => {
     const account = createFakeAccount();
     const ds = makeDataSource(account);
-    ds.pendingEntryOrderByOrderId.set(8001, {
+    ds.pendingEntryOrderByOrderId.set('8001', { // string key - see the map's own set() convention (2026-09-18 fix)
       symbolName: 'US100',
       source: 'fvg',
       signalId: 'US100-789',
@@ -232,7 +234,7 @@ for (const executionType of ['ORDER_CANCELLED', 'ORDER_EXPIRED', 'ORDER_REJECTED
 
     ds._handleExecutionEvent({ executionType, order: { orderId: 8001 } });
 
-    assert.equal(ds.pendingEntryOrderByOrderId.has(8001), false);
+    assert.equal(ds.pendingEntryOrderByOrderId.has('8001'), false);
     assert.equal(ds.openPositionInfoByPositionId.size, 0, 'an order that never filled must never create a phantom open position');
     assert.equal(account._recordOrderOutcomeCalls.length, 1);
     assert.equal(account._recordOrderOutcomeCalls[0].outcome, 'unfilled');
@@ -240,6 +242,84 @@ for (const executionType of ['ORDER_CANCELLED', 'ORDER_EXPIRED', 'ORDER_REJECTED
     assert.deepEqual(account._clearBelievedPositionCalls[0], { symbol: 'US100', signalId: 'US100-789' });
   });
 }
+
+// BUG FOUND 2026-09-18 (continuing the execution-path audit: "on doit tous
+// coder, continue de chercher des bugs"): pendingEntryOrderByOrderId and
+// pyramidOrderSymbolByOrderId are BOTH keyed by orderId with the raw value
+// used as-is at every set()/get()/has()/delete() call site - unlike
+// openPositionInfoByPositionId and pyramidPositionIdBySymbol (positionId),
+// which were already fixed (see the two tests above) to normalize
+// consistently. Map key lookup uses SameValueZero (effectively strict
+// equality) - `map.has(7001)` and `map.has('7001')` are NOT the same lookup.
+// The order id populating these two maps can come from THREE different
+// broker message types depending on which path confirmed it:
+//   - _waitForOrderIdBySymbol's ProtoOAExecutionEvent listener (ACCEPTED)
+//   - the reconcile-verified fallback (_findRealOrderOrPositionForLabel),
+//     which reads orderId straight off a ProtoOAReconcileRes.order[] entry
+//   - a later confirmation (_handleExecutionEvent, FILLED/CANCELLED/etc),
+//     itself a DIFFERENT ProtoOAExecutionEvent instance than the one that
+//     set the map
+// This project's own repeated, confirmed finding is that this broker
+// serializes the SAME CONCEPTUAL int64 field inconsistently as a string or a
+// number depending on which message it came from (already hit 4+ times this
+// session alone: balance, executionTimestamp, positionId x2). Nothing here
+// proves orderId is immune to the same inconsistency, and the two maps below
+// are the only ones left in this file that don't defend against it - exactly
+// the gap the positionId maps already closed.
+//
+// Worst case if this mismatch is real: the reconcile-verified fallback is
+// the path BUILT SPECIFICALLY to survive a degraded/zombie connection
+// (2026-09-17's whole "comment s'assurer à 100%" effort) - if its adopted
+// orderId's type never matches a later real ProtoOAExecutionEvent fill, the
+// resulting position NEVER reaches openPositionInfoByPositionId, silently
+// defeating both the missing-stop-loss safety net and the durable journal
+// for exactly the connection state this fallback exists to handle.
+test('_handleExecutionEvent: a tracked auto-execute entry order FILLS, matched by numeric value not strict type (string vs number orderId)', () => {
+  const account = createFakeAccount();
+  const ds = makeDataSource(account);
+  // Simulates the reconcile-verified fallback path, which reads orderId
+  // straight off a ProtoOAReconcileReq response - a string on this broker,
+  // same as positionId already is (see the precedent test above).
+  ds.pendingEntryOrderByOrderId.set('7002', {
+    symbolName: 'US100',
+    source: 'silverbullet',
+    signalId: 'silverbullet-US100-999',
+    direction: 'bullish',
+    entryPrice: 29440.7,
+    riskAmount: 100,
+    stopPrice: 29389.5,
+    targetPrice: 29696.7,
+  });
+
+  ds._handleExecutionEvent({
+    executionType: 'ORDER_FILLED',
+    // The confirming event's own orderId, here a NUMBER - deliberately the
+    // opposite type from what's tracked above.
+    order: { orderId: 7002 },
+    deal: { positionId: 41800001 },
+  });
+
+  assert.equal(ds.pendingEntryOrderByOrderId.has('7002'), false, 'must match and clean up despite the string/number type difference');
+  assert.ok(ds.openPositionInfoByPositionId.has('41800001'), 'the real fill must still be adopted so its eventual close writes a real journal row');
+  assert.equal(account._recordOrderOutcomeCalls.length, 1);
+  assert.equal(account._recordOrderOutcomeCalls[0].outcome, 'filled');
+});
+
+test('_handleExecutionEvent: a pyramid add-on order FILLS, matched by numeric value not strict type (string vs number orderId)', () => {
+  const account = createFakeAccount();
+  const ds = makeDataSource(account);
+  // Same reconcile-verified-fallback scenario as above, for the pyramid path.
+  ds.pyramidOrderSymbolByOrderId.set('6003', 'US100');
+
+  ds._handleExecutionEvent({
+    executionType: 'ORDER_FILLED',
+    order: { orderId: 6003 },
+    position: { positionId: 41700002 },
+  });
+
+  assert.equal(ds.pyramidOrderSymbolByOrderId.has('6003'), false, 'must match and clean up despite the string/number type difference');
+  assert.equal(ds.pyramidPositionIdBySymbol.get('US100'), 41700002, 'the resulting position must still be tracked for its eventual close');
+});
 
 test('_handleExecutionEvent: an event for an UNTRACKED orderId (not ours, e.g. a manual trade) is a safe no-op', () => {
   const account = createFakeAccount();

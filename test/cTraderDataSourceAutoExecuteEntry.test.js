@@ -100,8 +100,8 @@ test('_handleAutoExecuteEntry: push confirmation arrives -> tracked in pendingEn
   });
   await promise;
 
-  assert.ok(ds.pendingEntryOrderByOrderId.has(50415794), 'the confirmed order must be tracked for later fill/cancel handling');
-  const tracked = ds.pendingEntryOrderByOrderId.get(50415794);
+  assert.ok(ds.pendingEntryOrderByOrderId.has('50415794'), 'the confirmed order must be tracked for later fill/cancel handling'); // string key - see the map's own set() convention (2026-09-18 fix)
+  const tracked = ds.pendingEntryOrderByOrderId.get('50415794');
   assert.equal(tracked.symbolName, 'US100');
   assert.equal(tracked.source, 'silverbullet');
   assert.equal(account._clearBelievedPositionCalls.length, 0);
@@ -130,7 +130,7 @@ test('_handleAutoExecuteEntry: no confirmation, reconcile finds the order still 
   t.mock.timers.tick(3000); // _waitForOrderIdBySymbol's own timeout - no push ever arrives
   await promise;
 
-  assert.ok(ds.pendingEntryOrderByOrderId.has(777), 'the reconciled real orderId must be adopted, not discarded');
+  assert.ok(ds.pendingEntryOrderByOrderId.has('777'), 'the reconciled real orderId must be adopted, not discarded'); // string key - see the map's own set() convention (2026-09-18 fix)
   assert.equal(account._clearBelievedPositionCalls.length, 0, 'a real working order must NOT clear the engine\'s belief');
 });
 

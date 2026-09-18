@@ -89,7 +89,7 @@ test('_handlePyramidOrderRequested: push confirmation arrives -> markPyramidOrde
   await promise;
 
   assert.deepEqual(account._markPyramidOrderPlacedCalls, [{ symbol: 'US100', brokerOrderId: 6500 }]);
-  assert.equal(ds.pyramidOrderSymbolByOrderId.get(6500), 'US100');
+  assert.equal(ds.pyramidOrderSymbolByOrderId.get('6500'), 'US100'); // string key - see the map's own set() convention (2026-09-18 fix)
 });
 
 test('_handlePyramidOrderRequested: no confirmation, reconcile finds the STOP order still pending -> adopted by real orderId', async (t) => {
@@ -115,7 +115,7 @@ test('_handlePyramidOrderRequested: no confirmation, reconcile finds the STOP or
   await promise;
 
   assert.deepEqual(account._markPyramidOrderPlacedCalls, [{ symbol: 'US100', brokerOrderId: 6600 }]);
-  assert.equal(ds.pyramidOrderSymbolByOrderId.get(6600), 'US100');
+  assert.equal(ds.pyramidOrderSymbolByOrderId.get('6600'), 'US100'); // string key - see the map's own set() convention (2026-09-18 fix)
 });
 
 test('_handlePyramidOrderRequested: no confirmation, reconcile finds the STOP already FILLED -> real bug found writing this test, now fixed: tracked in openPositionInfoByPositionId', async (t) => {

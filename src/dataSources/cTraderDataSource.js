@@ -1550,7 +1550,7 @@ export class CTraderDataSource {
       console.log(`[pyramid] _submitOrder resolved for ${symbolName}: brokerOrderId=${brokerOrderId}`);
       if (brokerOrderId != null) {
         store.strategyEngine.markPyramidOrderPlaced(symbolName, brokerOrderId);
-        this.pyramidOrderSymbolByOrderId.set(brokerOrderId, symbolName);
+        this.pyramidOrderSymbolByOrderId.set(String(brokerOrderId), symbolName);
         this._notifyText(`🔺 Pyramide auto : ordre stop programmé sur ${symbolName} (entrée ${e.entryPrice}, stop ${e.stopPrice}, cible ${e.targetPrice}, ${sizing.lots} lots)`);
       } else {
         // 2026-09-17: same gap already fixed on the entry path (see
@@ -1571,7 +1571,7 @@ export class CTraderDataSource {
 
         if (verified?.orderId != null) {
           store.strategyEngine.markPyramidOrderPlaced(symbolName, verified.orderId);
-          this.pyramidOrderSymbolByOrderId.set(verified.orderId, symbolName);
+          this.pyramidOrderSymbolByOrderId.set(String(verified.orderId), symbolName);
           console.warn(`[pyramid] no push confirmation for ${symbolName}, but reconcile found the REAL working order orderId=${verified.orderId} - adopted.`);
           this._notifyText(`🔺 Pyramide auto : ordre stop bien programmé sur ${symbolName} (confirmé en interrogeant le courtier, message de confirmation perdu)`);
         } else if (verified?.positionId != null) {
@@ -1624,7 +1624,7 @@ export class CTraderDataSource {
     if (!e.brokerOrderId) return; // never actually reached the broker (e.g. placement itself failed) - nothing to cancel
     try {
       await this._cancelOrder(e.brokerOrderId);
-      this.pyramidOrderSymbolByOrderId.delete(e.brokerOrderId);
+      this.pyramidOrderSymbolByOrderId.delete(String(e.brokerOrderId));
     } catch (err) {
       console.warn(`[pyramid] failed to cancel add-on order ${e.brokerOrderId} for ${symbolName}:`, err.message);
       this._notifyText(`⚠️ Pyramide auto : échec de l'annulation de l'ordre en attente sur ${symbolName} - à annuler manuellement si toujours ouvert`);
@@ -2026,7 +2026,7 @@ export class CTraderDataSource {
         // Tracked so _handleExecutionEvent can confirm the REAL outcome
         // (filled vs cancelled/expired/rejected) instead of leaving the
         // engine's own 'validated'-time belief unverified indefinitely.
-        this.pendingEntryOrderByOrderId.set(brokerOrderId, {
+        this.pendingEntryOrderByOrderId.set(String(brokerOrderId), {
           symbolName,
           source: signal.source,
           signalId: signal.id,
@@ -2080,7 +2080,7 @@ export class CTraderDataSource {
           // triggered yet) - only its confirmation push was lost. Track it
           // exactly as the confirmed path does, so its eventual fill/expiry
           // still resolves normally if the push channel recovers.
-          this.pendingEntryOrderByOrderId.set(verified.orderId, {
+          this.pendingEntryOrderByOrderId.set(String(verified.orderId), {
             symbolName,
             source: signal.source,
             signalId: signal.id,
@@ -2295,9 +2295,9 @@ export class CTraderDataSource {
     // recorded at placement time, NOT by parsing the order's label - more
     // robust if a given API response doesn't echo the label back.
     if (event.executionType === 'ORDER_FILLED' && !event.deal?.closePositionDetail && event.order?.orderId != null) {
-      const symbolName = this.pyramidOrderSymbolByOrderId.get(event.order.orderId);
+      const symbolName = this.pyramidOrderSymbolByOrderId.get(String(event.order.orderId));
       if (symbolName) {
-        this.pyramidOrderSymbolByOrderId.delete(event.order.orderId);
+        this.pyramidOrderSymbolByOrderId.delete(String(event.order.orderId));
         const filled = store.strategyEngine.markPyramidOrderFilled(symbolName);
         const positionId = event.position?.positionId ?? event.deal?.positionId;
         if (filled && positionId != null) {
@@ -2352,11 +2352,26 @@ export class CTraderDataSource {
     // the one a GOOD_TILL_DATE limit that never got touched again should
     // produce, not yet confirmed against a real response (same "written
     // against documentation" caveat as the rest of this file).
-    if (event.order?.orderId != null && this.pendingEntryOrderByOrderId.has(event.order.orderId)) {
-      const pending = this.pendingEntryOrderByOrderId.get(event.order.orderId);
+    // BUG FOUND 2026-09-18 (execution-path audit continued): String(...) on
+    // the lookup key, not the raw event.order.orderId - see the matching
+    // fix/tests on pyramidOrderSymbolByOrderId above and the
+    // openPositionInfoByPositionId/pyramidPositionIdBySymbol precedent this
+    // mirrors. pendingEntryOrderByOrderId can be populated from THREE
+    // different broker message types (a ProtoOAExecutionEvent ACCEPTED via
+    // _waitForOrderIdBySymbol, or a ProtoOAReconcileRes order/position via
+    // the reconcile-verified fallback - see _handleAutoExecuteEntry), and
+    // this broker is confirmed (repeatedly, this session) to serialize the
+    // same conceptual int64 field as a string or a number depending on which
+    // message it came from. A bare `.has(event.order.orderId)` would
+    // silently never match a fallback-adopted order whose type happened to
+    // differ from this later FILLED/CANCELLED event's own orderId - exactly
+    // the connection state the fallback exists to survive.
+    const pendingOrderKey = String(event.order?.orderId);
+    if (event.order?.orderId != null && this.pendingEntryOrderByOrderId.has(pendingOrderKey)) {
+      const pending = this.pendingEntryOrderByOrderId.get(pendingOrderKey);
       const unfilledTypes = new Set(['ORDER_CANCELLED', 'ORDER_EXPIRED', 'ORDER_REJECTED']);
       if (event.executionType === 'ORDER_FILLED' && !event.deal?.closePositionDetail) {
-        this.pendingEntryOrderByOrderId.delete(event.order.orderId);
+        this.pendingEntryOrderByOrderId.delete(pendingOrderKey);
         // 2026-09-14: remember this REAL position (String() - see this
         // class's own openPositionInfoByPositionId comment for why) so the
         // eventual real close below can log a durable trade row from
@@ -2369,7 +2384,7 @@ export class CTraderDataSource {
         console.log(`[auto-execute] CONFIRMED FILLED: ${pending.symbolName} source=${pending.source} orderId=${event.order.orderId} - real position opened at the broker.`);
         this._notifyText(`✅ [${pending.source.toUpperCase()}] Ordre confirmé REMPLI sur ${pending.symbolName} - position réellement ouverte chez le courtier.`);
       } else if (unfilledTypes.has(event.executionType)) {
-        this.pendingEntryOrderByOrderId.delete(event.order.orderId);
+        this.pendingEntryOrderByOrderId.delete(pendingOrderKey);
         store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'unfilled', executionType: event.executionType });
         console.log(`[auto-execute] CONFIRMED UNFILLED: ${pending.symbolName} source=${pending.source} orderId=${event.order.orderId} executionType=${event.executionType} - no real position, clearing believed-open.`);
         // The engine believed this was open the moment it validated the
