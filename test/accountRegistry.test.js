@@ -53,13 +53,16 @@ test('buildEffectiveConfig: no propFirmProgramId means the account\'s own guardr
 // production the entire time despite being documented as live. Every
 // live-mechanism config block must be forwarded, checked explicitly by name
 // so a future mechanism added to config.js but forgotten here fails loudly.
-test('buildEffectiveConfig: forwards every live-mechanism config block from CONFIG (nwog/judasSwing/weeklySweep/breakerBlock/silverBullet/pyramid), none silently dropped', () => {
+test('buildEffectiveConfig: forwards every live-mechanism config block from CONFIG (nwog/judasSwing/weeklySweep/breakerBlock/silverBullet/cbdr/pyramid), none silently dropped', () => {
   const effective = buildEffectiveConfig({ id: 'test-plain', propFirmProgramId: null, guardrails: {}, riskPctPerTrade: 0.3 });
   assert.equal(effective.nwog, CONFIG.nwog);
   assert.equal(effective.judasSwing, CONFIG.judasSwing);
   assert.equal(effective.weeklySweep, CONFIG.weeklySweep);
   assert.equal(effective.breakerBlock, CONFIG.breakerBlock);
   assert.equal(effective.silverBullet, CONFIG.silverBullet);
+  // 2026-09-18: added alongside CBDR going live (US100 only) - same
+  // regression class, guarded here from the start this time.
+  assert.equal(effective.cbdr, CONFIG.cbdr);
   assert.equal(effective.pyramid, CONFIG.pyramid);
 });
 

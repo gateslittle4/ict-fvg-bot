@@ -73,6 +73,11 @@ export function buildEffectiveConfig(accountConfig) {
     weeklySweep: CONFIG.weeklySweep,
     breakerBlock: CONFIG.breakerBlock,
     silverBullet: CONFIG.silverBullet,
+    // 2026-09-18, added alongside CBDR going live (US100 only) - same class
+    // of bug as weeklySweep/breakerBlock above, avoided this time by adding
+    // it HERE in the same change that adds config.js's `cbdr` block, instead
+    // of after the fact.
+    cbdr: CONFIG.cbdr,
     pyramid: CONFIG.pyramid,
     guardrails,
     risk: { riskPctPerTrade: accountConfig.riskPctPerTrade },

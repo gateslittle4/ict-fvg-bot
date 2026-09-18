@@ -469,6 +469,58 @@ export const CONFIG = {
     rrMultiple: 3,
     maxHoldingM15Candles: 480,
   },
+  // CBDR (ICT "Central Bank Dealer Range" standard-deviation-projection fade)
+  // - LIVE, auto-executed (2026-09-18), US100 ONLY, at Esdras's explicit
+  // "cable alors cbdr" request. Validated across 3 layers this session, each
+  // documented in HANDOFF.md:
+  //   (1) full historical depth train(<2024)/test(2024-2025) split on
+  //       data/backtest-input/US100.csv (2010-11-14 -> present, ~15 years,
+  //       not just the ~7-year window some other symbols have) - train
+  //       exp 0.11R (n=694), test exp 0.18R (n=166), verdict "tient".
+  //   (2) a forward-test on real never-touched cTrader candles
+  //       (data/real-data-2026-02-to-09/, 2026-02-10 -> 2026-09-16) - exp
+  //       +0.34R (n=52), stronger than either historical window, never used
+  //       to tune anything.
+  //   (3) an overlap analysis against what's already live on US100 (FVG,
+  //       Divergence, NWOG, Silver Bullet - all four share ONE netted
+  //       position slot per symbol, see liveStrategyEngine.js's
+  //       `openPositions` comment) - 71.0% of CBDR's standalone trades
+  //       overlap NONE of them (genuinely additive), same order of
+  //       magnitude as the 76-83% figure that supported Silver Bullet's own
+  //       rollout. See data/backtest-input/cbdr-us100-overlap-analysis.md.
+  //
+  // Deliberately NOT added on GER40 despite being CBDR's strongest
+  // historical/train-test candidate: its real forward-test failed
+  // (exp -0.07R over the same 2026-02->09 window) - traced to a single
+  // catastrophic month (August 2026, 12/12 losses) during a persistent
+  // trending regime, itself consistent with GER40's own 15-year monthly
+  // tail-risk distribution (2 prior similar all-loss months exist), but not
+  // yet resolved with Esdras as an accepted risk. EURUSD/GBPUSD were BOTH
+  // downgraded from "tient" to "affaibli" once their own historical CSVs
+  // were extended to full ~15-year depth (train expectancy flips negative
+  // on both once the pre-2018/2019 years are included) - see HANDOFF.md's
+  // EURUSD/GBPUSD depth-extension sections. US100 is the only symbol that
+  // cleared all three layers without reservation.
+  //
+  // rrMultiple: 3, maxHoldingM15Candles: 480 - the exact values every
+  // validation above was run at (cbdr.js's own RR_MULTIPLE/
+  // MAX_HOLDING_CANDLES defaults), not re-tuned or extended to 5 the way
+  // FVG/NWOG/Weekly Sweep/Breaker Block eventually were - that extension was
+  // only ever tested for THOSE mechanisms, and picking a bigger number here
+  // now, never having tested it, would be exactly the after-the-fact
+  // parameter choice this project's discipline exists to avoid. No
+  // direction filter - CBDR is a bidirectional fade (upside touch ->
+  // bearish, downside touch -> bullish), never screened for a long/short
+  // split the way NWOG/US100 was.
+  //
+  // Wired into the SAME openPositions/netting/auto-execute path as every
+  // other live source (liveStrategyEngine.js's _processCbdrCandidate) - no
+  // special-cased position tracking.
+  cbdr: {
+    symbols: ['US100'],
+    rrMultiple: 3,
+    maxHoldingM15Candles: 480,
+  },
   // Pyramid add-on ("stops indépendants, sans breakeven" - see HANDOFF.md):
   // once an FVG position on `symbols` has moved `addAtR` in its favor, place
   // a SECOND, fully independent unit (own entry/stop/target - the original
