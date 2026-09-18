@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyTransactionCosts, runLabBacktest } from '../src/backtest/labRunner.js';
+import { applyTransactionCosts, runLabBacktest, runLabBacktestTrainTest, labVerdict, TRAIN_TEST_CUTOFF } from '../src/backtest/labRunner.js';
 import { LAB_STRATEGIES, listLabStrategies } from '../src/backtest/labRegistry.js';
 
 test('applyTransactionCosts: a symbol with no known spread passes trades through unchanged', () => {
@@ -67,4 +67,33 @@ test('runLabBacktest: returns a coherent shape end to end for a real strategy on
     assert.equal(typeof point.cumulativeR, 'number');
   }
   assert.equal(typeof result.droppedAsNonViable, 'number');
+});
+
+test('labVerdict: not enough trades on either side is reported honestly, never a false confirmation', () => {
+  assert.equal(labVerdict(0.5, 0.5, 5, 50), 'not-enough-trades');
+  assert.equal(labVerdict(0.5, 0.5, 50, 5), 'not-enough-trades');
+  assert.equal(labVerdict(0.5, null, 50, 50), 'not-enough-trades');
+});
+
+test('labVerdict: a non-positive out-of-sample expectancy always fails, regardless of train', () => {
+  assert.equal(labVerdict(0.8, 0, 50, 50), 'fails');
+  assert.equal(labVerdict(0.8, -0.1, 50, 50), 'fails');
+});
+
+test('labVerdict: test expectancy retaining at least 30% of train expectancy holds', () => {
+  assert.equal(labVerdict(1.0, 0.3, 50, 50), 'holds');
+  assert.equal(labVerdict(1.0, 0.29, 50, 50), 'weakened');
+});
+
+test('runLabBacktestTrainTest: splits candles at the project-wide 2024-01-01 cutoff and verdicts them', () => {
+  const before = { time: TRAIN_TEST_CUTOFF - 86400000, open: 100, high: 101, low: 99, close: 100.5 };
+  const after = { time: TRAIN_TEST_CUTOFF + 86400000, open: 100, high: 101, low: 99, close: 100.5 };
+  const candles = [];
+  for (let i = 0; i < 50; i++) candles.push({ ...before, time: before.time - i * 900000 });
+  for (let i = 0; i < 50; i++) candles.push({ ...after, time: after.time + i * 900000 });
+  candles.sort((a, b) => a.time - b.time);
+  const result = runLabBacktestTrainTest('macd-trend', candles, 'US100');
+  assert.ok(result.train.trades.every((t) => t.entryTime < TRAIN_TEST_CUTOFF));
+  assert.ok(result.test.trades.every((t) => t.entryTime >= TRAIN_TEST_CUTOFF));
+  assert.ok(['holds', 'weakened', 'fails', 'not-enough-trades'].includes(result.verdict));
 });

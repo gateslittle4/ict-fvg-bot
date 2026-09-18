@@ -198,6 +198,21 @@ function renderEquityCurve(equityCurve) {
   `;
 }
 
+const VERDICT_LABELS = {
+  holds: { text: '✅ Tient hors échantillon (test)', cls: 'win' },
+  weakened: { text: '⚠️ Affaibli hors échantillon', cls: '' },
+  fails: { text: '❌ Ne tient pas hors échantillon', cls: 'loss' },
+  'not-enough-trades': { text: '❓ Pas assez de trades pour conclure', cls: '' },
+};
+function verdictBadge(verdict) {
+  const v = VERDICT_LABELS[verdict] || VERDICT_LABELS['not-enough-trades'];
+  return `<span class="metric-value ${v.cls}" style="font-size:13px;">${v.text}</span>`;
+}
+function verdictCell(verdict) {
+  const v = VERDICT_LABELS[verdict] || VERDICT_LABELS['not-enough-trades'];
+  return `<span class="${v.cls}">${v.text}</span>`;
+}
+
 async function loadMeta() {
   const msgEl = document.getElementById('lab-meta-msg');
   try {
@@ -236,27 +251,33 @@ async function runLab() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
     resultsEl.hidden = false;
-    const s = data.summary;
-    const netWin = s.finalEquityR >= 0;
+    const test = data.test.summary;
+    const train = data.train.summary;
+    const netWin = test.finalEquityR >= 0;
+    const cutoffLabel = fmtTime(data.trainCutoff);
     statsEl.innerHTML = `
+      ${verdictBadge(data.verdict)}
+      <div class="meta" style="margin: 8px 0;">Résultats sur la période <strong>TEST</strong> (à partir de ${cutoffLabel}, jamais utilisée pour choisir les paramètres de cette stratégie) — le chiffre qui compte vraiment. Entraînement (avant ${cutoffLabel}) donné en référence seulement.</div>
       <div class="metric-tiles">
-        <div class="metric-tile"><div class="metric-label">Trades</div><div class="metric-value">${s.totalSignals}</div></div>
-        <div class="metric-tile"><div class="metric-label">Taux de réussite</div><div class="metric-value">${s.winRate === null ? '—' : fmt(s.winRate * 100, 0) + '%'}</div></div>
-        <div class="metric-tile"><div class="metric-label">Profit factor</div><div class="metric-value">${fmt(s.profitFactor)}</div></div>
-        <div class="metric-tile"><div class="metric-label">Espérance</div><div class="metric-value ${s.expectancyR >= 0 ? 'win' : 'loss'}">${s.expectancyR >= 0 ? '+' : ''}${fmt(s.expectancyR)}R</div></div>
-        <div class="metric-tile"><div class="metric-label">Drawdown max</div><div class="metric-value loss">-${fmt(s.maxDrawdownR)}R</div></div>
-        <div class="metric-tile"><div class="metric-label">Total en R</div><div class="metric-value ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.finalEquityR)}R</div></div>
+        <div class="metric-tile"><div class="metric-label">Trades (test)</div><div class="metric-value">${test.totalSignals}</div></div>
+        <div class="metric-tile"><div class="metric-label">Taux de réussite</div><div class="metric-value">${test.winRate === null ? '—' : fmt(test.winRate * 100, 0) + '%'}</div></div>
+        <div class="metric-tile"><div class="metric-label">Profit factor</div><div class="metric-value">${fmt(test.profitFactor)}</div></div>
+        <div class="metric-tile"><div class="metric-label">Espérance</div><div class="metric-value ${test.expectancyR >= 0 ? 'win' : 'loss'}">${test.expectancyR >= 0 ? '+' : ''}${fmt(test.expectancyR)}R</div></div>
+        <div class="metric-tile"><div class="metric-label">Drawdown max</div><div class="metric-value loss">-${fmt(test.maxDrawdownR)}R</div></div>
+        <div class="metric-tile"><div class="metric-label">Total en R (test)</div><div class="metric-value ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(test.finalEquityR)}R</div></div>
       </div>
+      <div class="meta">Pour référence — entraînement (${train.totalSignals} trades avant ${cutoffLabel}) : espérance ${train.expectancyR >= 0 ? '+' : ''}${fmt(train.expectancyR)}R, total ${train.finalEquityR >= 0 ? '+' : ''}${fmt(train.finalEquityR)}R.</div>
     `;
-    equityEl.innerHTML = renderEquityCurve(data.equityCurve);
-    caveatEl.textContent = `${data.candleCount.toLocaleString('fr-FR')} bougies M15 analysées · ${data.droppedAsNonViable} signal(aux) écarté(s) comme non-tradeable (stop trop proche du spread) · coûts de spread réels déjà déduits du R affiché. Recherche seulement — rien ici n'est branché sur le trading réel.`;
-    if (data.recentTrades.length === 0) {
-      tradesEl.innerHTML = '<div class="meta">Aucun trade généré par cette combinaison stratégie/symbole.</div>';
+    equityEl.innerHTML = renderEquityCurve(data.test.equityCurve);
+    const recentTrades = data.test.recentTrades;
+    caveatEl.textContent = `${data.candleCount.toLocaleString('fr-FR')} bougies M15 analysées au total · ${data.test.droppedAsNonViable} signal(aux) de test écarté(s) comme non-tradeable (stop trop proche du spread) · coûts de spread réels déjà déduits du R affiché. Recherche seulement — rien ici n'est branché sur le trading réel.`;
+    if (recentTrades.length === 0) {
+      tradesEl.innerHTML = '<div class="meta">Aucun trade de test généré par cette combinaison stratégie/symbole.</div>';
     } else {
       tradesEl.innerHTML = `
         <table class="strategy-table">
           <thead><tr><th>Entrée</th><th>Sens</th><th>Résultat</th><th>R</th></tr></thead>
-          <tbody>${data.recentTrades.map((t) => `
+          <tbody>${recentTrades.map((t) => `
             <tr>
               <td>${fmtTime(t.entryTime)}</td>
               <td>${t.direction === 'bullish' ? '▲ Achat' : t.direction === 'bearish' ? '▼ Vente' : (t.direction || '—')}</td>
@@ -298,22 +319,22 @@ async function runScreen() {
     if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
     screenResultsEl.hidden = false;
     const rows = data.results.map((r) => {
-      if (!r.ok) return `<tr><td>${r.symbol}</td><td colspan="5" class="err">${r.error}</td></tr>`;
+      if (!r.ok) return `<tr><td>${r.symbol}</td><td colspan="6" class="err">${r.error}</td></tr>`;
       const netWin = r.finalEquityR >= 0;
       return `
         <tr>
           <td>${r.symbol}</td>
-          <td>${r.totalSignals}</td>
+          <td>${r.testSignals} <span class="meta">(${r.trainSignals} entraînement)</span></td>
           <td>${r.winRate === null ? '—' : fmt(r.winRate * 100, 0) + '%'}</td>
           <td class="${r.expectancyR >= 0 ? 'win' : 'loss'}">${r.expectancyR === null ? '—' : (r.expectancyR >= 0 ? '+' : '') + fmt(r.expectancyR)}R</td>
           <td class="${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(r.finalEquityR)}R</td>
-          <td>${fmt(r.profitFactor)}</td>
+          <td>${verdictCell(r.verdict)}</td>
         </tr>
       `;
     }).join('');
     tableEl.innerHTML = `
       <table class="strategy-table">
-        <thead><tr><th>Symbole</th><th>Trades</th><th>Taux</th><th>Espérance</th><th>Total R</th><th>Profit factor</th></tr></thead>
+        <thead><tr><th>Symbole</th><th>Trades (test)</th><th>Taux</th><th>Espérance (test)</th><th>Total R (test)</th><th>Verdict</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     `;
@@ -349,17 +370,17 @@ async function runStrategyScreen() {
       return `
         <tr>
           <td>${r.label}</td>
-          <td>${r.totalSignals}</td>
+          <td>${r.testSignals} <span class="meta">(${r.trainSignals} entraînement)</span></td>
           <td>${r.winRate === null ? '—' : fmt(r.winRate * 100, 0) + '%'}</td>
           <td class="${r.expectancyR >= 0 ? 'win' : 'loss'}">${r.expectancyR === null ? '—' : (r.expectancyR >= 0 ? '+' : '') + fmt(r.expectancyR)}R</td>
           <td class="${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(r.finalEquityR)}R</td>
-          <td>${fmt(r.profitFactor)}</td>
+          <td>${verdictCell(r.verdict)}</td>
         </tr>
       `;
     }).join('');
     tableEl.innerHTML = `
       <table class="strategy-table">
-        <thead><tr><th>Stratégie</th><th>Trades</th><th>Taux</th><th>Espérance</th><th>Total R</th><th>Profit factor</th></tr></thead>
+        <thead><tr><th>Stratégie</th><th>Trades (test)</th><th>Taux</th><th>Espérance (test)</th><th>Total R (test)</th><th>Verdict</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     `;

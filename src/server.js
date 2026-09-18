@@ -24,7 +24,7 @@ import { getPropFirmProgram } from './propFirms/index.js';
 import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus } from './chatAssistant.js';
 import { loadCandlesFromCsv } from './backtest/csvLoader.js';
 import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
-import { runLabBacktest } from './backtest/labRunner.js';
+import { runLabBacktestTrainTest, TRAIN_TEST_CUTOFF } from './backtest/labRunner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -243,6 +243,21 @@ app.get('/api/lab/meta', (req, res) => {
 // the exact same pipeline per symbol, just returns summaries (not full
 // equity curves/trade lists - a ranking table doesn't need them, and this
 // keeps the response small even multiplied by 12 symbols).
+// Flattens a train/test result into the summary shape the screener tables
+// use - out-of-sample (test) figures are what gets ranked/shown as the
+// headline number, train is carried alongside only for the verdict.
+function flattenTrainTestForScreen(trainTest) {
+  return {
+    trainSignals: trainTest.train.summary.totalSignals,
+    testSignals: trainTest.test.summary.totalSignals,
+    winRate: trainTest.test.summary.winRate,
+    expectancyR: trainTest.test.summary.expectancyR,
+    finalEquityR: trainTest.test.summary.finalEquityR,
+    profitFactor: trainTest.test.summary.profitFactor,
+    verdict: trainTest.verdict,
+  };
+}
+
 app.post('/api/lab/screen', (req, res) => {
   const { strategyId } = req.body || {};
   if (!strategyId || !LAB_STRATEGIES[strategyId]) {
@@ -253,8 +268,8 @@ app.post('/api/lab/screen', (req, res) => {
     const results = symbols.map((symbol) => {
       try {
         const candles = loadLabCandles(symbol);
-        const { summary, droppedAsNonViable } = runLabBacktest(strategyId, candles, symbol);
-        return { symbol, ok: true, candleCount: candles.length, droppedAsNonViable, ...summary };
+        const trainTest = runLabBacktestTrainTest(strategyId, candles, symbol);
+        return { symbol, ok: true, candleCount: candles.length, ...flattenTrainTestForScreen(trainTest) };
       } catch (err) {
         return { symbol, ok: false, error: err.message };
       }
@@ -279,8 +294,8 @@ app.post('/api/lab/screen-strategies', (req, res) => {
     const candles = loadLabCandles(symbol);
     const results = listLabStrategies().map(({ id, label }) => {
       try {
-        const { summary, droppedAsNonViable } = runLabBacktest(id, candles, symbol);
-        return { strategyId: id, label, ok: true, droppedAsNonViable, ...summary };
+        const trainTest = runLabBacktestTrainTest(id, candles, symbol);
+        return { strategyId: id, label, ok: true, ...flattenTrainTestForScreen(trainTest) };
       } catch (err) {
         return { strategyId: id, label, ok: false, error: err.message };
       }
@@ -302,11 +317,8 @@ app.post('/api/lab/run', (req, res) => {
   }
   try {
     const candles = loadLabCandles(symbol);
-    const result = runLabBacktest(strategyId, candles, symbol);
-    res.json({
-      strategyId,
-      symbol,
-      candleCount: candles.length,
+    const { train, test, verdict } = runLabBacktestTrainTest(strategyId, candles, symbol);
+    const toPayload = (result) => ({
       summary: result.summary,
       equityCurve: result.equityCurve,
       droppedAsNonViable: result.droppedAsNonViable,
@@ -315,6 +327,15 @@ app.post('/api/lab/run', (req, res) => {
       // so the response stays small even for a strategy that fires
       // thousands of times (MACD Trend on 7 years of US100 M15: ~25k).
       recentTrades: result.trades.slice(-100).reverse(),
+    });
+    res.json({
+      strategyId,
+      symbol,
+      candleCount: candles.length,
+      trainCutoff: TRAIN_TEST_CUTOFF,
+      verdict,
+      train: toPayload(train),
+      test: toPayload(test),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

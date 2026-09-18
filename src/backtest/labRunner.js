@@ -30,6 +30,47 @@ export function applyTransactionCosts(trades, symbol) {
   });
 }
 
+// Same split point as EVERY scripts/run<Name>StrategyAnalysis.js in this
+// project (grepped across all of them 2026-09-18: identical literal in
+// every one) - screen on data before this date, verify on data after it,
+// never trust a full-history number alone. Baking this into the Lab too,
+// not just the one-off scripts, so a result shown here carries the same
+// "did this actually hold up out of sample" discipline instead of a number
+// that could just be curve-fit to the whole history.
+export const TRAIN_TEST_CUTOFF = Date.UTC(2024, 0, 1);
+const MIN_TRADES_FOR_VERDICT = 10;
+
+/**
+ * Same rule as every analysis script's own verdict() (copied here as the
+ * one canonical version rather than re-copied per script). 'holds' requires
+ * the out-of-sample expectancy to be at least 30% of the in-sample one -
+ * anything weaker is flagged rather than presented as confirmed.
+ */
+export function labVerdict(trainExpectancy, testExpectancy, trainCount, testCount) {
+  if (trainCount < MIN_TRADES_FOR_VERDICT || testCount < MIN_TRADES_FOR_VERDICT) return 'not-enough-trades';
+  if (testExpectancy === null || testExpectancy === undefined) return 'not-enough-trades';
+  if (testExpectancy <= 0) return 'fails';
+  if (trainExpectancy > 0 && testExpectancy >= 0.3 * trainExpectancy) return 'holds';
+  return 'weakened';
+}
+
+/**
+ * Runs one strategy on the train slice (before TRAIN_TEST_CUTOFF) and the
+ * test slice (on/after it) separately, plus a verdict on whether the
+ * train-period edge actually survived out of sample.
+ */
+export function runLabBacktestTrainTest(strategyId, candles, symbol) {
+  const trainCandles = candles.filter((c) => c.time < TRAIN_TEST_CUTOFF);
+  const testCandles = candles.filter((c) => c.time >= TRAIN_TEST_CUTOFF);
+  const train = runLabBacktest(strategyId, trainCandles, symbol);
+  const test = runLabBacktest(strategyId, testCandles, symbol);
+  return {
+    train,
+    test,
+    verdict: labVerdict(train.summary.expectancyR, test.summary.expectancyR, train.summary.totalSignals, test.summary.totalSignals),
+  };
+}
+
 /**
  * Runs one registered strategy against one candle series end to end:
  * raw signals -> realistic transaction costs -> summary stats + a
