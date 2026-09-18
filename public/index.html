@@ -206,6 +206,10 @@
     .operational-alert.ok { color: var(--green); }
     .risk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--panel-border); border: 1px solid var(--panel-border); }
     .risk-grid .metric-tile { min-width: 0; }
+    .emergency-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--panel-border); }
+    .emergency-close-all-btn { margin: 0; padding: 7px 10px; border: 1px solid rgba(255, 92, 95, 0.65); border-radius: var(--radius); background: rgba(255, 92, 95, 0.1); color: var(--red); cursor: pointer; font: 700 10px var(--mono); }
+    .emergency-close-all-btn:hover { background: rgba(255, 92, 95, 0.18); }
+    .emergency-close-all-btn:disabled { opacity: 0.5; cursor: wait; }
     @media (max-width: 900px) { .risk-grid { grid-template-columns: repeat(3, 1fr); } }
     @media (max-width: 520px) { .risk-grid { grid-template-columns: repeat(2, 1fr); } }
 
@@ -560,6 +564,10 @@
     <h2>Risk Command Center</h2>
     <div class="meta" style="margin-bottom:8px;">Exposition calculée sur les positions réellement ouvertes et leurs protections broker.</div>
     <div id="risk-command-body">Chargement des données de risque…</div>
+    <div class="emergency-actions" id="emergency-actions" hidden>
+      <button type="button" class="emergency-close-all-btn" id="close-all-positions-btn" onclick="closeAllPositions()">■ FERMER TOUTES LES POSITIONS RÉELLES</button>
+      <span class="meta">Action irréversible · les ordres en attente ne sont pas annulés.</span>
+    </div>
   </div>
 
   <div class="section-title">Simulation (pas des trades réels)</div>
@@ -804,10 +812,12 @@ function renderExecutionAudit() {
 }
 function renderRiskCommandCenter() {
   const el = document.getElementById('risk-command-body');
+  const emergencyActions = document.getElementById('emergency-actions');
   const data = controlState.account;
   const status = controlState.status;
   if (!el || !status) return;
   if (!data) {
+    if (emergencyActions) emergencyActions.hidden = true;
     el.innerHTML = status.liveConfigured
       ? '<div class="meta">Données de risque broker en attente de la réconciliation.</div>'
       : '<div class="meta">Risque broker réel indisponible en mode démo — aucune position réelle à réconcilier.</div>';
@@ -825,6 +835,7 @@ function renderRiskCommandCenter() {
   const pnl = data.floatingPnlEstimate;
   const pnlClass = pnl > 0 ? 'win' : pnl < 0 ? 'loss' : '';
   const riskClass = riskPct !== null && riskPct >= 1 ? 'loss' : riskPct !== null && riskPct >= 0.5 ? '' : 'win';
+  if (emergencyActions) emergencyActions.hidden = !data.positions?.length || !status.liveConfigured;
   el.innerHTML = `
     <div class="risk-grid">
       <div class="metric-tile"><div class="metric-label">Solde broker</div><div class="metric-value">${fmt(data.balance)}</div></div>
@@ -836,6 +847,29 @@ function renderRiskCommandCenter() {
     </div>
     <div class="meta" style="margin-top:8px;">${positions.length === 0 ? 'Aucune position réelle ouverte.' : `${positions.length} position${positions.length > 1 ? 's' : ''} ouverte${positions.length > 1 ? 's' : ''} · protections connues pour ${knownRiskCount}/${positions.length}.`}</div>
   `;
+}
+async function closeAllPositions() {
+  const positions = controlState.account?.positions || [];
+  if (positions.length === 0) return;
+  const summary = positions.map((position) => `${position.symbol || 'symbole inconnu'} (#${position.positionId})`).join(', ');
+  if (!confirm(`URGENT : fermer ${positions.length} position${positions.length > 1 ? 's' : ''} réelle${positions.length > 1 ? 's' : ''} au marché ?\n\n${summary}\n\nCette action est irréversible.`)) return;
+  if (!confirm('Dernière confirmation : envoyer les ordres de fermeture maintenant ?')) return;
+  const button = document.getElementById('close-all-positions-btn');
+  if (button) { button.disabled = true; button.textContent = 'FERMETURE EN COURS…'; }
+  try {
+    const res = await fetch(acctUrl('/positions/close-all'), { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok && res.status !== 207) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    const failed = data.failed || 0;
+    alert(failed > 0
+      ? `${data.closed || 0} position(s) fermée(s), ${failed} échec(s). Vérifie immédiatement la réconciliation broker.`
+      : `${data.closed || 0} position(s) fermée(s) avec confirmation broker.`);
+    await refreshAccount();
+  } catch (err) {
+    alert(`Échec de la fermeture d'urgence : ${err.message}`);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = '■ FERMER TOUTES LES POSITIONS RÉELLES'; }
+  }
 }
 function formatUptime(seconds) {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));

@@ -479,6 +479,54 @@ function createAccountRouter(getStore) {
     }
   });
 
+  // Emergency flatten for every REAL open position on this account. This is
+  // deliberately separate from auto-execute pause: pausing prevents new
+  // entries, while this route sends one broker close request per reconciled
+  // position. It never touches pending orders or the strategy's simulated
+  // beliefs, and continues through partial failures so the response shows
+  // exactly what did and did not close.
+  router.post('/positions/close-all', async (req, res) => {
+    const store = getStore(req);
+    const ds = store.liveDataSource;
+    if (!ds?.connection || typeof ds.getAccountReconciliation !== 'function') {
+      return res.status(503).json({ error: 'not connected to a live broker' });
+    }
+    try {
+      // Stop new automatic entries before taking the broker snapshot. Existing
+      // positions are then flattened without racing a fresh strategy signal.
+      store.setAutoExecute(false);
+      const account = await ds.getAccountReconciliation();
+      const positions = (account.positions || []).filter((position) => (
+        Number.isFinite(Number(position.positionId)) && Number(position.units) > 0
+      ));
+      const results = [];
+      for (const position of positions) {
+        const positionId = Number(position.positionId);
+        const volume = Math.round(Number(position.units) * 100);
+        if (!Number.isFinite(volume) || volume <= 0) {
+          results.push({ positionId, symbol: position.symbol, closed: false, error: 'invalid broker volume' });
+          continue;
+        }
+        try {
+          const result = await closePositionOnBroker(ds, positionId, volume, `close-all:${store.id}`);
+          results.push({ positionId, symbol: position.symbol, volume, ...result });
+        } catch (err) {
+          results.push({ positionId, symbol: position.symbol, volume, closed: false, error: err.message });
+        }
+      }
+      const failed = results.filter((result) => !result.closed);
+      res.status(failed.length > 0 ? 207 : 200).json({
+        autoExecutePaused: true,
+        requested: positions.length,
+        closed: results.filter((result) => result.closed).length,
+        failed: failed.length,
+        results,
+      });
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
+  });
+
   // Trading journal (2026-09, at the user's request): closed trades over the
   // last few days with a small chart window, queried fresh from the broker on
   // every request rather than stored - see getTradeHistory()'s own comment in
