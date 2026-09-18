@@ -14,6 +14,7 @@ import { buildForwardTest } from './backtest/forwardTest.js';
 import { resampleCandles } from './backtest/htfBias.js';
 import { buildChartOverlays } from './backtest/chartOverlays.js';
 import { startKeepAlive } from './keepAlive.js';
+import { buildHealthReport } from './healthReport.js';
 import { fetchPerformanceBySymbol } from './dataSources/supabaseTradeLog.js';
 import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
@@ -87,13 +88,7 @@ function withRealTimeSignal(signal) {
 // dashboard. Process-level, not account-specific - see GET /api/accounts for
 // a per-account breakdown.
 app.get('/healthz', (req, res) => {
-  const accounts = listAccounts();
-  res.json({
-    ok: true,
-    uptimeSec: Math.round((Date.now() - BOOTED_AT) / 1000),
-    accountsConnected: accounts.filter((a) => a.liveDataSource !== null).length,
-    accountsTotal: accounts.length,
-  });
+  res.json(buildHealthReport({ accounts: listAccounts(), now: Date.now(), bootedAt: BOOTED_AT }));
 });
 
 // Multi-account overview (2026-09, multi-account rollout - see HANDOFF.md
