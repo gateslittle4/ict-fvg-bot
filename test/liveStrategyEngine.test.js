@@ -1504,3 +1504,107 @@ test('LiveStrategyEngine: netting blocks a Silver Bullet signal on a symbol that
   assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
+
+// --- CBDR (Central Bank Dealer Range fade) - LIVE auto-execute (2026-09-18,
+// US100 only) ---------------------------------------------------------------
+// Same openPositions/netting/auto-execute path as every other live source
+// above - no CBDR-specific position tracking. Fixture copied from
+// test/cbdr.test.js's own cbdrFixture()/histDataTime() (the pure
+// detectCbdrEvents()/runCbdrBacktest() unit tests) - January dates keep real
+// NY time == the fixed-EST digits used project-wide for candle .time (no DST
+// in effect), same convention as every other live-engine test in this file.
+
+function histDataTime(y, m, d, h, min) {
+  return Date.UTC(y, m - 1, d, h, min, 0);
+}
+
+// CBDR (Jan 15 2024, 14:00-19:45 NY): range high=110, low=90, height=20.
+// upper 2x projection = 110 + 2*20 = 150. lower 2x projection = 90 - 2*20 = 50.
+function cbdrBaseFixture() {
+  return [
+    c(histDataTime(2024, 1, 15, 14, 0), 100, 101, 99, 100),
+    c(histDataTime(2024, 1, 15, 15, 0), 100, 110, 100, 108), // range high 110
+    c(histDataTime(2024, 1, 15, 16, 0), 108, 109, 90, 95), // range low 90
+    c(histDataTime(2024, 1, 15, 19, 0), 95, 100, 94, 99),
+  ];
+}
+
+const CBDR_CFG = { symbols: ['TEST1'], rrMultiple: 3, maxHoldingM15Candles: 480 };
+
+test('LiveStrategyEngine (CBDR): an upside 2x-projection touch fires a "validated" fade signal one candle later, entry = candle.open, and opens a REAL position', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, cbdrConfig: CBDR_CFG, guardrail, riskPctPerTrade: 1,
+  });
+
+  const touch = c(histDataTime(2024, 1, 15, 20, 0), 100, 152, 99, 101); // high 152 >= upper projection 150 -> bearish fade, stopReference = 152
+  const entry = c(histDataTime(2024, 1, 15, 20, 15), 101, 101.5, 100, 100.5); // entry candle: entryPrice = open = 101
+
+  for (const candle of cbdrBaseFixture()) engine.ingestCandle('TEST1', candle);
+  const touchEvents = engine.ingestCandle('TEST1', touch);
+  assert.equal(touchEvents.length, 0, 'the touch candle itself does not fire a signal - entry waits one more candle');
+
+  const entryEvents = engine.ingestCandle('TEST1', entry).filter((e) => e.source === 'cbdr');
+  assert.equal(entryEvents.length, 1);
+  const sig = entryEvents[0];
+  assert.equal(sig.direction, 'bearish');
+  assert.equal(sig.suggestedSide, 'sell'); // required by _handleAutoExecuteEntry's real order submission
+  assert.equal(sig.entryPrice, 101);
+  assert.equal(sig.stopPrice, 152);
+  assert.ok(Math.abs(sig.distance - 51) < 1e-9);
+  assert.ok(Math.abs(sig.targetPrice - (-52)) < 1e-9); // entry - 3R
+  assert.equal(sig.blockedReason, null);
+  assert.equal(engine.getOpenPosition('TEST1').source, 'cbdr', 'a clean CBDR signal now claims the REAL netting slot, same as every other live source');
+});
+
+test('LiveStrategyEngine (CBDR): resolves to a WIN at the fixed 1:3 target', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, cbdrConfig: CBDR_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const touch = c(histDataTime(2024, 1, 15, 20, 0), 100, 152, 99, 101);
+  const entry = c(histDataTime(2024, 1, 15, 20, 15), 101, 101.5, 100, 100.5);
+  const resolve = c(histDataTime(2024, 1, 15, 20, 30), 100.5, 101, -53, -52); // low <= target -52 -> WIN
+
+  for (const candle of [...cbdrBaseFixture(), touch, entry]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', resolve).filter((e) => e.type === 'closed' && e.source === 'cbdr');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'win');
+  assert.equal(engine.getOpenPosition('TEST1'), null);
+});
+
+test('LiveStrategyEngine (CBDR): resolves to a LOSS when the stop is hit', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, cbdrConfig: CBDR_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  const touch = c(histDataTime(2024, 1, 15, 20, 0), 100, 152, 99, 101);
+  const entry = c(histDataTime(2024, 1, 15, 20, 15), 101, 101.5, 100, 100.5);
+  const resolve = c(histDataTime(2024, 1, 15, 20, 30), 100.6, 153, 100, 101); // high >= stop 152 -> LOSS
+
+  for (const candle of [...cbdrBaseFixture(), touch, entry]) engine.ingestCandle('TEST1', candle);
+  const closeEvents = engine.ingestCandle('TEST1', resolve).filter((e) => e.type === 'closed' && e.source === 'cbdr');
+  assert.equal(closeEvents.length, 1);
+  assert.equal(closeEvents[0].outcome, 'loss');
+});
+
+test('LiveStrategyEngine: netting blocks a CBDR signal on a symbol that already has an open position (and vice versa - same shared slot)', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, cbdrConfig: CBDR_CFG, guardrail, riskPctPerTrade: 1,
+  });
+  engine.openPositions.set('TEST1', {
+    source: 'fvg', id: 'fake-open', direction: 'bearish', entryIndex: 0, entryTime: -1,
+    entryPrice: 100, stopPrice: 200, targetPrice: 0, distance: 100, rrMultiple: 3,
+    riskAmount: 100, maxHoldingCandles: 480,
+  });
+
+  const touch = c(histDataTime(2024, 1, 15, 20, 0), 100, 152, 99, 101);
+  const entry = c(histDataTime(2024, 1, 15, 20, 15), 101, 101.5, 100, 100.5);
+
+  for (const candle of [...cbdrBaseFixture(), touch]) engine.ingestCandle('TEST1', candle);
+  const entryEvents = engine.ingestCandle('TEST1', entry).filter((e) => e.source === 'cbdr');
+
+  assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
+  assert.equal(entryEvents[0].blockedReason, 'netting');
+});

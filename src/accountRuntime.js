@@ -92,6 +92,9 @@ export class AccountRuntime {
       // LIVE, auto-executed (2026-09-17, US100/US500/GER40) - see config.js's
       // `silverBullet` comment. Same opt-in-only pattern as nwogConfig above.
       silverBulletConfig: config.silverBullet,
+      // LIVE, auto-executed (2026-09-18, US100 only) - see config.js's
+      // `cbdr` comment. Same opt-in-only pattern as nwogConfig above.
+      cbdrConfig: config.cbdr,
       guardrail: this.guardrail,
       riskPctPerTrade: config.risk.riskPctPerTrade,
       spreads,

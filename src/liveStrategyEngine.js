@@ -134,6 +134,7 @@ import { detectJudasSwingEvents } from './backtest/judasSwing.js';
 import { detectWeeklySweepEvents } from './backtest/weeklyLiquiditySweep.js';
 import { computeBreakerBlockCandidates } from './backtest/breakerBlock.js';
 import { computeSilverBulletCandidates } from './backtest/silverBullet.js';
+import { detectCbdrEvents } from './backtest/cbdr.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
@@ -192,6 +193,17 @@ export class LiveStrategyEngine {
     // symmetric buy/sell on all 3 symbols). Not defaulted so the three
     // backtest/report engines don't silently start folding it in.
     silverBulletConfig = null,
+    // Same opt-in-only pattern as nwogConfig/judasSwingConfig/weeklySweepConfig/
+    // breakerBlockConfig/silverBulletConfig above (2026-09-18, US100 only -
+    // Esdras's explicit "cable alors cbdr" request, after CBDR/US100 was the
+    // only candidate to clear all 3 validation layers this session: full
+    // 15-year historical depth train/test, a real forward-test on never-
+    // touched cTrader candles, AND an overlap analysis against what's already
+    // live on US100 - see HANDOFF.md for the full writeup, including the
+    // 71% of CBDR's standalone trades that overlap nothing already open).
+    // Not defaulted so the three backtest/report engines don't silently
+    // start folding it in.
+    cbdrConfig = null,
     guardrail,
     riskPctPerTrade = CONFIG.risk.riskPctPerTrade,
     spreads = {},
@@ -206,6 +218,7 @@ export class LiveStrategyEngine {
     this.weeklySweepConfig = weeklySweepConfig || null;
     this.breakerBlockConfig = breakerBlockConfig || null;
     this.silverBulletConfig = silverBulletConfig || null;
+    this.cbdrConfig = cbdrConfig || null;
     this.guardrail = guardrail;
     this.riskPctPerTrade = riskPctPerTrade;
     this.spreads = spreads;
@@ -352,6 +365,10 @@ export class LiveStrategyEngine {
 
     if (this.silverBulletConfig && this.silverBulletConfig.symbols.includes(symbol)) {
       events.push(...this._detectSilverBulletSignal(symbol, candle, guardrailNow));
+    }
+
+    if (this.cbdrConfig && this.cbdrConfig.symbols.includes(symbol)) {
+      events.push(...this._detectCbdrSignal(symbol, candle, guardrailNow));
     }
 
     return events;
@@ -1282,6 +1299,108 @@ export class LiveStrategyEngine {
     return signal;
   }
 
+  /**
+   * Pure computation of every CBDR entry candidate implied by one symbol's
+   * full candle history - reuses detectCbdrEvents() (src/backtest/cbdr.js)
+   * UNCHANGED (the standard-deviation-projection detection itself is not
+   * reimplemented here), then shifts each touch event forward one candle to
+   * its entry (same "one-candle no-lookahead delay" cbdr.js's own header
+   * describes) - identical shape/pattern to _computeNwogCandidates() above.
+   */
+  _computeCbdrCandidates(candles) {
+    const events = detectCbdrEvents(candles);
+    const candidates = [];
+    for (const e of events) {
+      const entryIndex = e.index + 1;
+      if (entryIndex >= candles.length) continue; // touch candle is the most recent one - entry hasn't printed yet
+      candidates.push({ direction: e.direction, entryTime: candles[entryIndex].time, stopReference: e.sweepExtreme });
+    }
+    return candidates;
+  }
+
+  _detectCbdrSignal(symbol, candle, guardrailNow = candle.time) {
+    const hist = this.history.get(symbol);
+    const candidate = this._computeCbdrCandidates(hist).find((cd) => cd.entryTime === candle.time);
+    if (!candidate) return [];
+    return [this._processCbdrCandidate(symbol, candle, candidate, guardrailNow)];
+  }
+
+  /**
+   * Shared tail of CBDR signal handling - same shape and same
+   * openPositions/netting/auto-execute participation as
+   * _processNwogCandidate()/_processSilverBulletCandidate() above (2026-09-18,
+   * US100 only - see config.js's `cbdr` comment and HANDOFF.md). No direction
+   * filter - CBDR is a bidirectional fade (upside touch -> bearish, downside
+   * touch -> bullish), never screened for a long/short-only split the way
+   * NWOG/US100 was. Same validStopSide guard as every other source here
+   * (smtDivergence.js's lesson).
+   */
+  _processCbdrCandidate(symbol, candle, candidate, guardrailNow = candle.time) {
+    const cfg = this.cbdrConfig;
+    const bullish = candidate.direction === 'bullish';
+    const entryPrice = candle.open; // cbdr.js: "Entry at the open of the candle AFTER the touch candle"
+    const stopPrice = candidate.stopReference;
+    const distance = Math.abs(entryPrice - stopPrice);
+    const validStopSide = bullish ? stopPrice < entryPrice : stopPrice > entryPrice;
+    const id = `cbdr-${symbol}-${candle.time}`;
+    const suggestedSide = bullish ? 'buy' : 'sell';
+
+    if (distance <= 0 || !validStopSide) {
+      return {
+        type: 'validated',
+        source: 'cbdr',
+        symbol,
+        id,
+        direction: candidate.direction,
+        suggestedSide,
+        validatedAt: candle.time,
+        entryPrice,
+        stopPrice,
+        distance,
+        blockedReason: 'invalid-distance',
+      };
+    }
+
+    const blockedReason = this._blockReason(symbol, distance, candle, guardrailNow);
+
+    const signal = {
+      type: 'validated',
+      source: 'cbdr',
+      symbol,
+      id,
+      direction: candidate.direction,
+      suggestedSide,
+      validatedAt: candle.time,
+      entryPrice,
+      stopPrice,
+      distance,
+      rrMultiple: cfg.rrMultiple,
+      blockedReason,
+    };
+
+    if (!blockedReason) {
+      const targetPrice = bullish ? entryPrice + cfg.rrMultiple * distance : entryPrice - cfg.rrMultiple * distance;
+      const riskAmount = this.balance * (this.riskPctPerTrade / 100);
+      this.openPositions.set(symbol, {
+        source: 'cbdr',
+        id,
+        direction: candidate.direction,
+        entryIndex: this.history.get(symbol).length - 1,
+        entryTime: candle.time,
+        entryPrice,
+        stopPrice,
+        targetPrice,
+        distance,
+        rrMultiple: cfg.rrMultiple,
+        riskAmount,
+        maxHoldingCandles: cfg.maxHoldingM15Candles,
+      });
+      signal.targetPrice = targetPrice;
+      signal.riskAmount = riskAmount;
+    }
+    return signal;
+  }
+
   // -------------------------------------------------------------------------
   // Bulk warm-up (2026-09): reconstructs this engine's state (history,
   // openPositions, pyramidPositions, formationIndexBySymbol) from a full
@@ -1395,6 +1514,13 @@ export class LiveStrategyEngine {
         ? this._computeSilverBulletCandidates(candles)
         : null;
 
+    // CBDR candidates (2026-09-18, US100 only - see config.js's `cbdr`
+    // comment and HANDOFF.md). Same shape as NWOG/Judas Swing/Weekly Sweep/
+    // Breaker Block/Silver Bullet's own precomputation above: only needs
+    // this symbol's own final history.
+    const cbdrCandidates =
+      this.cbdrConfig && this.cbdrConfig.symbols.includes(symbol) ? this._computeCbdrCandidates(candles) : null;
+
     for (let i = 0; i < candles.length; i++) {
       const candle = candles[i];
       if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) continue; // defensive, same guard as ingestCandle
@@ -1464,6 +1590,14 @@ export class LiveStrategyEngine {
         const candidate = silverBulletCandidates.find((cd) => cd.entryTime === candle.time);
         if (candidate) {
           const signal = this._processSilverBulletCandidate(symbol, candle, candidate);
+          if (onEvent) onEvent(signal, candle);
+        }
+      }
+
+      if (cbdrCandidates) {
+        const candidate = cbdrCandidates.find((cd) => cd.entryTime === candle.time);
+        if (candidate) {
+          const signal = this._processCbdrCandidate(symbol, candle, candidate);
           if (onEvent) onEvent(signal, candle);
         }
       }
