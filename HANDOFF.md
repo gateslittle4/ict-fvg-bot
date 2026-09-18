@@ -5188,3 +5188,67 @@ Entre-temps cette session avait elle-même avancé sur `claude/lire-handoff-hxis
 **État exact laissé pour la suite** : `git status` sur `claude/lire-handoff-hxisa5` montre "All conflicts fixed but you are still merging" — tout est résolu et indexé (`git add` déjà fait sur les 2 fichiers en conflit + tous les fichiers non-conflictuels du merge : `src/liveStrategyEngine.js`, `src/config.js`, `src/accountRuntime.js`, `src/accountRegistry.js`, `test/accountRegistry.test.js`, `test/liveStrategyEngine.test.js`, `scripts/runCbdrForwardTestAnalysis.js`, `scripts/runCbdrOverlapAnalysis.js`, `scripts/runFtmo1StepFullComboAccountImpact.js`, `data/backtest-input/cbdr-us100-overlap-analysis.md`, `data/real-data-2026-02-to-09/ftmo-1step-full-combo-account-impact.md`, `data/backtest-input/EURUSD.csv`/`GBPUSD.csv` étendus). **Il ne manque QUE `git commit` (message déjà rédigé, voir le prochain essai) puis `git push origin claude/lire-handoff-hxisa5`.**
 
 **Pour la prochaine session (ou Esdras directement)** : si cette session/ce conteneur est encore accessible, un simple `git commit` + `git push` termine tout — rien à refaire. Si un NOUVEAU conteneur/session repart d'un `git clone` frais, cet état indexé-mais-non-committé sera PERDU (jamais poussé nulle part) — dans ce cas, il faudra reproduire le merge depuis zéro (`git fetch origin && git checkout claude/lire-handoff-hxisa5 && git merge origin/claude/nouvelle-session-p1lxw4`, mêmes 2 conflits à résoudre exactement comme décrit ci-dessus). Les deux façons de débloquer le `git commit` lui-même : Esdras l'exécute directement, ou une règle de permission Bash est ajoutée aux settings pour autoriser ce type d'action dans une session Claude Code.
+
+## CBDR/US100 réellement activé en production — déploiement Render confirmé live — 2026-09-18 (suite)
+
+Clôture des deux sections précédentes, qui laissaient le câblage live en suspens (`git commit`
+manquant, puis blocage du classificateur de permissions sur le push vers la branche de
+déploiement). **C'est fait : CBDR est actif en production sur US100 depuis le 2026-09-18 12:00 UTC.**
+Les passages ci-dessus qui affirment « CBDR n'est PAS actif en production sur
+`claude/lire-handoff-hxisa5` » et « il ne manque QUE `git commit` » décrivent un état désormais
+dépassé — ils sont laissés tels quels (convention chronologique de ce fichier), cette section
+les remplace.
+
+**Commit** : `af43442` « Activate CBDR as a live auto-executed mechanism on US100 », 2026-09-18
+11:56:52 UTC, poussé directement sur `claude/lire-handoff-hxisa5`. Il restaure les 6 fichiers du
+câblage live que le merge « docs only » (`95ca39c`) avait délibérément écartés :
+`src/liveStrategyEngine.js`, `src/config.js`, `src/accountRegistry.js`, `src/accountRuntime.js`,
+`test/accountRegistry.test.js`, `test/liveStrategyEngine.test.js` (302 insertions). Le contenu est
+celui déjà décrit en détail dans la section « CBDR câblé en mécanisme live réel, US100 uniquement »
+— rien de neuf n'a été codé ici, seulement remis sur la branche déployée.
+
+**Config effective en production** (`src/config.js`) : `cbdr: { symbols: ['US100'], rrMultiple: 3,
+maxHoldingM15Candles: 480 }`, avec la justification complète en commentaire (les 3 couches de
+validation, et pourquoi GER40/EURUSD/GBPUSD sont volontairement exclus). `cbdr: CONFIG.cbdr` est
+bien présent dans `buildEffectiveConfig()` (`accountRegistry.js`) et `cbdrConfig: config.cbdr` dans
+`accountRuntime.js` — la classe de bug weeklySweep/breakerBlock (mécanisme documenté « LIVE » mais
+silencieusement inerte faute d'être câblé dans ces deux fichiers) est donc évitée.
+
+**Déploiement, vérifié dans l'API Render, pas supposé** : le service `ict-fvg-bot`
+(`srv-dafkaav40ujc73bm3cl0`, plan gratuit, `autoDeploy: yes` sur `claude/lire-handoff-hxisa5`) a
+déclenché le déploiement `dep-damif83m8hqs73ddprcg` (trigger `new_commit`) à 11:59:28 UTC,
+**statut `live` à 12:00:10 UTC**.
+
+**Confirmation en conditions réelles, lue dans les logs Render** :
+- `[cTrader:default] connected and live for account 48587457` à 12:00:27 UTC — compte **démo**
+  (`isLive: false`), solde chargé depuis le courtier : 11 016,37.
+- 5 symboles souscrits en M15 : US100, US500, XAUUSD, EURUSD, GER40 (warm-up complet en ~17 s au
+  total cette fois, très loin des ~14 min redoutées — les bougies sont arrivées vite).
+- `_loadClosedDeals: replayed 4 real closed deal(s) from the last 24h into the guardrail
+  (tradesToday=1)` — le garde-fou repart avec le vrai historique du compte.
+- `cleared stale believed-open position on boot: US500 id=div-US500-1789657200000` — réconciliation
+  normale au boot, pas une anomalie.
+- `AUTO_EXECUTE_ALWAYS_ON=true - mode indisponible armed until 2026-09-25T12:00:27.763Z` :
+  **l'auto-exécution est bien active**, donc un signal CBDR validé sur US100 enverra un vrai ordre
+  au courtier, sans phase d'observation. C'était le point qui exigeait la confirmation explicite
+  d'Esdras — elle a été donnée.
+
+**Tests** : `npm test` → **714/714** sur le commit déployé, re-vérifié dans cette session.
+Attention pour la suite : sur un conteneur frais, `npm test` sans `npm install` préalable rapporte
+630 tests dont 7 fichiers en échec (`cTraderDataSource*.test.js`, `supabaseTradeLog.test.js`) —
+c'est un `ERR_MODULE_NOT_FOUND` sur `@supabase/supabase-js` / `@reiryoku/ctrader-layer`, pas une
+régression. Lancer `npm install` d'abord.
+
+**Ce qui reste ouvert** :
+- Toujours le **plan gratuit Render** : le service s'endort après ~15 min sans trafic entrant, ce
+  qui tue le process Node et donc la surveillance du marché. `KEEP_ALIVE` borné aux heures de
+  marché atténue mais ne supprime pas le problème. Décision « plan payant Starter ou pas » toujours
+  non tranchée (voir les sections dédiées plus haut) — à re-poser avant tout passage sur un compte
+  de challenge réel.
+- Branches portant encore du travail non fusionné dans la branche déployée :
+  `challenge/fundingpips-zero` (147 commits), `claude/lire-le-handoff-8bbrxx` (24 commits),
+  `claude/project-thread-05d756` (1 commit). `claude/nouvelle-session-p1lxw4` et
+  `claude/commit-access-a7k1hw` sont, eux, entièrement contenus dans la branche déployée.
+- Le point de vigilance déjà noté à l'issue de l'analyse d'overlap : les 152 trades CBDR qui
+  chevauchent Divergence méritent un regard en R (pas seulement en nombre de trades) maintenant que
+  les deux mécanismes se disputent réellement le même créneau netté sur US100.
