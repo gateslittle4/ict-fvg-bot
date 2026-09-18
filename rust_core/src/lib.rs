@@ -121,7 +121,11 @@ pub struct Guardrails {
 }
 
 impl Guardrails {
-    pub fn new(max_trades_per_day: usize, daily_loss_limit_pct: f64, target_pct: Option<f64>) -> Self {
+    pub fn new(
+        max_trades_per_day: usize,
+        daily_loss_limit_pct: f64,
+        target_pct: Option<f64>,
+    ) -> Self {
         Self {
             max_trades_per_day,
             daily_loss_limit_pct,
@@ -189,7 +193,7 @@ mod tests {
 
     fn us100() -> SymbolSpec {
         SymbolSpec {
-            point_size: 0.1,
+            point_size: 1.0,
             value_per_point_per_lot: 1.0,
             min_volume: 0.01,
             volume_step: 0.01,
@@ -209,7 +213,10 @@ mod tests {
 
     #[test]
     fn invalid_distance_is_rejected() {
-        assert_eq!(calculate_lot_size(10_000.0, 0.5, 100.0, 100.0, us100()), Err(LotError::ZeroDistance));
+        assert_eq!(
+            calculate_lot_size(10_000.0, 0.5, 100.0, 100.0, us100()),
+            Err(LotError::ZeroDistance)
+        );
     }
 
     #[test]
