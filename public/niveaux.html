@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Apex FVG — Niveaux</title>
+<script src="/theme.js"></script>
+<script src="/chat-widget.js" defer></script>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#05070a" data-dark="#05070a" data-light="#f6f7f9" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Apex FVG" />
+<style>
+  /* 2026-09-18 - same "Apex FVG" terminal palette as every other page
+     (index.html's :root is the source of truth these all copy). */
+  :root {
+    --bg: #05070a;
+    --bg-inset: #0a0e13;
+    --panel: #0e141b;
+    --panel-border: #202b37;
+    --panel-border-strong: #2d3b49;
+    --text: #eaf0f6;
+    --muted: #8b98a5;
+    --faint: #5c6773;
+    --green: #2fd480;
+    --red: #ff5c5f;
+    --amber: #e8b339;
+    --blue: #4c9eff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --radius: 3px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f9; --bg-inset: #eef0f3; --panel: #ffffff; --panel-border: #dde1e6; --panel-border-strong: #c7cdd4;
+      --text: #101418; --muted: #5b6470; --faint: #8b95a1; --green: #1a9d5c; --red: #d93c3f; --amber: #b3790f;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f7f9; --bg-inset: #eef0f3; --panel: #ffffff; --panel-border: #dde1e6; --panel-border-strong: #c7cdd4;
+    --text: #101418; --muted: #5b6470; --faint: #8b95a1; --green: #1a9d5c; --red: #d93c3f; --amber: #b3790f;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); margin: 0; padding: 16px; max-width: 1000px; }
+  body { margin-left: auto; margin-right: auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+  .topnav { display: flex; align-items: center; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--panel-border); overflow-x: auto; }
+  .topnav a { color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600; padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px; font-family: var(--mono); text-transform: uppercase; flex-shrink: 0; }
+  .topnav a:hover { color: var(--text); }
+  .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; flex-shrink: 0; }
+  .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; overflow-x: auto; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; }
+  .meta { color: var(--muted); font-size: 11.5px; }
+  .err { color: var(--red); font-size: 12px; }
+  .tabbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tabbar button { background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--muted); padding: 7px 14px; cursor: pointer; font-family: var(--mono); font-size: 12.5px; font-weight: 700; }
+  .tabbar button.active { color: #05070a; background: var(--blue); border-color: var(--blue); }
+  .timeline { position: relative; height: 44px; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin: 8px 0 22px; }
+  .timeline .win { position: absolute; top: 0; bottom: 0; opacity: 0.35; border-left: 1px solid rgba(255,255,255,0.25); }
+  .timeline .win span { position: absolute; top: 3px; left: 3px; font: 9.5px var(--mono); color: var(--text); opacity: 0; }
+  .timeline .tick { position: absolute; bottom: -16px; font: 9.5px var(--mono); color: var(--muted); transform: translateX(-50%); }
+  .timeline .now { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--amber); }
+  .timeline .now::after { content: 'maintenant'; position: absolute; top: -13px; left: 50%; transform: translateX(-50%); font: 9.5px var(--mono); color: var(--amber); white-space: nowrap; }
+  .win-list { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; margin-bottom: 4px; }
+  .win-list i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .win-list .live { color: var(--green); font-weight: 700; }
+  .ladder { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; min-width: 520px; }
+  .ladder td { padding: 7px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
+  .ladder td.price { text-align: right; font-weight: 700; }
+  .ladder td.dist { text-align: right; color: var(--muted); white-space: nowrap; }
+  .ladder tr.near td { background: rgba(232,179,57,0.10); }
+  .ladder tr.now-row td { background: var(--bg-inset); border-top: 2px solid var(--amber); border-bottom: 2px solid var(--amber); color: var(--amber); font-weight: 700; }
+  .ladder .note { display: block; color: var(--faint); font-size: 10.5px; font-weight: 400; }
+  .chip { display: inline-block; padding: 1px 6px; border-radius: 2px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; margin-right: 8px; color: #05070a; font-weight: 700; }
+  .up { color: var(--green); }
+  .down { color: var(--red); }
+</style>
+</head>
+<body>
+  <nav class="topnav">
+    <a href="/">Dashboard</a>
+    <a href="/chart.html">Graphique</a>
+    <a href="/niveaux.html" class="active">Niveaux</a>
+    <a href="/journal.html">Journal</a>
+    <a href="/accounts.html">Comptes</a>
+    <a href="/lab.html">Labo</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
+  </nav>
+  <h1>Niveaux du jour</h1>
+  <div class="subtitle">Les prix de référence autour desquels les mécanismes ICT de ce projet tradent : extrêmes du jour, de la veille et de la semaine dernière, ouverture de minuit, range asiatique, CBDR et ses projections, gaps d'ouverture. Calculés sur l'historique M15 du bot, avec les mêmes fonctions que les stratégies.</div>
+
+  <div class="card">
+    <h2>Sessions — heure de New York <span class="meta" id="ny-clock"></span></h2>
+    <div class="timeline" id="timeline"></div>
+    <div class="win-list" id="win-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="tabbar" id="sym-tabs"></div>
+    <div id="ladder"><div class="meta">Chargement…</div></div>
+    <div class="meta" id="ladder-foot" style="margin-top:8px;"></div>
+  </div>
+
+<script>
+const GROUP_COLOR = { Jour: 'var(--blue)', Semaine: '#a78bfa', Sessions: 'var(--green)', Gaps: 'var(--amber)' };
+const WIN_COLOR = { cbdr: '#a78bfa', asia: '#4c9eff', london: '#2fd480', silver: '#e8b339' };
+let data = null;
+let selected = null;
+
+// Decimals follow the magnitude of the PRICE, also for a distance (a 61-point gap on an index is "61,3", not "61,32200").
+const decimalsFor = (price) => (Math.abs(price) >= 1000 ? 1 : Math.abs(price) >= 100 ? 2 : 5);
+function fmtPrice(n, reference = n) {
+  if (n === null || n === undefined) return '—';
+  const d = decimalsFor(reference);
+  return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+const nyFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
+function nyNow() {
+  const parts = nyFmt.formatToParts(new Date());
+  return Number(parts.find((p) => p.type === 'hour').value) + Number(parts.find((p) => p.type === 'minute').value) / 60;
+}
+const hm = (h) => `${String(Math.floor(h) % 24).padStart(2, '0')}h${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+function untilText(hours) {
+  const total = Math.round(hours * 60);
+  return total >= 60 ? `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, '0')}` : `${total} min`;
+}
+
+function renderTimeline() {
+  if (!data) return;
+  const now = nyNow();
+  document.getElementById('ny-clock').textContent = `— il est ${hm(now)} à New York`;
+  const pos = (h) => `${(h / 24) * 100}%`;
+  let html = '';
+  for (const w of data.sessions) {
+    const segs = w.endHour > w.startHour ? [[w.startHour, w.endHour]] : [[w.startHour, 24], [0, w.endHour]];
+    for (const [a, b] of segs) html += `<div class="win" style="left:${pos(a)};width:${((b - a) / 24) * 100}%;background:${WIN_COLOR[w.key] || '#888'}"></div>`;
+  }
+  for (let h = 0; h <= 24; h += 3) html += `<div class="tick" style="left:${pos(h)}">${h === 24 ? '' : `${h}h`}</div>`;
+  html += `<div class="now" style="left:${pos(now)}"></div>`;
+  document.getElementById('timeline').innerHTML = html;
+  document.getElementById('win-list').innerHTML = data.sessions.map((w) => {
+    const inside = now >= w.startHour && now < w.endHour;
+    const wait = (w.startHour - now + 24) % 24;
+    const state = inside ? `<span class="live">en cours (finit dans ${untilText(w.endHour - now)})</span>` : `<span class="meta">dans ${untilText(wait)}</span>`;
+    return `<span><i style="background:${WIN_COLOR[w.key]}"></i>${w.label} ${hm(w.startHour)}–${hm(w.endHour)} · ${state}</span>`;
+  }).join('');
+}
+
+function renderTabs() {
+  document.getElementById('sym-tabs').innerHTML = data.symbols.map((s) => `<button type="button" class="${s.symbol === selected ? 'active' : ''}" onclick="selectSymbol('${s.symbol}')">${s.symbol}</button>`).join('');
+}
+function selectSymbol(sym) { selected = sym; try { localStorage.setItem('apexfvg_levels_symbol', sym); } catch {} renderTabs(); renderLadder(); }
+
+function renderLadder() {
+  const el = document.getElementById('ladder');
+  const foot = document.getElementById('ladder-foot');
+  const s = data.symbols.find((x) => x.symbol === selected);
+  if (!s || s.price === null) { el.innerHTML = '<div class="meta">Pas encore de bougies pour ce symbole (le bot vient de démarrer ou tourne en démo).</div>'; foot.textContent = ''; return; }
+  if (!s.levels.length) { el.innerHTML = '<div class="meta">Historique insuffisant pour calculer des niveaux.</div>'; return; }
+  const near = Math.max(Math.abs(s.price) * 0.0015, 0); // within 0.15 % of price
+  const row = (l) => `<tr class="${Math.abs(l.distance) <= near ? 'near' : ''}">
+      <td><span class="chip" style="background:${GROUP_COLOR[l.group] || '#888'}">${l.group}</span>${l.label}${l.note ? `<span class="note">${l.note}</span>` : ''}</td>
+      <td class="price">${fmtPrice(l.price)}</td>
+      <td class="dist ${l.distance > 0 ? 'up' : 'down'}">${l.distance > 0 ? '+' : ''}${fmtPrice(l.distance, l.price)} <span class="meta">(${l.distance > 0 ? '+' : ''}${l.distancePct.toFixed(2).replace('.', ',')} %)</span></td></tr>`;
+  const above = s.levels.filter((l) => l.price >= s.price);
+  const below = s.levels.filter((l) => l.price < s.price);
+  el.innerHTML = `<table class="ladder"><tbody>
+    ${above.map(row).join('')}
+    <tr class="now-row"><td>Prix actuel — ${s.symbol}</td><td class="price">${fmtPrice(s.price)}</td><td class="dist"></td></tr>
+    ${below.map(row).join('')}
+  </tbody></table>`;
+  const nearest = [...s.levels].sort((a, b) => Math.abs(a.distance) - Math.abs(b.distance))[0];
+  foot.textContent = `Niveau le plus proche : ${nearest.label} (${nearest.distance > 0 ? '+' : ''}${nearest.distancePct.toFixed(2).replace('.', ',')} %). Fond jaune = à moins de 0,15 % du prix. Jour et semaine = vrais jours calendaires de New York (minuit à minuit). Dernière bougie M15 fermée : ${new Date(s.lastTime).toLocaleString('fr-FR')}.`;
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/levels');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+    if (!selected) {
+      let saved = null;
+      try { saved = localStorage.getItem('apexfvg_levels_symbol'); } catch {}
+      selected = data.symbols.some((s) => s.symbol === saved) ? saved : data.symbols[0]?.symbol;
+    }
+    renderTabs(); renderLadder(); renderTimeline();
+  } catch (err) {
+    document.getElementById('ladder').innerHTML = `<div class="err">Erreur de chargement: ${err.message}</div>`;
+  }
+}
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 20000);
+setInterval(() => { if (!document.hidden) renderTimeline(); }, 30000);
+</script>
+</body>
+</html>

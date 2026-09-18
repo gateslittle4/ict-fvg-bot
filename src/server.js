@@ -24,12 +24,14 @@ import { fetchPerformanceBySymbol } from './dataSources/supabaseTradeLog.js';
 import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
-import { getPropFirmProgram } from './propFirms/index.js';
+import { getPropFirmProgram, listPropFirmPrograms } from './propFirms/index.js';
 import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus } from './chatAssistant.js';
 import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
 import { runLabJob } from './backtest/labClient.js';
 import { readDatasetMeta, listDatasets, deleteDataset, csvPathFor as labDatasetCsv, MAX_CUSTOM_DATASETS } from './backtest/labDatasets.js';
-import { isValidDatasetName } from './backtest/m1Import.js';
+import { isValidDatasetName, ImportError } from './backtest/m1Import.js';
+import { normalizeChallengeParams } from './backtest/labAnalytics.js';
+import { computeDailyLevels, rebaseLevels, SESSION_WINDOWS } from './backtest/dailyLevels.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -301,6 +303,7 @@ app.get('/api/lab/meta', (req, res) => {
       symbols: listLabSymbols(),
       customDatasets: listDatasets(LAB_UPLOAD_DIR).map((m) => ({ id: `custom:${m.name}`, ...m })),
       knownSpreads: DEFAULT_SPREADS,
+      propPrograms: listPropFirmPrograms().map((p) => ({ id: p.id, label: p.label, firm: p.firm, timeLimitDays: p.timeLimitDays ?? null, phases: p.phases })),
       uploadLimits: { maxFileMb: LAB_MAX_UPLOAD_MB, maxDatasets: MAX_CUSTOM_DATASETS },
     });
   } catch (err) {
@@ -338,6 +341,65 @@ app.post('/api/lab/screen-strategies', async (req, res) => {
     res.json({ symbol, candleCount, dataset: datasetInfo(ds), results });
   } catch (err) {
     sendLabError(res, err);
+  }
+});
+
+// Analyses built on a strategy's own trades (labAnalytics.js): prop-firm
+// Monte Carlo, weekday x hour heatmap, strategy portfolio. Same worker, same
+// datasets, same train/test split as the backtest.
+const MAX_PORTFOLIO_STRATEGIES = 6;
+
+function analysisRun(body) {
+  const ds = resolveLabDataset(body?.symbol);
+  if (!ds) throw new ImportError(`Symbole inconnu ou sans données: "${body?.symbol}"`);
+  return { csvPath: ds.csvPath, symbol: ds.symbol, spread: ds.spread, cutoff: ds.cutoff, ds };
+}
+
+function knownStrategy(id) {
+  if (!id || !LAB_STRATEGIES[id]) throw new ImportError(`Stratégie inconnue: "${id}"`);
+  return id;
+}
+
+function sendAnalysisError(res, err) {
+  if (err instanceof ImportError || err.userError) return res.status(400).json({ error: err.message });
+  return sendLabError(res, err);
+}
+
+app.post('/api/lab/analyze/challenge', async (req, res) => {
+  try {
+    const { ds, ...run } = analysisRun(req.body);
+    const strategyId = knownStrategy(req.body.strategyId);
+    const params = normalizeChallengeParams(req.body.params);
+    const sample = req.body.sample === 'test' ? 'test' : 'all';
+    const out = await runLabJob('analyzeChallenge', { ...run, strategyId, params, sample });
+    res.json({ strategyId, symbol: req.body.symbol, dataset: datasetInfo(ds), ...out });
+  } catch (err) {
+    sendAnalysisError(res, err);
+  }
+});
+
+app.post('/api/lab/analyze/heatmap', async (req, res) => {
+  try {
+    const { ds, ...run } = analysisRun(req.body);
+    const strategyId = knownStrategy(req.body.strategyId);
+    const out = await runLabJob('analyzeHeatmap', { ...run, strategyId });
+    res.json({ strategyId, symbol: req.body.symbol, dataset: datasetInfo(ds), ...out });
+  } catch (err) {
+    sendAnalysisError(res, err);
+  }
+});
+
+app.post('/api/lab/analyze/portfolio', async (req, res) => {
+  try {
+    const { ds, ...run } = analysisRun(req.body);
+    const ids = [...new Set(Array.isArray(req.body.strategyIds) ? req.body.strategyIds : [])].map(knownStrategy);
+    if (ids.length < 2 || ids.length > MAX_PORTFOLIO_STRATEGIES) {
+      throw new ImportError(`Choisis entre 2 et ${MAX_PORTFOLIO_STRATEGIES} stratégies.`);
+    }
+    const out = await runLabJob('analyzePortfolio', { ...run, strategyIds: ids });
+    res.json({ symbol: req.body.symbol, dataset: datasetInfo(ds), ...out });
+  } catch (err) {
+    sendAnalysisError(res, err);
   }
 });
 
@@ -821,6 +883,37 @@ function createAccountRouter(getStore) {
     } catch (err) {
       res.status(502).json({ error: err.message });
     }
+  });
+
+  // "Niveaux du jour" page (2026-09-18): the reference prices the ICT mechanisms
+  // trade around, per symbol. Computed from the engine's own retained M15
+  // history - no broker round-trip. Only the last ~15 days are used (all it
+  // needs: last week's extremes) and the result is cached per closed candle,
+  // because this shares the event loop with the live bot: the levels only
+  // change when a new M15 bar closes, while the price the distances are
+  // measured from is the live tick, applied per request for free.
+  const levelsCache = new Map(); // "account:symbol:lastCandleTime:length" -> computed levels (one live entry per symbol)
+  const LEVELS_HISTORY_CANDLES = 15 * 96;
+  router.get('/levels', (req, res) => {
+    const store = getStore(req);
+    const offsetMs = store.liveDataSource?.candleTimeOffsetMs ?? 0;
+    const symbols = CONFIG.symbols.map((symbol) => {
+      const history = store.strategyEngine.getHistory(symbol);
+      const lastCandle = history[history.length - 1];
+      if (!lastCandle) return { symbol, price: null, lastTime: null, levels: [] };
+      const cacheKey = `${store.id}:${symbol}:${lastCandle.time}:${history.length}`;
+      let entry = levelsCache.get(cacheKey);
+      if (!entry) {
+        for (const k of levelsCache.keys()) if (k.startsWith(`${store.id}:${symbol}:`)) levelsCache.delete(k);
+        entry = computeDailyLevels(history.slice(-LEVELS_HISTORY_CANDLES));
+        levelsCache.set(cacheKey, entry);
+      }
+      const tick = store.lastCandleBySymbol.get(symbol);
+      const price = tick ? tick.close : entry.price;
+      const live = rebaseLevels(entry, price);
+      return { symbol, price: live.price, lastTime: entry.lastTime + offsetMs, levels: live.levels };
+    });
+    res.json({ sessions: SESSION_WINDOWS, symbols });
   });
 
   // Market chart (2026-09, at the user's request: "un graphe des marchés

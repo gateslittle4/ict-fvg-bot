@@ -8,6 +8,7 @@
      Chrome") - installable on iOS/Android home screen, opens without browser
      chrome (address bar/tabs). See public/manifest.json + sw.js. -->
 <script src="/theme.js"></script>
+<script src="/riskConcentration.js"></script>
 <script src="/chat-widget.js" defer></script>
 <link rel="manifest" href="/manifest.json" />
 <meta name="theme-color" content="#0b0f14" data-dark="#0b0f14" data-light="#f6f7f9" />
@@ -475,6 +476,7 @@
   <nav class="topnav">
     <a href="/" class="active">Dashboard</a>
     <a href="/chart.html">Graphique</a>
+    <a href="/niveaux.html">Niveaux</a>
     <a href="/journal.html">Journal</a>
     <a href="/accounts.html">Comptes</a>
     <a href="/lab.html">Labo</a>
@@ -923,6 +925,39 @@ function renderExecutionAudit() {
     <tr><td>${fmtTime(row.time)}</td><td>${row.symbol || '—'}</td><td>${row.source}</td><td class="${row.cls}">${row.status}</td></tr>
   `).join('')}</tbody></table>`;
 }
+// 2026-09-18 (Esdras: "exposition globale") - the bot caps CLOSED trades per
+// day but not concurrent open ones, and correlated symbols in the same
+// direction are one bet taken twice: this says so. Logic lives in
+// riskConcentration.js (unit-tested); this only draws it.
+function renderConcentrationHtml(data, status) {
+  if (typeof computeRiskConcentration !== 'function') return '';
+  const g = status.guardrail || {};
+  const c = computeRiskConcentration({
+    positions: data.positions || [], pendingOrders: data.pendingOrders || [], balance: data.balance,
+    riskPctPerTrade: status.riskPctPerTrade, dailyLossPct: g.dailyLossPct, dailyLossLimitPct: g.dailyLossLimitPct,
+    drawdownFloor: g.overallDrawdownFloor, currentBalance: g.currentBalance,
+  });
+  if (c.empty) return '';
+  const rows = c.clusters.map((cl) => `
+    <tr>
+      <td>${cl.name}${cl.sameDirection ? ' <span class="loss" title="Plusieurs positions dans le même sens">⚠</span>' : ''}</td>
+      <td>${cl.entries.map((e) => `<span class="dir-${e.direction}">${e.direction === 'bullish' ? '▲' : e.direction === 'bearish' ? '▼' : '?'}</span> ${e.symbol}${e.kind === 'pending' ? ' <span class="meta">(ordre)</span>' : ''}`).join(' · ')}</td>
+      <td>${fmt(cl.positionRisk)}${cl.pendingRisk > 0 ? ` <span class="meta">+ ${fmt(cl.pendingRisk)} en attente (estimé)</span>` : ''}</td>
+      <td>${cl.riskPct === null ? '—' : fmt(cl.riskPct, 2) + ' %'}</td>
+    </tr>`).join('');
+  const warn = c.warnings.map((w) => `<div class="meta" style="margin-top:6px;color:var(${w.level === 'danger' ? '--red' : '--amber'});">${w.level === 'danger' ? '⛔' : '⚠'} ${w.text}</div>`).join('');
+  const room = [
+    c.dailyRoom !== null ? `marge de perte du jour : ${fmt(c.dailyRoom)}` : null,
+    c.drawdownRoom !== null ? `marge avant le plancher de drawdown : ${fmt(c.drawdownRoom)}` : null,
+  ].filter(Boolean).join(' · ');
+  return `
+    <div style="margin-top:14px;">
+      <div class="meta" style="margin-bottom:6px;"><strong>Concentration du risque</strong> — le bot ne plafonne pas le nombre de positions ouvertes en même temps${room ? ` · ${room}` : ''}</div>
+      <table class="strategy-table"><thead><tr><th>Groupe corrélé</th><th>Positions</th><th>Risque aux stops</th><th>% du solde</th></tr></thead><tbody>${rows}</tbody></table>
+      ${warn}
+    </div>`;
+}
+
 function renderRiskCommandCenter() {
   const el = document.getElementById('risk-command-body');
   const emergencyActions = document.getElementById('emergency-actions');
@@ -959,6 +994,7 @@ function renderRiskCommandCenter() {
       <div class="metric-tile"><div class="metric-label">Perte journalière</div><div class="metric-value ${status.guardrail.dailyLossPct > 0 ? 'loss' : ''}">${fmt(status.guardrail.dailyLossPct, 3)}%</div><div class="control-detail">limite ${fmt(status.guardrail.dailyLossLimitPct, 1)}%</div></div>
     </div>
     <div class="meta" style="margin-top:8px;">${positions.length === 0 ? 'Aucune position réelle ouverte.' : `${positions.length} position${positions.length > 1 ? 's' : ''} ouverte${positions.length > 1 ? 's' : ''} · protections connues pour ${knownRiskCount}/${positions.length}.`}</div>
+    ${renderConcentrationHtml(data, status)}
   `;
 }
 async function closeAllPositions() {

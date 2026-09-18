@@ -14,6 +14,7 @@ import { loadCandlesFromCsv } from './csvLoader.js';
 import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF } from './labRunner.js';
 import { listLabStrategies } from './labRegistry.js';
 import { importIntoDataset } from './labDatasets.js';
+import { simulateChallenge, buildHeatmap, analyzePortfolio } from './labAnalytics.js';
 import { ImportError } from './m1Import.js';
 
 const IDLE_RELEASE_MS = 60_000;
@@ -45,6 +46,20 @@ function toPayload(result) {
     droppedAsNonViable: result.droppedAsNonViable,
     recentTrades: result.trades.slice(-100).reverse(),
   };
+}
+
+// The full (untrimmed) train/test trade lists the analytics need - toPayload()
+// above deliberately keeps only the last 100 for the browser. Trades are
+// slimmed to the three fields the analytics read: a raw trade carries its
+// whole signal (zones, prices, ...), and 6 strategies x tens of thousands of
+// trades of those exceeded the thread's 160 MB heap on EURUSD (measured
+// 2026-09-18) - the slim ones are a small fraction of that.
+const slim = (trades) => trades.map((t) => ({ entryTime: t.entryTime, exitTime: t.exitTime, rMultiple: t.rMultiple }));
+
+function tradesTrainTest({ csvPath, strategyId, symbol, spread = null, cutoff = null }) {
+  const candles = loadCandles(csvPath);
+  const { train, test } = runLabBacktestTrainTest(strategyId, candles, symbol, { spread, cutoff: cutoff ?? TRAIN_TEST_CUTOFF });
+  return { train: slim(train.trades), test: slim(test.trades), candleCount: candles.length };
 }
 
 const handlers = {
@@ -83,6 +98,31 @@ const handlers = {
       }
     });
     return { candleCount: candles.length, results };
+  },
+
+  // Monte Carlo of one strategy's trades against prop-firm rules.
+  analyzeChallenge({ sample = 'all', params, ...run }) {
+    const { train, test, candleCount } = tradesTrainTest(run);
+    const trades = sample === 'test' ? test : [...train, ...test];
+    return { candleCount, sample, ...simulateChallenge(trades, params) };
+  },
+
+  analyzeHeatmap(run) {
+    const { train, test, candleCount } = tradesTrainTest(run);
+    return { candleCount, ...buildHeatmap(train, test) };
+  },
+
+  // Several strategies on the same dataset (one resident at a time is kept by loadCandles).
+  analyzePortfolio({ strategyIds, ...run }) {
+    const labels = Object.fromEntries(listLabStrategies().map(({ id, label }) => [id, label]));
+    const byStrategy = {};
+    let candleCount = 0;
+    for (const strategyId of strategyIds) {
+      const t = tradesTrainTest({ ...run, strategyId });
+      candleCount = t.candleCount;
+      byStrategy[strategyId] = { label: labels[strategyId] ?? strategyId, train: t.train, test: t.test };
+    }
+    return { candleCount, ...analyzePortfolio(byStrategy) };
   },
 
   // Parses one uploaded file into a dataset (CPU-heavy, hence here and not in

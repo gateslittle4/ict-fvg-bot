@@ -88,6 +88,22 @@
   .strategy-table th { text-align: left; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border-strong); }
   .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
   .strategy-table tr:hover td { background: var(--bg-inset); }
+  .tabbar { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--panel-border); overflow-x: auto; }
+  .tabbar button { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 12px; cursor: pointer; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0; }
+  .tabbar button.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .stack-bar { display: flex; height: 22px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--panel-border); margin: 6px 0 4px; }
+  .stack-bar > div { min-width: 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11.5px; color: var(--muted); margin-bottom: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .heat { border-collapse: separate; border-spacing: 2px; font-family: var(--mono); font-size: 10.5px; }
+  .heat th { color: var(--muted); font-weight: 600; padding: 2px 4px; font-size: 10px; }
+  .heat td { min-width: 34px; height: 34px; text-align: center; border-radius: 2px; background: var(--bg-inset); font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .heat td small { display: block; color: var(--muted); font-size: 8.5px; }
+  .heat td.thin { opacity: 0.4; outline: 1px dashed var(--panel-border-strong); }
+  .heat td.holds { outline: 2px solid var(--blue); opacity: 1; }
+  .strat-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px 12px; margin-bottom: 10px; }
+  .strat-checks label { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  .corr td { text-align: center; }
   .win { color: var(--green); }
   .loss { color: var(--red); }
 </style>
@@ -96,6 +112,7 @@
   <nav class="topnav">
     <a href="/">Dashboard</a>
     <a href="/chart.html">Graphique</a>
+    <a href="/niveaux.html">Niveaux</a>
     <a href="/journal.html">Journal</a>
     <a href="/accounts.html">Comptes</a>
     <a href="/lab.html" class="active">Labo</a>
@@ -177,6 +194,51 @@
     <div class="import-log" id="imp-log"></div>
     <div id="imp-list"></div>
   </details>
+
+  <div class="card" id="adv-card">
+    <h2>Analyses avancées <span class="meta">— sur la stratégie et le symbole choisis ci-dessus</span></h2>
+    <div class="tabbar" role="tablist">
+      <button type="button" class="active" data-adv="prop" onclick="showAdv('prop')">Simulateur prop firm</button>
+      <button type="button" data-adv="heat" onclick="showAdv('heat')">Heatmap horaire</button>
+      <button type="button" data-adv="port" onclick="showAdv('port')">Portefeuille</button>
+    </div>
+
+    <div id="adv-prop">
+      <p class="hint">Rejoue au hasard les vrais jours de trading de la stratégie (un jour = ses trades ensemble) contre les règles d'un challenge, des milliers de fois : combien passent, combien explosent, en combien de jours. Ce n'est pas une prévision : c'est « si le futur ressemble au passé, avec un ordre différent ».</p>
+      <div class="form-row">
+        <div class="form-field"><label for="pf-preset">Règles</label><select id="pf-preset" onchange="applyPropPreset()"></select></div>
+        <div class="form-field"><label for="pf-sample">Trades utilisés</label>
+          <select id="pf-sample"><option value="all">Tout l'historique (entraînement + test)</option><option value="test">Période test seulement (plus honnête, moins de trades)</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label for="pf-target">Objectif (%)</label><input type="text" id="pf-target" inputmode="decimal" value="10" /></div>
+        <div class="form-field"><label for="pf-daily">Perte max / jour (%)</label><input type="text" id="pf-daily" inputmode="decimal" value="5" /></div>
+        <div class="form-field"><label for="pf-dd">Drawdown max (%)</label><input type="text" id="pf-dd" inputmode="decimal" value="10" /></div>
+        <div class="form-field"><label for="pf-ddtype">Type de drawdown</label>
+          <select id="pf-ddtype"><option value="static">Statique (depuis le solde initial)</option><option value="trailing-eod">Suiveur fin de journée</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label for="pf-risk">Risque par trade (%)</label><input type="text" id="pf-risk" inputmode="decimal" value="1" /></div>
+        <div class="form-field"><label for="pf-days">Durée max (jours de trading)</label><input type="text" id="pf-days" inputmode="numeric" value="250" /></div>
+        <div class="form-field"><label for="pf-mindays">Jours minimum</label><input type="text" id="pf-mindays" inputmode="numeric" value="0" /></div>
+        <div class="form-field" style="flex:0 0 auto;min-width:0;"><button type="button" class="run-btn" id="pf-btn" onclick="runChallenge()">Simuler 4 000 challenges</button></div>
+      </div>
+      <div id="pf-out"></div>
+    </div>
+
+    <div id="adv-heat" hidden>
+      <p class="hint">Espérance par jour de la semaine × heure d'entrée (heure du moteur, EST fixe). Vert = gagnant, rouge = perdant. Une case n'est <strong>fiable</strong> (cadre bleu) que si elle a au moins 10 trades en entraînement <em>et</em> en test, et gagne dans les deux. Avec ~100 cases, beaucoup semblent bonnes par pur hasard : compare avec le repère donné.</p>
+      <button type="button" class="run-btn" id="hm-btn" onclick="runHeatmap()">Calculer la heatmap</button>
+      <div id="hm-out" style="margin-top:12px;"></div>
+    </div>
+
+    <div id="adv-port" hidden>
+      <p class="hint">Coche 2 à 6 stratégies (mêmes données) : corrélation de leurs résultats journaliers, equity combinée, drawdown combiné. Deux stratégies très corrélées ne se protègent pas l'une l'autre ; des corrélations proches de 0 ou négatives réduisent le drawdown.</p>
+      <div class="strat-checks" id="pt-checks"></div>
+      <button type="button" class="run-btn" id="pt-btn" onclick="runPortfolio()">Analyser ce portefeuille</button>
+      <div id="pt-out" style="margin-top:12px;"></div>
+    </div>
+  </div>
 
   <div id="lab-screen-results" hidden>
     <div class="card">
@@ -300,6 +362,7 @@ async function loadMeta(preferId) {
     msgEl.textContent = `${data.strategies.length} stratégies disponibles sur ${data.symbols.length} symboles du projet${custom.length ? ` + ${custom.length} jeu(x) importé(s)` : ''} (données historiques réelles, plusieurs années selon le symbole).`;
     renderImportForm(data);
     renderDatasetList(custom);
+    renderAdvancedForm(data);
   } catch (err) {
     msgEl.innerHTML = `<span class="err">Erreur de chargement: ${err.message}</span>`;
   }
@@ -592,6 +655,197 @@ async function runStrategyScreen() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Comparer les 21 stratégies sur ce symbole';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Analyses avancées (simulateur prop firm, heatmap horaire, portefeuille)
+// ---------------------------------------------------------------------------
+function showAdv(name) {
+  for (const id of ['prop', 'heat', 'port']) document.getElementById(`adv-${id}`).hidden = id !== name;
+  document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.adv === name));
+}
+
+function renderAdvancedForm(data) {
+  const presetEl = document.getElementById('pf-preset');
+  const options = ['<option value="">Personnalisé (les champs ci-dessous)</option>'];
+  (data.propPrograms || []).forEach((p) => p.phases.forEach((ph, i) => {
+    options.push(`<option value="${p.id}|${i}">${p.label} — ${ph.name}</option>`);
+  }));
+  const keep = presetEl.value;
+  presetEl.innerHTML = options.join('');
+  presetEl.value = [...presetEl.options].some((o) => o.value === keep) ? keep : '';
+  const checks = document.getElementById('pt-checks');
+  if (!checks.children.length) {
+    checks.innerHTML = data.strategies.map((s) => `<label><input type="checkbox" value="${s.id}" onchange="limitPortfolioChecks(this)" /> ${s.label}</label>`).join('');
+  }
+}
+
+function limitPortfolioChecks(box) {
+  const checked = document.querySelectorAll('#pt-checks input:checked');
+  if (checked.length > 6) { box.checked = false; }
+}
+
+function applyPropPreset() {
+  const v = document.getElementById('pf-preset').value;
+  if (!v || !labMeta) return;
+  const [id, idx] = v.split('|');
+  const program = labMeta.propPrograms.find((p) => p.id === id);
+  const ph = program && program.phases[Number(idx)];
+  if (!ph) return;
+  const set = (el, val) => { document.getElementById(el).value = val === null || val === undefined ? '' : String(val); };
+  set('pf-target', ph.targetPct ?? 10);
+  set('pf-daily', ph.dailyLossLimitPct);
+  set('pf-dd', ph.maxDrawdownPct);
+  set('pf-mindays', ph.minTradingDays ?? 0);
+  set('pf-days', program.timeLimitDays ?? 250);
+  // The simulator only knows a fixed floor or an end-of-day trailing one; a real-time trailing floor
+  // that locks at the start balance is the closest to "static" once locked, so it is the safer stand-in.
+  document.getElementById('pf-ddtype').value = ph.maxDrawdownType === 'trailing-eod' ? 'trailing-eod' : 'static';
+}
+
+async function postAnalysis(kind, body, btn, busyText, idleText) {
+  btn.disabled = true;
+  btn.textContent = busyText;
+  try {
+    const res = await fetch(`/api/lab/analyze/${kind}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    return data;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = idleText;
+  }
+}
+
+const pct = (v, d = 0) => (v === null || v === undefined ? '—' : `${fmt(v * 100, d)} %`);
+const selectedRun = () => ({ strategyId: document.getElementById('lab-strategy').value, symbol: document.getElementById('lab-symbol').value });
+const selectedLabel = () => {
+  const s = document.getElementById('lab-strategy');
+  return `${s.options[s.selectedIndex]?.text ?? ''} — ${document.getElementById('lab-symbol').value}`;
+};
+
+async function runChallenge() {
+  const out = document.getElementById('pf-out');
+  const btn = document.getElementById('pf-btn');
+  out.innerHTML = '<div class="meta">Calcul en cours (quelques secondes, jusqu\'à ~1 min sur le serveur)…</div>';
+  const v = (id) => document.getElementById(id).value.trim().replace(',', '.');
+  try {
+    const data = await postAnalysis('challenge', {
+      ...selectedRun(),
+      sample: document.getElementById('pf-sample').value,
+      params: {
+        targetPct: v('pf-target'), dailyLossLimitPct: v('pf-daily'), maxDrawdownPct: v('pf-dd'), maxDrawdownType: document.getElementById('pf-ddtype').value,
+        riskPct: v('pf-risk'), maxDays: v('pf-days'), minTradingDays: v('pf-mindays'), runs: 4000,
+      },
+    }, btn, 'Simulation…', 'Simuler 4 000 challenges');
+    if (data.insufficient) {
+      out.innerHTML = `<div class="err">Seulement ${data.tradeCount} trades pour ${selectedLabel()} : il en faut au moins ${data.minTrades} pour une simulation qui ait un sens. Essaie « Tout l'historique » ou un autre symbole.</div>`;
+      return;
+    }
+    const c = data.counts;
+    const seg = (n, color, title) => `<div style="width:${(n / data.runs) * 100}%;background:${color}" title="${title}"></div>`;
+    const good = data.passRate >= 0.5;
+    out.innerHTML = `
+      <div class="meta" style="margin-bottom:8px;">${selectedLabel()} — ${data.tradeCount} trades sur ${data.tradingDays} jours de trading (${data.sample === 'test' ? 'période test' : 'tout l\'historique'}), espérance ${data.expectancyR >= 0 ? '+' : ''}${fmt(data.expectancyR)}R par trade.</div>
+      <div class="metric-tiles">
+        <div class="metric-tile"><div class="metric-label">Challenges réussis</div><div class="metric-value ${good ? 'win' : 'loss'}">${pct(data.passRate)}</div></div>
+        <div class="metric-tile"><div class="metric-label">Compte cassé</div><div class="metric-value loss">${pct(data.failRate)}</div></div>
+        <div class="metric-tile"><div class="metric-label">Jours pour réussir (médiane)</div><div class="metric-value">${data.daysToPass.median ?? '—'}</div></div>
+        <div class="metric-tile"><div class="metric-label">…dans 90 % des cas</div><div class="metric-value">${data.daysToPass.p90 ?? '—'}</div></div>
+      </div>
+      <div class="stack-bar">
+        ${seg(c.pass, 'var(--green)', 'Réussis')}${seg(c.timeout, 'var(--amber)', 'Temps écoulé')}${seg(c.failDaily, '#c0392b', 'Perte journalière')}${seg(c.failDrawdown, 'var(--red)', 'Drawdown max')}
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--green)"></i>Réussis ${pct(c.pass / data.runs, 1)}</span>
+        <span><i style="background:var(--amber)"></i>Temps écoulé sans finir ${pct(c.timeout / data.runs, 1)}</span>
+        <span><i style="background:#c0392b"></i>Perte journalière dépassée ${pct(c.failDaily / data.runs, 1)}</span>
+        <span><i style="background:var(--red)"></i>Drawdown max dépassé ${pct(c.failDrawdown / data.runs, 1)}</span>
+      </div>
+      <div class="metric-tiles">
+        <div class="metric-tile"><div class="metric-label">Pire drawdown — typique</div><div class="metric-value">${fmt(data.drawdownPct.p50)} %</div></div>
+        <div class="metric-tile"><div class="metric-label">…1 fois sur 20</div><div class="metric-value loss">${fmt(data.drawdownPct.p95)} %</div></div>
+        <div class="metric-tile"><div class="metric-label">…1 fois sur 100</div><div class="metric-value loss">${fmt(data.drawdownPct.p99)} %</div></div>
+        <div class="metric-tile"><div class="metric-label">Solde final (médiane)</div><div class="metric-value ${data.endBalancePct.p50 >= 0 ? 'win' : 'loss'}">${data.endBalancePct.p50 >= 0 ? '+' : ''}${fmt(data.endBalancePct.p50)} %</div></div>
+      </div>
+      <div class="meta">${fmt(data.runs, 0)} simulations, risque fixe de ${fmt(data.params.riskPct)} % du solde initial par trade (sans réinvestir), coûts de spread du backtest inclus. Le solde est mesuré sur les trades clôturés : une vraie perte latente peut faire dépasser la limite journalière un peu plus tôt. Les « jours » sont les jours où la stratégie a pris au moins un trade. Vérifie les règles réelles de ta prop firm avant de t'y fier.</div>`;
+  } catch (err) {
+    out.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  }
+}
+
+const WEEKDAYS = { 1: 'Lun', 2: 'Mar', 3: 'Mer', 4: 'Jeu', 5: 'Ven', 6: 'Sam', 0: 'Dim' };
+
+async function runHeatmap() {
+  const out = document.getElementById('hm-out');
+  const btn = document.getElementById('hm-btn');
+  out.innerHTML = '<div class="meta">Calcul en cours (quelques secondes, jusqu\'à ~1 min sur le serveur)…</div>';
+  try {
+    const data = await postAnalysis('heatmap', selectedRun(), btn, 'Calcul…', 'Calculer la heatmap');
+    if (!data.cells.length) { out.innerHTML = '<div class="err">Aucun trade pour ce symbole.</div>'; return; }
+    const hours = [...new Set(data.cells.map((c) => c.hour))].sort((a, b) => a - b);
+    const minH = hours[0], maxH = hours[hours.length - 1];
+    const days = [1, 2, 3, 4, 5, 6, 0].filter((d) => data.cells.some((c) => c.weekday === d));
+    const at = (d, h) => data.cells.find((c) => c.weekday === d && c.hour === h);
+    const head = `<tr><th></th>${Array.from({ length: maxH - minH + 1 }, (_, i) => `<th>${minH + i}h</th>`).join('')}</tr>`;
+    const rows = days.map((d) => `<tr><th>${WEEKDAYS[d]}</th>${Array.from({ length: maxH - minH + 1 }, (_, i) => {
+      const c = at(d, minH + i);
+      if (!c) return '<td></td>';
+      const a = Math.min(0.85, Math.abs(c.expR) / 1.0 * 0.85);
+      const bg = c.expR >= 0 ? `rgba(47,212,128,${a})` : `rgba(255,92,95,${a})`;
+      const title = `${WEEKDAYS[d]} ${c.hour}h — ${c.n} trades, ${fmt(c.expR)}R en moyenne. Entraînement : ${c.trainN} trades (${fmt(c.trainExp)}R). Test : ${c.testN} trades (${fmt(c.testExp)}R).`;
+      return `<td class="${c.holds ? 'holds' : c.testable ? '' : 'thin'}" style="background:${bg}" title="${title}">${c.expR >= 0 ? '+' : ''}${fmt(c.expR, 1)}<small>${c.n}</small></td>`;
+    }).join('')}</tr>`).join('');
+    const chance = Math.round(data.testableCells * 0.25);
+    out.innerHTML = `
+      <div class="meta" style="margin-bottom:8px;">${selectedLabel()} — <strong>${data.holdingCells}</strong> case(s) fiable(s) sur ${data.testableCells} testables. Un hasard pur en ferait tenir environ ${chance} (1 sur 4) : ${data.holdingCells > chance * 1.5 && data.holdingCells >= 3 ? 'ici il y en a nettement plus, ce qui mérite d\'être creusé.' : 'ici ce n\'est pas nettement mieux, donc méfie-toi d\'un filtre horaire tiré de cette carte.'}</div>
+      <table class="heat">${head}${rows}</table>
+      <div class="legend" style="margin-top:8px;"><span>Chiffre = espérance en R, petit chiffre = nombre de trades</span><span>Cadre bleu = tient en entraînement ET en test</span><span>Case pâle en pointillés = moins de ${data.minCellTrades} trades d'un côté, non testable</span></div>`;
+  } catch (err) {
+    out.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  }
+}
+
+function corrColor(v) {
+  if (v === null) return 'transparent';
+  const a = Math.min(0.85, Math.abs(v) * 0.85);
+  return v >= 0 ? `rgba(255,92,95,${a})` : `rgba(47,212,128,${a})`; // high correlation = bad (red), negative = good (green)
+}
+
+async function runPortfolio() {
+  const out = document.getElementById('pt-out');
+  const btn = document.getElementById('pt-btn');
+  const ids = [...document.querySelectorAll('#pt-checks input:checked')].map((b) => b.value);
+  if (ids.length < 2) { out.innerHTML = '<div class="err">Coche au moins 2 stratégies (6 max).</div>'; return; }
+  out.innerHTML = `<div class="meta">Calcul en cours pour ${ids.length} stratégies (jusqu'à ~2 min sur le serveur)…</div>`;
+  try {
+    const data = await postAnalysis('portfolio', { symbol: document.getElementById('lab-symbol').value, strategyIds: ids }, btn, 'Calcul…', 'Analyser ce portefeuille');
+    const c = data.combined;
+    const short = (label) => (label.length > 16 ? `${label.slice(0, 15)}…` : label);
+    const stratRows = data.strategies.map((s) => `<tr><td>${s.label}</td><td>${s.trades}</td><td class="${s.expectancyR >= 0 ? 'win' : 'loss'}">${s.expectancyR === null ? '—' : (s.expectancyR >= 0 ? '+' : '') + fmt(s.expectancyR) + 'R'}</td><td class="${s.totalR >= 0 ? 'win' : 'loss'}">${s.totalR >= 0 ? '+' : ''}${fmt(s.totalR)}R</td><td class="loss">-${fmt(s.maxDrawdownR)}R</td></tr>`).join('');
+    const corrHead = `<tr><th></th>${data.strategies.map((s) => `<th>${short(s.label)}</th>`).join('')}</tr>`;
+    const corrRows = data.strategies.map((s, i) => `<tr><th style="text-align:left;">${short(s.label)}</th>${data.correlation[i].map((v, j) => `<td style="background:${i === j ? 'var(--bg-inset)' : corrColor(v)}">${v === null ? 'n/a' : fmt(v)}</td>`).join('')}</tr>`).join('');
+    const red = data.drawdownReduction;
+    const half = (h, name) => `<div class="metric-tile"><div class="metric-label">${name}</div><div class="metric-value ${h.totalR >= 0 ? 'win' : 'loss'}">${h.totalR >= 0 ? '+' : ''}${fmt(h.totalR)}R</div><div class="meta">${h.trades} trades, DD -${fmt(h.maxDrawdownR)}R</div></div>`;
+    out.innerHTML = `
+      <div class="metric-tiles">
+        <div class="metric-tile"><div class="metric-label">Trades combinés</div><div class="metric-value">${c.trades}</div></div>
+        <div class="metric-tile"><div class="metric-label">Total combiné</div><div class="metric-value ${c.totalR >= 0 ? 'win' : 'loss'}">${c.totalR >= 0 ? '+' : ''}${fmt(c.totalR)}R</div></div>
+        <div class="metric-tile"><div class="metric-label">Espérance</div><div class="metric-value ${c.expectancyR >= 0 ? 'win' : 'loss'}">${c.expectancyR === null ? '—' : (c.expectancyR >= 0 ? '+' : '') + fmt(c.expectancyR) + 'R'}</div></div>
+        <div class="metric-tile"><div class="metric-label">Drawdown combiné</div><div class="metric-value loss">-${fmt(c.maxDrawdownR)}R</div></div>
+        <div class="metric-tile"><div class="metric-label">Gain sur le drawdown</div><div class="metric-value ${red > 0.15 ? 'win' : ''}">${red === null ? '—' : pct(red)}</div></div>
+        <div class="metric-tile"><div class="metric-label">Corrélation moyenne</div><div class="metric-value">${data.avgCorrelation === null ? '—' : fmt(data.avgCorrelation)}</div></div>
+        <div class="metric-tile"><div class="metric-label">Positions simultanées max</div><div class="metric-value">${c.maxConcurrent}</div></div>
+      </div>
+      <div class="meta" style="margin-bottom:6px;">« Gain sur le drawdown » : de combien le drawdown du portefeuille est plus petit que la somme de ceux de chaque stratégie (0 % = aucune protection mutuelle). « Positions simultanées max » : le plus de trades ouverts en même temps, à garder en tête pour le risque total.</div>
+      <div class="metric-tiles">${half(data.train, 'Entraînement')}${half(data.test, 'Test (hors échantillon)')}</div>
+      ${renderEquityCurve(data.equityCurve)}
+      <table class="strategy-table" style="margin-bottom:14px;"><thead><tr><th>Stratégie</th><th>Trades</th><th>Espérance</th><th>Total R</th><th>Drawdown max</th></tr></thead><tbody>${stratRows}</tbody></table>
+      <div class="meta" style="margin-bottom:6px;">Corrélation des résultats journaliers (jours où au moins l'une des deux trade). Vert = se compensent, rouge = bougent ensemble, n/a = trop peu de jours communs.</div>
+      <table class="strategy-table corr" style="min-width:0;"><thead>${corrHead}</thead><tbody>${corrRows}</tbody></table>`;
+  } catch (err) {
+    out.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
   }
 }
 
