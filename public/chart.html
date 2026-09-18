@@ -505,6 +505,24 @@ const VISIBLE_BARS = 140;
 function focusOnCurrentPrice() {
   const total = lastCandles.length;
   if (total === 0) return;
+  // BUG FOUND 2026-09-18 (Esdras: "quand je vais après sur US500, je ne vois
+  // plus le charte de US500, comme si ce que j'ai fait sur US100 avait des
+  // impacts sur US500"). Reproduced: dragging the price axis (right side)
+  // to manually zoom/pan disables lightweight-charts' autoScale on the
+  // chart's rightPriceScale - set ONCE at buildChart() time and never
+  // re-enabled afterwards. Since `chart`/`candleSeries` are created ONCE and
+  // REUSED across every symbol/timeframe switch (only setData() changes),
+  // that manual range - appropriate for whatever price level the PREVIOUS
+  // symbol was at (e.g. US100 ~19000s) - stayed stuck when switching to a
+  // symbol at a totally different price level (e.g. US500 ~5500) - real
+  // data loaded correctly (confirmed: candles present, last-price banner
+  // showed the right value) but rendered completely off-screen, reading as
+  // "no chart at all". Re-enabling autoScale here (called on every fresh
+  // load - see loadChart()'s own `if (!keepView)` - and by the "Prix actuel"
+  // button) resets the price range to fit whatever symbol is now loaded,
+  // exactly like a fresh page load would, instead of carrying over a stale
+  // manual zoom from a DIFFERENT symbol's price level.
+  chart.priceScale('right').applyOptions({ autoScale: true });
   const from = Math.max(0, total - VISIBLE_BARS);
   // `to` runs a few bars past the last real bar to match the timeScale's
   // rightOffset breathing room, so the live candle sits just inside the edge.
