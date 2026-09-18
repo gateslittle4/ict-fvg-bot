@@ -216,7 +216,9 @@ Question d'Esdras juste après : « où se trouve la majorité de nos trades ? O
 - Quand `KEEP_ALIVE_WINDOWS` est défini, il **remplace** le gate heures-de-marché (il est strictement plus étroit par construction). **Un spec malformé émet un warning et retombe sur le gate PLUS LARGE** : une faute de frappe doit coûter des heures d'instance, jamais laisser le bot endormi pendant une session de trading.
 - +8 tests (301/301) : minutes de bordure exactes (06:00 vs 06:30, 12:00 vs 13:00), fenêtre NWOG du dimanche, samedi, plage de jours qui enjambe, chaque rejet du parseur, et le repli sur spec malformé. Les timestamps de fixture sont écrits avec leur équivalent NY pour qu'une régression DST ne passe pas inaperçue.
 
-**Variables d'environnement Render actives** : `KEEP_ALIVE=true`, `KEEP_ALIVE_WINDOWS=Mon-Fri@06:30-12:00,Sun@17:00-22:00`, `CTRADER_ACCOUNT_ID=48587457`.
+**Variables d'environnement Render actives** : `KEEP_ALIVE=true`, `CTRADER_ACCOUNT_ID=48587457`.
+
+> ⚠️ **CORRIGÉ LE 2026-09-18** — cette ligne affirmait aussi que `KEEP_ALIVE_WINDOWS=Mon-Fri@06:30-12:00,Sun@17:00-22:00` était actif sur Render. **C'était faux** : la variable n'a jamais été posée sur le service. Seul `KEEP_ALIVE=true` l'est, donc c'est le gate LARGE heures-de-marché qui s'applique (dimanche 17h → vendredi 17h NY), pas les fenêtres resserrées décrites ci-dessus. Le code de `parseKeepAliveWindows()`/`isWithinKeepAliveWindows()` reste valide et testé — il est simplement inutilisé en production. Preuve et décision : voir la section « Vérification du keep-alive en production » en fin de fichier.
 
 **Marge volontaire** : la fenêtre démarre à 06:30 alors que le premier FVG tire à 07h — le réveil (boot + warm-up + connexion cTrader) prend ~20-25 s et les pings sont espacés de 10 min, donc cette demi-heure garantit que le bot est chaud avant la première entrée possible.
 
@@ -802,7 +804,7 @@ Session qui a démarré sur l'investigation en cours du prix figé (voir section
 
 **⚠️ Correction d'une note plus haut dans ce fichier (section "Forward-test 2026") : l'accès réseau direct à `onrender.com` n'est PLUS bloqué dans cette session** — vérifié en direct (`curl https://ict-fvg-bot.onrender.com/api/status` a renvoyé du vrai JSON, code 200). La politique réseau a dû changer entre les deux sessions (ou était propre à celle-là). **Ne pas supposer d'un blocage sans re-tester** — une future session devrait juste essayer `curl`/`WebFetch` directement plutôt que de présumer que c'est fermé.
 
-**Utilisé pour diagnostiquer un signalement de "prix figé" (2026-09-10)** : vérifié en direct via `/api/status` à deux reprises à 20s d'intervalle — les prix bougeaient réellement (US100 29414.10→29413.35, XAUUSD 4417.38→4417.08). Conclusion : pas un bug, le service venait de redémarrer (mes propres déploiements l'ont réveillé) après une période probable de mise en veille (hors fenêtre `KEEP_ALIVE_WINDOWS`). Si "prix figé" est resignalé, revérifier `/api/status` directement avant de supposer une régression du bug `event.descriptor`.
+**Utilisé pour diagnostiquer un signalement de "prix figé" (2026-09-10)** : vérifié en direct via `/api/status` à deux reprises à 20s d'intervalle — les prix bougeaient réellement (US100 29414.10→29413.35, XAUUSD 4417.38→4417.08). Conclusion : pas un bug, le service venait de redémarrer (mes propres déploiements l'ont réveillé) après une période probable de mise en veille (marché fermé — le gate heures-de-marché laisse dormir le service du vendredi 17h au dimanche 17h NY ; `KEEP_ALIVE_WINDOWS` n'a jamais été actif, voir la correction plus haut). Si "prix figé" est resignalé, revérifier `/api/status` directement avant de supposer une régression du bug `event.descriptor`.
 
 **Refonte visuelle complète du dashboard, à la demande explicite** ("le site n'est pas pro du tout, je veux un site très pro pour un trader"). Purement visuel — aucune logique serveur touchée, chaque `id`/classe lu ou modifié par le JS existant a été préservé à l'identique (pas de risque de casse fonctionnelle) :
 - Vrai bandeau d'en-tête (logo, titre, pastille de statut LIVE/DEMO avec point pulsant).
@@ -5252,3 +5254,37 @@ régression. Lancer `npm install` d'abord.
 - Le point de vigilance déjà noté à l'issue de l'analyse d'overlap : les 152 trades CBDR qui
   chevauchent Divergence méritent un regard en R (pas seulement en nombre de trades) maintenant que
   les deux mécanismes se disputent réellement le même créneau netté sur US100.
+
+## Vérification du keep-alive en production : actif, mais pas comme ce fichier le disait — 2026-09-18 (suite)
+
+Esdras : « Je croyais que j'avais résolu le 1 ? Regarde si ce n'est pas déjà résolu. » (le « 1 » = la mise en veille du plan gratuit Render, ~15 min sans trafic). Vérifié directement contre le service Render `ict-fvg-bot` (`srv-dafkaav40ujc73bm3cl0`, plan **free**, web service, région Oregon, branche `claude/lire-handoff-hxisa5`) — pas depuis ce fichier, justement parce qu'il s'est révélé faux sur ce point.
+
+**Conclusion : le problème est RÉSOLU.** Le keep-alive tourne réellement.
+
+**Preuve n°1 — le log de démarrage**, identique à chaque boot depuis au moins le 2026-09-17 :
+
+```
+[keep-alive] enabled - pinging https://ict-fvg-bot.onrender.com/healthz every 10 min
+while the market is open (Sun 17:00 -> Fri 17:00 NY); asleep on weekends by design
+```
+
+**Preuve n°2 — une instance a survécu 6 h sans aucun visiteur.** L'instance `srv-dafkaav40ujc73bm3cl0-2s4c2` (démarrée par le déploiement de 04:43 UTC le 2026-09-18) a émis son heartbeat `[cTrader:default] balance loaded from broker` toutes les 5 minutes **sans un seul trou, de 05:04:10 à 10:44:10 UTC**, avant d'être remplacée par le déploiement suivant à 10:48. Sans keep-alive, Render l'aurait endormie vers 05:00. C'est la démonstration directe que le ping fonctionne. Aucun `[keep-alive] ping failed` dans les logs sur la période examinée.
+
+### Mais : `KEEP_ALIVE_WINDOWS` n'a jamais été posé sur Render
+
+Le message de log ci-dessus est la branche **gate heures-de-marché** de `resolveKeepAliveConfig()`. Si `KEEP_ALIVE_WINDOWS` était défini, `startKeepAlive()` afficherait à la place `only during the configured active-trade windows (...)` ; et s'il était défini mais malformé, un `[keep-alive] ignoring KEEP_ALIVE_WINDOWS - ...` le précéderait. Ni l'un ni l'autre n'apparaît. **La variable est donc simplement absente**, contrairement à ce que ce fichier affirmait (section « Suite — `KEEP_ALIVE_WINDOWS` », corrigée en place).
+
+Couverture réelle, donc : **24 h/24 du dimanche 17h au vendredi 17h NY**, soit ~120 h/semaine (~520 h/mois), et non les ~30 h/semaine documentées.
+
+### Décision d'Esdras : on garde le gate heures-de-marché
+
+Mis devant le choix (garder 24/5, ou poser enfin les fenêtres resserrées à ~30 h/semaine au prix des ~8 R/an chiffrés plus haut), **Esdras a tranché pour les heures de marché** — c'est-à-dire l'état actuel. **Aucune variable d'environnement Render n'a été modifiée.** Ce commit est purement documentaire.
+
+**Justification** : la couverture 24/5 est ce qui protège la Divergence, qui fournit ~70 % des trades et se déclenche aux frontières H1 à toute heure, session asiatique comprise. Les fenêtres resserrées auraient coupé 184 entrées Divergence + 10 NWOG (chiffrage déjà fait plus haut dans ce fichier). Le gain en heures d'instance ne valait pas ce renoncement.
+
+### ⚠️ Le vrai risque restant : le quota d'heures du COMPTE
+
+Render accorde 750 h d'instance gratuites par mois **par compte**, partagées entre tous les services gratuits. Ce bot en consomme ~520 à lui seul. Le workspace « Esdras's workspace » contient aussi ces web services gratuits (les sites statiques ne consomment pas d'heures d'instance) : `job-tracker`, `chf-backend-test`, `chf-demo2`, `chf-demo`, `chf-backend`, `demo5`, `chf-demo21` (+ `chf-backend2`, suspendu). Il reste donc ~230 h/mois pour tous les autres.
+
+Si le quota est épuisé, Render suspend les services gratuits — **et le bot tombe silencieusement**. C'est structurel : `keepAlive.js` ne peut que PRÉVENIR la mise en veille, jamais réveiller un process déjà mort (une fois le process tué, plus rien ne tourne pour envoyer un ping). C'est exactement l'argument en faveur d'une surveillance externe (être prévenu si le bot perd cTrader ou n'exécute plus rien), qui reste à faire.
+
