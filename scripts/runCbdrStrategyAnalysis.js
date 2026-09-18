@@ -9,8 +9,24 @@
 // after the touch, stop beyond the touch candle's own extreme, fixed 1:3
 // R:R, 480 M15-candle timeout.
 //
-// Screened on TRAIN (2019-2023), verified on TEST (2024-2025), same
-// verdict rule as everywhere else in this project.
+// Screened on TRAIN (everything before 2024-01-01), verified on TEST
+// (2024-2025), same verdict rule as everywhere else in this project.
+//
+// 2026-09-18 fix (Esdras: "Ce n'est pas la méthode. On étudie d'abord les
+// données passées, donc tu fais le test sur les 15 ans."): the TRAIN filter
+// below (`c.time < TRAIN_CUTOFF`) has NO lower bound - it already included
+// EVERY candle each symbol's CSV actually has before 2024, regardless of
+// how far back that goes. This script's own header used to say "TRAIN
+// (2019-2023)" as a blanket label, copied from the project's usual
+// 7-year-CSV convention - but data/backtest-input/US100.csv and GER40.csv
+// actually start 2010-11-14/15 (XAUUSD 2009-03-15, USDCAD 2010-01-03), so
+// TRAIN for those four symbols was ALREADY ~13-15 years deep, silently, the
+// whole time - the label just undersold it. EURUSD/GBPUSD/UKX/AUX genuinely
+// do start 2018-2019, so "2019-2023" was accurate for THOSE. Not a
+// calculation bug (the 2024-01-01 cut is unchanged, still correct) - the
+// table below now reports each symbol's REAL train-window start date
+// (read straight off its own CSV) instead of a single blanket label, so
+// this is never ambiguous again.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,16 +77,19 @@ function main() {
       "premier retournement. Entrée une bougie après le toucher, stop au-delà de l'extrême de cette bougie, cible " +
       "fixe 1:3, timeout 480 bougies M15. Filtre \"hauteur idéale 20-40 pips\" de la littérature ICT " +
       "délibérément PAS appliqué (concept forex, ne se traduit pas proprement sur les indices). Écran TRAIN " +
-      "(2019-2023) / vérification TEST (2024-2025), même règle de verdict que partout ailleurs."
+      "(tout l'historique disponible avant le 2024-01-01 — voir la colonne \"Début train\" ci-dessous, jusqu'à " +
+      "~15 ans selon le symbole, pas juste 2019) / vérification TEST (2024-2025), même règle de verdict que " +
+      "partout ailleurs."
   );
   md.push('');
-  md.push('| Symbole | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |');
-  md.push('|---|---|---|---|---|---|---|---|---|---|');
+  md.push('| Symbole | Début train | Trades train | WR train | PF train | Espérance train (R) | Trades test | WR test | PF test | Espérance test (R) | Verdict |');
+  md.push('|---|---|---|---|---|---|---|---|---|---|---|');
 
   for (const symbol of SYMBOLS) {
     const { candles } = loadCandlesFromCsv(path.join(dir, `${symbol}.csv`));
     const trainCandles = candles.filter((c) => c.time < TRAIN_CUTOFF);
     const testCandles = candles.filter((c) => c.time >= TRAIN_CUTOFF);
+    const trainStart = trainCandles.length > 0 ? new Date(trainCandles[0].time).toISOString().slice(0, 10) : '—';
 
     const trainTrades = runCbdrBacktest(trainCandles);
     const testTrades = runCbdrBacktest(testCandles);
@@ -80,8 +99,8 @@ function main() {
     const es = summarizeTrades(testNet);
     const v = verdict(ts.expectancyR, es.expectancyR, ts.totalSignals, es.totalSignals);
 
-    md.push(`| ${symbol} | ${ts.totalSignals} | ${fmtPct(ts.winRate)} | ${fmtNum(ts.profitFactor)} | ${fmtNum(ts.expectancyR)} | ${es.totalSignals} | ${fmtPct(es.winRate)} | ${fmtNum(es.profitFactor)} | ${fmtNum(es.expectancyR)} | ${v} |`);
-    console.error(`[${symbol}] train n=${ts.totalSignals} wr=${fmtPct(ts.winRate)} exp=${fmtNum(ts.expectancyR)} | test n=${es.totalSignals} wr=${fmtPct(es.winRate)} exp=${fmtNum(es.expectancyR)}`);
+    md.push(`| ${symbol} | ${trainStart} | ${ts.totalSignals} | ${fmtPct(ts.winRate)} | ${fmtNum(ts.profitFactor)} | ${fmtNum(ts.expectancyR)} | ${es.totalSignals} | ${fmtPct(es.winRate)} | ${fmtNum(es.profitFactor)} | ${fmtNum(es.expectancyR)} | ${v} |`);
+    console.error(`[${symbol}] train ${trainStart}->2023-12-31 n=${ts.totalSignals} wr=${fmtPct(ts.winRate)} exp=${fmtNum(ts.expectancyR)} | test n=${es.totalSignals} wr=${fmtPct(es.winRate)} exp=${fmtNum(es.expectancyR)}`);
   }
 
   const outMd = path.join(dir, 'cbdr-strategy-analysis.md');
