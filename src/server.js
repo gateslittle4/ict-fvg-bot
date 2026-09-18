@@ -25,6 +25,7 @@ import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus
 import { loadCandlesFromCsv } from './backtest/csvLoader.js';
 import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
 import { runLabBacktestTrainTest, TRAIN_TEST_CUTOFF } from './backtest/labRunner.js';
+import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -227,6 +228,15 @@ function listLabSymbols() {
     .map((name) => name.replace(/\.csv$/, ''))
     .sort();
 }
+
+// 2026-09-18 (Esdras: "continue, ne t'arrête pas") - closes a gap
+// documented in HANDOFF.md: every ntfy push is fire-and-forget and Render
+// keeps no history of them. In-memory only (src/alertHistory.js), account-
+// agnostic like the Lab routes above - resets on restart, which is an
+// accepted limit, not a bug (see that module's own header comment).
+app.get('/api/alerts', (req, res) => {
+  res.json({ alerts: getRecentAlerts(100) });
+});
 
 app.get('/api/lab/meta', (req, res) => {
   try {

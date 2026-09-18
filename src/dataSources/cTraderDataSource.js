@@ -41,6 +41,7 @@ import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRe
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
 import { buildComplianceChecklist, requiredH1LookbackCandles, requiredPreEntryContextCandles } from './tradeCompliance.js';
 import { buildChartOverlays } from '../backtest/chartOverlays.js';
+import { recordAlert } from '../alertHistory.js';
 import { evaluateLiveFilters } from '../backtest/liveFvgFilterStatus.js';
 import {
   nwogLiveStatus,
@@ -2751,6 +2752,7 @@ export class CTraderDataSource {
         ? ` [obs. vol: ${tagged.volRegime}, taille sugg. ${tagged.suggestedRiskPct.toFixed(2)}% — non appliqué]`
         : '';
       const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}${volNote}`;
+      recordAlert(text);
       fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
         console.warn('[ntfy] push failed', err.message)
       );
@@ -2759,6 +2761,7 @@ export class CTraderDataSource {
 
   /** Same push channel as _notify(), for a plain text message (pyramid auto-execution confirmations/warnings). */
   _notifyText(text) {
+    recordAlert(text);
     if (!CONFIG.notifications.ntfyTopic) return;
     fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
       console.warn('[ntfy] push failed', err.message)

@@ -77,6 +77,7 @@ import { getDefaultAccount } from '../accountRegistry.js';
 import { CONFIG } from '../config.js';
 import { calculateLotSize, getDefaultSpec } from '../engines/lotCalculator.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
+import { recordAlert } from '../alertHistory.js';
 
 const M15_MS = 15 * 60 * 1000;
 
@@ -741,6 +742,7 @@ export class MatchTraderDataSource {
         ? ` [obs. vol: ${tagged.volRegime}, taille sugg. ${tagged.suggestedRiskPct.toFixed(2)}% — non appliqué]`
         : '';
       const text = `${e.suggestedSide.toUpperCase()} ${e.symbol} — ${label}${range}${volNote}`;
+      recordAlert(text);
       fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
         console.warn('[ntfy] push failed', err.message)
       );
@@ -748,6 +750,7 @@ export class MatchTraderDataSource {
   }
 
   _notifyText(text) {
+    recordAlert(text);
     if (!CONFIG.notifications.ntfyTopic) return;
     fetch(`https://ntfy.sh/${CONFIG.notifications.ntfyTopic}`, { method: 'POST', body: text }).catch((err) =>
       console.warn('[ntfy] push failed', err.message)

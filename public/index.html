@@ -613,6 +613,15 @@
     <div id="execution-audit-body">—</div>
   </div>
 
+  <!-- 2026-09-18 - un push ntfy disparaît une fois envoyé (Render n'en garde
+       aucune trace) ; ceci n'est qu'une fenêtre en mémoire sur ce que CE
+       process a poussé depuis son dernier démarrage, pas un journal durable. -->
+  <div class="card" id="alert-history-card">
+    <h2>Historique des alertes (push)</h2>
+    <div class="meta" style="margin-bottom:8px;">Ce que ce processus a poussé (ou aurait poussé) depuis son dernier démarrage — en mémoire seulement, remis à zéro à chaque redémarrage/déploiement.</div>
+    <div id="alert-history-body">Chargement…</div>
+  </div>
+
   <div class="card" id="risk-command-card">
     <h2>Risk Command Center</h2>
     <div class="meta" style="margin-bottom:8px;">Exposition calculée sur les positions réellement ouvertes et leurs protections broker.</div>
@@ -1905,6 +1914,7 @@ function startDashboardForAccount(accountId) {
   refreshTradeLog();
   refreshAccount();
   refreshOrderLog();
+  refreshAlertHistory();
   liveStreamHandle = startLiveStream();
   dashboardPollIntervals = [
     setInterval(refreshHealth, 30000), // process health and API latency are cheap, but do not need a faster cadence
@@ -1912,7 +1922,32 @@ function startDashboardForAccount(accountId) {
     setInterval(refreshTradeLog, 60000), // grows one row per resolved trade, no meaningful reason to poll faster - only feeds the hero strip now, see its own comment
     setInterval(refreshAccount, 30000), // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
     setInterval(refreshOrderLog, 30000), // in-memory log, grows only on a real order outcome - no need for a faster cadence than the account card next to it
+    setInterval(refreshAlertHistory, 30000), // in-memory, same cadence as the order log it sits next to
   ];
+}
+
+async function refreshAlertHistory() {
+  const el = document.getElementById('alert-history-body');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/alerts');
+    const data = await res.json();
+    const alerts = data.alerts || [];
+    if (alerts.length === 0) {
+      el.innerHTML = '<div class="meta">Aucune alerte poussée depuis le dernier démarrage.</div>';
+      return;
+    }
+    el.innerHTML = `
+      <table class="strategy-table">
+        <thead><tr><th>Heure</th><th>Message</th></tr></thead>
+        <tbody>${alerts.slice(0, 30).map((a) => `
+          <tr><td class="meta">${fmtTime(a.at)}</td><td>${a.text}</td></tr>
+        `).join('')}</tbody>
+      </table>
+    `;
+  } catch (err) {
+    el.innerHTML = `<div class="err">Erreur de chargement: ${err.message}</div>`;
+  }
 }
 
 // "Vue d'ensemble" card (see the <div id="accounts-overview-card"> above) -
