@@ -5352,3 +5352,39 @@ Ce qui marche et ce qui échoue diffèrent sur un point : les quatre tests de co
 ### Point annexe : les redéploiements coupent le bot
 
 4 déploiements le 18/09 entre 11:07 et 12:33, déclenchés par les commits des différentes sessions. Chacun coûte ~90 s d'indisponibilité plus la remise en chauffe des 5 symboles. Le boot de 11:46 n'a même jamais atteint `connected and live` avant d'être remplacé par celui de 11:59. Un signal dont la bougie M15 se ferme dans une de ces fenêtres est purement perdu. La convention `[skip render]` sur les commits documentaires existe pour ça — l'appliquer systématiquement.
+
+## La cause du refus : un ordre MARKET ne peut pas porter de stop en prix absolu — 2026-09-18 (suite)
+
+Barry : « à quel pourcentage t'es sûr que le problème est prix absolu sur un ordre de marché ? » puis « on le fait maintenant ».
+
+**La preuve est dans le `.proto` de Spotware lui-même**, vendoré avec la bibliothèque du projet (`node_modules/@reiryoku/ctrader-layer/protobuf/OpenApiMessages.proto`, message `ProtoOANewOrderReq`) :
+
+```
+optional double stopLoss          = 11; // The absolute Stop Loss price (1.23456 for example). Not supported for the MARKER orders.
+optional double takeProfit        = 12; // The absolute Take Profit price (1.23456 for example). Unsupported for the MARKER orders.
+optional int64  relativeStopLoss  = 19; // (...) for BUY stopLoss = entryPrice - relativeStopLoss, for SELL stopLoss = entryPrice + relativeStopLoss.
+optional int64  relativeTakeProfit= 20; // (...) Specified in 1/100000 of unit of a price.
+```
+
+(« MARKER » est la coquille de Spotware pour « MARKET ».) Or `_submitOrder` envoyait `stopLoss`/`takeProfit` **absolus sur tous les ordres**, MARKET compris — c'est-à-dire sur tous les mécanismes sauf FVG (divergence, silver bullet, NWOG, Judas, weekly sweep, breaker block, CBDR).
+
+Concordance avec la production : **0 succès sur 3** pour les ordres MARKET avec protection, contre **4 sur 4** pour les ordres MARKET de `/admin/test-order-cycle`, qui ne portent aucune protection (`"stopLoss":null,"takeProfit":null` dans le dump brut) et sont acceptés puis remplis en ~290 ms.
+
+### Le correctif
+
+`toRelativeProtectionDistance(referencePrice, protectionPrice)` (exportée, testée) convertit un prix de protection absolu en distance, en 1/100000 d'unité de prix. `_submitOrder` l'applique **uniquement aux ordres MARKET** ; LIMIT (FVG) et STOP (pyramide) sont des ordres en attente à prix d'entrée connu et gardent la forme absolue, que le courtier accepte d'eux — leur comportement est strictement inchangé, verrouillé par des tests.
+
+Le signe est volontairement supprimé : le courtier déduit le côté de `tradeSide`, il attend une distance positive.
+
+**Conséquence de fond, à connaître** : la protection est désormais ancrée sur le **prix de remplissage réel**, et non plus sur le `entryPrice` du signal. C'est un gain, pas une régression — l'ordre MARKET part une fois la bougie M15 close, donc le prix a déjà dérivé ; l'ancien ancrage absolu laissait cette dérive élargir ou rétrécir silencieusement le R pour lequel la position avait été dimensionnée. La distance de risque est maintenant exactement celle qui a servi au calcul du lot.
+
+**Garde-fou** : si la distance ne peut pas être calculée (pas d'ancre, ou stop confondu avec l'entrée → distance nulle), `_submitOrder` **lève une erreur au lieu d'envoyer l'ordre**. Une distance de 0 s'encoderait en « aucune protection » et ouvrirait une position nue. Même raisonnement que le garde-fou `lotSize` : un échec bruyant sur un ordre vaut mieux qu'une position réelle non protégée.
+
+`npm test` : **748/748** (739 + 9 nouveaux).
+
+### Ce qui reste ouvert
+
+Le motif exact n'a toujours pas été observé — la capture `[order-error]` déployée juste avant reste le juge de paix. Si le prochain signal MARKET passe, la cause était bien celle-ci. S'il est encore refusé, le code d'erreur dira laquelle des deux autres pistes tient :
+
+1. **Le second mode d'échec, non élucidé** : les ordres FVG en LIMIT sur BTCUSD le 16/09 ont échoué ~15 fois pour ~6 succès, alors que LIMIT + protection absolue est autorisé par la spec. Piste à creuser : `timeInForce: 'GOOD_TILL_DATE'`, dont le nom d'énumération n'a jamais été vérifié contre une vraie réponse API (voir le commentaire de `_submitOrder`). Ce chemin n'est PAS touché par ce correctif.
+2. Autre chose encore, que seul `errorCode` nommera.
