@@ -145,13 +145,43 @@ test('pairDealsIntoTrades: without an orderLabelsById map, source is null (never
 
 test('pairDealsIntoTrades: looks up the OPENING deal\'s orderId in orderLabelsById to attach a source', () => {
   const deals = [opening({ positionId: 1, orderId: 42 }), closing({ positionId: 1 })];
-  const labels = new Map([[42, 'auto-divergence-US500']]);
+  // String key - the real contract (see pairDealsIntoTrades' own JSDoc and
+  // cTraderDataSource.js's getTradeHistory, which always builds this map
+  // that way).
+  const labels = new Map([['42', 'auto-divergence-US500']]);
   assert.equal(pairDealsIntoTrades(deals, labels)[0].source, 'divergence');
+});
+
+// BUG FOUND 2026-09-18 (execution-path audit continued, same class as the
+// orderId map-key fix in cTraderDataSource.js): orderLabelsById is built from
+// ProtoOAOrderListReq's response (getTradeHistory, cTraderDataSource.js) but
+// looked up here with the OPENING DEAL's own orderId, which comes from a
+// DIFFERENT message, ProtoOADealListReq. This broker is confirmed
+// (repeatedly, this session) to serialize the same conceptual int64 field
+// inconsistently as a string or a number depending on which message it came
+// from - nothing here defended against that for orderId, unlike every other
+// id comparison this session's audit already hardened (positionId, the two
+// broker-confirmation maps). A silent mismatch here doesn't lose money, but
+// it silently defeats the one thing this whole feature exists for
+// ("aucun screenshot ne dit quelle stratégie a généré le trade") - AND
+// degrades the compliance checklist for that trade (source: null -> cfg:
+// null in _configForSource), which is a real, user-facing regression on a
+// feature Esdras explicitly asked for.
+test('pairDealsIntoTrades: matches the opening deal\'s orderId to orderLabelsById by numeric value, not strict type (string vs number orderId)', () => {
+  // The deal's orderId as a NUMBER - this is the actual variable side: which
+  // type ProtoOADealListReq happens to serialize orderId as is NOT under
+  // this function's control. orderLabelsById itself is always String-keyed
+  // by contract (its one real caller, cTraderDataSource.js, normalizes it) -
+  // what this test locks in is that a deal orderId of a DIFFERENT type still
+  // resolves correctly against that String-keyed map.
+  const deals = [opening({ positionId: 1, orderId: 42 }), closing({ positionId: 1 })];
+  const labels = new Map([['42', 'auto-divergence-US500']]);
+  assert.equal(pairDealsIntoTrades(deals, labels)[0].source, 'divergence', 'must still attach the real source despite the string/number type difference');
 });
 
 test('pairDealsIntoTrades: an opening order missing from the label map (manual trade) gets source null', () => {
   const deals = [opening({ positionId: 1, orderId: 99 }), closing({ positionId: 1 })];
-  const labels = new Map([[42, 'auto-fvg-US100']]); // a different order entirely
+  const labels = new Map([['42', 'auto-fvg-US100']]); // a different order entirely, string-keyed per contract
   assert.equal(pairDealsIntoTrades(deals, labels)[0].source, null);
 });
 

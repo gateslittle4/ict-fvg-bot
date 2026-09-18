@@ -34,7 +34,11 @@ export function parseSourceFromLabel(label) {
 
 /**
  * @param {object[]} deals - raw `deal` array from ProtoOADealListReq
- * @param {Map<number, string>} [orderLabelsById] - orderId -> ProtoOAOrder.tradeData.label, from ProtoOAOrderListReq over the same window
+ * @param {Map<string, string>} [orderLabelsById] - String(orderId) -> ProtoOAOrder.tradeData.label,
+ *   from ProtoOAOrderListReq over the same window. Keys MUST be String(orderId) -
+ *   see cTraderDataSource.js's getTradeHistory(), and the 2026-09-18 fix
+ *   comment on the lookup below for why a raw (unconverted) key silently
+ *   breaks source attribution on this broker.
  * @returns {object[]} one entry per CLOSED position, newest first: {
  *   positionId, symbolId, direction: 'bullish'|'bearish',
  *   entryPrice, entryTime, exitPrice, exitTime, pnl, source: string|null
@@ -77,7 +81,17 @@ export function pairDealsIntoTrades(deals, orderLabelsById) {
     // ("Invalid Date") - Date() does NOT treat a numeric string as an epoch
     // number the way arithmetic operators do.
     const closing = closings.reduce((a, b) => (Number(b.executionTimestamp) > Number(a.executionTimestamp) ? b : a));
-    const label = orderLabelsById ? orderLabelsById.get(opening.orderId) : undefined;
+    // BUG FOUND 2026-09-18 (execution-path audit continued): String(...) on
+    // the lookup key, not the raw opening.orderId. orderLabelsById is built
+    // from ProtoOAOrderListReq's response (see cTraderDataSource.js's
+    // getTradeHistory) but looked up here with a DEAL's orderId, which comes
+    // from ProtoOADealListReq - a different message. This broker is
+    // confirmed (repeatedly, this session) to serialize the same conceptual
+    // int64 field as a string or a number depending on which message it came
+    // from - orderLabelsById's own keys are normalized with the SAME
+    // String(...) at construction time (see cTraderDataSource.js), so both
+    // sides now agree regardless of either message's actual serialization.
+    const label = orderLabelsById ? orderLabelsById.get(String(opening.orderId)) : undefined;
 
     trades.push({
       positionId,

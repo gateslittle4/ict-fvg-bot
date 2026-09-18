@@ -707,8 +707,13 @@ export class CTraderDataSource {
         fromTimestamp: from,
         toTimestamp: to,
       });
+      // String(...) key (2026-09-18, execution-path audit continued) - see
+      // dealPairing.js's pairDealsIntoTrades() for the full reasoning: this
+      // map's keys must agree with the DEAL's own orderId (a different
+      // broker message, ProtoOADealListReq) regardless of how either message
+      // actually serializes the field.
       orderLabelsById = new Map(
-        (orderRes.order || []).map((o) => [o.orderId, o.tradeData && o.tradeData.label])
+        (orderRes.order || []).map((o) => [String(o.orderId), o.tradeData && o.tradeData.label])
       );
     } catch (err) {
       console.warn('[cTrader] trade history: failed to fetch order labels (source will show as unknown):', err.message);

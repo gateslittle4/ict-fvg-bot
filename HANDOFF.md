@@ -4853,3 +4853,22 @@ Ce courtier est confirmé (4+ fois cette session déjà : solde, executionTimest
 **Preuve que le diff final attrape bien la régression** (même discipline que tout le reste de cette série) : `git stash` du seul fichier source (tests + doc gardés) → 12 tests échouent sur les fichiers concernés → `git stash pop` → tout repasse au vert.
 
 `npm test` : 679/679 (677 + 2 nouveaux). **Fichiers** : `src/dataSources/cTraderDataSource.js`, `test/cTraderDataSourceExecutionEvent.test.js`, `test/cTraderDataSourceAutoExecuteEntry.test.js`, `test/cTraderDataSourcePyramidOrderRequested.test.js`.
+
+## Bug n°6 : même trou string/number sur l'attribution de source du journal (orderLabelsById) — 2026-09-18 (suite)
+
+Poursuite du même audit. Après avoir fermé la classe de bug sur `pendingEntryOrderByOrderId`/`pyramidOrderSymbolByOrderId` (n°5), recherche du MÊME pattern ailleurs dans le pipeline live : `dealPairing.js` (le fichier qui construit le journal de trades affiché dans `/api/trade-history`) a déjà un long historique de bugs de ce type documentés dans ses propres commentaires. Lecture complète du fichier → trouvé.
+
+**Le trou** : `pairDealsIntoTrades()` (dealPairing.js) attache la SOURCE de chaque trade (FVG/Divergence/NWOG/...) en cherchant `opening.orderId` (le champ `orderId` d'un DEAL, venant de `ProtoOADealListReq`) dans `orderLabelsById`, une map construite dans `cTraderDataSource.js`'s `getTradeHistory()` à partir de `orderRes.order` (venant de `ProtoOAOrderListReq` — **un message différent**). Exactement le même schéma que le n°5 (deux messages courtier différents pour le même champ conceptuel `orderId`), mais ici sur le lookup `.get(opening.orderId)`, sans aucune normalisation ni côté construction (`o.orderId` brut) ni côté lecture (`opening.orderId` brut).
+
+**Pourquoi c'est réel** : ce courtier est confirmé (5+ fois cette session) sérialiser le même champ int64 tantôt en string, tantôt en number, selon le message d'origine. Si `ProtoOAOrderListReq` et `ProtoOADealListReq` ne sérialisent pas `orderId` de la même façon pour le même ordre, l'attribution de source échoue silencieusement — CHAQUE trade du journal afficherait `source: null` ("Mécanisme inconnu"), défaisant exactement la fonctionnalité qu'Esdras avait demandée explicitement ("aucun screenshot ne dit quelle stratégie a généré le trade") — et dégraderait aussi la checklist de conformité de ce trade (`source: null` → `cfg: null` dans `_configForSource`).
+
+**Preuve avant correctif** : nouveau test écrit d'abord (orderId du deal en STRING, clé de la map en NUMBER) — confirmé en échec contre le code non corrigé.
+
+**Corrigé** (les deux côtés, même discipline que le n°5) :
+- `cTraderDataSource.js` : `orderLabelsById` construite avec des clés `String(o.orderId)`.
+- `dealPairing.js` : lookup fait avec `orderLabelsById.get(String(opening.orderId))`. JSDoc mis à jour pour documenter le contrat (`Map<string, string>`, clés = `String(orderId)`).
+- Les 2 tests préexistants qui posaient une clé number à la main (`new Map([[42, ...]])`) mis à jour pour respecter le vrai contrat (clé string) — ils testaient la cohérence interne de leur propre fixture, pas un vrai scénario.
+
+**Preuve que le diff final attrape la régression** : `git stash` des seuls fichiers source (`dealPairing.js` + `cTraderDataSource.js`, tests gardés) → 2 tests échouent → `git stash pop` → tout repasse au vert.
+
+`npm test` : 680/680 (679 + 1 nouveau). **Fichiers** : `src/dataSources/dealPairing.js`, `src/dataSources/cTraderDataSource.js`, `test/dealPairing.test.js`.
