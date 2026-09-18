@@ -227,6 +227,57 @@ export function computeStaleBeliefsToClear({ realPositions, pendingOrders, symbo
 }
 
 /**
+ * Pure decision logic behind cTraderDataSource.js's _clearStaleBeliefsAgainstBroker()
+ * ADOPTION step (2026-09-18, HANDOFF.md: "un redémarrage pendant qu'une
+ * position est ouverte fait perdre au bot sa propre trace du trade") - the
+ * mirror image of computeStaleBeliefsToClear() above. That one clears a
+ * BELIEVED position with nothing real behind it; this one finds a REAL open
+ * position with no belief behind it (reconcileAccount()'s 'real-only'
+ * status - typically a position this process itself opened, then forgot
+ * about across a restart, since LiveStrategyEngine.openPositions is
+ * in-memory only) and returns what's needed to adopt it back into tracking,
+ * so netting correctly blocks a SECOND position on the same symbol until
+ * this one closes for real.
+ *
+ * At most one adoption per symbol - LiveStrategyEngine tracks a single
+ * believed position per symbol (see its own openPositions comment), so a
+ * symbol with more than one real open position (e.g. a manual trade stacked
+ * on top of another) can only ever have ONE of them adopted; the rest stay
+ * real-only, same as today - not a regression this introduces, just not
+ * something a single-slot belief map can represent.
+ *
+ * @param {object[]} realPositions - raw ProtoOAReconcileRes.position array
+ * @param {Map<string,string>} symbolNameById - String(symbolId) -> symbol name (see reconcileAccount's own param doc for why String(...) keys are mandatory)
+ * @param {string[]} symbols - symbols this LiveStrategyEngine instance actually tracks - a real position on any other symbol has nowhere safe to be adopted into and is skipped
+ * @param {(symbol: string) => object|null} getBelievedPosition - LiveStrategyEngine.getOpenPosition
+ * @returns {{symbol: string, positionId: string, direction: 'bullish'|'bearish', entryPrice: number|null, stopPrice: number|null, targetPrice: number|null, openTimestamp: number|null}[]}
+ */
+export function computeRealOnlyPositionsToAdopt({ realPositions, symbolNameById, symbols, getBelievedPosition }) {
+  const trackedSymbols = new Set(symbols || []);
+  const queuedSymbols = new Set();
+  const toAdopt = [];
+  for (const pos of realPositions || []) {
+    if (pos.positionStatus && pos.positionStatus !== 'POSITION_STATUS_OPEN') continue;
+    const symbol = symbolNameById.get(String(pos.tradeData?.symbolId));
+    if (!symbol || !trackedSymbols.has(symbol)) continue;
+    if (getBelievedPosition(symbol)) continue; // already believed open - reconcileAccount would call this 'match', nothing to adopt
+    if (queuedSymbols.has(symbol)) continue; // a real position on this symbol is already queued for adoption - see header
+    queuedSymbols.add(symbol);
+    const enriched = enrichRealPosition(pos, null);
+    toAdopt.push({
+      symbol,
+      positionId: String(enriched.positionId),
+      direction: enriched.direction,
+      entryPrice: enriched.entryPrice,
+      stopPrice: enriched.stopLoss,
+      targetPrice: enriched.takeProfit,
+      openTimestamp: enriched.openTimestamp,
+    });
+  }
+  return toAdopt;
+}
+
+/**
  * Pure decision logic behind cTraderDataSource.js's stop-protection sweep
  * (2026-09-14, found live: a real BTCUSD position filled via a LIMIT order
  * came back from the broker with stopLoss:null AND a genuinely separate

@@ -1608,3 +1608,98 @@ test('LiveStrategyEngine: netting blocks a CBDR signal on a symbol that already 
   assert.equal(entryEvents.length, 1, 'still reported - informational, same convention as every other blockedReason');
   assert.equal(entryEvents[0].blockedReason, 'netting');
 });
+
+// 2026-09-18, real bug found live (HANDOFF.md: "un redémarrage pendant
+// qu'une position est ouverte fait perdre au bot sa propre trace du
+// trade"): a real Silver Bullet GER40 position survived an unrelated
+// deploy's restart, but openPositions (in-memory only) came back empty -
+// netting had no way to know GER40 was occupied. adoptExternalPosition()
+// is cTraderDataSource.js's _clearStaleBeliefsAgainstBroker's fix for
+// this: re-register a real-only position (accountReconciliation.js's
+// computeRealOnlyPositionsToAdopt decides WHICH ones qualify) back into
+// tracking.
+test('LiveStrategyEngine.adoptExternalPosition: registers a real position with no prior belief, source "adopted", entryIndex at the tail of history', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+  });
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  engine.ingestCandle('TEST1', c(M15, 100, 102, 100, 101)); // history now has 2 candles, tail index 1
+
+  const belief = engine.adoptExternalPosition('TEST1', {
+    positionId: '41685618', direction: 'bearish', entryPrice: 25330.75, stopPrice: 25367.95, targetPrice: 25219.15,
+  });
+
+  assert.ok(belief, 'expected the real-only position to be adopted');
+  assert.equal(belief.source, 'adopted');
+  assert.equal(belief.id, 'adopted:41685618');
+  assert.equal(belief.entryIndex, 1, 'entryIndex is "now" (tail of history), not a guessed real entry point');
+  assert.equal(belief.direction, 'bearish');
+  assert.equal(belief.entryPrice, 25330.75);
+  assert.equal(belief.stopPrice, 25367.95);
+  assert.equal(belief.targetPrice, 25219.15);
+  assert.equal(belief.riskAmount, null, 'unknowable after the fact - never fabricated');
+  assert.deepEqual(engine.getOpenPosition('TEST1'), belief);
+});
+
+test('LiveStrategyEngine.adoptExternalPosition: never clobbers an existing belief on the same symbol', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+  });
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  const existing = {
+    source: 'fvg', id: 'fvg-real-open', direction: 'bullish', entryIndex: 0, entryTime: 0,
+    entryPrice: 100, stopPrice: 90, targetPrice: 130, distance: 10, rrMultiple: 3,
+    riskAmount: 50, maxHoldingCandles: 480,
+  };
+  engine.openPositions.set('TEST1', existing);
+
+  const result = engine.adoptExternalPosition('TEST1', {
+    positionId: '999', direction: 'bearish', entryPrice: 200, stopPrice: 210, targetPrice: 150,
+  });
+
+  assert.equal(result, null, 'a belief already exists - nothing to adopt');
+  assert.equal(engine.getOpenPosition('TEST1'), existing, 'the real existing belief must survive untouched');
+});
+
+test('LiveStrategyEngine.adoptExternalPosition: a symbol this engine does not track at all is never adopted into', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'], fvgConfig: {}, divergenceConfig: null, guardrail, riskPctPerTrade: 1,
+  });
+
+  const result = engine.adoptExternalPosition('UNTRACKED', {
+    positionId: '1', direction: 'bullish', entryPrice: 100, stopPrice: 90, targetPrice: 130,
+  });
+
+  assert.equal(result, null);
+  assert.equal(engine.getOpenPosition('UNTRACKED'), null);
+});
+
+test('LiveStrategyEngine.adoptExternalPosition: once adopted, netting blocks a new real signal on the same symbol (the actual fix)', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  engine.ingestCandle('TEST1', c(M15, 100, 102, 100, 101));
+  engine.adoptExternalPosition('TEST1', {
+    positionId: '41685618', direction: 'bearish', entryPrice: 100, stopPrice: 110, targetPrice: 80,
+  });
+
+  // Same bullish-gap sequence as the very first test in this file, on top
+  // of the adopted belief - without the fix, openPositions would be empty
+  // and this would open a SECOND real position on the same symbol.
+  engine.ingestCandle('TEST1', c(2 * M15, 102, 105, 103, 104));
+  const validatedEvs = engine.ingestCandle('TEST1', c(3 * M15, 104, 104, 102, 103));
+  const validated = validatedEvs.find((e) => e.type === 'validated');
+
+  assert.ok(validated, 'expected the FVG signal to still be reported (informational)');
+  assert.equal(validated.blockedReason, 'netting');
+  assert.equal(engine.getOpenPosition('TEST1').source, 'adopted', 'the adopted position must remain the one tracked');
+});

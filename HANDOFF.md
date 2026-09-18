@@ -5518,3 +5518,67 @@ la demande d'Esdras avant de passer à une autre session Claude) :
 **Fichiers concernés** (aucun modifié ici) : `src/dataSources/accountReconciliation.js`,
 `src/dataSources/cTraderDataSource.js` (`_clearStaleBeliefsAgainstBroker`,
 ligne ~406), `src/liveStrategyEngine.js` (`openPositions`, ligne ~230).
+
+## CORRIGÉ — adoption des positions `real-only` dans `openPositions` (le bug ci-dessus) — 2026-09-18 (suite, même session)
+
+Implémenté dans la foulée, à la demande d'Esdras ("on fait les
+modifications ici??"), exactement le plan laissé dans la section
+précédente :
+
+- `src/dataSources/accountReconciliation.js` : nouvelle fonction pure
+  `computeRealOnlyPositionsToAdopt()` (miroir de `computeStaleBeliefsToClear()`
+  juste au-dessus) — pour chaque position réelle ouverte sans croyance
+  correspondante (`getBelievedPosition(symbol)` falsy), sur un symbole que
+  ce process suit réellement (`symbols`), retourne ce qu'il faut pour
+  l'adopter (`positionId`, `direction`, `entryPrice`, `stopPrice`,
+  `targetPrice`, `openTimestamp` — réutilise `enrichRealPosition()`, pas de
+  parsing dupliqué). Au plus une adoption par symbole (le modèle à un seul
+  slot par symbole ne peut pas en représenter plus).
+- `src/liveStrategyEngine.js` : nouvelle méthode `adoptExternalPosition(symbol, {...})` —
+  écrit dans `openPositions` avec `source: 'adopted'` (jamais `null`, sinon
+  `reconcileAccount()` resterait bloqué sur `'real-only'` pour toujours même
+  après adoption) et `entryIndex` calé sur MAINTENANT (fin de l'historique
+  retenu) plutôt que sur l'entrée réelle (invérifiable après coup) — donne
+  une fenêtre `maxHoldingCandles` fraîche plutôt que de risquer un faux
+  timeout immédiat. Refuse si une croyance existe déjà sur ce symbole
+  (`return null`, garde défensive) ou si le symbole n'est pas suivi du tout.
+- `src/dataSources/cTraderDataSource.js` : `_clearStaleBeliefsAgainstBroker()`
+  appelle maintenant aussi `computeRealOnlyPositionsToAdopt()` (même réponse
+  `ProtoOAReconcileReq`, aucun aller-retour broker supplémentaire) juste
+  après la boucle `toClear` existante, et pour chaque adoption réussie
+  enregistre l'entrée correspondante dans `openPositionInfoByPositionId`
+  (`source: 'adopted'`, `riskAmount: null` — le vrai risque initial est
+  invérifiable après coup, donc le R-multiple du journal pour cette position
+  restera `null` plutôt que d'être inventé) pour que la fermeture réelle
+  éventuelle écrive tout de même une ligne de journal durable. Tourne au
+  boot ET toutes les 5 minutes, même cadence que le nettoyage inverse déjà
+  en place.
+- Tests : `computeRealOnlyPositionsToAdopt` (6 cas, `accountReconciliation.test.js`),
+  `adoptExternalPosition` (4 cas dont un bout-en-bout qui prouve que le
+  netting bloque bien un second signal, `liveStrategyEngine.test.js`), le
+  câblage réel dans `_clearStaleBeliefsAgainstBroker` (3 cas,
+  `cTraderDataSourceStaleBeliefsSweep.test.js`). Un test PRÉEXISTANT de ce
+  dernier fichier s'est cassé au premier passage : sa fixture avait
+  `openPositionInfoByPositionId` peuplé sans croyance correspondante
+  (raccourci de test, jamais un état réel puisque les deux s'écrivent
+  ensemble en production) — le nouveau code d'adoption prenait alors cette
+  position pour `real-only` et écrasait l'entrée suivie avec des données
+  `adopted` vides, cassant le test du correctif de stop manquant. Corrigé en
+  donnant à cette fixture la croyance qu'elle aurait réellement en
+  production, pas en affaiblissant le nouveau code.
+
+`npm test` : 767/767 (754 + 13 nouveaux).
+
+**Comportement assumé** : une position réelle `real-only` est adoptée que
+son origine soit une croyance perdue du bot (le cas GER40 ci-dessus) OU un
+trade manuel (le commentaire de statut `'real-only'` dans
+`accountReconciliation.js` liste explicitement les deux causes) — dans les
+deux cas, bloquer le netting sur ce symbole tant que la position réelle
+reste ouverte est le choix sûr : ça empêche le bot d'empiler une seconde
+position réelle sur un symbole déjà exposé, sans supposer laquelle des deux
+causes s'applique.
+
+**Fichiers modifiés** : `src/dataSources/accountReconciliation.js`,
+`src/dataSources/cTraderDataSource.js`, `src/liveStrategyEngine.js`,
+`test/accountReconciliation.test.js`, `test/liveStrategyEngine.test.js`,
+`test/cTraderDataSourceStaleBeliefsSweep.test.js`.

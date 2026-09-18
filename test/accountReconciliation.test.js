@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enrichRealPosition, reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from '../src/dataSources/accountReconciliation.js';
+import { enrichRealPosition, reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes } from '../src/dataSources/accountReconciliation.js';
 
 function realPosition(overrides = {}) {
   return {
@@ -336,4 +336,77 @@ test('computeMissingStopFixes: a non-open position (e.g. already closed) is neve
     getTrackedStopPrice: () => ({ stopPrice: 78069.5, takeProfit: null }),
   });
   assert.deepEqual(toFix, []);
+});
+
+// 2026-09-18, real bug found live (HANDOFF.md: "un redémarrage pendant
+// qu'une position est ouverte fait perdre au bot sa propre trace du
+// trade"): a real Silver Bullet GER40 position survived an unrelated
+// deploy's restart, but LiveStrategyEngine.openPositions came back empty
+// (in-memory only) - reconcileAccount() correctly LABELED this 'real-only',
+// but nothing acted on that label. computeRealOnlyPositionsToAdopt() is the
+// mirror image of computeStaleBeliefsToClear() above: it finds the real
+// positions that need adopting BACK into tracking so netting stops
+// believing the symbol is free.
+test('computeRealOnlyPositionsToAdopt: a real open position with no belief is queued for adoption', () => {
+  const toAdopt = computeRealOnlyPositionsToAdopt({
+    realPositions: [realPosition()], // US100, bullish, entry 20000, stop 19800, target 20600
+    symbolNameById,
+    symbols: ['US100'],
+    getBelievedPosition: () => null,
+  });
+  assert.deepEqual(toAdopt, [
+    { symbol: 'US100', positionId: '1', direction: 'bullish', entryPrice: 20000, stopPrice: 19800, targetPrice: 20600, openTimestamp: 1000 },
+  ]);
+});
+
+test('computeRealOnlyPositionsToAdopt: a symbol already believed open ("match") is never touched', () => {
+  const toAdopt = computeRealOnlyPositionsToAdopt({
+    realPositions: [realPosition()],
+    symbolNameById,
+    symbols: ['US100'],
+    getBelievedPosition: (s) => (s === 'US100' ? { id: 'US100-1' } : null),
+  });
+  assert.deepEqual(toAdopt, []);
+});
+
+test('computeRealOnlyPositionsToAdopt: a real position on a symbol this engine does not track is skipped (nowhere safe to adopt into)', () => {
+  const toAdopt = computeRealOnlyPositionsToAdopt({
+    realPositions: [realPosition()], // US100
+    symbolNameById,
+    symbols: ['XAUUSD'], // this engine instance only tracks XAUUSD
+    getBelievedPosition: () => null,
+  });
+  assert.deepEqual(toAdopt, []);
+});
+
+test('computeRealOnlyPositionsToAdopt: at most one adoption per symbol, even with two real positions stacked on it', () => {
+  const toAdopt = computeRealOnlyPositionsToAdopt({
+    realPositions: [realPosition({ positionId: 1 }), realPosition({ positionId: 2 })],
+    symbolNameById,
+    symbols: ['US100'],
+    getBelievedPosition: () => null,
+  });
+  assert.equal(toAdopt.length, 1, 'LiveStrategyEngine can only ever track one belief per symbol');
+});
+
+test('computeRealOnlyPositionsToAdopt: a non-open position (e.g. already closed) is never adopted', () => {
+  const toAdopt = computeRealOnlyPositionsToAdopt({
+    realPositions: [realPosition({ positionStatus: 'POSITION_STATUS_CLOSED' })],
+    symbolNameById,
+    symbols: ['US100'],
+    getBelievedPosition: () => null,
+  });
+  assert.deepEqual(toAdopt, []);
+});
+
+test('computeRealOnlyPositionsToAdopt: a broker-serialized STRING price/stopLoss/takeProfit reads as real numbers, same as enrichRealPosition', () => {
+  const toAdopt = computeRealOnlyPositionsToAdopt({
+    realPositions: [realPosition({ price: '20000', stopLoss: '19800', takeProfit: '20600' })],
+    symbolNameById,
+    symbols: ['US100'],
+    getBelievedPosition: () => null,
+  });
+  assert.equal(toAdopt[0].entryPrice, 20000);
+  assert.equal(toAdopt[0].stopPrice, 19800);
+  assert.equal(toAdopt[0].targetPrice, 20600);
 });

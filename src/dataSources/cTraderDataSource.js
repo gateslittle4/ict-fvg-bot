@@ -37,7 +37,7 @@ import { calculateLotSize, getDefaultSpec, buildSpecFromBrokerSymbol } from '../
 import { describeBrokerPayload, extractBrokerError } from './brokerPayload.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
-import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeMissingStopFixes } from './accountReconciliation.js';
+import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes } from './accountReconciliation.js';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
 import { buildComplianceChecklist, requiredH1LookbackCandles, requiredPreEntryContextCandles } from './tradeCompliance.js';
 import { buildChartOverlays } from '../backtest/chartOverlays.js';
@@ -1299,6 +1299,50 @@ export class CTraderDataSource {
       if (cleared) {
         console.log(`[cTrader] cleared stale believed-open position on boot: ${symbol} id=${id} (no matching real position or pending order at the broker)`);
       }
+    }
+
+    // 2026-09-18 (HANDOFF.md: "un redémarrage pendant qu'une position est
+    // ouverte fait perdre au bot sa propre trace du trade") - the mirror
+    // image of the toClear loop above. A real GER40 position (Silver
+    // Bullet) was found open at the broker with reconcileAccount() already
+    // reporting botBelievesOpen:false/source:null ('real-only') after an
+    // unrelated deploy restarted this process mid-trade - netting had no
+    // way to know GER40 was occupied and could have opened a second
+    // position on top of it. computeRealOnlyPositionsToAdopt() (pure,
+    // tested separately) decides WHICH real positions qualify;
+    // adoptExternalPosition() (liveStrategyEngine.js) is what actually
+    // re-registers one into openPositions. Also mirrors
+    // openPositionInfoByPositionId so the eventual real close still writes
+    // a durable journal row (source:'adopted', riskAmount:null -> rMultiple
+    // reads as null rather than a fabricated number - see
+    // _handleExecutionEvent's own use of this map).
+    const toAdopt = computeRealOnlyPositionsToAdopt({
+      realPositions: res.position || [],
+      symbolNameById: this.symbolNameById,
+      symbols: this.symbols,
+      getBelievedPosition: (symbol) => store.strategyEngine.getOpenPosition(symbol),
+    });
+    for (const real of toAdopt) {
+      const adopted = store.strategyEngine.adoptExternalPosition(real.symbol, real);
+      if (!adopted) continue;
+      this.openPositionInfoByPositionId.set(real.positionId, {
+        symbolName: real.symbol,
+        source: 'adopted',
+        signalId: adopted.id,
+        direction: real.direction,
+        entryPrice: real.entryPrice,
+        riskAmount: null,
+        stopPrice: real.stopPrice,
+        targetPrice: real.targetPrice,
+        entryTime: real.openTimestamp || Date.now(),
+      });
+      console.warn(
+        `[cTrader] adopted a real-only position into tracking: ${real.symbol} positionId=${real.positionId} ` +
+          '(this process had no belief for it, e.g. after a restart) - netting now correctly blocked on this symbol until it closes.'
+      );
+      this._notifyText(
+        `🟡 Position réelle détectée sur ${real.symbol} que le bot ne suivait plus (redémarrage ?) - reprise en suivi, netting bloqué sur ce symbole jusqu'à sa fermeture.`
+      );
     }
 
     // 2026-09-14 (found live: a real BTCUSD position came back with

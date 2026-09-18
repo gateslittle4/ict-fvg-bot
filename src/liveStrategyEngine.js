@@ -138,6 +138,7 @@ import { detectCbdrEvents } from './backtest/cbdr.js';
 import { CONFIG } from './config.js';
 
 const FVG_MAX_HOLDING_M15_CANDLES = 480; // same convention as every FVG grid/backtest script
+const ADOPTED_POSITION_MAX_HOLDING_M15_CANDLES = 480; // every mechanism in config.js (fvg/divergence/nwog/judasSwing/weeklySweep/breakerBlock/silverBullet/cbdr) already uses this exact value - see adoptExternalPosition()
 
 export class LiveStrategyEngine {
   /**
@@ -265,6 +266,65 @@ export class LiveStrategyEngine {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Adopts a position that exists at the broker but that this process has
+   * no memory of (reconcileAccount()'s 'real-only' status - see
+   * accountReconciliation.js's computeRealOnlyPositionsToAdopt, which is
+   * what decides WHICH positions reach this method). Most commonly a
+   * position this same process opened itself, then forgot after a restart:
+   * openPositions is in-memory only, never persisted (see HANDOFF.md,
+   * 2026-09-18: "un redémarrage pendant qu'une position est ouverte fait
+   * perdre au bot sa propre trace du trade"). Without this, netting
+   * (`_hasOpenPosition`-style checks against `openPositions.has(symbol)`)
+   * would believe the symbol free and could open a SECOND real position on
+   * top of one already open at the broker.
+   *
+   * `entryIndex` is set to "now" (the tail of this symbol's own retained
+   * history), not the position's real entry index - genuinely unknowable,
+   * since this process never saw it form. That gives the adopted position a
+   * full fresh maxHoldingCandles window rather than risking an immediate
+   * false timeout on the very next candle - the position is real and
+   * already protected by its own broker-side SL/TP either way, so a
+   * generous timeout costs nothing.
+   *
+   * `source: 'adopted'` (never null) is deliberate: reconcileAccount() only
+   * reports 'match' when `getOpenPosition(symbol)?.source` is truthy - a
+   * null source here would keep reporting 'real-only' forever even after
+   * adoption, even though netting is already correctly fixed by the
+   * `openPositions.set()` below. A distinct, non-mechanism source also lets
+   * the dashboard/journal tell an adopted position apart from one this
+   * process actually signalled itself.
+   *
+   * Returns the stored belief (with its generated `id`) so the caller
+   * (cTraderDataSource.js) can register a matching
+   * `openPositionInfoByPositionId` entry for the real-close journal path,
+   * or `null` if nothing was adopted (a belief already existed on this
+   * symbol, or this engine doesn't track the symbol at all - see the two
+   * guards below, both defensive: the real caller already checks both
+   * before getting here).
+   */
+  adoptExternalPosition(symbol, { positionId, direction, entryPrice, stopPrice, targetPrice }) {
+    if (this.openPositions.has(symbol)) return null;
+    const hist = this.history.get(symbol);
+    if (!hist) return null; // not a symbol this engine tracks - nothing safe to adopt into
+    const belief = {
+      source: 'adopted',
+      id: `adopted:${positionId}`,
+      direction,
+      entryIndex: hist.length - 1,
+      entryTime: hist.length > 0 ? hist[hist.length - 1].time : Date.now(),
+      entryPrice,
+      stopPrice,
+      targetPrice,
+      distance: stopPrice != null && entryPrice != null ? Math.abs(entryPrice - stopPrice) : null,
+      rrMultiple: null,
+      riskAmount: null, // unknowable after the fact - see cTraderDataSource.js's matching openPositionInfoByPositionId entry, whose riskAmount:null already degrades rMultiple to null safely in the real-close journal path
+      maxHoldingCandles: ADOPTED_POSITION_MAX_HOLDING_M15_CANDLES,
+    };
+    this.openPositions.set(symbol, belief);
+    return belief;
   }
 
   getHistoryLength(symbol) {
