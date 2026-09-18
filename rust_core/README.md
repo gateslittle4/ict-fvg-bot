@@ -16,3 +16,15 @@ cargo test
 The first migration target is deterministic risk calculation. Broker
 authentication, order submission, and account switching stay outside this
 crate until parity tests cover the current production behavior.
+
+## Explore index pairs
+
+From the repository root:
+
+```bash
+cargo run --manifest-path rust_core/Cargo.toml --bin pair_explorer
+```
+
+Pass another CSV directory as the first argument when needed. The output is
+CSV with return correlation, aligned-bar count, and prior-window ratio z-score
+event counts. It is research output only and never changes live configuration.
