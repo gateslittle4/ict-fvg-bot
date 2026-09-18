@@ -59,6 +59,42 @@ export function buildHealthReport({ accounts = [], now = Date.now(), bootedAt = 
     }
   }
 
+  // ---- execution health (the 4th signal) --------------------------------
+  // Levels 1-3 above all read GREEN during the 2026-09-16..18 incident: the
+  // process was up, the broker socket was open, candles were arriving - and
+  // all three strategy orders came back with brokerOrderId=null, so nothing
+  // was ever executed. A watchdog that cannot see that is a watchdog that
+  // would have said "all good" for three days while the bot traded nothing.
+  //
+  // Two distinct ways an order fails to land, deliberately reported
+  // separately because they need different fixes:
+  //   - the broker explicitly REFUSED it  -> lastOrderRejection*
+  //   - the broker said nothing at all    -> unconfirmedOrderStreak
+  //
+  // Both are read defensively off liveDataSource: lastOrderRejection is
+  // populated by the ProtoOAOrderErrorEvent subscription added in a sibling
+  // branch, so until that lands this simply reads null rather than breaking.
+  // _consecutiveOrderConfirmationTimeouts is read rather than owned here -
+  // observability must not fork the state that decides the forced restart.
+  //
+  // NOT built on the consecutive counter alone: that counter resets on the
+  // next success AND on an explicit rejection, and it only forces a restart
+  // at 2 in a row - which never happened, because orders are a day apart and
+  // every deploy resets it to 0. The guardrail existed and could never fire.
+  let lastOrderRejection = null;
+  let unconfirmedOrderStreak = 0;
+  for (const account of connected) {
+    const source = account?.liveDataSource;
+    const rejection = source?.lastOrderRejection;
+    if (rejection && Number.isFinite(rejection.receivedAtMs)) {
+      if (lastOrderRejection === null || rejection.receivedAtMs > lastOrderRejection.receivedAtMs) {
+        lastOrderRejection = rejection;
+      }
+    }
+    const streak = source?._consecutiveOrderConfirmationTimeouts;
+    if (Number.isFinite(streak) && streak > unconfirmedOrderStreak) unconfirmedOrderStreak = streak;
+  }
+
   return {
     ok: true,
     uptimeSec: Math.round((now - bootedAt) / 1000),
@@ -76,5 +112,14 @@ export function buildHealthReport({ accounts = [], now = Date.now(), bootedAt = 
     // Without this, a watchdog would page every weekend, when this service is
     // asleep BY DESIGN (see keepAlive.js's market-hours gate).
     marketOpen: isMarketOpen(now),
+    // null when no order was ever refused in this process's lifetime. A
+    // restart therefore clears it - accepted, and the reason the external
+    // probe polls every 10 minutes rather than hourly.
+    lastOrderRejectionAgeSec:
+      lastOrderRejection === null ? null : Math.max(0, Math.round((now - lastOrderRejection.receivedAtMs) / 1000)),
+    // Carried so the alert can say WHY rather than just "something failed".
+    lastOrderRejectionCode: lastOrderRejection?.errorCode ?? null,
+    // 0 when the last order attempt was confirmed, or when none was tried.
+    unconfirmedOrderStreak,
   };
 }

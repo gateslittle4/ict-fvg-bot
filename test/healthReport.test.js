@@ -113,3 +113,74 @@ test('buildHealthReport: candles are aggregated across several connected account
   assert.equal(r.accountsConnected, 2);
   assert.equal(r.lastCandleAgeSec, 45);
 });
+
+// ---- the 4th signal: execution health ------------------------------------
+// Regression cover for the 2026-09-16..18 incident, where levels 1-3 all read
+// green while every strategy order came back with brokerOrderId=null.
+
+const connectedWith = (liveDataSource) => ({ liveDataSource, lastCandleBySymbol: new Map() });
+
+test('buildHealthReport: a healthy bot reports no rejection and no unconfirmed streak', () => {
+  const r = buildHealthReport({ accounts: [connectedWith({})], now: WED_NOON_UTC });
+  assert.equal(r.lastOrderRejectionAgeSec, null);
+  assert.equal(r.lastOrderRejectionCode, null);
+  assert.equal(r.unconfirmedOrderStreak, 0);
+});
+
+test('buildHealthReport: an explicit broker refusal surfaces with its age and reason', () => {
+  const r = buildHealthReport({
+    accounts: [connectedWith({ lastOrderRejection: { receivedAtMs: WED_NOON_UTC - 120_000, errorCode: 'NOT_ENOUGH_MONEY' } })],
+    now: WED_NOON_UTC,
+  });
+  assert.equal(r.lastOrderRejectionAgeSec, 120);
+  assert.equal(r.lastOrderRejectionCode, 'NOT_ENOUGH_MONEY');
+});
+
+test('buildHealthReport: a silent broker surfaces as an unconfirmed streak, with no rejection', () => {
+  // The 2026-09-18 11:00 shape: order sent, nothing came back, no refusal either.
+  const r = buildHealthReport({
+    accounts: [connectedWith({ _consecutiveOrderConfirmationTimeouts: 1 })],
+    now: WED_NOON_UTC,
+  });
+  assert.equal(r.unconfirmedOrderStreak, 1);
+  assert.equal(r.lastOrderRejectionAgeSec, null);
+});
+
+test('buildHealthReport: reads nothing from a DISCONNECTED account', () => {
+  const r = buildHealthReport({
+    accounts: [{ liveDataSource: null, lastCandleBySymbol: new Map() }],
+    now: WED_NOON_UTC,
+  });
+  assert.equal(r.lastOrderRejectionAgeSec, null);
+  assert.equal(r.unconfirmedOrderStreak, 0);
+});
+
+test('buildHealthReport: tolerates a data source predating the rejection field', () => {
+  // The sibling branch adding ProtoOAOrderErrorEvent is not merged yet, so in
+  // production lastOrderRejection is simply absent. That must read as "no
+  // rejection", never throw and never fabricate one.
+  const r = buildHealthReport({ accounts: [connectedWith({ someOtherField: 1 })], now: WED_NOON_UTC });
+  assert.equal(r.lastOrderRejectionAgeSec, null);
+  assert.equal(r.unconfirmedOrderStreak, 0);
+});
+
+test('buildHealthReport: a malformed rejection is ignored rather than reported as age NaN', () => {
+  const r = buildHealthReport({
+    accounts: [connectedWith({ lastOrderRejection: { errorCode: 'X' } })], // no receivedAtMs
+    now: WED_NOON_UTC,
+  });
+  assert.equal(r.lastOrderRejectionAgeSec, null);
+});
+
+test('buildHealthReport: across accounts, the NEWEST rejection and the WORST streak win', () => {
+  const r = buildHealthReport({
+    accounts: [
+      connectedWith({ lastOrderRejection: { receivedAtMs: WED_NOON_UTC - 3600_000, errorCode: 'OLD' }, _consecutiveOrderConfirmationTimeouts: 1 }),
+      connectedWith({ lastOrderRejection: { receivedAtMs: WED_NOON_UTC - 60_000, errorCode: 'RECENT' }, _consecutiveOrderConfirmationTimeouts: 3 }),
+    ],
+    now: WED_NOON_UTC,
+  });
+  assert.equal(r.lastOrderRejectionCode, 'RECENT');
+  assert.equal(r.lastOrderRejectionAgeSec, 60);
+  assert.equal(r.unconfirmedOrderStreak, 3);
+});
