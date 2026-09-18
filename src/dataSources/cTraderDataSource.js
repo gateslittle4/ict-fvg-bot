@@ -123,12 +123,27 @@ export const RELATIVE_PRICE_SCALE = 100000;
  *   the inputs cannot produce a real one - never 0, since a zero-distance
  *   protection reads as "no protection" and would open an unguarded position.
  */
-export function toRelativeProtectionDistance(referencePrice, protectionPrice) {
+export function relativeProtectionStep(priceDigits) {
+  // Number(null) is 0 and Number('') is 0 - both would read as "this symbol
+  // quotes whole numbers" and round a stop away entirely. Only an actual
+  // number counts as a stated precision.
+  if (typeof priceDigits !== 'number') return 1;
+  const digits = priceDigits;
+  if (!Number.isInteger(digits) || digits < 0 || digits > 5) return 1;
+  return 10 ** (5 - digits);
+}
+
+export function toRelativeProtectionDistance(referencePrice, protectionPrice, priceDigits = null) {
   const reference = Number(referencePrice);
   const protection = Number(protectionPrice);
   if (!Number.isFinite(reference) || reference <= 0) return null;
   if (!Number.isFinite(protection) || protection <= 0) return null;
-  const distance = Math.round(Math.abs(protection - reference) * RELATIVE_PRICE_SCALE);
+  const step = relativeProtectionStep(priceDigits);
+  // Round to whole 1/100000 units FIRST: float subtraction leaves noise
+  // (29516.925 - 29415.98 is 100.94499999999516 here), and rounding straight
+  // to the symbol grid would let that noise decide which step it lands on.
+  const raw = Math.round(Math.abs(protection - reference) * RELATIVE_PRICE_SCALE);
+  const distance = Math.round(raw / step) * step;
   return distance > 0 ? distance : null;
 }
 
@@ -648,7 +663,7 @@ export class CTraderDataSource {
       this.brokerSymbolSpecByName.set(match.name, merged);
       console.log(
         `[cTrader] broker contract spec ${match.name}: lotSize=${merged.lotSize} ` +
-          `minLots=${merged.minVolume} stepLots=${merged.volumeStep} maxLots=${merged.maxVolume}`
+          `minLots=${merged.minVolume} stepLots=${merged.volumeStep} maxLots=${merged.maxVolume} digits=${merged.digits ?? 'unknown'}`
       );
     }
 
@@ -1996,8 +2011,21 @@ export class CTraderDataSource {
     // form the broker does accept from them, unchanged.
     if (orderType === 'MARKET' && (stopLoss != null || takeProfit != null)) {
       const anchor = referencePrice ?? price;
-      const relativeStopLoss = stopLoss == null ? null : toRelativeProtectionDistance(anchor, stopLoss);
-      const relativeTakeProfit = takeProfit == null ? null : toRelativeProtectionDistance(anchor, takeProfit);
+      // 2026-09-18, SECOND ROUND. The relative form above was accepted as a
+      // field but refused as a value: the broker answered
+      // "INVALID_REQUEST - Relative stop loss has invalid precision" to both
+      // US100 MARKET orders of 14:45 and 15:15 UTC. A relative distance is
+      // in 1/100000 of a price unit, but it still has to land on the
+      // SYMBOL's own price grid: US100 quotes 2 decimals, so only multiples
+      // of 1000 are expressible. Our stops carry more decimals than that
+      // (stopLoss=29561.275 against a 2-decimal symbol), which is what the
+      // broker was rejecting. digits comes from the broker's own
+      // ProtoOASymbol (see buildSpecFromBrokerSymbol); with no spec the step
+      // falls back to 1, i.e. the previous behaviour.
+      const priceDigits = symbolSpec?.digits;
+      const relativeStopLoss = stopLoss == null ? null : toRelativeProtectionDistance(anchor, stopLoss, priceDigits);
+      const relativeTakeProfit =
+        takeProfit == null ? null : toRelativeProtectionDistance(anchor, takeProfit, priceDigits);
       // Refuse rather than send a MARKET order stripped of its protection.
       // Same reasoning as the lotSize guard above: one loud failure to place
       // an order beats one real unguarded position running on a live account.

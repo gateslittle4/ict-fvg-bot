@@ -237,8 +237,16 @@ export function buildSpecFromBrokerSymbol(brokerSymbol, placeholder) {
     return Number.isFinite(n) && n > 0 ? n / lotSize : fallback;
   };
 
+  // Price precision, straight from the broker (ProtoOASymbol.digits is a
+  // REQUIRED field). _submitOrder needs it to round relativeStopLoss /
+  // relativeTakeProfit onto the symbol's own price grid - see
+  // toRelativeProtectionDistance(). Left undefined when absent so the
+  // caller can tell "unknown" from a real 0.
+  const digits = Number(brokerSymbol.digits);
+
   return {
     ...placeholder,
+    ...(Number.isInteger(digits) && digits >= 0 ? { digits } : {}),
     lotSize, // raw broker volume for 1.0 lot - consumed by _submitOrder
     minVolume: inLots(brokerSymbol.minVolume, placeholder.minVolume),
     volumeStep: inLots(brokerSymbol.stepVolume, placeholder.volumeStep),

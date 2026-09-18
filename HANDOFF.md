@@ -5388,3 +5388,47 @@ Le motif exact n'a toujours pas été observé — la capture `[order-error]` d�
 
 1. **Le second mode d'échec, non élucidé** : les ordres FVG en LIMIT sur BTCUSD le 16/09 ont échoué ~15 fois pour ~6 succès, alors que LIMIT + protection absolue est autorisé par la spec. Piste à creuser : `timeInForce: 'GOOD_TILL_DATE'`, dont le nom d'énumération n'a jamais été vérifié contre une vraie réponse API (voir le commentaire de `_submitOrder`). Ce chemin n'est PAS touché par ce correctif.
 2. Autre chose encore, que seul `errorCode` nommera.
+
+## 2026-09-18 (soir) — Le courtier a enfin dit pourquoi : « Relative stop loss has invalid precision »
+
+Le passage aux stops relatifs sur les ordres MARKET (PR #3) a immédiatement
+donné ce qu'on cherchait depuis trois jours : un motif de refus écrit noir sur
+blanc dans les logs. Deux signaux US100 silverbullet ont été envoyés après le
+déploiement, à 14:45 et 15:15 UTC, et les deux ont été refusés avec :
+
+```
+[_submitOrder] MARKET SELL for symbolId=213 was REFUSED by the broker:
+errorCode=INVALID_REQUEST description=Relative stop loss has invalid precision
+(volume=64 stopLoss=29516.925 takeProfit=29313.025 label=auto-silverbullet-US100)
+```
+
+Donc : le champ relatif est bien le bon (le courtier ne dit plus « non supporté »),
+mais la VALEUR ne l'était pas. Une distance relative s'exprime en 1/100000
+d'unité de prix, mais elle doit quand même tomber sur la grille de prix du
+symbole. US100 est coté à 2 décimales : seuls les multiples de 1000 (soit
+0,01 unité de prix) sont exprimables. Nos stops portaient 3 décimales
+(29516.925), issues du calcul de la stratégie — d'où le rejet.
+
+Correctif : `toRelativeProtectionDistance()` prend désormais la précision du
+symbole et arrondit la distance sur cette grille. La précision vient du
+courtier lui-même (`ProtoOASymbol.digits`, champ requis), reportée dans le spec
+par `buildSpecFromBrokerSymbol()` et tracée au démarrage dans la ligne
+`[cTrader] broker contract spec ... digits=N`. Sans spec courtier, le pas
+retombe à 1, c'est-à-dire le comportement précédent.
+
+Deux pièges traités au passage, les deux couverts par des tests :
+- `Number(null)` vaut 0, donc une précision absente aurait été lue comme
+  « symbole coté en nombres entiers » et aurait pu écraser un stop entier.
+  Seul un vrai `number` compte comme précision déclarée.
+- l'arrondi se fait d'abord en unités entières de 1/100000 puis sur la grille :
+  la soustraction flottante laisse du bruit (29516.925 - 29415.98 donne
+  100.94499999999516 en JS) qui déciderait sinon du pas d'arrivée.
+
+Un arrondi qui ramènerait la distance à zéro reste refusé plutôt qu'envoyé :
+une protection nulle vaut une position non protégée.
+
+`npm test` : 754/754.
+
+Ce qui reste ouvert : le second mode d'échec sur les ordres LIMIT (FVG), non
+touché par ce correctif, et toujours suspecté du côté de `timeInForce:
+'GOOD_TILL_DATE'`.

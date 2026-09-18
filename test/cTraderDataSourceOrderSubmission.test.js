@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CTraderDataSource, toRelativeProtectionDistance, RELATIVE_PRICE_SCALE } from '../src/dataSources/cTraderDataSource.js';
+import {
+  CTraderDataSource,
+  toRelativeProtectionDistance,
+  relativeProtectionStep,
+  RELATIVE_PRICE_SCALE,
+} from '../src/dataSources/cTraderDataSource.js';
 
 // DELIBERATE exception to cTraderDataSource.test.js's own stated convention
 // ("only the pure pieces are unit-tested here... everything else is network
@@ -499,4 +504,59 @@ test('_submitOrder: a MARKET order with no protection at all sends neither form 
   assert.ok(!('stopLoss' in payload));
   assert.ok(!('relativeStopLoss' in payload));
   assert.equal(payload.orderType, 'MARKET');
+});
+
+
+// --- Price precision of the relative protection (2026-09-18, second round) ---
+// The broker answered "INVALID_REQUEST - Relative stop loss has invalid
+// precision" to both US100 MARKET orders sent after the relative-distance fix
+// went live (14:45 and 15:15 UTC). A relative distance still has to land on
+// the symbol's own price grid.
+
+test('relativeProtectionStep: the step is the symbol grid expressed in 1/100000 units', () => {
+  assert.equal(relativeProtectionStep(2), 1000); // US100/US500/GER40 quote 2 decimals
+  assert.equal(relativeProtectionStep(5), 1); // a 5-decimal forex symbol needs no rounding
+  assert.equal(relativeProtectionStep(3), 100);
+});
+
+test('relativeProtectionStep: an unknown or nonsensical precision falls back to no rounding', () => {
+  assert.equal(relativeProtectionStep(null), 1);
+  assert.equal(relativeProtectionStep(undefined), 1);
+  assert.equal(relativeProtectionStep(7), 1);
+  assert.equal(relativeProtectionStep(-1), 1);
+  assert.equal(relativeProtectionStep('two'), 1);
+});
+
+test('toRelativeProtectionDistance: the exact refused value is rounded onto the 2-decimal grid', () => {
+  // The shape of the real 15:15 UTC refusal: a US100 stop carrying more
+  // decimals than the symbol can quote.
+  const distance = toRelativeProtectionDistance(29415.98, 29516.925, 2);
+  assert.equal(distance % 1000, 0, 'must be a whole number of 0.01 price steps');
+  assert.equal(distance, 10095000);
+});
+
+test('toRelativeProtectionDistance: a 5-decimal symbol keeps its full precision', () => {
+  assert.equal(toRelativeProtectionDistance(1.14654, 1.14554, 5), 100);
+});
+
+test('toRelativeProtectionDistance: rounding never turns a real distance into zero protection', () => {
+  // Under a 0.01 grid, a stop 0.001 away rounds to nothing - which must be
+  // refused, not sent as an unguarded order.
+  assert.equal(toRelativeProtectionDistance(29415.975, 29415.9754, 2), null);
+});
+
+test('_submitOrder: a MARKET order rounds its relative protection to the symbol precision', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const connection = createPayloadCapturingConnection();
+  const payload = await submitAndCapture(t, connection, {
+    orderType: 'MARKET',
+    referencePrice: 29415.975,
+    stopLoss: 29516.925,
+    takeProfit: 29313.025,
+    symbolSpec: { ...SYMBOL_SPEC, digits: 2 },
+  });
+  assert.equal(payload.relativeStopLoss % 1000, 0);
+  assert.equal(payload.relativeTakeProfit % 1000, 0);
+  assert.equal(payload.stopLoss, undefined);
+  assert.equal(payload.takeProfit, undefined);
 });
