@@ -5040,3 +5040,22 @@ Esdras : "On creuse pourquoi GER40 échoue sur le forward-test réel." Analyse a
 **Conclusion, pas de verdict forcé** : ni un bug ni une preuve que le signal est cassé sur GER40 — le risque de queue d'une stratégie de fade face à un régime tendanciel, quantifié et cohérent avec l'historique propre du symbole. Mais ça révèle que l'espérance moyenne du TEST 2024-2025 (+0.21R/trade) sous-estime la variance réelle : tenir GER40/CBDR en réel suppose d'encaisser un mois à environ -13R, ce qui arrive statistiquement tous les 5-8 ans sur ce symbole d'après le backtest — pas hypothétique. Décision (exclure GER40, réduire la taille pour tolérer ce risque, ou l'accepter) à prendre avec Esdras, pas tranchée ici.
 
 **Fichiers** : aucun — analyse exploratoire uniquement, aucun code ni donnée modifié pour cette investigation.
+
+## Extension réelle de la profondeur GBPUSD (2010-2025), même travail que EURUSD — 2026-09-18 (suite)
+
+Esdras : "On approfondit GBPUSD, même travail que EURUSD." `GBPUSD.csv` démarrait le 2019-01-01 (392 trades train) — le seul autre symbole CBDR encore court parmi les 4 qui tenaient à l'origine (US100/EURUSD/GBPUSD/GER40). Esdras a fourni les 9 fichiers ZIP HistData.com M1 2010-2018 (complets cette fois, aucune année manquante contrairement au premier upload EURUSD).
+
+**Pipeline identique à EURUSD** : extraction, conversion M1→M15 via `convertHistData.js`, vérification du raccord avant fusion. Différence par rapport à EURUSD : ici **pas de chevauchement** entre le nouveau fichier (se termine 2018-12-31) et l'existant (démarre 2019-01-01) — juste un écart normal de jour férié (Nouvel An, ~24h), donc simple concaténation plutôt qu'une déduplication de bougies communes. Continuité vérifiée : strictement monotone, aucun doublon, aucun écart anormal (seulement les fermetures week-end/Noël habituelles). `GBPUSD.csv` couvre maintenant **2010-01-03 → 2025-12-31** (394 806 lignes de données, contre 171 022 avant).
+
+**Effet sur le verdict CBDR GBPUSD** (`data/backtest-input/cbdr-strategy-analysis.md` régénéré) :
+- Avant (TRAIN 2019-2023, 392 trades) : espérance train **+0.04R** → ✅ tient.
+- Après (TRAIN 2010-2023, 1255 trades) : espérance train **-0.08R** → **⚠️ affaibli** (test reste positif à +0.11R sur 102 trades).
+
+**Même schéma qu'EURUSD** : l'échantillon plus que triple (392→1255) et le signe de l'espérance train s'inverse — pas du bruit marginal. Sur les 4 symboles qui tenaient initialement, **il n'en reste plus que 2 qui tiennent réellement sur la profondeur complète : US100 et GER40**. EURUSD et GBPUSD tiennent tous les deux en test/forward-test mais pas au sens strict de la règle train/test une fois la vraie profondeur disponible.
+
+**Bilan CBDR à ce stade (3 filtres — historique profond, train/test, forward-test réel)** :
+- **US100** : seul candidat qui passe les trois filtres sans réserve (tient en profondeur, tient en train/test, tient en forward-test réel +0.34R).
+- **GER40** : tient en profondeur/train-test, mais un mois de queue (août 2026, voir section précédente) fait échouer le forward-test agrégé — risque quantifié, pas un signal cassé.
+- **EURUSD / GBPUSD** : affaiblis sur la profondeur complète (train négatif), forward-test positif pour EURUSD (+0.73R, petit échantillon), GBPUSD jamais vérifié sur données réelles (pas d'export GBPUSD dans le dépôt).
+
+**Fichiers modifiés** : `data/backtest-input/GBPUSD.csv` (394 807 lignes, remplace l'ancien fichier 171 023 lignes), `data/backtest-input/cbdr-strategy-analysis.md` (régénéré). Aucun changement de code de stratégie ni de comportement live. `npm test` : 710/710.
