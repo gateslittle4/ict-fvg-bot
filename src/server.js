@@ -494,6 +494,28 @@ function createAccountRouter(getStore) {
     }
   });
 
+  // Cancel a single pending broker order (2026-09-18, Esdras: the new
+  // dashboard "Ordres en attente" card could only be cleared via the
+  // all-or-nothing emergency flatten below). Mirrors close-position's shape
+  // exactly - same connection guard, same report-then-fill-in pattern.
+  router.post('/orders/:orderId/cancel', async (req, res) => {
+    const store = getStore(req);
+    const ds = store.liveDataSource;
+    if (!ds?.connection || typeof ds._cancelOrder !== 'function') {
+      return res.status(503).json({ error: 'not connected to a live broker' });
+    }
+    const orderId = Number(req.params.orderId);
+    if (!Number.isFinite(orderId)) {
+      return res.status(400).json({ error: 'orderId (URL) is required' });
+    }
+    try {
+      await ds._cancelOrder(orderId);
+      res.json({ orderId, cancelled: true });
+    } catch (err) {
+      res.status(502).json({ orderId, cancelled: false, error: err.message });
+    }
+  });
+
   // Emergency flatten for every REAL open position on this account. This is
   // deliberately separate from auto-execute pause: pausing prevents new
   // entries, while this route sends one broker close request per reconciled

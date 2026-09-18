@@ -444,6 +444,10 @@
   .metric-tile .metric-value.win { color: var(--green); }
   .metric-tile .metric-value.loss { color: var(--red); }
   .equity-chart { width: 100%; height: 140px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin-bottom: 14px; }
+  .equity-chart .curve-positive { fill: rgba(47,212,128,0.12); }
+  .equity-chart .curve-negative { fill: rgba(255,92,95,0.10); }
+  .equity-chart .curve-grid { stroke: var(--panel-border); stroke-width: 1; stroke-dasharray: 3,4; }
+  .equity-chart .curve-label { fill: var(--muted); font: 10px var(--mono); }
   .strategy-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
   .strategy-table th { text-align: left; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border-strong); }
   .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
@@ -582,10 +586,19 @@
        globale (journal durable), détail par instrument, ET le journal de
        trading complet avec le graphique par trade (maintenant bien plus
        grand, avec plusieurs bougies de contexte avant/après - voir ce
-       fichier et cTraderDataSource.js's chartMarginMs). Rien de tout ça
-       n'est calculé une seconde fois ici : le bandeau principal ci-dessus
-       garde son propre appel léger à /trade-log (voir refreshTradeLog plus
-       bas) juste pour ses 3 chiffres, sans reconstruire les cartes. -->
+       fichier et cTraderDataSource.js's chartMarginMs). Cette demande visait
+       spécifiquement CE graphique par trade (bougies + zone), pas la courbe
+       d'équité ci-dessous : elle est petite, réutilise exactement les mêmes
+       données déjà chargées par le bandeau principal (refreshTradeLog, /trade-
+       log), et son code existait déjà ici avant le déplacement (CSS
+       .equity-chart orpheline retrouvée le 2026-09-18) - juste jamais
+       remise en place depuis. -->
+
+  <div class="card" id="equity-curve-card">
+    <h2>Courbe d'équité (journal réel, en R cumulés)</h2>
+    <div class="meta" style="margin-bottom:8px;">Trades réellement clôturés et confirmés par le courtier — voir la page Journal pour le détail complet.</div>
+    <div id="equity-curve-body"><div class="meta">Chargement…</div></div>
+  </div>
 
   <div class="card" id="order-log-card">
     <h2>Ordres envoyés (résultat réel)</h2>
@@ -776,15 +789,34 @@ const controlState = { status: null, account: null, health: null, latencyMs: nul
 // simplest honest signal that the live feed is actually alive: age of the
 // MOST RECENT candle across every subscribed symbol. Deliberately not
 // per-symbol-timeframe-aware (an M15 symbol's own candle can legitimately
-// be ~14 min old and still be healthy) - BTCUSD's M1 cadence means the
-// FRESHEST tick across all symbols stays under a couple minutes whenever
-// the connection is genuinely alive, and goes stale together with
-// everything else the moment it isn't. One number, not five.
+// be ~14 min old and still be healthy) - the ORIGINAL design relied on
+// BTCUSD's M1 cadence to keep the FRESHEST tick across all symbols under a
+// couple minutes whenever the connection was genuinely alive.
+//
+// BUG FOUND 2026-09-18 (Esdras noticed "flux silencieux depuis 12 min" on a
+// perfectly healthy live connection, asked to look into it): BTCUSD was
+// removed from CONFIG.symbols on 2026-09-16 (src/config.js:81's own
+// comment - "here from 2026-09-13 to 2026-09-16"). Every remaining symbol
+// (US100/US500/XAUUSD/EURUSD/GER40) is M15, so the freshest possible candle
+// age climbs to ~15 min EVERY cycle even when nothing is wrong - the fixed
+// 2min/10min thresholds below had gone stale the moment BTCUSD left, and
+// were false-alarming for roughly a third of every 15-minute window since.
+// Fixed by deriving the thresholds from the account's own reported
+// timeframe (controlState.status.timeframe, e.g. "M15") instead of a
+// hardcoded number - correct again if the traded timeframe ever changes,
+// and correct today without needing an M1 symbol to exist at all.
+const TIMEFRAME_MS = { M1: 60 * 1000, M5: 5 * 60 * 1000, M15: 15 * 60 * 1000, H1: 60 * 60 * 1000, H4: 4 * 60 * 60 * 1000, D1: 24 * 60 * 60 * 1000 };
+function candleIntervalMs() {
+  return TIMEFRAME_MS[controlState.status?.timeframe] || TIMEFRAME_MS.M15;
+}
 function connectionHealth(ageMs) {
   if (ageMs === null) return { label: '—', cls: '' };
   ageMs = Math.max(0, ageMs); // clock drift / accelerated demo-mode clocks can put the "latest" candle a hair in the future - never show a negative age
-  if (ageMs < 2 * 60 * 1000) return { label: `🟢 données fraîches (${Math.round(ageMs / 1000)}s)`, cls: 'win' };
-  if (ageMs < 10 * 60 * 1000) return { label: `🟡 ralenti (${Math.round(ageMs / 60000)} min)`, cls: '' };
+  const interval = candleIntervalMs();
+  // < 1 candle old: still inside the window the next candle is expected in - fresh.
+  if (ageMs < interval) return { label: `🟢 données fraîches (${Math.round(ageMs / 1000)}s)`, cls: 'win' };
+  // < ~2 candles + a 2min buffer: one cycle got a bit late (broker/network hiccup) but not yet a real outage.
+  if (ageMs < interval * 2 + 2 * 60 * 1000) return { label: `🟡 ralenti (${Math.round(ageMs / 60000)} min)`, cls: '' };
   return { label: `🔴 aucune donnée récente (${Math.round(ageMs / 60000)} min)`, cls: 'loss' };
 }
 // 2026-09-18 (Esdras: amélioration du dashboard) - /healthz gained
@@ -1018,7 +1050,10 @@ function renderOperationalAlerts() {
   const ageMs = heroState.freshestTickTime === null ? null : Math.max(0, Date.now() - heroState.freshestTickTime);
   if (!data.liveConfigured || data.mode === 'demo') alerts.push({ cls: 'critical', text: '⚠ Connexion broker live inactive : les données et résultats peuvent être simulés.' });
   else if (data.broker?.isDemo === true) alerts.push({ cls: 'warn', text: '⚠ Connexion cTrader active sur un compte DÉMO.' });
-  if (ageMs !== null && ageMs >= 10 * 60 * 1000) alerts.push({ cls: 'critical', text: `⚠ Flux marché silencieux depuis ${Math.round(ageMs / 60000)} minutes.` });
+  // Same threshold as connectionHealth()'s red state (2026-09-18 fix) -
+  // this alert and that indicator must never disagree about what "stale"
+  // means, or one would stay green while the other cries wolf.
+  if (ageMs !== null && ageMs >= candleIntervalMs() * 2 + 2 * 60 * 1000) alerts.push({ cls: 'critical', text: `⚠ Flux marché silencieux depuis ${Math.round(ageMs / 60000)} minutes.` });
   if (!auto.active) alerts.push({ cls: 'warn', text: '● Auto-exécution inactive : les signaux sont alertés mais aucun ordre automatique ne sera envoyé.' });
   if (g.blocked) alerts.push({ cls: 'critical', text: `⛔ Garde-fous actifs : ${g.blockReasons?.join(', ') || 'nouvelles entrées bloquées'}.` });
   if (lastKnownPositions.length > 0) alerts.push({ cls: 'ok', text: `● ${lastKnownPositions.length} position${lastKnownPositions.length > 1 ? 's' : ''} réelle${lastKnownPositions.length > 1 ? 's' : ''} suivie${lastKnownPositions.length > 1 ? 's' : ''} chez le broker.` });
@@ -1319,15 +1354,36 @@ function renderPendingOrders(pendingOrders) {
         <td>${rawVolume === null ? '—' : fmtUnits(rawVolume)}</td>
         <td class="meta">${o.label || '—'}</td>
         <td class="meta">#${o.orderId ?? '—'}</td>
+        <td>${o.orderId == null ? '' : `<button type="button" class="btn-ghost" onclick="cancelPendingOrder(${o.orderId}, '${o.symbol || 'symbole inconnu'}')">Annuler</button>`}</td>
       </tr>
     `;
   }).join('');
   el.innerHTML = `
     <table class="strategy-table">
-      <thead><tr><th>Symbole</th><th>Sens</th><th>Type</th><th>Volume</th><th>Label</th><th>ID ordre</th></tr></thead>
+      <thead><tr><th>Symbole</th><th>Sens</th><th>Type</th><th>Volume</th><th>Label</th><th>ID ordre</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
+}
+
+// 2026-09-18 (Esdras: annuler un ordre en attente individuellement) - même
+// discipline de confirmation que closePosition() : une action broker réelle
+// et irréversible obtient toujours une confirmation explicite d'abord.
+async function cancelPendingOrder(orderId, symbol) {
+  if (!confirm(`Annuler réellement l'ordre en attente sur ${symbol} (id ${orderId}) chez le courtier ? Cette action est irréversible.`)) return;
+  try {
+    const res = await fetch(acctUrl(`/orders/${orderId}/cancel`), { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`Échec de l'annulation: ${data.error || res.statusText}`);
+    } else {
+      alert(`Ordre ${orderId} annulé chez le courtier.`);
+    }
+  } catch (err) {
+    alert(`Erreur réseau lors de l'annulation: ${err.message}`);
+  } finally {
+    refreshAccount();
+  }
 }
 
 // Fermer une position réelle (2026-09-15, Esdras: "on ne voit pas d'endroit
@@ -1577,7 +1633,54 @@ async function refreshRecentPerformance() {
 // this slim fetch, purely to feed the hero strip's 3 durable-journal
 // numbers (totalR/winRatePct/totalTrades) - no DOM section left here to
 // render the rest into, so none of it is rebuilt on this page anymore.
+// Inline SVG line chart of cumulative R over time (no library) - identical
+// to journal.html's own copy (kept as two copies deliberately: this
+// project's convention for shared page fragments, see acctUrl()'s own
+// per-page duplication).
+function renderEquityCurve(equityCurve) {
+  if (!equityCurve || equityCurve.length < 2) {
+    return '<div class="meta">Pas encore assez de trades clôturés pour tracer une courbe.</div>';
+  }
+  const W = 900, H = 240, PAD_L = 48, PAD_R = 18, PAD_T = 18, PAD_B = 24;
+  const values = equityCurve.map((p) => p.cumulativeR);
+  const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
+  const range = (maxR - minR) || 1;
+  const y = (v) => PAD_T + (1 - (v - minR) / range) * (H - PAD_T - PAD_B);
+  const plotW = W - PAD_L - PAD_R;
+  const x = (i) => PAD_L + (equityCurve.length === 1 ? 0 : (i / (equityCurve.length - 1)) * plotW);
+
+  const finalR = values[values.length - 1];
+  const color = finalR >= 0 ? 'var(--green)' : 'var(--red)';
+  const points = values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const zeroY = y(0);
+  const lastX = x(values.length - 1);
+  const positiveArea = `${PAD_L},${zeroY} ${points} ${lastX},${zeroY}`;
+  const negativePoints = values.map((v, i) => `${x(i)},${y(Math.min(v, 0))}`).join(' ');
+  const negativeArea = `${PAD_L},${zeroY} ${negativePoints} ${lastX},${zeroY}`;
+  const gridValues = [maxR, (maxR + minR) / 2, minR];
+  const startTime = equityCurve[0]?.time;
+  const endTime = equityCurve[equityCurve.length - 1]?.time;
+  const circles = equityCurve.map((point, i) => {
+    if (equityCurve.length > 80 && i % Math.ceil(equityCurve.length / 40) !== 0 && i !== equityCurve.length - 1) return '';
+    return `<circle cx="${x(i)}" cy="${y(point.cumulativeR)}" r="2.5" fill="${color}"><title>${fmtTime(point.time)} · ${point.cumulativeR >= 0 ? '+' : ''}${fmt(point.cumulativeR)}R cumulés</title></circle>`;
+  }).join('');
+
+  return `
+    <svg class="equity-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Courbe de R cumulés des trades clôturés">
+      ${gridValues.map((value) => `<line class="curve-grid" x1="${PAD_L}" y1="${y(value)}" x2="${W - PAD_R}" y2="${y(value)}" />`).join('')}
+      <polygon class="curve-positive" points="${positiveArea}" />
+      <polygon class="curve-negative" points="${negativeArea}" />
+      <line x1="${PAD_L}" y1="${zeroY}" x2="${W - PAD_R}" y2="${zeroY}" stroke="var(--panel-border-strong)" stroke-width="1.2" />
+      ${gridValues.map((value) => `<text class="curve-label" x="4" y="${y(value) + 4}">${value >= 0 ? '+' : ''}${fmt(value, 1)}R</text>`).join('')}
+      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" />
+      ${circles}
+      <text class="curve-label" x="${PAD_L}" y="${H - 6}">${fmtTime(startTime)}</text>
+      <text class="curve-label" x="${Math.max(PAD_L + 4, lastX - 56)}" y="${H - 6}">${fmtTime(endTime)}</text>
+    </svg>
+  `;
+}
 async function refreshTradeLog() {
+  const equityCurveEl = document.getElementById('equity-curve-body');
   try {
     const res = await fetch(acctUrl('/trade-log'));
     const data = await res.json();
@@ -1586,16 +1689,19 @@ async function refreshTradeLog() {
       heroState.totalR = null;
       heroState.winRatePct = null;
       heroState.totalTrades = 0;
+      if (equityCurveEl) equityCurveEl.innerHTML = `<div class="meta">${data.reason || 'Aucune opération enregistrée pour le moment.'}</div>`;
     } else {
       heroState.totalR = overall.finalEquityR;
       heroState.winRatePct = overall.winRate === null ? null : Math.round(overall.winRate * 1000) / 10;
       heroState.totalTrades = overall.totalSignals;
+      if (equityCurveEl) equityCurveEl.innerHTML = renderEquityCurve(data.equityCurve);
     }
     renderHeroStrip();
   } catch (err) {
     // Best-effort, same as every other hero-strip source - the tile just
     // stays on whatever it last showed (or "—") rather than erroring loudly
     // on a card that no longer exists on this page.
+    if (equityCurveEl) equityCurveEl.innerHTML = `<div class="err">Erreur de chargement: ${err.message}</div>`;
   }
 }
 
