@@ -233,17 +233,19 @@ test('an unrecognized maxDrawdownType fails OPEN (never blocks on a config typo)
   assert.equal(status.overallDrawdownBreached, false);
 });
 
-test('target reached: flips true once, does NOT block trading, and stays true afterward even on a pullback', () => {
+test('target reached: blocks new trading and stays sticky after a pullback', () => {
   const g = new GuardrailEngine({ targetPct: 10, maxTradesPerDay: 100 });
   g.setBalance(10000, DAY1);
   assert.equal(g.getStatus(DAY1).targetReached, false);
   g.recordTrade({ pnl: 1000, time: DAY1 + 1000, balanceAfter: 11000 });
   let status = g.getStatus(DAY1 + 2000);
   assert.equal(status.targetReached, true);
-  assert.equal(status.blocked, false); // reaching target never blocks - trading continues
+  assert.equal(status.blocked, true);
+  assert.ok(status.blockReasons.includes('profit_target_reached'));
   g.recordTrade({ pnl: -500, time: DAY1 + 3000, balanceAfter: 10500 }); // pull back below target
   status = g.getStatus(DAY1 + 4000);
   assert.equal(status.targetReached, true); // sticky - stays true
+  assert.equal(status.blocked, true);
 });
 
 test('consumeTargetReachedEvent fires exactly once, on the first call after the target is hit', () => {

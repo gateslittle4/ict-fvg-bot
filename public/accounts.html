@@ -105,7 +105,7 @@
 </head>
 <body>
   <h1>Apex FVG — Comptes</h1>
-  <p class="hint">Ajoute un compte (challenge ou financé, cTrader ou Match-Trader) sans toucher au code. Sauvegardé dans Supabase, pris en compte au prochain redémarrage du bot.</p>
+  <p class="hint">Gère les comptes et leurs règles. Les changements de prop firm, phase, risque et garde-fous s'appliquent immédiatement aux comptes déjà connectés ; l'ajout d'un nouveau compte nécessite sa prochaine reconnexion.</p>
 
   <nav class="topnav">
     <a href="/">Dashboard</a>
@@ -117,8 +117,8 @@
 
   <div class="card gate" id="gate-card">
     <h2>Token admin</h2>
-    <label for="token-input">Même token que les autres pages admin</label>
-    <input type="password" id="token-input" placeholder="ADMIN_EXPORT_TOKEN" autocomplete="off" />
+    <label for="token-input">Code administrateur</label>
+    <input type="password" id="token-input" placeholder="Code administrateur" autocomplete="off" />
     <div class="actions">
       <button class="primary" id="unlock-btn">Déverrouiller</button>
     </div>
@@ -229,9 +229,9 @@
 
     <div class="card">
       <h2>Appliquer les changements</h2>
-      <p class="hint">Sauvegarder un compte ne le connecte pas tout de suite — le bot doit redémarrer (~10-20s, pas un redéploiement) pour le lire. Redémarre une seule fois après avoir ajouté/modifié tout ce que tu veux.</p>
+      <p class="hint">Les règles et le risque s'appliquent immédiatement aux comptes déjà connectés. Une nouvelle connexion de plateforme sera initialisée au prochain redémarrage.</p>
       <div class="actions">
-        <button class="warn" id="restart-btn">Redémarrer le bot</button>
+        <button class="warn" id="restart-btn">Recharger les connexions</button>
       </div>
       <div class="msg" id="restart-msg"></div>
     </div>
@@ -284,7 +284,7 @@ async function loadAccounts() {
   }
   tbody.querySelectorAll('[data-del]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm(`Supprimer le compte "${btn.dataset.del}" ? (le bot devra redémarrer pour que ça prenne effet)`)) return;
+      if (!confirm(`Supprimer le compte "${btn.dataset.del}" ? La connexion sera retirée au prochain redémarrage.`)) return;
       try {
         await api(`/api/admin/accounts/${encodeURIComponent(btn.dataset.del)}`, { method: 'DELETE' });
         loadAccounts();
@@ -348,7 +348,7 @@ document.getElementById('account-form').addEventListener('submit', async (e) => 
 });
 
 document.getElementById('restart-btn').addEventListener('click', async () => {
-  if (!confirm('Redémarrer le bot maintenant ? Coupure de ~10-20 secondes.')) return;
+  if (!confirm('Recharger les connexions maintenant ? Interruption estimée : 10 à 20 secondes.')) return;
   const restartMsg = document.getElementById('restart-msg');
   try {
     const result = await api('/api/admin/restart', { method: 'POST' });

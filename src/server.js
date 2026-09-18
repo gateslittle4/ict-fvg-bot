@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry, isAccountDisabled } from './config.js';
-import { getDefaultAccount, getAccount, listAccounts, registerAccount } from './accountRegistry.js';
+import { buildEffectiveConfig, getDefaultAccount, getAccount, listAccounts, registerAccount } from './accountRegistry.js';
 import { MAX_AUTO_EXECUTE_HOURS } from './accountRuntime.js';
 import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
@@ -158,7 +158,27 @@ app.post('/api/admin/accounts', async (req, res) => {
   if (!raw.id) return res.status(400).json({ error: 'id is required' });
   const result = await saveDynamicAccount(raw);
   if (!result.ok) return res.status(502).json(result);
-  res.json({ ok: true, note: 'Sauvegardé. Redémarre le bot (bouton ci-dessous) pour que ce compte se connecte.' });
+  const normalized = normalizeAccountEntry(raw, 0);
+  const runtime = getAccount(normalized.id);
+  let appliedLive = false;
+  if (runtime) {
+    const effective = buildEffectiveConfig(normalized);
+    runtime.applyAccountControls({
+      accountMode: normalized.accountMode,
+      propFirmProgramId: normalized.propFirmProgramId,
+      phaseIndex: normalized.phaseIndex,
+      guardrails: effective.guardrails,
+      riskPctPerTrade: effective.risk.riskPctPerTrade,
+    });
+    appliedLive = true;
+  }
+  res.json({
+    ok: true,
+    appliedLive,
+    note: appliedLive
+      ? 'Sauvegardé et règles appliquées immédiatement. Les credentials/plateforme ne changent pas sans reconnexion.'
+      : 'Sauvegardé. Ce nouveau compte doit être initialisé/reconnecté au prochain redémarrage du bot.',
+  });
 });
 
 app.delete('/api/admin/accounts/:id', async (req, res) => {

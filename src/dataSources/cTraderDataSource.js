@@ -2278,10 +2278,9 @@ export class CTraderDataSource {
         }
       }
       // Prop-firm challenge target alert (2026-09, multi-account rollout -
-      // see src/propFirms/index.js). Fires ONCE, the first real trade close
-      // that confirms the target is reached - trading keeps going either way
-      // (see GuardrailEngine's own header on why this never blocks). Esdras
-      // adds the next-phase account herself once the firm actually grants it.
+      // see src/propFirms/index.js). Fires ONCE on the first real close that
+      // confirms the target; GuardrailEngine now blocks every new entry until
+      // the operator reviews the account and applies the next phase.
       if (store.guardrail.consumeTargetReachedEvent()) {
         this._notifyText(`🎯 Cible atteinte sur ${store.label} (+${store.guardrail.targetPct}%) - solde ${store.balance.toFixed(2)}. La prop firm devrait bientôt fournir le compte de la phase suivante.`);
       }

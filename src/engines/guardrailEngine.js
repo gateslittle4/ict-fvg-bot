@@ -246,6 +246,10 @@ export class GuardrailEngine {
     if (dailyLossPct >= this.dailyLossLimitPct) blockReasons.push('daily_loss_limit_reached');
     // Not per-day like the check above - does NOT reset at day rollover.
     if (overallDrawdownBreached) blockReasons.push('overall_drawdown_breached');
+    // Once a challenge target is reached, stop opening new trades. The flag
+    // is sticky so a later pullback cannot silently re-arm the account before
+    // the prop-firm phase is reviewed or reset by an operator.
+    if (targetReached) blockReasons.push('profit_target_reached');
 
     return {
       dayKey: this.dayKey,

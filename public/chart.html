@@ -170,7 +170,7 @@
     <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
   </nav>
   <h1>Apex FVG — Graphique des marchés</h1>
-  <div class="subtitle">Historique conservé par le bot lui-même (mêmes bougies que la détection de signaux).</div>
+  <div class="subtitle">Données de marché et niveaux suivis par la salle de marché.</div>
 
   <div class="card">
     <div class="toolbar">
@@ -218,7 +218,7 @@
         <div id="chart"></div>
         <div id="chart-loading">
           <div class="spinner"></div>
-          <div class="label">Le bot se reconnecte au courtier (démarrage à froid, quelques secondes)…</div>
+          <div class="label">Connexion au flux de marché en cours…</div>
         </div>
       </div>
       <div class="overlay-toggles" id="overlay-toggles">
@@ -245,7 +245,7 @@
 
   <div class="card">
     <h1 style="font-size:14px; margin:0 0 4px;">Checklist pour trade</h1>
-    <div class="subtitle" style="margin-bottom:10px;">Le statut EN CE MOMENT de chaque mécanisme actif sur ce symbole — la zone FVG active la plus récente formée aujourd'hui (encore "en surveillance", jamais une zone déjà validée/expirée) avec CHACUN de ses critères, et pour les autres mécanismes (NWOG/Judas Swing/Weekly Sweep/Breaker Block/Silver Bullet/Divergence), où ils en sont : aucun signal actif, ou signal détecté et entrée déjà ouverte/imminente.</div>
+    <div class="subtitle" style="margin-bottom:10px;">État actuel des configurations actives et des niveaux surveillés sur cet instrument.</div>
     <div id="pending-checklist-body"><div class="meta">Chargement…</div></div>
   </div>
 
@@ -759,11 +759,11 @@ async function loadChart({ keepView = false } = {}) {
     document.getElementById('last-price').textContent = last ? fmt(last.close, decimals) : '—';
     document.getElementById('last-time').textContent = last
       ? `${currentSymbol} · ${currentTimeframe} · ${new Date(last.time).toLocaleString('fr-FR')} · ${lastCandles.length} bougies`
-      : 'Pas encore de données (le bot est peut-être encore en démarrage)';
+      : 'Pas encore de données — initialisation du flux en cours.';
     document.getElementById('position-note').textContent = openPosition
       ? openPosition.confirmed
         ? `Position réellement ouverte chez le courtier (confirmée) : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
-        : `Signal validé par le bot, PAS ENCORE CONFIRMÉ chez le courtier : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
+        : `Signal validé, PAS ENCORE CONFIRMÉ chez le courtier : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
       : '';
   } catch (err) {
     errEl.textContent = `Erreur de chargement: ${err.message}`;

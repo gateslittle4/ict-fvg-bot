@@ -469,7 +469,7 @@
   <section class="control-center" aria-label="Centre de contrôle institutionnel">
     <div class="control-center-head">
       <span class="control-center-title">Institutional Control Center</span>
-      <span class="control-center-subtitle" id="control-center-actions">broker truth / execution state</span>
+      <span class="control-center-subtitle" id="control-center-actions">surveillance opérationnelle</span>
     </div>
     <div class="control-center-grid" id="control-center-grid">
       <div class="control-cell"><div class="control-label">Connexion</div><div class="control-value">Chargement…</div></div>
@@ -493,7 +493,7 @@
   <div class="section-title"><span class="live-dot"></span>Positions ouvertes (réelles, temps réel)</div>
 
   <div class="card" id="open-positions-card">
-    <div class="meta" style="margin-bottom:8px;">Directement depuis le courtier (ProtoOAReconcileReq) — jamais une croyance du bot. P&amp;L flottant estimé au dernier prix vu (pas un flux tick-par-tick).</div>
+    <div class="meta" style="margin-bottom:8px;">Positions confirmées par la plateforme — P&amp;L flottant estimé au dernier prix disponible.</div>
     <div id="open-positions-body"><div class="meta">Chargement…</div></div>
   </div>
 
@@ -511,7 +511,7 @@
     </div>
 
     <div class="card" id="account-card">
-      <h2>Compte réel (cTrader)</h2>
+      <h2>Compte connecté</h2>
       <div class="meta" style="margin-bottom:8px;">Solde/marge réels ; équité et P&amp;L flottant estimés (dernier prix vu, pas un flux instantané).</div>
       <div id="account-body">—</div>
     </div>
@@ -556,7 +556,7 @@
 
   <div class="card" id="execution-audit-card">
     <h2>Audit d'exécution récent</h2>
-    <div class="meta" style="margin-bottom:8px;">Chronologie opérationnelle en mémoire : signaux validés et confirmations broker reçues par cette instance.</div>
+    <div class="meta" style="margin-bottom:8px;">Chronologie opérationnelle récente : signaux validés et confirmations de la plateforme.</div>
     <div id="execution-audit-body">—</div>
   </div>
 
@@ -570,11 +570,11 @@
     </div>
   </div>
 
-  <div class="section-title">Simulation (pas des trades réels)</div>
+  <div class="section-title">Analyse historique</div>
 
   <div class="card">
-    <h2>Performance récente (90 derniers jours, hypothétique)</h2>
-    <div class="meta" style="margin-bottom:8px;">Simulation sur les 90 derniers jours de vrais prix — pas des trades réels.</div>
+    <h2>Performance récente (90 derniers jours)</h2>
+    <div class="meta" style="margin-bottom:8px;">Analyse historique sur les données de marché disponibles — distincte des résultats réalisés.</div>
     <div id="recent-perf-summary">Chargement…</div>
     <div id="recent-perf-list" style="margin-top:8px;"></div>
   </div>
@@ -597,7 +597,7 @@
       <input type="number" id="settings-risk-input" class="filter-select" step="0.05" min="0.05" max="2" placeholder="ex: 0.5" style="width:100px;" />
       <button type="button" id="settings-risk-save" class="btn-ghost">Enregistrer</button>
     </div>
-    <div class="meta" id="settings-risk-note" style="margin-top:6px;">Effectif immédiatement sur les prochains signaux (jamais rétroactif) — revient à la valeur par défaut au prochain redémarrage sauf changement permanent en configuration.</div>
+    <div class="meta" id="settings-risk-note" style="margin-top:6px;">Effectif immédiatement sur les prochaines décisions. Les résultats déjà enregistrés ne sont pas modifiés.</div>
     <div class="stat-row" style="margin-top:14px;"><span class="label">Symboles actifs</span><span id="settings-symbols-current">—</span></div>
     <div class="meta">Non modifiable ici — câblé à la connexion live au démarrage (souscription courtier + 90 jours d'historique par symbole). Ajout/retrait d'un symbole = changement de configuration (redéploiement nécessaire).</div>
   </div>
@@ -646,7 +646,7 @@
     <h2>Tester la connexion broker</h2>
     <p class="meta">Passe un ordre minimal (plus petit lot possible) pour vérifier que les ordres arrivent vraiment au broker. L'ordre sera ouvert puis fermé immédiatement — un VRAI ordre, qui compte dans le quota quotidien du garde-fou (max 3 trades/jour) : à utiliser avec parcimonie.</p>
     <div id="test-order-token-row" class="journal-toolbar">
-      <input type="password" id="test-order-token" class="filter-select" placeholder="ADMIN_EXPORT_TOKEN" autocomplete="off" />
+      <input type="password" id="test-order-token" class="filter-select" placeholder="Code administrateur" autocomplete="off" />
     </div>
     <div class="journal-toolbar" style="margin-top:8px;">
       <select id="test-order-symbol" class="filter-select">
@@ -769,7 +769,7 @@ function renderControlCenter() {
   if (actionsEl) {
     actionsEl.innerHTML = auto.active
       ? '<button type="button" class="control-pause-btn" onclick="pauseAutoExecution()" title="Arrêter les nouvelles entrées automatiques">⏸ PAUSE AUTO-EXÉCUTION</button>'
-      : 'broker truth / execution state';
+      : 'surveillance opérationnelle';
   }
   el.innerHTML = `
     <div class="control-cell"><div class="control-label">Connexion broker</div><div class="control-value ${liveClass}">${liveLabel}</div><div class="control-detail">${broker.name || 'aucun broker'} · ${data.symbols?.length || 0} symboles</div></div>
@@ -1165,8 +1165,8 @@ function reconciliationExplanation(r) {
     // Swing) enter on a MARKET order instead, so "believed-only" there is
     // more likely a real submission problem worth checking manually.
     return r.source === 'fvg'
-      ? `⚠ ${r.symbol} : le bot a validé un signal ${src} et pose un ordre LIMITE à l'entrée, mais rien n'est ouvert chez le courtier — le plus probable : le prix n'est jamais revenu remplir la limite avant son expiration (~1h), pas une erreur.`
-      : `⚠ ${r.symbol} : le bot croit avoir une position ${src} ouverte (ordre au marché normalement), mais rien n'est ouvert chez le courtier — à vérifier, l'envoi de l'ordre a peut-être échoué.`;
+      ? `⚠ ${r.symbol} : un signal ${src} a placé une limite, mais aucune position n'est ouverte — le prix n'est probablement pas revenu au niveau avant expiration.`
+      : `⚠ ${r.symbol} : une entrée ${src} est attendue, mais aucune position n'est ouverte — vérification de l'exécution recommandée.`;
   }
   return '⚠ statut inconnu';
 }
@@ -1357,7 +1357,7 @@ function renderAutoExecute(ae) {
     const remainingMin = Math.max(0, Math.round((ae.expiresAt - Date.now()) / 60000));
     const h = Math.floor(remainingMin / 60), m = remainingMin % 60;
     body.innerHTML = `
-      <div class="auto-status active">🤖 ACTIF — le bot exécute les entrées lui-même jusqu'à ${fmtTime(ae.expiresAt)} (reste ${h}h${String(m).padStart(2,'0')})</div>
+      <div class="auto-status active">🤖 ACTIF — les entrées sont exécutées automatiquement jusqu'à ${fmtTime(ae.expiresAt)} (reste ${h}h${String(m).padStart(2,'0')})</div>
       <div class="auto-btn-row"><button class="danger" onclick="setAutoExecute(false)">Désactiver maintenant (revenir en manuel)</button></div>
     `;
   } else {
@@ -1441,7 +1441,7 @@ async function refreshRecentPerformance() {
       <div class="stat-row"><span class="label">Taux de réussite</span><span>${fmt(s.winRatePct, 0)}% (${s.wins}G / ${s.losses}P${s.timeouts ? ' / ' + s.timeouts + ' expirés' : ''})</span></div>
       <div class="stat-row"><span class="label">Total en R (net du spread)</span><span class="journal-pnl ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.totalR)}R</span></div>
       <div class="stat-row"><span class="label meta">dont brut (sans spread)</span><span class="meta">${s.totalGrossR >= 0 ? '+' : ''}${fmt(s.totalGrossR)}R</span></div>
-      <div class="meta" style="margin-top:4px">Simulation : un gain = la cible RR configurée, une perte = -1R exactement, moins le spread réel. Pas un ordre réellement passé - voir le journal durable pour les vrais résultats confirmés par le courtier.</div>
+      <div class="meta" style="margin-top:4px">Analyse historique : un gain suit la cible configurée, une perte représente -1R, avec prise en compte du spread. Les résultats réalisés sont affichés dans le journal.</div>
     `;
     listEl.innerHTML = data.trades.length
       ? '<ul class="signal-list">' + data.trades.slice(0, 30).map((t) => {

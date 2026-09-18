@@ -198,7 +198,12 @@
   .metric-tile .metric-value { font-family: var(--mono); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .metric-tile .metric-value.win { color: var(--green); }
   .metric-tile .metric-value.loss { color: var(--red); }
-  .equity-chart { width: 100%; height: 140px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin-bottom: 14px; }
+  .equity-chart { width: 100%; height: 240px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin-bottom: 14px; }
+  .equity-chart .curve-positive { fill: rgba(47,212,128,0.12); }
+  .equity-chart .curve-negative { fill: rgba(255,92,95,0.10); }
+  .equity-chart .curve-grid { stroke: var(--panel-border); stroke-width: 1; stroke-dasharray: 3,4; }
+  .equity-chart .curve-label { fill: var(--muted); font: 10px var(--mono); }
+  @media (max-width: 640px) { .equity-chart { height: 190px; } }
   .strategy-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
   .strategy-table th { text-align: left; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border-strong); }
   .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
@@ -307,7 +312,7 @@
 
   <div class="card">
     <h2>Statistiques par heure et jour de la semaine</h2>
-    <div class="meta" style="margin-bottom:8px;">Même journal durable, réparti par heure de sortie et par jour de la semaine (heure locale) — pour repérer si le bot performe mieux à certains moments.</div>
+    <div class="meta" style="margin-bottom:8px;">Répartition par heure de sortie et jour de la semaine — pour identifier les périodes les plus efficaces.</div>
     <div id="time-stats-body">Chargement…</div>
   </div>
 
@@ -396,7 +401,7 @@ function renderEquityCurve(equityCurve) {
   if (!equityCurve || equityCurve.length < 2) {
     return '<div class="meta">Pas encore assez de trades clôturés pour tracer une courbe.</div>';
   }
-  const W = 600, H = 140, PAD_L = 40, PAD_R = 10, PAD_T = 10, PAD_B = 10;
+  const W = 900, H = 240, PAD_L = 48, PAD_R = 18, PAD_T = 18, PAD_B = 24;
   const values = equityCurve.map((p) => p.cumulativeR);
   const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
   const range = (maxR - minR) || 1;
@@ -408,12 +413,29 @@ function renderEquityCurve(equityCurve) {
   const color = finalR >= 0 ? 'var(--green)' : 'var(--red)';
   const points = values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
   const zeroY = y(0);
+  const lastX = x(values.length - 1);
+  const positiveArea = `${PAD_L},${zeroY} ${points} ${lastX},${zeroY}`;
+  const negativePoints = values.map((v, i) => `${x(i)},${y(Math.min(v, 0))}`).join(' ');
+  const negativeArea = `${PAD_L},${zeroY} ${negativePoints} ${lastX},${zeroY}`;
+  const gridValues = [maxR, (maxR + minR) / 2, minR];
+  const startTime = equityCurve[0]?.time;
+  const endTime = equityCurve[equityCurve.length - 1]?.time;
+  const circles = equityCurve.map((point, i) => {
+    if (equityCurve.length > 80 && i % Math.ceil(equityCurve.length / 40) !== 0 && i !== equityCurve.length - 1) return '';
+    return `<circle cx="${x(i)}" cy="${y(point.cumulativeR)}" r="2.5" fill="${color}"><title>${fmtTime(point.time)} · ${point.cumulativeR >= 0 ? '+' : ''}${fmt(point.cumulativeR)}R cumulés</title></circle>`;
+  }).join('');
 
   return `
-    <svg class="equity-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <line x1="${PAD_L}" y1="${zeroY}" x2="${W - PAD_R}" y2="${zeroY}" stroke="var(--panel-border-strong)" stroke-width="1" stroke-dasharray="4,3" />
-      <text x="2" y="${zeroY + 4}" fill="var(--muted)" font-size="10">0R</text>
-      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" />
+    <svg class="equity-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Courbe de R cumulés des trades clôturés">
+      ${gridValues.map((value) => `<line class="curve-grid" x1="${PAD_L}" y1="${y(value)}" x2="${W - PAD_R}" y2="${y(value)}" />`).join('')}
+      <polygon class="curve-positive" points="${positiveArea}" />
+      <polygon class="curve-negative" points="${negativeArea}" />
+      <line x1="${PAD_L}" y1="${zeroY}" x2="${W - PAD_R}" y2="${zeroY}" stroke="var(--panel-border-strong)" stroke-width="1.2" />
+      ${gridValues.map((value) => `<text class="curve-label" x="4" y="${y(value) + 4}">${value >= 0 ? '+' : ''}${fmt(value, 1)}R</text>`).join('')}
+      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" />
+      ${circles}
+      <text class="curve-label" x="${PAD_L}" y="${H - 6}">${fmtTime(startTime)}</text>
+      <text class="curve-label" x="${Math.max(PAD_L + 4, lastX - 56)}" y="${H - 6}">${fmtTime(endTime)}</text>
     </svg>
   `;
 }
@@ -733,7 +755,7 @@ function renderOverview(data) {
   const recoveryEl = document.getElementById('recovery-body');
   const overall = data.overall;
   if (!overall || overall.totalSignals === 0) {
-    const emptyMsg = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+    const emptyMsg = `<div class="meta">${data.reason === 'not configured' ? 'Historique durable indisponible pour le moment.' : (data.reason || 'Aucune opération enregistrée pour le moment.')}</div>`;
     el.innerHTML = emptyMsg;
     if (monthCalEl) monthCalEl.innerHTML = emptyMsg;
     if (timeStatsEl) timeStatsEl.innerHTML = emptyMsg;
@@ -804,7 +826,7 @@ async function refreshTradeLog() {
     renderOverview(data);
     const symbols = Object.keys(data.bySymbol || {});
     if (symbols.length === 0) {
-      el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? "Persistance non activée (SUPABASE_URL / SUPABASE_SERVICE_KEY absents)." : (data.reason || 'Aucun trade enregistré pour le moment.')}</div>`;
+      el.innerHTML = `<div class="meta">${data.reason === 'not configured' ? 'Historique durable indisponible pour le moment.' : (data.reason || 'Aucune opération enregistrée pour le moment.')}</div>`;
       return;
     }
     el.innerHTML = symbols.map((symbol) => {

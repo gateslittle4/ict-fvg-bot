@@ -199,6 +199,25 @@ export class AccountRuntime {
     this.strategyEngine.setRiskPctPerTrade(pct);
   }
 
+  // Apply account-specific operating rules without rebuilding the broker
+  // connection. Credentials/platform changes still require a reconnect, but
+  // prop-firm phase, guardrails, account mode, and risk are safe in-memory
+  // controls and can take effect for the next signal immediately.
+  applyAccountControls({ accountMode, propFirmProgramId, phaseIndex, guardrails, riskPctPerTrade } = {}) {
+    if (accountMode) this.accountMode = accountMode;
+    if (propFirmProgramId !== undefined) this.propFirmProgramId = propFirmProgramId;
+    if (phaseIndex !== undefined) this.phaseIndex = phaseIndex;
+    if (guardrails && typeof guardrails === 'object') Object.assign(this.guardrail, guardrails);
+    if (riskPctPerTrade !== undefined) this.setRiskPctPerTrade(riskPctPerTrade);
+    return {
+      accountMode: this.accountMode,
+      propFirmProgramId: this.propFirmProgramId,
+      phaseIndex: this.phaseIndex,
+      riskPctPerTrade: this.strategyEngine.riskPctPerTrade,
+      guardrails: this.guardrail.getStatus(),
+    };
+  }
+
   /**
    * Forward-test OBSERVATION ONLY (2026-09, at Esdras's explicit request:
    * "forward-test démo d'abord" before changing any real position sizing) -

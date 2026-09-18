@@ -78,6 +78,34 @@ test('setRiskPctPerTrade: the bounds themselves are valid, inclusive', () => {
   account.setRiskPctPerTrade(0.5); // restore
 });
 
+test('applyAccountControls: updates prop-firm rules and risk without rebuilding the runtime', () => {
+  const originalGuardrails = {
+    maxTradesPerDay: account.guardrail.maxTradesPerDay,
+    dailyLossLimitPct: account.guardrail.dailyLossLimitPct,
+    targetPct: account.guardrail.targetPct,
+  };
+  const engineBefore = account.strategyEngine;
+  const result = account.applyAccountControls({
+    accountMode: 'live',
+    propFirmProgramId: 'ftmo-1step-funded',
+    phaseIndex: 0,
+    riskPctPerTrade: 0.3,
+    guardrails: { maxTradesPerDay: 5, dailyLossLimitPct: 1.5, targetPct: null },
+  });
+  assert.equal(account.strategyEngine, engineBefore);
+  assert.equal(account.accountMode, 'live');
+  assert.equal(account.propFirmProgramId, 'ftmo-1step-funded');
+  assert.equal(account.guardrail.maxTradesPerDay, 5);
+  assert.equal(account.guardrail.dailyLossLimitPct, 1.5);
+  assert.equal(account.strategyEngine.riskPctPerTrade, 0.3);
+  assert.equal(result.riskPctPerTrade, 0.3);
+  Object.assign(account.guardrail, originalGuardrails);
+  account.accountMode = 'challenge';
+  account.propFirmProgramId = null;
+  account.phaseIndex = null;
+  account.setRiskPctPerTrade(0.5);
+});
+
 // pushSignalEvents' volatility-regime OBSERVATION tagging (2026-09, at
 // Esdras's explicit request for a forward-test démo before changing any
 // real position sizing - see HANDOFF.md and src/backtest/volatilityRegime.js).
