@@ -50,6 +50,11 @@ jobs:
       - name: Interroger le bot
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          # Repli de diagnostic : l'erreur la plus courante est de créer une
+          # VARIABLE au lieu d'un SECRET (même écran, onglet voisin). Sans ça,
+          # les deux cas sont indiscernables : « rien ne part », sans savoir
+          # pourquoi. La valeur n'est jamais affichée, seulement sa provenance.
+          NTFY_TOPIC_VAR: ${{ vars.NTFY_TOPIC }}
           HEALTH_URL: https://ict-fvg-bot.onrender.com/healthz
           WATCHDOG_TEST_ALERT: ${{ inputs.test_alert }}
         run: node scripts/runWatchdog.js

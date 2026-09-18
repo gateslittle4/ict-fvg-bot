@@ -11,7 +11,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { decideWatchdogAlert, decideNotification, OK } from '../src/watchdogDecision.js';
 
 const HEALTH_URL = process.env.HEALTH_URL || 'https://ict-fvg-bot.onrender.com/healthz';
-const NTFY_TOPIC = process.env.NTFY_TOPIC || '';
+// Le secret d'abord ; la variable seulement en repli, pour qu'une
+// configuration au mauvais endroit fonctionne quand même plutôt que de
+// laisser le bot sans surveillance - mais en le disant.
+const NTFY_TOPIC = process.env.NTFY_TOPIC || process.env.NTFY_TOPIC_VAR || '';
+const NTFY_SOURCE = process.env.NTFY_TOPIC ? 'secret' : process.env.NTFY_TOPIC_VAR ? 'variable' : 'aucune';
 const STATE_FILE = process.env.WATCHDOG_STATE_FILE || '.watchdog-state';
 // Render's free tier can take tens of seconds to answer a cold start. Waiting
 // is right: a slow answer is a living bot, and calling it dead would be a
@@ -38,8 +42,20 @@ function readPreviousState() {
 
 async function push(title, body) {
   if (!NTFY_TOPIC) {
-    console.error('NTFY_TOPIC absent - alerte NON envoyée. Ajoute-la dans les secrets GitHub du dépôt.');
+    console.error(
+      'NTFY_TOPIC introuvable - alerte NON envoyée.\n' +
+        "  Ni le secret ni la variable du dépôt ne portent ce nom exact.\n" +
+        '  À vérifier : Settings > Secrets and variables > Actions > onglet "Secrets"\n' +
+        '  (PAS l\'onglet "Variables"), bouton "New repository secret",\n' +
+        '  nom exactement NTFY_TOPIC (majuscules, underscore, sans espace).'
+    );
     return;
+  }
+  // Jamais la valeur : ces logs sont lisibles par quiconque a accès au dépôt,
+  // et le topic ntfy est de fait un secret (qui le connaît lit tes alertes).
+  console.log(`topic ntfy trouvé via ${NTFY_SOURCE} (${NTFY_TOPIC.length} caractères)`);
+  if (NTFY_SOURCE === 'variable') {
+    console.warn('ATTENTION : trouvé dans les VARIABLES, pas les SECRETS. Ça marche, mais la valeur est visible en clair dans les réglages. À déplacer.');
   }
   const res = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
     method: 'POST',
