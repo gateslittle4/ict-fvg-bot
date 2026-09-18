@@ -482,9 +482,10 @@ function createAccountRouter(getStore) {
   // Emergency flatten for every REAL open position on this account. This is
   // deliberately separate from auto-execute pause: pausing prevents new
   // entries, while this route sends one broker close request per reconciled
-  // position. It never touches pending orders or the strategy's simulated
-  // beliefs, and continues through partial failures so the response shows
-  // exactly what did and did not close.
+  // position, then cancels pending broker orders from the same snapshot. It
+  // never touches the strategy's simulated beliefs, and continues through
+  // partial failures so the response shows exactly what did and did not
+  // close/cancel.
   router.post('/positions/close-all', async (req, res) => {
     const store = getStore(req);
     const ds = store.liveDataSource;
@@ -514,13 +515,30 @@ function createAccountRouter(getStore) {
           results.push({ positionId, symbol: position.symbol, volume, closed: false, error: err.message });
         }
       }
+      const pendingOrders = (account.pendingOrders || []).filter((order) => Number.isFinite(Number(order.orderId)));
+      const cancelledOrders = [];
+      for (const order of pendingOrders) {
+        const orderId = Number(order.orderId);
+        try {
+          if (typeof ds._cancelOrder !== 'function') throw new Error('broker cancel operation unavailable');
+          await ds._cancelOrder(orderId);
+          cancelledOrders.push({ orderId, symbol: order.symbol, cancelled: true });
+        } catch (err) {
+          cancelledOrders.push({ orderId, symbol: order.symbol, cancelled: false, error: err.message });
+        }
+      }
       const failed = results.filter((result) => !result.closed);
-      res.status(failed.length > 0 ? 207 : 200).json({
+      const cancelFailed = cancelledOrders.filter((order) => !order.cancelled);
+      res.status(failed.length > 0 || cancelFailed.length > 0 ? 207 : 200).json({
         autoExecutePaused: true,
         requested: positions.length,
         closed: results.filter((result) => result.closed).length,
         failed: failed.length,
+        pendingRequested: pendingOrders.length,
+        pendingCancelled: cancelledOrders.filter((order) => order.cancelled).length,
+        pendingCancelFailed: cancelFailed.length,
         results,
+        cancelledOrders,
       });
     } catch (err) {
       res.status(502).json({ error: err.message });

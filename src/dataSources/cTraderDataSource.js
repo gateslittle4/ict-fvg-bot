@@ -1100,7 +1100,17 @@ export class CTraderDataSource {
       believedOpenBySymbol,
     });
 
-    return { ...result, balance: store.balance, equityEstimate: estimateEquity(store.balance, result.floatingPnlEstimate) };
+    const pendingOrders = (res.order || []).map((order) => ({
+      orderId: order.orderId ?? null,
+      symbolId: order.tradeData?.symbolId ?? order.symbolId ?? null,
+      symbol: this.symbolNameById.get(String(order.tradeData?.symbolId ?? order.symbolId)) || null,
+      orderType: order.orderType ?? null,
+      tradeSide: order.tradeData?.tradeSide ?? order.tradeSide ?? null,
+      volume: order.tradeData?.volume ?? order.volume ?? null,
+      label: order.tradeData?.label ?? order.label ?? null,
+    }));
+
+    return { ...result, pendingOrders, balance: store.balance, equityEstimate: estimateEquity(store.balance, result.floatingPnlEstimate) };
   }
 
   /**
