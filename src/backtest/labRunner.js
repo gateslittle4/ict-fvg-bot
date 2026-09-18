@@ -89,3 +89,20 @@ export function runLabBacktest(strategyId, candles, symbol) {
   const equityCurve = trades.map((t, i) => ({ time: t.entryTime, cumulativeR: summary.equityCurve[i] }));
   return { summary, trades, equityCurve, droppedAsNonViable: rawTrades.length - trades.length };
 }
+
+/**
+ * Flattens a train/test result into the summary shape the screener tables
+ * use - out-of-sample (test) figures are the headline number (and what
+ * gets ranked), train is carried only for the verdict and its trade count.
+ */
+export function flattenTrainTestForScreen(trainTest) {
+  return {
+    trainSignals: trainTest.train.summary.totalSignals,
+    testSignals: trainTest.test.summary.totalSignals,
+    winRate: trainTest.test.summary.winRate,
+    expectancyR: trainTest.test.summary.expectancyR,
+    finalEquityR: trainTest.test.summary.finalEquityR,
+    profitFactor: trainTest.test.summary.profitFactor,
+    verdict: trainTest.verdict,
+  };
+}

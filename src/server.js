@@ -22,9 +22,8 @@ import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
 import { getPropFirmProgram } from './propFirms/index.js';
 import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus } from './chatAssistant.js';
-import { loadCandlesFromCsv } from './backtest/csvLoader.js';
 import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
-import { runLabBacktestTrainTest, TRAIN_TEST_CUTOFF } from './backtest/labRunner.js';
+import { runLabJob } from './backtest/labClient.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -213,20 +212,24 @@ app.post('/api/admin/restart', (req, res) => {
 // connection or account state involved) - top-level routes like
 // /api/admin/accounts above, not inside createAccountRouter().
 const LAB_DATA_DIR = path.join(__dirname, '..', 'data', 'backtest-input');
-const labCandlesCache = new Map(); // symbol -> candles[] - these CSVs are large and static for the process lifetime, no reason to re-parse per request
-function loadLabCandles(symbol) {
-  if (labCandlesCache.has(symbol)) return labCandlesCache.get(symbol);
-  const filePath = path.join(LAB_DATA_DIR, `${symbol}.csv`);
-  const { candles } = loadCandlesFromCsv(filePath);
-  labCandlesCache.set(symbol, candles);
-  return candles;
-}
 function listLabSymbols() {
   return fs
     .readdirSync(LAB_DATA_DIR)
     .filter((name) => name.endsWith('.csv') && !/vix|_M5/i.test(name))
     .map((name) => name.replace(/\.csv$/, ''))
     .sort();
+}
+function labCsvPath(symbol) {
+  return path.join(LAB_DATA_DIR, `${symbol}.csv`);
+}
+
+// Every computation below runs in a worker THREAD (labClient.js/labWorker.js),
+// never in this process's event loop: it shares a process with the live
+// trading bot, and the first version of these routes (computing inline, with
+// every dataset cached in memory) measured at ~870 MB RSS against Render's
+// 512 MB free tier and multi-second event-loop stalls. See labClient.js.
+function sendLabError(res, err) {
+  res.status(500).json({ error: err.message });
 }
 
 // 2026-09-18 (Esdras: "continue, ne t'arrête pas") - closes a gap
@@ -242,82 +245,45 @@ app.get('/api/lab/meta', (req, res) => {
   try {
     res.json({ strategies: listLabStrategies(), symbols: listLabSymbols() });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendLabError(res, err);
   }
 });
 
-// Screener mode (2026-09-18, same feature request as /api/lab/run above,
-// added right after it): running one strategy on one symbol at a time
-// answers "does this work on US100?" - the more useful research question is
-// usually "which of these 12 symbols does this actually work on?". Reuses
-// the exact same pipeline per symbol, just returns summaries (not full
-// equity curves/trade lists - a ranking table doesn't need them, and this
-// keeps the response small even multiplied by 12 symbols).
-// Flattens a train/test result into the summary shape the screener tables
-// use - out-of-sample (test) figures are what gets ranked/shown as the
-// headline number, train is carried alongside only for the verdict.
-function flattenTrainTestForScreen(trainTest) {
-  return {
-    trainSignals: trainTest.train.summary.totalSignals,
-    testSignals: trainTest.test.summary.totalSignals,
-    winRate: trainTest.test.summary.winRate,
-    expectancyR: trainTest.test.summary.expectancyR,
-    finalEquityR: trainTest.test.summary.finalEquityR,
-    profitFactor: trainTest.test.summary.profitFactor,
-    verdict: trainTest.verdict,
-  };
-}
+const byExpectancyDesc = (a, b) => (b.expectancyR ?? -Infinity) - (a.expectancyR ?? -Infinity);
 
-app.post('/api/lab/screen', (req, res) => {
+// Screener: one strategy across every symbol, ranked by OUT-OF-SAMPLE
+// expectancy. Summaries only (a ranking table doesn't need equity curves).
+app.post('/api/lab/screen', async (req, res) => {
   const { strategyId } = req.body || {};
   if (!strategyId || !LAB_STRATEGIES[strategyId]) {
     return res.status(400).json({ error: `Stratégie inconnue: "${strategyId}"` });
   }
   try {
-    const symbols = listLabSymbols();
-    const results = symbols.map((symbol) => {
-      try {
-        const candles = loadLabCandles(symbol);
-        const trainTest = runLabBacktestTrainTest(strategyId, candles, symbol);
-        return { symbol, ok: true, candleCount: candles.length, ...flattenTrainTestForScreen(trainTest) };
-      } catch (err) {
-        return { symbol, ok: false, error: err.message };
-      }
-    });
-    results.sort((a, b) => (b.expectancyR ?? -Infinity) - (a.expectancyR ?? -Infinity));
+    const datasets = listLabSymbols().map((symbol) => ({ key: symbol, symbol, csvPath: labCsvPath(symbol) }));
+    const results = await runLabJob('screenSymbols', { strategyId, datasets });
+    results.sort(byExpectancyDesc);
     res.json({ strategyId, results });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendLabError(res, err);
   }
 });
 
-// Mirror of /api/lab/screen above, other axis: instead of "which symbol
-// works for this strategy", "which of the ~20 strategies works best on
-// this ONE symbol" - the question someone eyeing a specific instrument
-// (e.g. "what should I even try on XAUUSD?") actually has.
-app.post('/api/lab/screen-strategies', (req, res) => {
+// Other axis: which of the ~20 strategies works best on this ONE symbol.
+app.post('/api/lab/screen-strategies', async (req, res) => {
   const { symbol } = req.body || {};
   if (!symbol || !listLabSymbols().includes(symbol)) {
     return res.status(400).json({ error: `Symbole inconnu ou sans données: "${symbol}"` });
   }
   try {
-    const candles = loadLabCandles(symbol);
-    const results = listLabStrategies().map(({ id, label }) => {
-      try {
-        const trainTest = runLabBacktestTrainTest(id, candles, symbol);
-        return { strategyId: id, label, ok: true, ...flattenTrainTestForScreen(trainTest) };
-      } catch (err) {
-        return { strategyId: id, label, ok: false, error: err.message };
-      }
-    });
-    results.sort((a, b) => (b.expectancyR ?? -Infinity) - (a.expectancyR ?? -Infinity));
-    res.json({ symbol, candleCount: candles.length, results });
+    const { candleCount, results } = await runLabJob('screenStrategies', { csvPath: labCsvPath(symbol), symbol });
+    results.sort(byExpectancyDesc);
+    res.json({ symbol, candleCount, results });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendLabError(res, err);
   }
 });
 
-app.post('/api/lab/run', (req, res) => {
+app.post('/api/lab/run', async (req, res) => {
   const { strategyId, symbol } = req.body || {};
   if (!strategyId || !LAB_STRATEGIES[strategyId]) {
     return res.status(400).json({ error: `Stratégie inconnue: "${strategyId}"` });
@@ -326,29 +292,10 @@ app.post('/api/lab/run', (req, res) => {
     return res.status(400).json({ error: `Symbole inconnu ou sans données: "${symbol}"` });
   }
   try {
-    const candles = loadLabCandles(symbol);
-    const { train, test, verdict } = runLabBacktestTrainTest(strategyId, candles, symbol);
-    const toPayload = (result) => ({
-      summary: result.summary,
-      equityCurve: result.equityCurve,
-      droppedAsNonViable: result.droppedAsNonViable,
-      // Full equityCurve already carries every trade's outcome for the
-      // chart - the table only ever needs to show the most recent handful,
-      // so the response stays small even for a strategy that fires
-      // thousands of times (MACD Trend on 7 years of US100 M15: ~25k).
-      recentTrades: result.trades.slice(-100).reverse(),
-    });
-    res.json({
-      strategyId,
-      symbol,
-      candleCount: candles.length,
-      trainCutoff: TRAIN_TEST_CUTOFF,
-      verdict,
-      train: toPayload(train),
-      test: toPayload(test),
-    });
+    const result = await runLabJob('runTrainTest', { csvPath: labCsvPath(symbol), strategyId, symbol });
+    res.json({ strategyId, symbol, ...result });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendLabError(res, err);
   }
 });
 
