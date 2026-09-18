@@ -75,6 +75,32 @@ export async function fetchDynamicAccounts(client = createAccountStoreClient()) 
 }
 
 /**
+ * BUG FOUND 2026-09-18 (audit prompted by Esdras's "improve the site"
+ * green light): merges a credential object field-by-field instead of
+ * replacing it outright. accounts.html's form always submits a FULLY
+ * populated broker/matchTrader object with every untouched field defaulted
+ * to null (public/accounts.html's submit handler) - there is no way for the
+ * dashboard to tell "the user left this blank because they don't want to
+ * change it" from "the user wants to clear it". Before this fix,
+ * saveDynamicAccount() did `broker: raw.broker || {}` (a raw overwrite), so
+ * using the SAME "Ajouter / mettre à jour un compte" form to change one
+ * unrelated field (e.g. risk %) on an existing account silently nulled out
+ * its stored cTrader/Match-Trader credentials - invisible until the next
+ * restart, when the account fails to reconnect. Only an explicitly
+ * non-empty incoming value overwrites the stored one; a blank/null/
+ * undefined incoming value keeps whatever was already stored.
+ * @param {object} existing - previous stored value (or {} for a new account)
+ * @param {object} incoming - what the form just submitted
+ */
+function mergeCredentialFields(existing, incoming) {
+  const merged = { ...(existing || {}) };
+  for (const [key, value] of Object.entries(incoming || {})) {
+    if (value !== null && value !== undefined && value !== '') merged[key] = value;
+  }
+  return merged;
+}
+
+/**
  * Upserts one account row (by id). `raw` is the SAME shape an ACCOUNTS_JSON
  * entry has ({id, label, accountMode, platform, riskPctPerTrade,
  * propFirmProgramId, phaseIndex, guardrails, broker, matchTrader}) - the
@@ -85,6 +111,8 @@ export async function fetchDynamicAccounts(client = createAccountStoreClient()) 
 export async function saveDynamicAccount(raw, client = createAccountStoreClient()) {
   if (!client) return { ok: false, error: 'Supabase not configured (SUPABASE_URL/SUPABASE_SERVICE_KEY unset)' };
   if (!raw.id) return { ok: false, error: 'id is required' };
+  const { data: existingRow, error: fetchError } = await client.from(TABLE).select('broker, match_trader').eq('id', raw.id).maybeSingle();
+  if (fetchError) return { ok: false, error: fetchError.message };
   const row = {
     id: raw.id,
     label: raw.label || raw.id,
@@ -94,8 +122,8 @@ export async function saveDynamicAccount(raw, client = createAccountStoreClient(
     prop_firm_program_id: raw.propFirmProgramId || null,
     phase_index: Number.isInteger(raw.phaseIndex) ? raw.phaseIndex : 0,
     guardrails: raw.guardrails || null,
-    broker: raw.broker || {},
-    match_trader: raw.matchTrader || {},
+    broker: mergeCredentialFields(existingRow?.broker, raw.broker),
+    match_trader: mergeCredentialFields(existingRow?.match_trader, raw.matchTrader),
     updated_at: new Date().toISOString(),
   };
   const { error } = await client.from(TABLE).upsert(row, { onConflict: 'id' });
