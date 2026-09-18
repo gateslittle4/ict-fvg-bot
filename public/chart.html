@@ -754,10 +754,22 @@ async function loadChart({ keepView = false } = {}) {
 
 function wireGroup(groupId, dataKey, onPick) {
   document.querySelectorAll(`#${groupId} button`).forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       document.querySelectorAll(`#${groupId} button`).forEach((b) => b.classList.toggle('active', b === btn));
       onPick(btn.dataset[dataKey]);
-      loadChart();
+      // Pause the live-tick poller across the switch (2026-09-18, found while
+      // reproducing "des trous" - a narrower, related race): startLiveTick()
+      // runs on its own 3s interval regardless of what loadChart() is doing,
+      // reading `currentSymbol` (already updated above) but `lastCandles`
+      // (only updated once loadChart()'s fetch resolves) - a poll landing in
+      // that gap compares the NEW symbol's live bar against the OLD symbol's
+      // still-in-place lastCandles, which can push a stray/mismatched bar
+      // right before setData() below replaces the whole series anyway.
+      // Stopping the poller for the switch's duration removes the window
+      // entirely.
+      stopLiveTick();
+      await loadChart();
+      startLiveTick();
     });
   });
 }
@@ -833,6 +845,32 @@ function startLiveTick() {
         // OHLC readout (which reads lastCandles, not the series) stay
         // consistent with what's actually drawn.
         lastCandles[lastCandles.length - 1] = { ...lastKnown, high: s.lastHigh, low: s.lastLow, close: s.lastPrice };
+      } else {
+        // BUG FOUND 2026-09-18 (reported: "il ne donne plus les bougies,
+        // mais des trous" - real screenshot showed the chart's right edge
+        // degenerating into a run of flat/near-flat dashes). Root cause:
+        // this branch used to do NOTHING when a genuinely NEW bar appeared
+        // (liveBar.time newer than lastKnown) - candleSeries.update(liveBar)
+        // above DOES push it onto the rendered chart series, but lastCandles
+        // (this array) was never advanced to match. Every following poll
+        // (every 3s) then kept recomputing `lastKnown` from the SAME stale
+        // last element, so `liveBar.time !== Math.floor(lastKnown.time/1000)`
+        // stayed true call after call - re-entering THIS branch and calling
+        // candleSeries.update() again and again with a fresh time each poll,
+        // silently piling extra bars onto the chart's OWN series (confirmed
+        // via Playwright: the rendered series grew from 37 to 61 bars in 95s
+        // while lastCandles.length sat frozen at 37) until the next full
+        // loadChart() refresh (every 60s) wiped and rebuilt the whole series
+        // from truth - masking the growing pile every minute, but not before
+        // it visibly distorted the right edge in between (each freshly-
+        // opened bar starts as a literal doji - open===high===low===close -
+        // before any tick folds in, which lightweight-charts draws as a flat
+        // dash; several of those piling up read exactly as "des trous").
+        // Fix: push the new bar into lastCandles too, so the NEXT poll's
+        // lastKnown correctly becomes THIS bar - keeping the local array (and
+        // therefore every future comparison) in lockstep with what's already
+        // on the chart, instead of diverging further with every tick.
+        lastCandles.push({ time: s.lastCandleTime, open: s.lastOpen, high: s.lastHigh, low: s.lastLow, close: s.lastPrice });
       }
       document.getElementById('last-price').textContent = fmt(s.lastPrice, decimals);
     } catch {
