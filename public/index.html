@@ -116,6 +116,14 @@
   }
   .banner.demo { background: rgba(232,179,57,0.1); color: var(--amber); border: 1px solid rgba(232,179,57,0.35); }
   .banner.live { background: rgba(47,212,128,0.1); color: var(--green); border: 1px solid rgba(47,212,128,0.35); }
+  /* 2026-09-18 (mobile polish): found while testing the changes above, not
+     caused by them - the demo-mode sentence ("MODE DÉMO — données
+     simulées...") is long enough that `white-space: nowrap` forced the
+     whole page into horizontal scroll on a phone (690px banner on a 375px
+     viewport, confirmed via Playwright). The live banner's text is short
+     enough to stay on one line even here, so this only changes behavior
+     when the text is actually too long to fit. */
+  @media (max-width: 640px) { .banner { white-space: normal; } }
   .banner.live::before { animation: pulse-dot 2s ease-in-out infinite; }
   @keyframes pulse-dot {
     0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(47,212,128,0.5); }
@@ -130,6 +138,7 @@
      avant, plutôt qu'une liste à puces noyée dans une carte de stats. ---------- */
   .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse-dot 2s ease-in-out infinite; }
   .positions-table td.pnl-cell, .positions-table th.pnl-cell { text-align: right; }
+  .positions-table { min-width: 720px; }
 
   /* ---------- Ticker (live prices, dense market-strip style) ---------- */
   .ticker {
@@ -196,6 +205,7 @@
     .control-value { color: var(--text); font: 700 14px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .control-value.win { color: var(--green); }
     .control-value.loss { color: var(--red); }
+    .control-value.warn { color: var(--amber); }
     .control-detail { color: var(--faint); font: 10px var(--mono); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     @media (max-width: 900px) { .control-center-grid { grid-template-columns: repeat(3, 1fr); } }
     @media (max-width: 520px) { .control-center-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -231,6 +241,14 @@
     border-radius: var(--radius);
     padding: 12px 14px;
     margin-bottom: 10px;
+    /* 2026-09-18 (mobile polish): .strategy-table has no column collapsing
+       and positions-table alone has 9 columns - without this, a phone
+       viewport either forced every cell to wrap illegibly or overflowed the
+       page itself. overflow-x here scopes the scroll to the card, and
+       positions-table's min-width below (not .strategy-table's, so the
+       narrower 4-6 column tables stay unaffected) is what actually forces
+       the scrollbar to appear instead of the browser just crushing columns. */
+    overflow-x: auto;
   }
   .card h2 {
     font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
@@ -283,6 +301,17 @@
   .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
   .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; }
   .theme-toggle-btn:hover { border-color: var(--panel-border-strong); }
+  /* 2026-09-18 (mobile polish, found alongside the .banner fix above): 4
+     nav links + the theme button never fit a phone width (413px measured
+     content in a 375px viewport) - .topnav had no wrap/scroll handling at
+     all. Scrolls horizontally instead of forcing the whole page to, same
+     pattern as .card above for wide tables; flex-shrink:0 keeps the theme
+     button from being squeezed illegibly by the scroll container. */
+  @media (max-width: 640px) {
+    .topnav { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .topnav a { padding: 8px 10px; flex-shrink: 0; }
+    .theme-toggle-btn { flex-shrink: 0; }
+  }
 
   /* ---------- Multi-account switcher + overview (2026-09, Phase 3 of the
      multi-account rollout - see HANDOFF.md "Multi-compte") - hidden
@@ -495,6 +524,16 @@
   <div class="card" id="open-positions-card">
     <div class="meta" style="margin-bottom:8px;">Positions confirmées par la plateforme — P&amp;L flottant estimé au dernier prix disponible.</div>
     <div id="open-positions-body"><div class="meta">Chargement…</div></div>
+  </div>
+
+  <!-- 2026-09-18 (Esdras: amélioration du dashboard) - le backend renvoyait
+       déjà pendingOrders (utilisé pour l'arrêt d'urgence), mais rien ne
+       l'affichait au repos : impossible de voir d'un coup d'œil qu'un ordre
+       stop/limite est programmé chez le courtier sans déclencher le flatten. -->
+  <div class="card" id="pending-orders-card">
+    <h2>Ordres en attente chez le courtier</h2>
+    <div class="meta" style="margin-bottom:8px;">Ordres stop/limite programmés, pas encore remplis.</div>
+    <div id="pending-orders-body"><div class="meta">Chargement…</div></div>
   </div>
 
   <div class="section-title">État actuel</div>
@@ -748,6 +787,37 @@ function connectionHealth(ageMs) {
   if (ageMs < 10 * 60 * 1000) return { label: `🟡 ralenti (${Math.round(ageMs / 60000)} min)`, cls: '' };
   return { label: `🔴 aucune donnée récente (${Math.round(ageMs / 60000)} min)`, cls: 'loss' };
 }
+// 2026-09-18 (Esdras: amélioration du dashboard) - /healthz gained
+// lastOrderRejection*/unconfirmedOrderStreak specifically because the
+// 2026-09-16..18 incident (three strategy orders came back with
+// brokerOrderId=null, nothing executed) stayed invisible to every other
+// signal on this strip: process up, broker connected, candles arriving.
+// Until now that only reached Esdras through the external ntfy watchdog
+// (10 min poll) - this surfaces the same read directly on the dashboard he
+// already has open. Severity order matches watchdogDecision.js: an explicit
+// broker refusal outranks an order that simply never got confirmed.
+function renderExecutionHealthCell(healthInfo) {
+  let value = '—';
+  let cls = '';
+  let detail = 'en attente des données de santé';
+  if (healthInfo && healthInfo.ok) {
+    if (healthInfo.lastOrderRejectionCode) {
+      value = 'ORDRE REFUSÉ';
+      cls = 'loss';
+      const age = healthInfo.lastOrderRejectionAgeSec;
+      detail = `${healthInfo.lastOrderRejectionCode}${age == null ? '' : ` · il y a ${fmtDuration(age * 1000)}`}`;
+    } else if (healthInfo.unconfirmedOrderStreak > 0) {
+      value = `${healthInfo.unconfirmedOrderStreak} SANS CONFIRMATION`;
+      cls = 'warn';
+      detail = 'ordre(s) jamais confirmé(s) par le courtier';
+    } else {
+      value = 'OK';
+      cls = 'win';
+      detail = 'aucun rejet ni ordre bloqué';
+    }
+  }
+  return `<div class="control-cell"><div class="control-label">Santé d'exécution</div><div class="control-value ${cls}">${value}</div><div class="control-detail">${detail}</div></div>`;
+}
 function renderControlCenter() {
   const el = document.getElementById('control-center-grid');
   const data = controlState.status;
@@ -779,6 +849,7 @@ function renderControlCenter() {
     <div class="control-cell"><div class="control-label">Risque opérationnel</div><div class="control-value ${g.blocked ? 'loss' : 'win'}">${g.blocked ? 'BLOQUÉ' : 'SOUS CONTRÔLE'}</div><div class="control-detail">${g.tradesToday || 0} / ${g.maxTradesPerDay || '—'} trades · ${fmt(data.riskPctPerTrade, 2)}%</div></div>
     <div class="control-cell"><div class="control-label">Positions broker</div><div class="control-value">${positionCount}</div><div class="control-detail">réconciliées réellement</div></div>
     <div class="control-cell"><div class="control-label">Ordres auto confirmés</div><div class="control-value ${filled > 0 ? 'win' : ''}">${filled} remplis</div><div class="control-detail">${unfilled} non rempli · journal courant</div></div>
+    ${renderExecutionHealthCell(healthInfo)}
   `;
 }
 function auditSourceLabel(source) {
@@ -1224,6 +1295,41 @@ function renderOpenPositions(positions) {
   `;
 }
 
+// 2026-09-18: mirrors renderOpenPositions() but for orders that never
+// filled yet. orderType/tradeSide come straight off the broker's own
+// ProtoOAReconcileRes (cTraderDataSource.js's reconcileAccount) and are
+// displayed as-is rather than through a hand-built enum→label table: this
+// project has been burned before by broker fields whose real shape wasn't
+// confirmed against documentation, and a wrong guess here would misreport
+// a real pending order rather than just look plain.
+function renderPendingOrders(pendingOrders) {
+  const el = document.getElementById('pending-orders-body');
+  if (!el) return;
+  if (!pendingOrders || pendingOrders.length === 0) {
+    el.innerHTML = '<div class="meta">Aucun ordre en attente chez le courtier en ce moment.</div>';
+    return;
+  }
+  const rows = pendingOrders.map((o) => {
+    const rawVolume = o.volume != null ? Math.round(o.volume) / 100 : null;
+    return `
+      <tr>
+        <td>${o.symbol || '—'}</td>
+        <td>${o.tradeSide || '—'}</td>
+        <td>${o.orderType || '—'}</td>
+        <td>${rawVolume === null ? '—' : fmtUnits(rawVolume)}</td>
+        <td class="meta">${o.label || '—'}</td>
+        <td class="meta">#${o.orderId ?? '—'}</td>
+      </tr>
+    `;
+  }).join('');
+  el.innerHTML = `
+    <table class="strategy-table">
+      <thead><tr><th>Symbole</th><th>Sens</th><th>Type</th><th>Volume</th><th>Label</th><th>ID ordre</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
 // Fermer une position réelle (2026-09-15, Esdras: "on ne voit pas d'endroit
 // où fermer la position") - un vrai ordre de marché irréversible, donc une
 // confirmation explicite d'abord (même discipline que toute action risquée/
@@ -1253,6 +1359,7 @@ async function closePosition(positionId, volume, symbol) {
 async function refreshAccount() {
   const bodyEl = document.getElementById('account-body');
   const openPositionsEl = document.getElementById('open-positions-body');
+  const pendingOrdersEl = document.getElementById('pending-orders-body');
   try {
     const res = await fetch(acctUrl('/account'));
     const data = await res.json();
@@ -1260,6 +1367,7 @@ async function refreshAccount() {
       controlState.account = null;
       bodyEl.innerHTML = `<div class="meta">${data.reason}</div>`;
       if (openPositionsEl) openPositionsEl.innerHTML = `<div class="meta">${data.reason}</div>`;
+      if (pendingOrdersEl) pendingOrdersEl.innerHTML = `<div class="meta">${data.reason}</div>`;
       renderRiskCommandCenter();
       return;
     }
@@ -1303,6 +1411,7 @@ async function refreshAccount() {
     lastKnownBalance = data.balance;
     controlState.account = data;
     renderOpenPositions(positions);
+    renderPendingOrders(data.pendingOrders || []);
     renderControlCenter();
     renderRiskCommandCenter();
 
@@ -1314,6 +1423,7 @@ async function refreshAccount() {
   } catch (err) {
     bodyEl.innerHTML = `<div class="err">Erreur de chargement du compte: ${err.message}</div>`;
     if (openPositionsEl) openPositionsEl.innerHTML = `<div class="err">Erreur de chargement: ${err.message}</div>`;
+    if (pendingOrdersEl) pendingOrdersEl.innerHTML = `<div class="err">Erreur de chargement: ${err.message}</div>`;
   }
 }
 
