@@ -17,6 +17,11 @@ on:
     - cron: '*/10 0-20 * * 5'     # vendredi, jusqu'à 20h UTC (clôture NY = 21h/22h UTC)
     - cron: '*/10 22-23 * * 0'    # dimanche soir, après la réouverture NY
   workflow_dispatch:              # pour tester à la main
+    inputs:
+      test_alert:
+        description: "Envoyer une alerte de TEST sur le téléphone (ne vérifie pas le bot)"
+        type: boolean
+        default: false
 
 concurrency:
   group: watchdog
@@ -46,6 +51,7 @@ jobs:
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           HEALTH_URL: https://ict-fvg-bot.onrender.com/healthz
+          WATCHDOG_TEST_ALERT: ${{ inputs.test_alert }}
         run: node scripts/runWatchdog.js
 
       - name: Sauvegarder l'état

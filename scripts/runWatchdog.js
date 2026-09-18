@@ -49,6 +49,18 @@ async function push(title, body) {
   if (!res.ok) console.error(`[ntfy] échec du push: HTTP ${res.status}`);
 }
 
+// Test mode: proves the whole push chain - secret, topic, phone - without
+// having to break the bot or wait for a real fault. Needed because the
+// market-hours gate means a healthy weekend run is CORRECTLY silent, so
+// "no alert" can mean "all fine" or "the secret is wrong", and those two
+// must never be indistinguishable. Deliberately skips the health check and
+// touches no state file, so a test can never mask or clear a real fault.
+if (String(process.env.WATCHDOG_TEST_ALERT) === 'true') {
+  console.log('mode TEST - envoi d\'une alerte de vérification, le bot n\'est pas interrogé');
+  await push('Test de la surveillance', "Ceci est un test. Si tu lis ceci sur ton téléphone, les alertes du bot fonctionnent.");
+  process.exit(0);
+}
+
 const { health, fetchError } = await readHealth();
 const current = decideWatchdogAlert({ health, fetchError });
 const previous = readPreviousState();
