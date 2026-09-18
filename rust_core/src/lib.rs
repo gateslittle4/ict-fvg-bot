@@ -205,6 +205,8 @@ mod tests {
     #[test]
     fn lot_size_rounds_down_without_overrisking() {
         let result = calculate_lot_size(20_000.0, 0.5, 19_500.0, 19_480.0, us100()).unwrap();
+        // risk_amount = 20000 * 0.5% = 100; distance_in_points = (19500-19480)/1.0 = 20;
+        // raw_lots = 100 / (20 * 1.0) = 5.0, already aligned to the 0.01 volume_step.
         assert_eq!(result.lots, 5.0);
         assert!(result.actual_risk_amount <= result.risk_amount);
     }
