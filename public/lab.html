@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Apex FVG — Labo</title>
+<script src="/theme.js"></script>
+<script src="/chat-widget.js" defer></script>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#05070a" data-dark="#05070a" data-light="#f6f7f9" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Apex FVG" />
+<style>
+  /* 2026-09-18 - same "Apex FVG" terminal palette as every other page
+     (index.html's :root is the source of truth these all copy). */
+  :root {
+    --bg: #05070a;
+    --bg-inset: #0a0e13;
+    --panel: #0e141b;
+    --panel-border: #202b37;
+    --panel-border-strong: #2d3b49;
+    --text: #eaf0f6;
+    --muted: #8b98a5;
+    --faint: #5c6773;
+    --green: #2fd480;
+    --red: #ff5c5f;
+    --amber: #e8b339;
+    --blue: #4c9eff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --radius: 3px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f9; --bg-inset: #eef0f3; --panel: #ffffff; --panel-border: #dde1e6; --panel-border-strong: #c7cdd4;
+      --text: #101418; --muted: #5b6470; --faint: #8b95a1; --green: #1a9d5c; --red: #d93c3f; --amber: #b3790f;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f7f9; --bg-inset: #eef0f3; --panel: #ffffff; --panel-border: #dde1e6; --panel-border-strong: #c7cdd4;
+    --text: #101418; --muted: #5b6470; --faint: #8b95a1; --green: #1a9d5c; --red: #d93c3f; --amber: #b3790f;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); margin: 0; padding: 16px; max-width: 1000px; }
+  body { margin-left: auto; margin-right: auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+  .topnav { display: flex; align-items: center; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--panel-border); overflow-x: auto; }
+  .topnav a { color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600; padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px; font-family: var(--mono); text-transform: uppercase; flex-shrink: 0; }
+  .topnav a:hover { color: var(--text); }
+  .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; flex-shrink: 0; }
+  .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; overflow-x: auto; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; }
+  .meta { color: var(--muted); font-size: 11.5px; }
+  .err { color: var(--red); font-size: 12px; }
+  .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+  .form-field { display: flex; flex-direction: column; gap: 4px; min-width: 180px; flex: 1 1 180px; }
+  .form-field label { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; font-family: var(--mono); }
+  select, button { font-family: var(--mono); font-size: 12.5px; }
+  select { background: var(--bg-inset); color: var(--text); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 7px 9px; width: 100%; }
+  .run-btn { background: var(--blue); color: #05070a; border: none; border-radius: var(--radius); padding: 9px 16px; font-weight: 700; cursor: pointer; }
+  .run-btn:disabled { opacity: 0.5; cursor: wait; }
+  .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; margin-bottom: 14px; background: var(--panel-border); border: 1px solid var(--panel-border); }
+  .metric-tile { background: var(--bg-inset); padding: 9px 11px; }
+  .metric-tile .metric-label { color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 5px; font-family: var(--mono); }
+  .metric-tile .metric-value { font-family: var(--mono); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .metric-tile .metric-value.win { color: var(--green); }
+  .metric-tile .metric-value.loss { color: var(--red); }
+  .equity-chart { width: 100%; height: 220px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin-bottom: 14px; }
+  .equity-chart .curve-positive { fill: rgba(47,212,128,0.12); }
+  .equity-chart .curve-negative { fill: rgba(255,92,95,0.10); }
+  .equity-chart .curve-grid { stroke: var(--panel-border); stroke-width: 1; stroke-dasharray: 3,4; }
+  .equity-chart .curve-label { fill: var(--muted); font: 10px var(--mono); }
+  .strategy-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+  .strategy-table th { text-align: left; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border-strong); }
+  .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
+  .strategy-table tr:hover td { background: var(--bg-inset); }
+  .win { color: var(--green); }
+  .loss { color: var(--red); }
+</style>
+</head>
+<body>
+  <nav class="topnav">
+    <a href="/">Dashboard</a>
+    <a href="/chart.html">Graphique</a>
+    <a href="/journal.html">Journal</a>
+    <a href="/accounts.html">Comptes</a>
+    <a href="/lab.html" class="active">Labo</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
+  </nav>
+  <h1>Labo de stratégies</h1>
+  <div class="subtitle">Teste directement les mécanismes de recherche déjà codés dans ce projet — sans redéploiement, sans script à faire lancer. Résultats sur données historiques réelles, coûts de spread réels appliqués — pas des chiffres théoriques.</div>
+
+  <div class="card">
+    <div class="form-row">
+      <div class="form-field">
+        <label for="lab-strategy">Stratégie</label>
+        <select id="lab-strategy"></select>
+      </div>
+      <div class="form-field">
+        <label for="lab-symbol">Symbole</label>
+        <select id="lab-symbol"></select>
+      </div>
+      <div class="form-field" style="flex: 0 0 auto; min-width: 0;">
+        <button type="button" class="run-btn" id="lab-run-btn" onclick="runLab()">Lancer le backtest</button>
+      </div>
+    </div>
+    <div class="meta" id="lab-meta-msg">Chargement des stratégies disponibles…</div>
+  </div>
+
+  <div id="lab-results" hidden>
+    <div class="card">
+      <h2>Résultats</h2>
+      <div id="lab-stats"></div>
+      <div id="lab-equity"></div>
+      <div class="meta" id="lab-caveat"></div>
+    </div>
+    <div class="card">
+      <h2>Derniers trades (les 100 les plus récents)</h2>
+      <div id="lab-trades"></div>
+    </div>
+  </div>
+
+<script>
+function fmt(n, d = 2) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  if (n === Infinity) return '∞';
+  return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function fmtTime(ms) {
+  if (!ms) return '—';
+  return new Date(ms).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+// Identical to index.html/journal.html's own copy (see their shared header
+// comment on why this small fragment is duplicated rather than shared).
+function renderEquityCurve(equityCurve) {
+  if (!equityCurve || equityCurve.length < 2) {
+    return '<div class="meta">Pas assez de trades pour tracer une courbe.</div>';
+  }
+  const W = 900, H = 220, PAD_L = 52, PAD_R = 18, PAD_T = 18, PAD_B = 24;
+  const values = equityCurve.map((p) => p.cumulativeR);
+  const minR = Math.min(0, ...values), maxR = Math.max(0, ...values);
+  const range = (maxR - minR) || 1;
+  const y = (v) => PAD_T + (1 - (v - minR) / range) * (H - PAD_T - PAD_B);
+  const plotW = W - PAD_L - PAD_R;
+  const x = (i) => PAD_L + (equityCurve.length === 1 ? 0 : (i / (equityCurve.length - 1)) * plotW);
+
+  const finalR = values[values.length - 1];
+  const color = finalR >= 0 ? 'var(--green)' : 'var(--red)';
+  const points = values.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  const zeroY = y(0);
+  const lastX = x(values.length - 1);
+  const positiveArea = `${PAD_L},${zeroY} ${points} ${lastX},${zeroY}`;
+  const negativePoints = values.map((v, i) => `${x(i)},${y(Math.min(v, 0))}`).join(' ');
+  const negativeArea = `${PAD_L},${zeroY} ${negativePoints} ${lastX},${zeroY}`;
+  const gridValues = [maxR, (maxR + minR) / 2, minR];
+  const startTime = equityCurve[0]?.time;
+  const endTime = equityCurve[equityCurve.length - 1]?.time;
+
+  return `
+    <svg class="equity-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Courbe de R cumulés">
+      ${gridValues.map((value) => `<line class="curve-grid" x1="${PAD_L}" y1="${y(value)}" x2="${W - PAD_R}" y2="${y(value)}" />`).join('')}
+      <polygon class="curve-positive" points="${positiveArea}" />
+      <polygon class="curve-negative" points="${negativeArea}" />
+      <line x1="${PAD_L}" y1="${zeroY}" x2="${W - PAD_R}" y2="${zeroY}" stroke="var(--panel-border-strong)" stroke-width="1.2" />
+      ${gridValues.map((value) => `<text class="curve-label" x="4" y="${y(value) + 4}">${value >= 0 ? '+' : ''}${fmt(value, 1)}R</text>`).join('')}
+      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke" />
+      <text class="curve-label" x="${PAD_L}" y="${H - 6}">${fmtTime(startTime)}</text>
+      <text class="curve-label" x="${Math.max(PAD_L + 4, lastX - 70)}" y="${H - 6}">${fmtTime(endTime)}</text>
+    </svg>
+  `;
+}
+
+async function loadMeta() {
+  const msgEl = document.getElementById('lab-meta-msg');
+  try {
+    const res = await fetch('/api/lab/meta');
+    const data = await res.json();
+    const strategyEl = document.getElementById('lab-strategy');
+    const symbolEl = document.getElementById('lab-symbol');
+    strategyEl.innerHTML = data.strategies.map((s) => `<option value="${s.id}">${s.label}</option>`).join('');
+    symbolEl.innerHTML = data.symbols.map((s) => `<option value="${s}">${s}</option>`).join('');
+    // US100 first-choice default when available - the account this bot
+    // actually trades today, so it's the most useful default comparison point.
+    if (data.symbols.includes('US100')) symbolEl.value = 'US100';
+    msgEl.textContent = `${data.strategies.length} stratégies disponibles sur ${data.symbols.length} symboles (données historiques réelles, plusieurs années selon le symbole).`;
+  } catch (err) {
+    msgEl.innerHTML = `<span class="err">Erreur de chargement: ${err.message}</span>`;
+  }
+}
+
+async function runLab() {
+  const btn = document.getElementById('lab-run-btn');
+  const strategyId = document.getElementById('lab-strategy').value;
+  const symbol = document.getElementById('lab-symbol').value;
+  const resultsEl = document.getElementById('lab-results');
+  const statsEl = document.getElementById('lab-stats');
+  const equityEl = document.getElementById('lab-equity');
+  const caveatEl = document.getElementById('lab-caveat');
+  const tradesEl = document.getElementById('lab-trades');
+  btn.disabled = true;
+  btn.textContent = 'Calcul en cours…';
+  try {
+    const res = await fetch('/api/lab/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategyId, symbol }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    resultsEl.hidden = false;
+    const s = data.summary;
+    const netWin = s.finalEquityR >= 0;
+    statsEl.innerHTML = `
+      <div class="metric-tiles">
+        <div class="metric-tile"><div class="metric-label">Trades</div><div class="metric-value">${s.totalSignals}</div></div>
+        <div class="metric-tile"><div class="metric-label">Taux de réussite</div><div class="metric-value">${s.winRate === null ? '—' : fmt(s.winRate * 100, 0) + '%'}</div></div>
+        <div class="metric-tile"><div class="metric-label">Profit factor</div><div class="metric-value">${fmt(s.profitFactor)}</div></div>
+        <div class="metric-tile"><div class="metric-label">Espérance</div><div class="metric-value ${s.expectancyR >= 0 ? 'win' : 'loss'}">${s.expectancyR >= 0 ? '+' : ''}${fmt(s.expectancyR)}R</div></div>
+        <div class="metric-tile"><div class="metric-label">Drawdown max</div><div class="metric-value loss">-${fmt(s.maxDrawdownR)}R</div></div>
+        <div class="metric-tile"><div class="metric-label">Total en R</div><div class="metric-value ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(s.finalEquityR)}R</div></div>
+      </div>
+    `;
+    equityEl.innerHTML = renderEquityCurve(data.equityCurve);
+    caveatEl.textContent = `${data.candleCount.toLocaleString('fr-FR')} bougies M15 analysées · ${data.droppedAsNonViable} signal(aux) écarté(s) comme non-tradeable (stop trop proche du spread) · coûts de spread réels déjà déduits du R affiché. Recherche seulement — rien ici n'est branché sur le trading réel.`;
+    if (data.recentTrades.length === 0) {
+      tradesEl.innerHTML = '<div class="meta">Aucun trade généré par cette combinaison stratégie/symbole.</div>';
+    } else {
+      tradesEl.innerHTML = `
+        <table class="strategy-table">
+          <thead><tr><th>Entrée</th><th>Sens</th><th>Résultat</th><th>R</th></tr></thead>
+          <tbody>${data.recentTrades.map((t) => `
+            <tr>
+              <td>${fmtTime(t.entryTime)}</td>
+              <td>${t.direction === 'bullish' ? '▲ Achat' : t.direction === 'bearish' ? '▼ Vente' : (t.direction || '—')}</td>
+              <td class="${t.outcome === 'win' ? 'win' : t.outcome === 'loss' ? 'loss' : ''}">${t.outcome || '—'}</td>
+              <td class="${t.rMultiple >= 0 ? 'win' : 'loss'}">${t.rMultiple >= 0 ? '+' : ''}${fmt(t.rMultiple)}</td>
+            </tr>
+          `).join('')}</tbody>
+        </table>
+      `;
+    }
+  } catch (err) {
+    resultsEl.hidden = false;
+    statsEl.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+    equityEl.innerHTML = '';
+    caveatEl.textContent = '';
+    tradesEl.innerHTML = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Lancer le backtest';
+  }
+}
+
+loadMeta();
+</script>
+</body>
+</html>

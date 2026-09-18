@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry, isAccountDisabled } from './config.js';
 import { buildEffectiveConfig, getDefaultAccount, getAccount, listAccounts, registerAccount } from './accountRegistry.js';
@@ -21,6 +22,9 @@ import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
 import { getPropFirmProgram } from './propFirms/index.js';
 import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus } from './chatAssistant.js';
+import { loadCandlesFromCsv } from './backtest/csvLoader.js';
+import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
+import { runLabBacktest } from './backtest/labRunner.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -197,6 +201,68 @@ app.post('/api/admin/restart', (req, res) => {
   res.json({ ok: true, note: 'Redémarrage en cours - le bot sera de retour dans ~10-20 secondes.' });
   console.log('[admin] restart requested via /api/admin/restart');
   setTimeout(() => process.exit(0), 250); // let the response above actually flush first
+});
+
+// "Labo de stratégies" (2026-09-18, Esdras: "tu as le feu vert pour imaginer
+// des fonctionnalités" after a round of dashboard polish) - self-serve
+// access to the ~20 already-built research-only backtest engines in
+// src/backtest/ (labRegistry.js) that were previously only reachable by
+// asking a Claude session to write and run a one-off scripts/run*.js.
+// Account-agnostic on purpose (pure historical-CSV research, no broker
+// connection or account state involved) - top-level routes like
+// /api/admin/accounts above, not inside createAccountRouter().
+const LAB_DATA_DIR = path.join(__dirname, '..', 'data', 'backtest-input');
+const labCandlesCache = new Map(); // symbol -> candles[] - these CSVs are large and static for the process lifetime, no reason to re-parse per request
+function loadLabCandles(symbol) {
+  if (labCandlesCache.has(symbol)) return labCandlesCache.get(symbol);
+  const filePath = path.join(LAB_DATA_DIR, `${symbol}.csv`);
+  const { candles } = loadCandlesFromCsv(filePath);
+  labCandlesCache.set(symbol, candles);
+  return candles;
+}
+function listLabSymbols() {
+  return fs
+    .readdirSync(LAB_DATA_DIR)
+    .filter((name) => name.endsWith('.csv') && !/vix|_M5/i.test(name))
+    .map((name) => name.replace(/\.csv$/, ''))
+    .sort();
+}
+
+app.get('/api/lab/meta', (req, res) => {
+  try {
+    res.json({ strategies: listLabStrategies(), symbols: listLabSymbols() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/lab/run', (req, res) => {
+  const { strategyId, symbol } = req.body || {};
+  if (!strategyId || !LAB_STRATEGIES[strategyId]) {
+    return res.status(400).json({ error: `Stratégie inconnue: "${strategyId}"` });
+  }
+  if (!symbol || !listLabSymbols().includes(symbol)) {
+    return res.status(400).json({ error: `Symbole inconnu ou sans données: "${symbol}"` });
+  }
+  try {
+    const candles = loadLabCandles(symbol);
+    const result = runLabBacktest(strategyId, candles, symbol);
+    res.json({
+      strategyId,
+      symbol,
+      candleCount: candles.length,
+      summary: result.summary,
+      equityCurve: result.equityCurve,
+      droppedAsNonViable: result.droppedAsNonViable,
+      // Full equityCurve already carries every trade's outcome for the
+      // chart - the table only ever needs to show the most recent handful,
+      // so the response stays small even for a strategy that fires
+      // thousands of times (MACD Trend on 7 years of US100 M15: ~25k).
+      recentTrades: result.trades.slice(-100).reverse(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Shared by GET .../status (polled fallback / first paint) and the SSE
