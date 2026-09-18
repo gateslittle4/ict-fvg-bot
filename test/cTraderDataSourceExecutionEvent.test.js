@@ -53,7 +53,7 @@ function createFakeAccount() {
 
 function makeDataSource(account) {
   const ds = new CTraderDataSource({ account, brokerConfig: {}, symbols: [] });
-  ds.symbolNameById.set(213, 'US100');
+  ds.symbolNameById.set('213', 'US100'); // string key - the real contract (see the map's own set() convention, 2026-09-18 fix)
   return ds;
 }
 
@@ -84,6 +84,49 @@ test('_handleExecutionEvent: a real position CLOSE updates balance/guardrail, lo
   assert.equal(!ds.openPositionInfoByPositionId.has('41661214'), true, 'a closed position must stop being tracked as open');
   assert.equal(account._clearBelievedPositionCalls.length, 1);
   assert.deepEqual(account._clearBelievedPositionCalls[0], { symbol: 'US100', signalId: 'silverbullet-US100-123' });
+});
+
+// BUG FOUND 2026-09-18 (execution-path audit continued, same class as n5/n6
+// but on a THIRD id dimension - symbolId, not orderId/positionId):
+// symbolNameById is populated once at boot from ProtoOASymbolsListReq
+// (_loadSymbols) but looked up here with event.deal.symbolId, which comes
+// from a DIFFERENT message, ProtoOAExecutionEvent - the same cross-message
+// serialization risk this session has now confirmed 3 separate times. A
+// mismatch here is WORSE than n5/n6: recordTrade's `symbol` argument would
+// silently be undefined, and GuardrailEngine.recordTrade's own `if (symbol)`
+// guard means the per-symbol cooldown-after-loss is simply never armed for
+// the symbol that just lost - the bot could immediately re-enter the same
+// symbol right after a real loss, exactly the protection the guardrail
+// exists to provide. tradesToday/dailyLossPct are unaffected either way
+// (those are account-wide, not per-symbol - see GuardrailEngine's own
+// header), so this fails SILENTLY with no visible dashboard symptom.
+test('_handleExecutionEvent: a real LOSS on symbolId matched by numeric value (not strict type) still arms that symbol\'s cooldown', () => {
+  const account = createFakeAccount();
+  const ds = makeDataSource(account);
+  // makeDataSource() seeds symbolNameById with a STRING key ('213' - the
+  // real contract) - this test's event deliberately uses a NUMBER symbolId
+  // to prove the lookup survives the type difference.
+  ds.openPositionInfoByPositionId.set('41661999', {
+    symbolName: 'US100',
+    source: 'silverbullet',
+    signalId: 'silverbullet-US100-999',
+    direction: 'bullish',
+    entryPrice: 29440.7,
+    riskAmount: 100,
+    entryTime: Date.now() - 60000,
+  });
+
+  ds._handleExecutionEvent({
+    executionType: 'ORDER_FILLED',
+    deal: {
+      positionId: '41661999',
+      symbolId: 213, // NUMBER - deliberately the opposite type from symbolNameById's key ('213', a string)
+      closePositionDetail: { grossProfit: '-200', balance: '980000', moneyDigits: 2 },
+    },
+  });
+
+  assert.ok(account.guardrail.lastTradeBySymbol.has('US100'), 'the loss must arm US100\'s own cooldown, not silently skip it because symbol resolved to undefined');
+  assert.equal(account.guardrail.lastTradeBySymbol.get('US100').isLoss, true);
 });
 
 test('_handleExecutionEvent: a pyramid add-on order FILLING (opening, not closing) is tracked, not confused with a close', () => {

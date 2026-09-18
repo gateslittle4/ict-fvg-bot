@@ -4872,3 +4872,28 @@ Poursuite du même audit. Après avoir fermé la classe de bug sur `pendingEntry
 **Preuve que le diff final attrape la régression** : `git stash` des seuls fichiers source (`dealPairing.js` + `cTraderDataSource.js`, tests gardés) → 2 tests échouent → `git stash pop` → tout repasse au vert.
 
 `npm test` : 680/680 (679 + 1 nouveau). **Fichiers** : `src/dataSources/dealPairing.js`, `src/dataSources/cTraderDataSource.js`, `test/dealPairing.test.js`.
+
+## Bug n°7 : même trou string/number sur symbolId, cette fois avec un impact réel sur le garde-fou (cooldown après perte jamais armé) — 2026-09-18 (suite)
+
+Poursuite du même audit, troisième dimension d'id après orderId (n°5) et positionId (n°4). `symbolNameById` (peuplée une fois au boot depuis `ProtoOASymbolsListReq`) est cherchée à **4 endroits** avec un `symbolId` venant chaque fois d'un AUTRE message courtier, sans normalisation nulle part (ni côté écriture, ni côté lecture) :
+- `_loadClosedDeals` (ligne ~660) : `deal.symbolId` vient de `ProtoOADealListReq`.
+- `getTradeHistory` (ligne ~741) : `trade.symbolId` vient de `dealPairing.js`, lui-même sourcé de `ProtoOADealListReq`.
+- `_handleExecutionEvent` (ligne ~2201) : `event.deal.symbolId` vient de `ProtoOAExecutionEvent`.
+- `accountReconciliation.js`'s `reconcileAccount()` (4e site, trouvé en élargissant la recherche à tout `src/` avec un `grep -rn "symbolNameById"`) : `pos.tradeData?.symbolId` vient de `ProtoOAReconcileReq`.
+
+**Pourquoi celui-ci est PLUS grave que le n°5/n°6** : les deux premiers sites (`_loadClosedDeals`, `_handleExecutionEvent`) alimentent `store.guardrail.recordTrade({ ..., symbol })`. Or `GuardrailEngine.recordTrade()` a sa propre garde `if (symbol) this.lastTradeBySymbol.set(symbol, ...)` — si `symbol` résout à `undefined` (mismatch de type), cette ligne est silencieusement SAUTÉE. Conséquence concrète : **le cooldown de 30 minutes après une perte réelle ne s'arme jamais pour le symbole concerné** — le bot pourrait ré-entrer immédiatement sur le même symbole juste après une vraie perte, exactement la protection que le garde-fou existe pour fournir. Aucun symptôme visible sur le dashboard (`tradesToday`/`dailyLossPct` restent corrects, car ceux-là sont compte-global, pas par-symbole — voir l'en-tête de `GuardrailEngine`), donc ce bug, s'il se produit, est totalement silencieux.
+
+Le 4e site (`accountReconciliation.js`) est moins critique côté argent mais dégrade directement le tableau de réconciliation `/api/account` : une vraie position pourrait apparaître comme `symbolId:213` inconnu au lieu de `US100`, cassant le statut "match"/"real-only"/"believed-only" qu'Esdras utilise pour vérifier que le bot voit bien ce qui se passe réellement sur son compte.
+
+**Preuve avant correctif** : 2 nouveaux tests écrits d'abord (`cTraderDataSourceExecutionEvent.test.js` pour le garde-fou, `accountReconciliation.test.js` pour la réconciliation) — confirmés en échec contre le code non corrigé.
+
+**Corrigé** (même discipline que n°5/n°6, `String(...)` partout) :
+- `cTraderDataSource.js` : `symbolNameById` construite avec `String(sym.symbolId)` ; les 3 lectures (`_loadClosedDeals`, `getTradeHistory`, `_handleExecutionEvent`) passées en `String(...)`.
+- `accountReconciliation.js` : lecture passée en `String(pos.tradeData?.symbolId)`, JSDoc mis à jour (`Map<string,string>`).
+- Fixtures de tests préexistantes mises à jour pour respecter le nouveau contrat (clé string) : la constante partagée `symbolNameById` dans `accountReconciliation.test.js`, et le seed dans `makeDataSource()` de `cTraderDataSourceExecutionEvent.test.js`.
+
+**Preuve que le diff final attrape la régression** : `git stash` des deux fichiers source (`cTraderDataSource.js` + `accountReconciliation.js`, tests gardés) → 4 tests échouent → `git stash pop` → tout repasse au vert.
+
+`npm test` : 682/682 (680 + 2 nouveaux). **Fichiers** : `src/dataSources/cTraderDataSource.js`, `src/dataSources/accountReconciliation.js`, `test/cTraderDataSourceExecutionEvent.test.js`, `test/accountReconciliation.test.js`.
+
+**Bilan de la série n°4-7 (même audit continu)** : quatre dimensions d'id (positionId, orderId ×2 maps, symbolId ×4 sites) partageaient toutes le même trou — aucune normalisation de type sur un champ int64 que ce courtier sérialise de façon incohérente selon le message d'origine. Vérifié par `grep -rn` sur tout `src/` qu'il ne reste plus de comparaison `===`/lookup de Map non protégée sur positionId/orderId/symbolId dans le code live. La classe de bug semble maintenant fermée partout où elle a été cherchée.

@@ -484,7 +484,12 @@ export class CTraderDataSource {
     });
     for (const sym of res.symbol || []) {
       this.symbolIdByName.set(sym.symbolName, sym.symbolId);
-      this.symbolNameById.set(sym.symbolId, sym.symbolName);
+      // String(...) key (2026-09-18, execution-path audit continued, same
+      // class as the orderId map fixes above): symbolNameById is looked up
+      // with a symbolId coming from OTHER broker messages (ProtoOADealListReq,
+      // ProtoOAExecutionEvent, ProtoOAReconcileReq) - see the 3 read sites'
+      // own comments below and accountReconciliation.js's reconcileAccount().
+      this.symbolNameById.set(String(sym.symbolId), sym.symbolName);
     }
   }
 
@@ -657,7 +662,13 @@ export class CTraderDataSource {
         // resolved (boot ordering) - undefined symbol just means this
         // specific replayed trade doesn't seed any symbol's cooldown,
         // tradesToday/dailyLossPct are unaffected either way.
-        store.guardrail.recordTrade({ pnl, time: Number(deal.executionTimestamp), symbol: this.symbolNameById.get(deal.symbolId) });
+        // String(...) (2026-09-18): deal.symbolId comes from ProtoOADealListReq,
+        // a different message than the one that populated symbolNameById
+        // (ProtoOASymbolsListReq) - a raw mismatch would silently pass
+        // symbol:undefined here, and GuardrailEngine.recordTrade's own
+        // `if (symbol)` guard means the per-symbol cooldown-after-loss is
+        // simply never armed - no visible symptom, just a defeated safety net.
+        store.guardrail.recordTrade({ pnl, time: Number(deal.executionTimestamp), symbol: this.symbolNameById.get(String(deal.symbolId)) });
         recorded++;
       }
     }
@@ -738,7 +749,7 @@ export class CTraderDataSource {
 
     const enriched = [];
     for (const trade of trades) {
-      const symbolName = this.symbolNameById.get(trade.symbolId) || `#${trade.symbolId}`;
+      const symbolName = this.symbolNameById.get(String(trade.symbolId)) || `#${trade.symbolId}`; // String(...) - trade.symbolId originates from ProtoOADealListReq via dealPairing.js, a different message than symbolNameById's own ProtoOASymbolsListReq (2026-09-18)
       // 2026-09-14, Esdras (screenshot): the trade-history mini-chart looked
       // wrong for BTCUSD - was already flagged as a known, unfixed gap when
       // per-symbol timeframes shipped ("getTradeHistory()'s chart-candle
@@ -2198,7 +2209,11 @@ export class CTraderDataSource {
         event.deal.closePositionDetail.moneyDigits
       );
       store.setBalance(balanceAfter !== null ? balanceAfter : store.balance + pnl);
-      store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance, symbol: this.symbolNameById.get(event.deal.symbolId) });
+      // String(...) (2026-09-18) - same reasoning as _loadClosedDeals' own
+      // recordTrade call above: event.deal.symbolId comes from
+      // ProtoOAExecutionEvent, a different message than symbolNameById's
+      // ProtoOASymbolsListReq origin.
+      store.guardrail.recordTrade({ pnl, time: Date.now(), balanceAfter: store.balance, symbol: this.symbolNameById.get(String(event.deal.symbolId)) });
 
       // 2026-09-14 (Esdras: "corrige pour voir le vrai P&L du courtier"):
       // logs the REAL outcome/pnl to the durable Supabase journal, using

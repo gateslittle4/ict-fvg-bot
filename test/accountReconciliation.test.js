@@ -80,7 +80,12 @@ test('enrichRealPosition: no current price known yet -> floating P&L is null, no
   assert.equal(enriched.currentPrice, null);
 });
 
-const symbolNameById = new Map([[100, 'US100'], [200, 'XAUUSD']]);
+// String keys - the real contract (see reconcileAccount's own JSDoc and
+// cTraderDataSource.js's _loadSymbols, which always builds this map that
+// way). realPosition()'s tradeData.symbolId stays a NUMBER throughout this
+// file's fixtures - reconcileAccount's own String(...) on the lookup is what
+// makes the two sides agree regardless.
+const symbolNameById = new Map([['100', 'US100'], ['200', 'XAUUSD']]);
 
 test('reconcileAccount: sums margin and floating P&L across multiple real open positions', () => {
   const positions = [
@@ -123,6 +128,31 @@ test('reconcileAccount: reconciliation flags "match" when a real position exists
     believedOpenBySymbol: { US100: true },
   });
   const us100 = result.reconciliation.find((r) => r.symbol === 'US100');
+  assert.equal(us100.status, 'match');
+});
+
+// BUG FOUND 2026-09-18 (execution-path audit continued, 4th confirmed site
+// of the same class - see cTraderDataSource.js's symbolNameById fix and
+// dealPairing.js's orderLabelsById fix for the other three): symbolNameById
+// is built from ProtoOASymbolsListReq, but a real position's tradeData.symbolId
+// comes from ProtoOAReconcileReq - a different message. This broker is
+// confirmed to sometimes serialize the same conceptual int64 field
+// differently depending on which message it came from. A mismatch here
+// would silently mislabel a real, matching position as "symbolId:100" -
+// which can NEVER line up with believedOpenBySymbol (keyed by the real
+// symbol name), so a genuine match would misreport as believed-only AND
+// real-only on two different, unmatched rows instead of one correct "match".
+test('reconcileAccount: still reconciles as "match" when the real position\'s symbolId is a STRING against a numeric-looking map key', () => {
+  const positions = [realPosition({ tradeData: { symbolId: '100', volume: 10000, tradeSide: 'BUY', openTimestamp: 1000 } })];
+  const result = reconcileAccount({
+    realPositions: positions,
+    symbolNameById,
+    currentPriceBySymbol: { US100: 20010 },
+    believedOpenBySymbol: { US100: true },
+  });
+  assert.equal(result.reconciliation.length, 1, 'must resolve to the ONE real symbol, not a second unmatched "symbolId:100" row');
+  const us100 = result.reconciliation.find((r) => r.symbol === 'US100');
+  assert.ok(us100, 'the real position must resolve to the real symbol name');
   assert.equal(us100.status, 'match');
 });
 

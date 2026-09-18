@@ -100,7 +100,10 @@ export function enrichRealPosition(position, currentPrice) {
 
 /**
  * @param {object[]} realPositions - raw ProtoOAReconcileRes.position array (OPEN ones only are considered)
- * @param {Map<number,string>} symbolNameById
+ * @param {Map<string,string>} symbolNameById - String(symbolId) -> symbol name.
+ *   Keys MUST be String(symbolId) - see the lookup below for why a raw
+ *   (unconverted) key silently breaks this on a broker that serializes the
+ *   same conceptual int64 field differently across messages.
  * @param {Record<string,number>} currentPriceBySymbol
  * @param {Record<string,boolean>} believedOpenBySymbol - symbol -> LiveStrategyEngine.getOpenPosition(symbol) !== null
  * @returns {{positions: object[], marginUsedReal: number, floatingPnlEstimate: number, floatingPnlIsPartial: boolean, reconciliation: object[]}}
@@ -117,7 +120,17 @@ export function reconcileAccount({ realPositions, symbolNameById, currentPriceBy
   let floatingPnlIsPartial = false; // true if ANY open position's P&L couldn't be estimated (no current price known yet)
 
   for (const pos of openPositions) {
-    const symbol = symbolNameById.get(pos.tradeData?.symbolId) || `symbolId:${pos.tradeData?.symbolId}`;
+    // BUG FOUND 2026-09-18 (execution-path audit continued, 4th confirmed
+    // site of this exact class - see cTraderDataSource.js's symbolNameById
+    // fix and dealPairing.js's orderLabelsById fix for the other three):
+    // symbolNameById is built once at boot from ProtoOASymbolsListReq, but
+    // pos.tradeData?.symbolId comes from a DIFFERENT message,
+    // ProtoOAReconcileReq - String(...) here, matching the map's own
+    // String(...) keys at construction, so a mismatch never silently
+    // degrades a real position into a "symbolId:213"-labeled unknown that
+    // can't line up with the bot's own believedOpenBySymbol (keyed by the
+    // real symbol name).
+    const symbol = symbolNameById.get(String(pos.tradeData?.symbolId)) || `symbolId:${pos.tradeData?.symbolId}`;
     const currentPrice = currentPriceBySymbol[symbol];
     const enrichedPos = enrichRealPosition(pos, currentPrice);
     enriched.push({ ...enrichedPos, symbol });
