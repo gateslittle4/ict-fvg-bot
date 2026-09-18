@@ -16,7 +16,11 @@ import { Worker } from 'node:worker_threads';
 
 const WORKER_URL = new URL('./labWorker.js', import.meta.url);
 const WORKER_HEAP_MB = 160; // largest single dataset (~350k candles) measured ~30 MB of heap once parsed; the rest is transient parse garbage that a low ceiling forces V8 to collect promptly instead of letting RSS balloon toward the 512 MB container limit
-const DEFAULT_TIMEOUT_MS = 180_000;
+// Measured 2026-09-18: the same all-strategies screen takes 8.6 s locally and 65 s on
+// Render's free instance (~7.6x slower - a fraction of a CPU). The biggest dataset
+// (US100) would then need ~150 s, so the original 180 s was one slow day from
+// killing a legitimate job.
+const DEFAULT_TIMEOUT_MS = 420_000;
 
 let worker = null;
 let nextId = 1;

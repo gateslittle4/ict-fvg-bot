@@ -5676,7 +5676,7 @@ en production pouvait faire tuer le bot (positions ouvertes) ou affamer ses
 heartbeats. Corrigé (`59d91f1`) : tout calcul Labo tourne dans un **worker
 thread** (`labClient.js`/`labWorker.js`), un seul jeu de données en mémoire à
 la fois, plafond de tas 160 Mo propre au thread (s'il explose, seul le thread
-meurt), délai de 180 s. Mesuré sur le vrai serveur : `/healthz` ≤ 92 ms
+meurt), délai de 420 s (relevé de 180 s après mesure en production : le même calcul de 8,6 s en local prend **65 s** sur l'instance gratuite Render, ~7,6× plus lent ; le comparateur sur US100 approcherait 150 s). Mesuré sur le vrai serveur : `/healthz` ≤ 92 ms
 pendant un calcul, pic RSS 250–302 Mo. Métriques Render : bot au repos
 ~100–118 Mo, limite 536 870 900 octets.
 **Leçon** : mesurer mémoire et blocage d'une fonctionnalité *avant* de la dire

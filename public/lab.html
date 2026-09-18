@@ -509,7 +509,7 @@ async function runScreen() {
   const tableEl = document.getElementById('lab-screen-table');
   document.getElementById('lab-screen-strategy-name').textContent = strategyLabel;
   btn.disabled = true;
-  btn.textContent = 'Comparaison en cours (12 symboles)…';
+  btn.textContent = 'Comparaison en cours… (jusqu\'à ~1 min sur le serveur)';
   try {
     const res = await fetch('/api/lab/screen', {
       method: 'POST',
@@ -556,7 +556,7 @@ async function runStrategyScreen() {
   const symbolOption = document.getElementById('lab-symbol').selectedOptions[0];
   document.getElementById('lab-screen-strat-symbol-name').textContent = symbolOption ? symbolOption.textContent : symbol;
   btn.disabled = true;
-  btn.textContent = 'Comparaison en cours (21 stratégies)…';
+  btn.textContent = 'Comparaison en cours… (jusqu\'à ~2 min sur le serveur)';
   try {
     const res = await fetch('/api/lab/screen-strategies', {
       method: 'POST',
