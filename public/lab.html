@@ -111,6 +111,9 @@
       <div class="form-field" style="flex: 0 0 auto; min-width: 0;">
         <button type="button" class="run-btn" id="lab-screen-btn" onclick="runScreen()" style="background: var(--panel-border-strong); color: var(--text);">Comparer sur les 12 symboles</button>
       </div>
+      <div class="form-field" style="flex: 0 0 auto; min-width: 0;">
+        <button type="button" class="run-btn" id="lab-screen-strat-btn" onclick="runStrategyScreen()" style="background: var(--panel-border-strong); color: var(--text);">Comparer les 21 stratégies sur ce symbole</button>
+      </div>
     </div>
     <div class="meta" id="lab-meta-msg">Chargement des stratégies disponibles…</div>
   </div>
@@ -120,6 +123,14 @@
       <h2>Comparaison par symbole — <span id="lab-screen-strategy-name"></span></h2>
       <div class="meta" style="margin-bottom:8px;">Trié par espérance (R moyen par trade) décroissante — le même filtre de coût de spread que le backtest individuel est appliqué à chaque symbole.</div>
       <div id="lab-screen-table"></div>
+    </div>
+  </div>
+
+  <div id="lab-screen-strat-results" hidden>
+    <div class="card">
+      <h2>Comparaison par stratégie — <span id="lab-screen-strat-symbol-name"></span></h2>
+      <div class="meta" style="margin-bottom:8px;">Les 21 stratégies du labo, triées par espérance décroissante sur ce symbole — pour répondre à "qu'est-ce qui vaut la peine d'être exploré ici ?".</div>
+      <div id="lab-screen-strat-table"></div>
     </div>
   </div>
 
@@ -312,6 +323,52 @@ async function runScreen() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Comparer sur les 12 symboles';
+  }
+}
+
+async function runStrategyScreen() {
+  const btn = document.getElementById('lab-screen-strat-btn');
+  const symbol = document.getElementById('lab-symbol').value;
+  const resultsEl = document.getElementById('lab-screen-strat-results');
+  const tableEl = document.getElementById('lab-screen-strat-table');
+  document.getElementById('lab-screen-strat-symbol-name').textContent = symbol;
+  btn.disabled = true;
+  btn.textContent = 'Comparaison en cours (21 stratégies)…';
+  try {
+    const res = await fetch('/api/lab/screen-strategies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    resultsEl.hidden = false;
+    const rows = data.results.map((r) => {
+      if (!r.ok) return `<tr><td>${r.label}</td><td colspan="5" class="err">${r.error}</td></tr>`;
+      const netWin = r.finalEquityR >= 0;
+      return `
+        <tr>
+          <td>${r.label}</td>
+          <td>${r.totalSignals}</td>
+          <td>${r.winRate === null ? '—' : fmt(r.winRate * 100, 0) + '%'}</td>
+          <td class="${r.expectancyR >= 0 ? 'win' : 'loss'}">${r.expectancyR === null ? '—' : (r.expectancyR >= 0 ? '+' : '') + fmt(r.expectancyR)}R</td>
+          <td class="${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(r.finalEquityR)}R</td>
+          <td>${fmt(r.profitFactor)}</td>
+        </tr>
+      `;
+    }).join('');
+    tableEl.innerHTML = `
+      <table class="strategy-table">
+        <thead><tr><th>Stratégie</th><th>Trades</th><th>Taux</th><th>Espérance</th><th>Total R</th><th>Profit factor</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (err) {
+    resultsEl.hidden = false;
+    tableEl.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Comparer les 21 stratégies sur ce symbole';
   }
 }
 

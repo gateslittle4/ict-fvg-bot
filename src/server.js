@@ -266,6 +266,32 @@ app.post('/api/lab/screen', (req, res) => {
   }
 });
 
+// Mirror of /api/lab/screen above, other axis: instead of "which symbol
+// works for this strategy", "which of the ~20 strategies works best on
+// this ONE symbol" - the question someone eyeing a specific instrument
+// (e.g. "what should I even try on XAUUSD?") actually has.
+app.post('/api/lab/screen-strategies', (req, res) => {
+  const { symbol } = req.body || {};
+  if (!symbol || !listLabSymbols().includes(symbol)) {
+    return res.status(400).json({ error: `Symbole inconnu ou sans données: "${symbol}"` });
+  }
+  try {
+    const candles = loadLabCandles(symbol);
+    const results = listLabStrategies().map(({ id, label }) => {
+      try {
+        const { summary, droppedAsNonViable } = runLabBacktest(id, candles, symbol);
+        return { strategyId: id, label, ok: true, droppedAsNonViable, ...summary };
+      } catch (err) {
+        return { strategyId: id, label, ok: false, error: err.message };
+      }
+    });
+    results.sort((a, b) => (b.expectancyR ?? -Infinity) - (a.expectancyR ?? -Infinity));
+    res.json({ symbol, candleCount: candles.length, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/lab/run', (req, res) => {
   const { strategyId, symbol } = req.body || {};
   if (!strategyId || !LAB_STRATEGIES[strategyId]) {
