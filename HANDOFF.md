@@ -5582,3 +5582,159 @@ causes s'applique.
 `src/dataSources/cTraderDataSource.js`, `src/liveStrategyEngine.js`,
 `test/accountReconciliation.test.js`, `test/liveStrategyEngine.test.js`,
 `test/cTraderDataSourceStaleBeliefsSweep.test.js`.
+
+## 2026-09-18 (soir, après le correctif « real-only ») — refonte du dashboard, nouvel onglet Labo, alertes, et ce que la mesure a révélé
+
+Session longue, demandée par Esdras (« on doit tout coder, continue »), avec
+feu vert explicite pour implémenter les bonnes idées sans demander. Tout est
+sur `claude/lire-handoff-hxisa5`. Regroupé ici plutôt qu'en 10 entrées, dans
+l'ordre où les choses ont été faites.
+
+### Fusions de branches parallèles
+- Watchdog externe (`.github/workflows/watchdog.yml`, `scripts/runWatchdog.js`,
+  `src/watchdogDecision.js`) + `/healthz` enrichi (`lastOrderRejection*`,
+  `unconfirmedOrderStreak`, `src/healthReport.js`) : existaient sur
+  `claude/project-thread-cd3lfq`, jamais fusionnés. Le secret GitHub
+  `NTFY_TOPIC` a été ajouté par Esdras (même valeur que la variable Render).
+- `5a11aab` (adoption `real-only`) était déjà sur la branche principale.
+- Restent volontairement non fusionnées : `lire-le-handoff-8bbrxx` (forward-test
+  déjà présent sous une autre forme), `project-thread-05d756` (refonte de
+  HANDOFF périmée), `challenge/fundingpips-zero` (compte séparé).
+
+### Dashboard (`public/index.html`)
+- Carte « Ordres en attente chez le courtier » (`pendingOrders` était déjà
+  renvoyé par le backend mais seulement utilisé pour l'arrêt d'urgence) +
+  route `POST /orders/:orderId/cancel` et bouton Annuler par ordre.
+- Cellule « Santé d'exécution » dans le bandeau (mêmes règles de gravité que
+  `watchdogDecision.js` : un refus explicite prime sur un ordre non confirmé).
+- Courbe d'équité compacte restaurée : le CSS `.equity-chart` était resté
+  orphelin depuis le déplacement du Journal (2026-09-15). Réutilise les
+  données déjà chargées par `refreshTradeLog()`.
+- Mobile (Playwright à 375 px) : bannière démo (`white-space: nowrap` faisait
+  déborder toute la page), barre de navigation, tableaux larges scopés à leur carte.
+- **Bug** : la fausse alerte « flux silencieux » venait du retrait de BTCUSD
+  (2026-09-16), le seul symbole M1. Tous les symboles restants sont M15 : l'âge
+  de la dernière bougie monte à ~15 min à chaque cycle sans problème. Seuils
+  désormais dérivés du timeframe du compte (`candleIntervalMs()`), plus d'un
+  nombre codé en dur supposant un symbole M1. `watchdogDecision.js` (30 min)
+  n'était pas concerné.
+- « Trades aujourd'hui » renommé « Trades **clôturés** aujourd'hui » : le
+  compteur (`GuardrailEngine.tradesToday`) n'est alimenté que par
+  `recordTrade()` à la CLÔTURE. Ce n'est pas un bug — c'est le compromis déjà
+  étudié le 2026-09-12 (aucun plafond de positions simultanées entre symboles) —
+  mais rien ne l'expliquait à l'écran.
+- Historique des alertes (`src/alertHistory.js`, `GET /api/alerts`, carte
+  dashboard) : anneau mémoire de 200 entrées branché sur `_notify()` et
+  `_notifyText()` des deux connecteurs. Volontairement en mémoire seulement
+  (remis à zéro à chaque redémarrage, dit sur la carte). Petite asymétrie
+  documentée : `_notify()` ne consigne que si `NTFY_TOPIC` est défini.
+
+### Bugs réels trouvés en auditant les autres onglets
+- **`accounts.html` effaçait les identifiants broker à la modification d'un
+  compte** : le formulaire envoie toujours un objet `broker`/`matchTrader`
+  complet (champs non retapés = `null`, par conception : on ne réaffiche jamais
+  un secret) et `saveDynamicAccount()` faisait un écrasement brut. Corrigé à la
+  source (`mergeCredentialFields`, fusion champ par champ), 5 tests.
+- **CBDR n'existait que dans `liveStrategyEngine.js`** alors qu'il est actif sur
+  US100 depuis aujourd'hui : alertes push étiquetées « FVG rempli »,
+  `LABEL_SOURCE_RE` (dealPairing) sans `cbdr`, journal/dashboard « manuel/inconnu »,
+  checklist de conformité « mécanisme inconnu ». Même mode d'échec récurrent
+  que Breaker Block (commentaire de `dealPairing.test.js`). Corrigé partout ;
+  la checklist dit honnêtement « checklist détaillée pas encore construite »
+  au lieu d'inventer des critères jamais vérifiés contre `cbdr.js`.
+- `sourceLabelFull`/`sourceLabelShort` (index.html) : clé `judasSwing` alors que
+  la vraie source est `judaswing` → repli sur la chaîne brute. Corrigé.
+- **Non traité** : `liveMechanismStatus.js` n'a pas de widget CBDR (fonctionnalité
+  manquante, pas un libellé faux).
+- Connu, non fait : `chart.html`/`journal.html` ne suivent pas le sélecteur
+  multi-compte de l'index (sans effet tant qu'il n'y a qu'un compte).
+
+### Labo de stratégies (`public/lab.html`, `src/backtest/lab*.js`, `m1Import.js`)
+Nouvel onglet : 21 moteurs de backtest déjà codés (RSI Divergence, MACD Trend,
+OTE, Power of Three, Unicorn, Asian Range, CBDR, NDOG/NWOG…) jusque-là
+accessibles seulement via un `scripts/run*.js` lancé par une session Claude.
+- `labRegistry.js` : `{label, run(candles)}` par stratégie, config par défaut
+  copiée de son script d'analyse. Exclus (et documenté) : SMT/corrélation
+  (2 séries), RSI momentum (bougies journalières), sous-composants non autonomes.
+- `labRunner.js` : coûts de spread réels (même règle `MIN_DISTANCE_SPREAD_MULTIPLE=3`
+  que tous les scripts), **coupure entraînement/test au 2024-01-01** (littéral
+  identique dans tous les scripts d'analyse) et `labVerdict()` (règle copiée
+  des scripts : ≥10 trades des deux côtés, espérance test > 0 ET ≥ 30 % de
+  l'espérance d'entraînement). Deux comparateurs : une stratégie sur les 12
+  symboles, ou les 21 stratégies sur un symbole, classés par espérance TEST.
+- Résultat qui valide l'outil : CBDR ressort « tient hors échantillon » sur
+  GER40 et US100 — exactement ses deux symboles configurés en production.
+- **Import de données** (demande d'Esdras : plusieurs années M1 d'une paire,
+  « faire ton travail mais dans le site ») : voir plus bas.
+
+### Ce que la MESURE a révélé sur ce que j'avais livré (à retenir)
+Le Labo calculait d'abord dans le même processus que le bot de trading, avec
+un cache mémoire de tous les jeux de données. Mesuré ensuite : 12 jeux chargés =
+**~870 Mo RSS (573 Mo de tas) pour 512 Mo de limite Render**, et le comparateur
+bloque la boucle d'événements plusieurs secondes (13 s sur XAUUSD). Un clic
+en production pouvait faire tuer le bot (positions ouvertes) ou affamer ses
+heartbeats. Corrigé (`59d91f1`) : tout calcul Labo tourne dans un **worker
+thread** (`labClient.js`/`labWorker.js`), un seul jeu de données en mémoire à
+la fois, plafond de tas 160 Mo propre au thread (s'il explose, seul le thread
+meurt), délai de 180 s. Mesuré sur le vrai serveur : `/healthz` ≤ 92 ms
+pendant un calcul, pic RSS 250–302 Mo. Métriques Render : bot au repos
+~100–118 Mo, limite 536 870 900 octets.
+**Leçon** : mesurer mémoire et blocage d'une fonctionnalité *avant* de la dire
+finie, surtout quand elle partage un processus avec du trading réel.
+
+### Import M1 → M15 (`m1Import.js`, `labDatasets.js`, routes `/api/lab/datasets/*`)
+- Formats : HistData ASCII M1 (sans en-tête) ou CSV avec en-tête (virgule/
+  point-virgule/tab ; temps ISO, MetaTrader `2020.01.06`+`10:00`, unix secondes).
+  Un fichier par année ; plusieurs fichiers étendent le même jeu.
+- Agrégation en un passage, **indépendante de l'ordre** : chaque bougie garde
+  l'heure de sa première/dernière minute, donc un fichier qui coupe une bougie
+  en deux fusionne avec le vrai open/close, un ré-envoi ne change rien.
+- **Fuseau explicite, jamais deviné** : HistData = EST fixe = heure moteur du
+  projet (utilisé tel quel, comme `convertHistData.js`) ; export courtier = UTC
+  réel, décalé de `FIXED_EST_TO_UTC_OFFSET_MS` comme les scripts real-data.
+  Mélanger les deux dans un jeu est refusé (décalerait les sessions de 5 h).
+- **Spread obligatoire** pour une paire absente de `DEFAULT_SPREADS` (sinon coût
+  zéro = résultats trop beaux, piège déjà documenté pour USDJPY) ; un 0 explicite
+  est accepté et signalé dans les résultats.
+- Coupure entraînement/test : 2024-01-01 si l'historique existe des deux côtés
+  (≥ 2 ans avant, ≥ 6 mois après), sinon 70 %/30 % de la période — un jeu qui
+  s'arrête en 2019 ne doit pas avoir de période test vide. La règle appliquée
+  est affichée, et le texte n'affirme plus « période jamais utilisée pour
+  régler la stratégie » (vrai seulement pour les données du projet).
+- Sécurité : site public → **token admin** (`ADMIN_EXPORT_TOKEN`, en-tête
+  `x-admin-token`, vérifié AVANT de lire le corps) ; corps streamé sur disque
+  (un corps bufférisé de 22 Mo coûtait ~280 Mo de pic), 413 lisible au-delà de
+  40 Mo, identifiants `custom:…` validés (aucun chemin forgé n'atteint le disque).
+- **Stockage éphémère** (disque Render gratuit, effacé à chaque déploiement) —
+  dit dans l'interface. Un stockage durable demanderait une table Supabase
+  (base de production partagée) : volontairement non créée sans accord.
+- Vérification : 400 puis 3 années entières de vrais chandeliers M15 EURUSD du
+  projet transformés en M1 synthétique (373 k lignes/an, 20+ Mo) et importés par
+  la vraie route HTTP dans le désordre → jeu stocké **identique bit à bit**
+  (71 463/71 463), résultats de stratégie identiques sur série importée vs
+  originale, chemin UTC identique au chemin EST ; mutations testées (fusion des
+  bougies coupées, décalage UTC, garde timeframe) ; navigateur réel
+  (Playwright) desktop + mobile. Import de 3 fichiers en ~6 s, `/healthz` ≤ 151 ms,
+  pic RSS 266 Mo.
+- **Non vérifié en production** : l'import lui-même (nécessite le token admin).
+  Le dossier d'écriture retombe sur le dossier temporaire de l'OS si le
+  checkout n'est pas inscriptible.
+
+### Tests
+`npm test` : 842/842. Un test fragile écrit ce soir (délai de 1 ms contre un
+job de 1 ms sur un thread chaud) rendu déterministe.
+
+### Autres
+- Mémoire de session ajoutée (`~/.claude/projects/.../memory/`) : feu vert
+  d'Esdras pour les améliorations autonomes, discipline de vérification,
+  sémantique des garde-fous.
+- `rust_core/` (crate isolé) : test `lot_size_rounds_down_without_overrisking`
+  corrigé en parallèle par deux sessions (fixture `point_size` 1.0 gardée) ;
+  à propos de Rust pour « découvrir des stratégies » : le goulot n'est pas la
+  vitesse (backtests en ~0,2 s), le Labo répond au besoin sans Rust.
+
+**Fichiers principaux** : `public/lab.html` (nouveau), `public/index.html`,
+`public/journal.html`, `src/backtest/{labRegistry,labRunner,labWorker,labClient,
+labDatasets,m1Import}.js` (nouveaux), `src/alertHistory.js` (nouveau),
+`src/server.js`, `src/dataSources/{dealPairing,supabaseAccountStore,
+tradeCompliance,cTraderDataSource,matchTraderDataSource}.js`.
