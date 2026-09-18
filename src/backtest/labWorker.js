@@ -13,6 +13,8 @@ import fs from 'node:fs';
 import { loadCandlesFromCsv } from './csvLoader.js';
 import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF } from './labRunner.js';
 import { listLabStrategies } from './labRegistry.js';
+import { importIntoDataset } from './labDatasets.js';
+import { ImportError } from './m1Import.js';
 
 const IDLE_RELEASE_MS = 60_000;
 let cache = null; // { key, candles }
@@ -46,10 +48,13 @@ function toPayload(result) {
 }
 
 const handlers = {
-  runTrainTest({ csvPath, strategyId, symbol }) {
+  // `spread`/`cutoff` are only set for imported datasets (they carry their own);
+  // built-in ones pass neither and get the table spread + the project-wide cutoff.
+  runTrainTest({ csvPath, strategyId, symbol, spread = null, cutoff = null }) {
     const candles = loadCandles(csvPath);
-    const { train, test, verdict } = runLabBacktestTrainTest(strategyId, candles, symbol);
-    return { candleCount: candles.length, trainCutoff: TRAIN_TEST_CUTOFF, verdict, train: toPayload(train), test: toPayload(test) };
+    const usedCutoff = cutoff ?? TRAIN_TEST_CUTOFF;
+    const { train, test, verdict } = runLabBacktestTrainTest(strategyId, candles, symbol, { spread, cutoff: usedCutoff });
+    return { candleCount: candles.length, trainCutoff: usedCutoff, verdict, train: toPayload(train), test: toPayload(test) };
   },
 
   // One strategy across several datasets, sequentially, one resident at a time.
@@ -66,17 +71,29 @@ const handlers = {
   },
 
   // Every registered strategy against one dataset.
-  screenStrategies({ csvPath, symbol }) {
+  screenStrategies({ csvPath, symbol, spread = null, cutoff = null }) {
     const candles = loadCandles(csvPath);
+    const options = { spread, cutoff: cutoff ?? TRAIN_TEST_CUTOFF };
     const results = listLabStrategies().map(({ id, label }) => {
       try {
-        const trainTest = runLabBacktestTrainTest(id, candles, symbol);
+        const trainTest = runLabBacktestTrainTest(id, candles, symbol, options);
         return { strategyId: id, label, ok: true, ...flattenTrainTestForScreen(trainTest) };
       } catch (err) {
         return { strategyId: id, label, ok: false, error: err.message };
       }
     });
     return { candleCount: candles.length, results };
+  },
+
+  // Parses one uploaded file into a dataset (CPU-heavy, hence here and not in
+  // the main thread). The dataset file changes, so the single-slot cache above
+  // invalidates itself through its mtime key.
+  // The upload arrives as a temp FILE (written straight from the request by
+  // the main thread, which therefore never holds the body in memory) - read
+  // here, in the thread that has its own heap ceiling.
+  importDataset({ textFile, ...params }) {
+    cache = null;
+    return importIntoDataset({ ...params, text: fs.readFileSync(textFile, 'utf8') });
   },
 };
 
@@ -85,7 +102,7 @@ parentPort.on('message', ({ id, op, payload }) => {
     if (!handlers[op]) throw new Error(`Opération inconnue: ${op}`);
     parentPort.postMessage({ id, ok: true, result: handlers[op](payload) });
   } catch (err) {
-    parentPort.postMessage({ id, ok: false, error: err.message });
+    parentPort.postMessage({ id, ok: false, error: err.message, userError: err instanceof ImportError });
   } finally {
     scheduleRelease();
   }

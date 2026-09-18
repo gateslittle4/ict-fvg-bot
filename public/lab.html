@@ -62,6 +62,15 @@
   .form-field label { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; font-family: var(--mono); }
   select, button { font-family: var(--mono); font-size: 12.5px; }
   select { background: var(--bg-inset); color: var(--text); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 7px 9px; width: 100%; }
+  input[type="text"], input[type="password"], input[type="file"] { background: var(--bg-inset); color: var(--text); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 7px 9px; width: 100%; font-family: var(--mono); font-size: 12.5px; }
+  details.card > summary { cursor: pointer; font-size: 13px; list-style-position: inside; }
+  details.card[open] > summary { margin-bottom: 10px; }
+  .hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 0 0 10px; }
+  .check { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; margin: 4px 0 10px; }
+  .import-log div { font-size: 12px; margin: 3px 0; font-family: var(--mono); }
+  .dataset-row { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--panel-border); font-size: 12px; }
+  .dataset-row .meta { margin-top: 2px; }
+  .btn-ghost { background: none; border: 1px solid var(--panel-border-strong); color: var(--text); border-radius: var(--radius); padding: 4px 9px; cursor: pointer; flex-shrink: 0; }
   .run-btn { background: var(--blue); color: #05070a; border: none; border-radius: var(--radius); padding: 9px 16px; font-weight: 700; cursor: pointer; }
   .run-btn:disabled { opacity: 0.5; cursor: wait; }
   .metric-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; margin-bottom: 14px; background: var(--panel-border); border: 1px solid var(--panel-border); }
@@ -117,6 +126,57 @@
     </div>
     <div class="meta" id="lab-meta-msg">Chargement des stratégies disponibles…</div>
   </div>
+
+  <details class="card" id="import-card">
+    <summary><strong>Importer mes propres données</strong> <span class="meta">— plusieurs années d'une même paire, en M1</span></summary>
+    <p class="hint">
+      Ajoute un fichier par année (ou par période) : ils sont fusionnés en une seule série M15, puis toutes les stratégies ci-dessus tournent dessus,
+      avec la même coupure entraînement/test. Formats acceptés : <strong>HistData ASCII M1</strong> (sans en-tête, celui de <code>convertHistData.js</code>)
+      ou un <strong>CSV avec en-tête</strong> (time/date, open, high, low, close). Décompresse les .zip avant. 40 Mo max par fichier.
+      <strong>Stockage temporaire</strong> : les jeux importés disparaissent à chaque redéploiement du site — il faudra les réimporter.
+    </p>
+    <div class="form-row">
+      <div class="form-field">
+        <label for="imp-token">Token admin</label>
+        <input type="password" id="imp-token" autocomplete="off" placeholder="le même que pour la page Comptes" />
+      </div>
+      <div class="form-field">
+        <label for="imp-pair">Paire</label>
+        <select id="imp-pair" onchange="onImportPairChange()"></select>
+      </div>
+      <div class="form-field" id="imp-other-wrap" hidden>
+        <label for="imp-other">Nom de la paire</label>
+        <input type="text" id="imp-other" placeholder="ex. EURGBP" autocomplete="off" />
+      </div>
+      <div class="form-field">
+        <label for="imp-spread">Spread (unités de prix)</label>
+        <input type="text" id="imp-spread" inputmode="decimal" autocomplete="off" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label for="imp-name">Nom du jeu de données</label>
+        <input type="text" id="imp-name" placeholder="par défaut : le nom de la paire" autocomplete="off" />
+      </div>
+      <div class="form-field">
+        <label for="imp-tz">Fuseau horaire des fichiers</label>
+        <select id="imp-tz">
+          <option value="est">EST fixe, UTC-5 sans changement d'heure — export HistData (comme les données du projet)</option>
+          <option value="utc">UTC réel — export d'un courtier (converti comme le fait le bot)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label for="imp-files">Fichiers</label>
+        <input type="file" id="imp-files" multiple accept=".csv,.txt" />
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="imp-replace" /> Repartir de zéro (remplace le jeu de données du même nom au lieu de l'agrandir)</label>
+    <button type="button" class="run-btn" id="imp-btn" onclick="importFiles()">Importer</button>
+    <div class="import-log" id="imp-log"></div>
+    <div id="imp-list"></div>
+  </details>
 
   <div id="lab-screen-results" hidden>
     <div class="card">
@@ -213,22 +273,160 @@ function verdictCell(verdict) {
   return `<span class="${v.cls}">${v.text}</span>`;
 }
 
-async function loadMeta() {
+let labMeta = null;
+const yearOf = (ms) => new Date(ms).getUTCFullYear();
+function customLabel(d) {
+  return `${d.name} — ${d.symbol} importé (${yearOf(d.from)}–${yearOf(d.to)})`;
+}
+
+async function loadMeta(preferId) {
   const msgEl = document.getElementById('lab-meta-msg');
   try {
     const res = await fetch('/api/lab/meta');
     const data = await res.json();
+    labMeta = data;
     const strategyEl = document.getElementById('lab-strategy');
     const symbolEl = document.getElementById('lab-symbol');
-    strategyEl.innerHTML = data.strategies.map((s) => `<option value="${s.id}">${s.label}</option>`).join('');
-    symbolEl.innerHTML = data.symbols.map((s) => `<option value="${s}">${s}</option>`).join('');
+    const previous = preferId || symbolEl.value;
+    strategyEl.innerHTML = strategyEl.options.length ? strategyEl.innerHTML : data.strategies.map((s) => `<option value="${s.id}">${s.label}</option>`).join('');
+    const custom = data.customDatasets || [];
+    symbolEl.innerHTML =
+      `<optgroup label="Données du projet">${data.symbols.map((s) => `<option value="${s}">${s}</option>`).join('')}</optgroup>` +
+      (custom.length ? `<optgroup label="Mes données importées">${custom.map((d) => `<option value="${d.id}">${customLabel(d)}</option>`).join('')}</optgroup>` : '');
     // US100 first-choice default when available - the account this bot
     // actually trades today, so it's the most useful default comparison point.
-    if (data.symbols.includes('US100')) symbolEl.value = 'US100';
-    msgEl.textContent = `${data.strategies.length} stratégies disponibles sur ${data.symbols.length} symboles (données historiques réelles, plusieurs années selon le symbole).`;
+    const all = [...data.symbols, ...custom.map((d) => d.id)];
+    symbolEl.value = all.includes(previous) ? previous : (data.symbols.includes('US100') ? 'US100' : data.symbols[0]);
+    msgEl.textContent = `${data.strategies.length} stratégies disponibles sur ${data.symbols.length} symboles du projet${custom.length ? ` + ${custom.length} jeu(x) importé(s)` : ''} (données historiques réelles, plusieurs années selon le symbole).`;
+    renderImportForm(data);
+    renderDatasetList(custom);
   } catch (err) {
     msgEl.innerHTML = `<span class="err">Erreur de chargement: ${err.message}</span>`;
   }
+}
+
+// One line saying exactly what an imported dataset is and which rules were
+// applied to it - the results are only trustworthy if these are visible.
+function datasetNote(d) {
+  const cutoffRule = d.cutoffKind === 'standard'
+    ? 'coupure standard du projet (1er janvier 2024)'
+    : 'coupure 70 % / 30 % de la période (pas assez d\'historique de part et d\'autre du 1er janvier 2024 pour la coupure standard)';
+  const spreadWarn = d.spread === 0 ? ' <strong class="loss">— AUCUN coût de spread appliqué : résultats trop optimistes</strong>' : '';
+  return `<div class="meta" style="margin-bottom: 8px;">Jeu importé « ${d.name} » (${d.symbol}) : ${d.candles.toLocaleString('fr-FR')} bougies M15 du ${fmtTime(d.from)} au ${fmtTime(d.to)}
+    · spread appliqué ${d.spread} (${d.spreadSource})${spreadWarn} · fuseau ${d.tz === 'utc' ? 'UTC réel converti en heure moteur' : 'EST fixe (comme le projet)'} · ${cutoffRule}.</div>`;
+}
+
+// ---------------------------------------------------------------- import
+const TOKEN_KEY = 'apexfvg_admin_token';
+
+function renderImportForm(meta) {
+  const pairEl = document.getElementById('imp-pair');
+  if (!pairEl.options.length) {
+    const known = Object.keys(meta.knownSpreads || {}).sort();
+    pairEl.innerHTML = known.map((p) => `<option value="${p}">${p}</option>`).join('') + '<option value="__other__">Autre paire…</option>';
+    try { document.getElementById('imp-token').value = localStorage.getItem(TOKEN_KEY) || ''; } catch { /* storage blocked: the field just starts empty */ }
+    onImportPairChange();
+  }
+}
+
+function onImportPairChange() {
+  const pair = document.getElementById('imp-pair').value;
+  const other = pair === '__other__';
+  document.getElementById('imp-other-wrap').hidden = !other;
+  const spreadEl = document.getElementById('imp-spread');
+  const known = labMeta && labMeta.knownSpreads ? labMeta.knownSpreads[pair] : undefined;
+  spreadEl.placeholder = other
+    ? 'obligatoire, ex. 0.00012 (1.2 pip sur une paire à 4 décimales)'
+    : `optionnel — défaut du projet : ${known}`;
+}
+
+function importLog(html) {
+  const log = document.getElementById('imp-log');
+  log.insertAdjacentHTML('beforeend', `<div>${html}</div>`);
+  return log.lastElementChild;
+}
+
+async function importFiles() {
+  const btn = document.getElementById('imp-btn');
+  const log = document.getElementById('imp-log');
+  log.innerHTML = '';
+  const token = document.getElementById('imp-token').value.trim();
+  const pairSel = document.getElementById('imp-pair').value;
+  const pair = (pairSel === '__other__' ? document.getElementById('imp-other').value : pairSel).trim().toUpperCase();
+  const name = (document.getElementById('imp-name').value.trim() || pair);
+  const spread = document.getElementById('imp-spread').value.trim().replace(',', '.');
+  const tz = document.getElementById('imp-tz').value;
+  const files = [...document.getElementById('imp-files').files].sort((a, b) => a.name.localeCompare(b.name));
+  const replace = document.getElementById('imp-replace').checked;
+  const maxMb = (labMeta && labMeta.uploadLimits && labMeta.uploadLimits.maxFileMb) || 40;
+
+  if (!token) return void importLog('<span class="err">Token admin requis.</span>');
+  if (!pair) return void importLog('<span class="err">Indique la paire.</span>');
+  if (pairSel === '__other__' && spread === '') return void importLog('<span class="err">Spread obligatoire pour une paire inconnue du projet (sinon les coûts seraient nuls et les résultats trop beaux).</span>');
+  if (!files.length) return void importLog('<span class="err">Choisis au moins un fichier.</span>');
+  const tooBig = files.find((f) => f.size > maxMb * 1024 * 1024);
+  if (tooBig) return void importLog(`<span class="err">${tooBig.name} fait ${(tooBig.size / 1048576).toFixed(0)} Mo (max ${maxMb} Mo) — découpe-le, par exemple une année par fichier.</span>`);
+  try { localStorage.setItem(TOKEN_KEY, token); } catch { /* fine */ }
+
+  btn.disabled = true;
+  let imported = 0;
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const line = importLog(`⏳ ${file.name} (${(file.size / 1048576).toFixed(1)} Mo)…`);
+      const query = new URLSearchParams({ symbol: pair, tz, filename: file.name });
+      if (spread !== '') query.set('spread', spread);
+      if (replace && i === 0) query.set('replace', '1');
+      const res = await fetch(`/api/lab/datasets/${encodeURIComponent(name)}/files?${query}`, {
+        method: 'POST',
+        headers: { 'x-admin-token': token, 'Content-Type': 'text/plain' },
+        body: await file.text(),
+      });
+      let body = {};
+      try { body = await res.json(); } catch { /* non-JSON error page */ }
+      if (!res.ok) {
+        const why = res.status === 404 ? "l'import est désactivé côté serveur (ADMIN_EXPORT_TOKEN non configuré)"
+          : res.status === 403 ? 'token admin invalide'
+          : body.error || `erreur HTTP ${res.status}`;
+        line.innerHTML = `<span class="err">❌ ${file.name} : ${why}</span>`;
+        break;
+      }
+      imported++;
+      const skipped = body.file.skipped ? ` (${body.file.skipped} ligne(s) ignorée(s))` : '';
+      const step = body.file.stepMinutes && body.file.stepMinutes !== 1 ? ` — bougies de ${body.file.stepMinutes} min détectées, pas du M1` : '';
+      line.innerHTML = `<span class="win">✅ ${file.name}</span> : ${body.file.rows.toLocaleString('fr-FR')} lignes${skipped}${step} → le jeu « ${body.dataset.name} » compte maintenant ${body.dataset.candles.toLocaleString('fr-FR')} bougies M15 (${fmtTime(body.dataset.from)} → ${fmtTime(body.dataset.to)})`;
+    }
+  } catch (err) {
+    importLog(`<span class="err">Erreur réseau : ${err.message}</span>`);
+  } finally {
+    btn.disabled = false;
+  }
+  if (imported > 0) {
+    await loadMeta(`custom:${name}`);
+    importLog(`Jeu « ${name} » sélectionné plus haut — choisis une stratégie et lance le backtest.`);
+  }
+}
+
+function renderDatasetList(list) {
+  const el = document.getElementById('imp-list');
+  if (!list.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="meta" style="margin: 10px 0 2px;">Jeux de données importés</div>' + list.map((d) => `
+    <div class="dataset-row">
+      <div>
+        <strong>${d.name}</strong> — ${d.symbol}, ${d.candles.toLocaleString('fr-FR')} bougies M15 (${fmtTime(d.from)} → ${fmtTime(d.to)})
+        <div class="meta">${d.files.length} fichier(s) · ${d.m1Rows.toLocaleString('fr-FR')} lignes importées · spread ${d.spread} (${d.spreadSource}) · fuseau ${d.tz} · test à partir du ${fmtTime(d.trainCutoff)} (${d.cutoffKind === 'standard' ? 'coupure du projet' : '70/30'})</div>
+      </div>
+      <button type="button" class="btn-ghost" onclick="deleteDataset('${d.name}')">Supprimer</button>
+    </div>`).join('');
+}
+
+async function deleteDataset(name) {
+  const token = document.getElementById('imp-token').value.trim();
+  if (!token) return void importLog('<span class="err">Token admin requis pour supprimer.</span>');
+  if (!confirm(`Supprimer le jeu de données importé « ${name} » ?`)) return;
+  const res = await fetch(`/api/lab/datasets/${encodeURIComponent(name)}`, { method: 'DELETE', headers: { 'x-admin-token': token } });
+  if (!res.ok) return void importLog(`<span class="err">Suppression refusée (HTTP ${res.status}).</span>`);
+  await loadMeta();
 }
 
 async function runLab() {
@@ -257,7 +455,10 @@ async function runLab() {
     const cutoffLabel = fmtTime(data.trainCutoff);
     statsEl.innerHTML = `
       ${verdictBadge(data.verdict)}
-      <div class="meta" style="margin: 8px 0;">Résultats sur la période <strong>TEST</strong> (à partir de ${cutoffLabel}, jamais utilisée pour choisir les paramètres de cette stratégie) — le chiffre qui compte vraiment. Entraînement (avant ${cutoffLabel}) donné en référence seulement.</div>
+      <div class="meta" style="margin: 8px 0;">${data.dataset
+        ? `Résultats sur la période <strong>TEST</strong> de ce jeu importé (à partir de ${cutoffLabel}) — le chiffre qui compte, pour CETTE paire. Attention : les réglages par défaut de ces stratégies ont été choisis sur les données du projet, pas sur les tiennes ; entraînement (avant ${cutoffLabel}) donné en référence.`
+        : `Résultats sur la période <strong>TEST</strong> (à partir de ${cutoffLabel}, jamais utilisée pour choisir les paramètres de cette stratégie) — le chiffre qui compte vraiment. Entraînement (avant ${cutoffLabel}) donné en référence seulement.`}</div>
+      ${data.dataset ? datasetNote(data.dataset) : ''}
       <div class="metric-tiles">
         <div class="metric-tile"><div class="metric-label">Trades (test)</div><div class="metric-value">${test.totalSignals}</div></div>
         <div class="metric-tile"><div class="metric-label">Taux de réussite</div><div class="metric-value">${test.winRate === null ? '—' : fmt(test.winRate * 100, 0) + '%'}</div></div>
@@ -352,7 +553,8 @@ async function runStrategyScreen() {
   const symbol = document.getElementById('lab-symbol').value;
   const resultsEl = document.getElementById('lab-screen-strat-results');
   const tableEl = document.getElementById('lab-screen-strat-table');
-  document.getElementById('lab-screen-strat-symbol-name').textContent = symbol;
+  const symbolOption = document.getElementById('lab-symbol').selectedOptions[0];
+  document.getElementById('lab-screen-strat-symbol-name').textContent = symbolOption ? symbolOption.textContent : symbol;
   btn.disabled = true;
   btn.textContent = 'Comparaison en cours (21 stratégies)…';
   try {

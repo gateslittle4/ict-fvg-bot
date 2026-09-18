@@ -65,7 +65,9 @@ test('runLabJob screenStrategies: returns one row per registered strategy', asyn
 });
 
 test('runLabJob: a job past its deadline is rejected and does not wedge the client for the next one', async () => {
-  await assert.rejects(runLabJob('runTrainTest', { csvPath, strategyId: 'macd-trend', symbol: 'US100' }, { timeoutMs: 1 }), /trop long/);
+  // screenStrategies runs ~20 strategies (~150 ms even with a warm thread), so a 5 ms
+  // deadline can't be beaten by the job - a single quick strategy could.
+  await assert.rejects(runLabJob('screenStrategies', { csvPath, symbol: 'US100' }, { timeoutMs: 5 }), /trop long/);
   const r = await runLabJob('runTrainTest', { csvPath, strategyId: 'macd-trend', symbol: 'US100' });
   assert.equal(r.candleCount, 2500);
 });

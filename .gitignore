@@ -4,3 +4,6 @@ node_modules/
 *.log
 rust_core/target/
 rust_core/Cargo.lock
+
+# Imported Labo datasets: user data, ephemeral on Render, never committed
+data/lab-uploads/

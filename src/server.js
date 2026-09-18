@@ -1,6 +1,10 @@
 import express from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
+import crypto from 'node:crypto';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry, isAccountDisabled } from './config.js';
 import { buildEffectiveConfig, getDefaultAccount, getAccount, listAccounts, registerAccount } from './accountRegistry.js';
@@ -24,6 +28,8 @@ import { getPropFirmProgram } from './propFirms/index.js';
 import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus } from './chatAssistant.js';
 import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
 import { runLabJob } from './backtest/labClient.js';
+import { readDatasetMeta, listDatasets, deleteDataset, csvPathFor as labDatasetCsv, MAX_CUSTOM_DATASETS } from './backtest/labDatasets.js';
+import { isValidDatasetName } from './backtest/m1Import.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -137,7 +143,10 @@ function requireAdminToken(req, res) {
     res.status(404).json({ error: 'not enabled' });
     return false;
   }
-  const provided = req.query.token || req.body?.token;
+  // The header form exists so an upload's token never lands in a request URL
+  // (and therefore in access logs) - the query/body forms stay for the
+  // existing callers.
+  const provided = req.get('x-admin-token') || req.query.token || req.body?.token;
   if (provided !== configuredToken) {
     res.status(403).json({ error: 'invalid or missing token' });
     return false;
@@ -241,9 +250,59 @@ app.get('/api/alerts', (req, res) => {
   res.json({ alerts: getRecentAlerts(100) });
 });
 
+// Imported datasets (2026-09-18, Esdras: add several years of one pair in M1
+// and test the strategies on them) live here, one M15 CSV + metadata per name.
+// EPHEMERAL on Render's free tier - wiped on every deploy/restart; the UI says so.
+// The deployed checkout is not guaranteed to be writable on every host, so
+// fall back to the OS temp dir rather than have every import fail with EACCES.
+function pickLabUploadDir() {
+  if (process.env.LAB_UPLOAD_DIR) return process.env.LAB_UPLOAD_DIR;
+  const preferred = path.join(__dirname, '..', 'data', 'lab-uploads');
+  try {
+    fs.mkdirSync(preferred, { recursive: true });
+    fs.accessSync(preferred, fs.constants.W_OK);
+    return preferred;
+  } catch {
+    return path.join(os.tmpdir(), 'lab-uploads');
+  }
+}
+const LAB_UPLOAD_DIR = pickLabUploadDir();
+const LAB_MAX_UPLOAD_MB = 40;
+
+/**
+ * Turns what the browser sends as "symbol" into something runnable: a
+ * built-in symbol ("US100") or an imported dataset ("custom:EURGBP-2010").
+ * Imported ones carry their own spread and train/test cutoff. null = unknown.
+ */
+function resolveLabDataset(id) {
+  if (typeof id !== 'string') return null;
+  if (id.startsWith('custom:')) {
+    const name = id.slice('custom:'.length);
+    if (!isValidDatasetName(name)) return null; // never let a crafted id reach the filesystem
+    const meta = readDatasetMeta(LAB_UPLOAD_DIR, name);
+    if (!meta || !fs.existsSync(labDatasetCsv(LAB_UPLOAD_DIR, name))) return null;
+    return { key: id, csvPath: labDatasetCsv(LAB_UPLOAD_DIR, name), symbol: meta.symbol, spread: meta.spread, cutoff: meta.trainCutoff, meta };
+  }
+  if (!listLabSymbols().includes(id)) return null;
+  return { key: id, csvPath: labCsvPath(id), symbol: id, spread: null, cutoff: null, meta: null };
+}
+
+// What the results page needs to describe an imported dataset honestly.
+function datasetInfo(ds) {
+  if (!ds.meta) return null;
+  const m = ds.meta;
+  return { name: m.name, symbol: m.symbol, spread: m.spread, spreadSource: m.spreadSource, tz: m.tz, cutoffKind: m.cutoffKind, from: m.from, to: m.to, candles: m.candles, stepMinutes: m.stepMinutes };
+}
+
 app.get('/api/lab/meta', (req, res) => {
   try {
-    res.json({ strategies: listLabStrategies(), symbols: listLabSymbols() });
+    res.json({
+      strategies: listLabStrategies(),
+      symbols: listLabSymbols(),
+      customDatasets: listDatasets(LAB_UPLOAD_DIR).map((m) => ({ id: `custom:${m.name}`, ...m })),
+      knownSpreads: DEFAULT_SPREADS,
+      uploadLimits: { maxFileMb: LAB_MAX_UPLOAD_MB, maxDatasets: MAX_CUSTOM_DATASETS },
+    });
   } catch (err) {
     sendLabError(res, err);
   }
@@ -251,7 +310,7 @@ app.get('/api/lab/meta', (req, res) => {
 
 const byExpectancyDesc = (a, b) => (b.expectancyR ?? -Infinity) - (a.expectancyR ?? -Infinity);
 
-// Screener: one strategy across every symbol, ranked by OUT-OF-SAMPLE
+// Screener: one strategy across every BUILT-IN symbol, ranked by OUT-OF-SAMPLE
 // expectancy. Summaries only (a ranking table doesn't need equity curves).
 app.post('/api/lab/screen', async (req, res) => {
   const { strategyId } = req.body || {};
@@ -268,16 +327,15 @@ app.post('/api/lab/screen', async (req, res) => {
   }
 });
 
-// Other axis: which of the ~20 strategies works best on this ONE symbol.
+// Other axis: which of the ~20 strategies works best on this ONE dataset.
 app.post('/api/lab/screen-strategies', async (req, res) => {
   const { symbol } = req.body || {};
-  if (!symbol || !listLabSymbols().includes(symbol)) {
-    return res.status(400).json({ error: `Symbole inconnu ou sans données: "${symbol}"` });
-  }
+  const ds = resolveLabDataset(symbol);
+  if (!ds) return res.status(400).json({ error: `Symbole inconnu ou sans données: "${symbol}"` });
   try {
-    const { candleCount, results } = await runLabJob('screenStrategies', { csvPath: labCsvPath(symbol), symbol });
+    const { candleCount, results } = await runLabJob('screenStrategies', { csvPath: ds.csvPath, symbol: ds.symbol, spread: ds.spread, cutoff: ds.cutoff });
     results.sort(byExpectancyDesc);
-    res.json({ symbol, candleCount, results });
+    res.json({ symbol, candleCount, dataset: datasetInfo(ds), results });
   } catch (err) {
     sendLabError(res, err);
   }
@@ -288,14 +346,72 @@ app.post('/api/lab/run', async (req, res) => {
   if (!strategyId || !LAB_STRATEGIES[strategyId]) {
     return res.status(400).json({ error: `Stratégie inconnue: "${strategyId}"` });
   }
-  if (!symbol || !listLabSymbols().includes(symbol)) {
-    return res.status(400).json({ error: `Symbole inconnu ou sans données: "${symbol}"` });
-  }
+  const ds = resolveLabDataset(symbol);
+  if (!ds) return res.status(400).json({ error: `Symbole inconnu ou sans données: "${symbol}"` });
   try {
-    const result = await runLabJob('runTrainTest', { csvPath: labCsvPath(symbol), strategyId, symbol });
-    res.json({ strategyId, symbol, ...result });
+    const result = await runLabJob('runTrainTest', { csvPath: ds.csvPath, strategyId, symbol: ds.symbol, spread: ds.spread, cutoff: ds.cutoff });
+    res.json({ strategyId, symbol, dataset: datasetInfo(ds), ...result });
   } catch (err) {
     sendLabError(res, err);
+  }
+});
+
+// Import ONE file into a dataset (call once per year of M1). Admin-only: the
+// site is public, and this writes to disk and burns CPU/memory - the token is
+// checked BEFORE the (up to 40 MB) body is read. Raw text body, not JSON or
+// multipart: no extra dependency, and the browser can send a file as-is.
+// The body is streamed to a temp file instead of being buffered: measured, a
+// buffered 22 MB upload cost this process ~280 MB at peak (Buffer + decoded
+// string + the copy handed to the worker) on an instance with 512 MB total.
+const requireAdminGate = (req, res, next) => { if (requireAdminToken(req, res)) next(); };
+// Past the limit it stops forwarding bytes but keeps draining the request, so
+// the client still receives a readable 413 instead of a reset connection.
+function byteLimit(maxBytes) {
+  let seen = 0;
+  const stream = new Transform({
+    transform(chunk, _enc, cb) {
+      seen += chunk.length;
+      cb(null, seen > maxBytes ? undefined : chunk);
+    },
+  });
+  return { stream, exceeded: () => seen > maxBytes };
+}
+app.post(
+  '/api/lab/datasets/:name/files',
+  requireAdminGate,
+  async (req, res) => {
+    const q = req.query;
+    const textFile = path.join(os.tmpdir(), `lab-upload-${crypto.randomBytes(8).toString('hex')}.txt`);
+    try {
+      const limit = byteLimit(LAB_MAX_UPLOAD_MB * 1024 * 1024);
+      await pipeline(req, limit.stream, fs.createWriteStream(textFile));
+      if (limit.exceeded()) {
+        return res.status(413).json({ error: `Fichier trop volumineux (${LAB_MAX_UPLOAD_MB} Mo max) - découpe-le, par exemple une année par fichier.` });
+      }
+      const out = await runLabJob('importDataset', {
+        textFile,
+        dir: LAB_UPLOAD_DIR,
+        name: req.params.name,
+        symbol: q.symbol,
+        spread: q.spread === undefined || q.spread === '' ? null : Number(q.spread),
+        tz: q.tz || 'est',
+        replace: q.replace === '1',
+        filename: typeof q.filename === 'string' ? q.filename.slice(0, 120) : 'fichier',
+      });
+      res.json(out);
+    } catch (err) {
+      err.userError ? res.status(400).json({ error: err.message }) : sendLabError(res, err);
+    } finally {
+      fs.rm(textFile, { force: true }, () => {});
+    }
+  }
+);
+
+app.delete('/api/lab/datasets/:name', requireAdminGate, (req, res) => {
+  try {
+    res.json({ deleted: deleteDataset(LAB_UPLOAD_DIR, req.params.name) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

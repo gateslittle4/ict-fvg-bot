@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyTransactionCosts, runLabBacktest, runLabBacktestTrainTest, labVerdict, TRAIN_TEST_CUTOFF } from '../src/backtest/labRunner.js';
+import { applyTransactionCosts, runLabBacktest, runLabBacktestTrainTest, labVerdict, chooseTrainTestCutoff, TRAIN_TEST_CUTOFF } from '../src/backtest/labRunner.js';
 import { LAB_STRATEGIES, listLabStrategies } from '../src/backtest/labRegistry.js';
 
 test('applyTransactionCosts: a symbol with no known spread passes trades through unchanged', () => {
@@ -96,4 +96,52 @@ test('runLabBacktestTrainTest: splits candles at the project-wide 2024-01-01 cut
   assert.ok(result.train.trades.every((t) => t.entryTime < TRAIN_TEST_CUTOFF));
   assert.ok(result.test.trades.every((t) => t.entryTime >= TRAIN_TEST_CUTOFF));
   assert.ok(['holds', 'weakened', 'fails', 'not-enough-trades'].includes(result.verdict));
+});
+
+test('applyTransactionCosts: an explicit spread override beats the table, and 0 means "no cost" (not "fall back to the table")', () => {
+  const trades = [{ distance: 0.01, rMultiple: 2 }];
+  // EURUSD's table spread is 0.00011; an override of 0.0005 must win.
+  const overridden = applyTransactionCosts(trades, 'EURUSD', 0.0005);
+  assert.ok(Math.abs(overridden[0].costR - 0.05) < 1e-9);
+  // 0 is honoured: EURUSD would otherwise be charged its table spread.
+  assert.deepEqual(applyTransactionCosts(trades, 'EURUSD', 0), trades);
+  // A symbol absent from the table gets a real cost once a spread is supplied.
+  assert.ok(applyTransactionCosts(trades, 'EURGBP', 0.0002)[0].costR > 0);
+});
+
+test('runLabBacktestTrainTest: honours a custom cutoff instead of the project-wide date', () => {
+  const start = Date.UTC(2015, 0, 1);
+  const candles = [];
+  let price = 100;
+  for (let i = 0; i < 3000; i++) {
+    const open = price;
+    const close = open + Math.sin(i / 9) * 1.5 + (i % 17 === 0 ? 3 : 0) - (i % 23 === 0 ? 3 : 0);
+    candles.push({ time: start + i * 900000, open, high: Math.max(open, close) + 0.8, low: Math.min(open, close) - 0.8, close });
+    price = close;
+  }
+  const cutoff = start + 1500 * 900000;
+  const r = runLabBacktestTrainTest('macd-trend', candles, 'US100', { cutoff });
+  assert.ok(r.train.trades.length > 0 && r.test.trades.length > 0, 'both sides must have trades for this to prove anything');
+  assert.ok(r.train.trades.every((t) => t.entryTime < cutoff));
+  assert.ok(r.test.trades.every((t) => t.entryTime >= cutoff));
+});
+
+test('chooseTrainTestCutoff: keeps 2024-01-01 when there is real history on both sides of it', () => {
+  const candles = [{ time: Date.UTC(2018, 0, 1) }, { time: Date.UTC(2025, 11, 31) }];
+  assert.deepEqual(chooseTrainTestCutoff(candles), { cutoff: TRAIN_TEST_CUTOFF, kind: 'standard' });
+});
+
+test('chooseTrainTestCutoff: a dataset that stops before 2024 gets a 70/30 split, never an empty test period', () => {
+  const candles = [{ time: Date.UTC(2010, 0, 1) }, { time: Date.UTC(2019, 11, 31) }];
+  const { cutoff, kind } = chooseTrainTestCutoff(candles);
+  assert.equal(kind, 'proportional');
+  assert.ok(cutoff > candles[0].time && cutoff < candles[1].time);
+  const trainShare = (cutoff - candles[0].time) / (candles[1].time - candles[0].time);
+  assert.ok(Math.abs(trainShare - 0.7) < 0.01);
+  assert.equal(cutoff % 86400000, 0, 'rounded to a UTC day boundary');
+});
+
+test('chooseTrainTestCutoff: 2024 is too recent to leave a meaningful test period -> proportional', () => {
+  const candles = [{ time: Date.UTC(2020, 0, 1) }, { time: Date.UTC(2024, 1, 15) }];
+  assert.equal(chooseTrainTestCutoff(candles).kind, 'proportional');
 });

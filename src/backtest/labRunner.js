@@ -17,10 +17,13 @@ const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
 /**
  * @param {Array<{distance:number, rMultiple:number}>} trades - raw, pre-cost
  * @param {string} symbol
+ * @param {number|null} [spreadOverride] - price-unit spread to use instead of
+ *   DEFAULT_SPREADS[symbol] (imported datasets carry their own; 0 is honoured
+ *   as "no cost", not silently replaced by the table's value)
  * @returns {Array} trades with realistic spread cost applied, unviable ones dropped
  */
-export function applyTransactionCosts(trades, symbol) {
-  const spread = DEFAULT_SPREADS[symbol] ?? 0;
+export function applyTransactionCosts(trades, symbol, spreadOverride = null) {
+  const spread = spreadOverride ?? DEFAULT_SPREADS[symbol] ?? 0;
   if (!spread) return trades;
   const viable = trades.filter((t) => !Number.isFinite(t.distance) || t.distance >= spread * MIN_DISTANCE_SPREAD_MULTIPLE);
   return viable.map((t) => {
@@ -59,11 +62,11 @@ export function labVerdict(trainExpectancy, testExpectancy, trainCount, testCoun
  * test slice (on/after it) separately, plus a verdict on whether the
  * train-period edge actually survived out of sample.
  */
-export function runLabBacktestTrainTest(strategyId, candles, symbol) {
-  const trainCandles = candles.filter((c) => c.time < TRAIN_TEST_CUTOFF);
-  const testCandles = candles.filter((c) => c.time >= TRAIN_TEST_CUTOFF);
-  const train = runLabBacktest(strategyId, trainCandles, symbol);
-  const test = runLabBacktest(strategyId, testCandles, symbol);
+export function runLabBacktestTrainTest(strategyId, candles, symbol, { spread = null, cutoff = TRAIN_TEST_CUTOFF } = {}) {
+  const trainCandles = candles.filter((c) => c.time < cutoff);
+  const testCandles = candles.filter((c) => c.time >= cutoff);
+  const train = runLabBacktest(strategyId, trainCandles, symbol, spread);
+  const test = runLabBacktest(strategyId, testCandles, symbol, spread);
   return {
     train,
     test,
@@ -79,12 +82,13 @@ export function runLabBacktestTrainTest(strategyId, candles, symbol) {
  * @param {string} strategyId - a key of LAB_STRATEGIES
  * @param {Array<{time:number,open:number,high:number,low:number,close:number}>} candles
  * @param {string} symbol - drives which spread applies, nothing else
+ * @param {number|null} [spreadOverride] - see applyTransactionCosts
  */
-export function runLabBacktest(strategyId, candles, symbol) {
+export function runLabBacktest(strategyId, candles, symbol, spreadOverride = null) {
   const strategy = LAB_STRATEGIES[strategyId];
   if (!strategy) throw new Error(`Unknown lab strategy "${strategyId}"`);
   const rawTrades = strategy.run(candles);
-  const trades = applyTransactionCosts(rawTrades, symbol);
+  const trades = applyTransactionCosts(rawTrades, symbol, spreadOverride);
   const summary = summarizeTrades(trades);
   const equityCurve = trades.map((t, i) => ({ time: t.entryTime, cumulativeR: summary.equityCurve[i] }));
   return { summary, trades, equityCurve, droppedAsNonViable: rawTrades.length - trades.length };
@@ -105,4 +109,29 @@ export function flattenTrainTestForScreen(trainTest) {
     profitFactor: trainTest.test.summary.profitFactor,
     verdict: trainTest.verdict,
   };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_TRAIN_MS = 2 * 365 * DAY_MS;
+const MIN_TEST_MS = 180 * DAY_MS;
+
+/**
+ * Where to split an IMPORTED dataset into train/test. The project-wide
+ * 2024-01-01 cutoff is only meaningful when the data has real history on
+ * both sides of it (>= 2 years before, >= 6 months after) - a dataset that
+ * stops in 2019 would otherwise get an EMPTY test period and a verdict
+ * built on nothing. When it does not, fall back to the first 70 % of the
+ * time range as train / last 30 % as test (rounded to a UTC day), and say
+ * so via `kind` so the UI can tell the user which rule was applied.
+ * @returns {{cutoff:number, kind:'standard'|'proportional'}}
+ */
+export function chooseTrainTestCutoff(candles, standardCutoff = TRAIN_TEST_CUTOFF) {
+  if (!candles || candles.length === 0) return { cutoff: standardCutoff, kind: 'standard' };
+  const first = candles[0].time;
+  const last = candles[candles.length - 1].time;
+  if (standardCutoff - first >= MIN_TRAIN_MS && last - standardCutoff >= MIN_TEST_MS) {
+    return { cutoff: standardCutoff, kind: 'standard' };
+  }
+  const raw = first + 0.7 * (last - first);
+  return { cutoff: Math.floor(raw / DAY_MS) * DAY_MS, kind: 'proportional' };
 }

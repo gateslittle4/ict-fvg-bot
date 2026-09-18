@@ -33,12 +33,13 @@ function failAll(message) {
 function getWorker() {
   if (worker) return worker;
   const w = new Worker(WORKER_URL, { resourceLimits: { maxOldGenerationSizeMb: WORKER_HEAP_MB, maxYoungGenerationSizeMb: 24 } });
-  w.on('message', ({ id, ok, result, error }) => {
+  w.on('message', ({ id, ok, result, error, userError }) => {
     const job = pending.get(id);
     if (!job) return; // already timed out
     clearTimeout(job.timer);
     pending.delete(id);
-    ok ? job.resolve(result) : job.reject(new Error(error));
+    // userError = the upload/option was wrong (a 400), not a server fault (a 500).
+    ok ? job.resolve(result) : job.reject(Object.assign(new Error(error), { userError: Boolean(userError) }));
   });
   const onDeath = (reason) => {
     if (worker === w) worker = null; // next job lazily starts a fresh one
@@ -51,7 +52,7 @@ function getWorker() {
 }
 
 /**
- * @param {'runTrainTest'|'screenSymbols'|'screenStrategies'} op
+ * @param {'runTrainTest'|'screenSymbols'|'screenStrategies'|'importDataset'} op
  * @param {object} payload
  * @returns {Promise<object>}
  */
