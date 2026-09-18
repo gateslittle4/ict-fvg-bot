@@ -210,6 +210,24 @@
   .strategy-table tr:hover td { background: var(--bg-inset); }
   .strategy-table tr:last-child td { border-bottom: none; }
 
+  /* 2026-09-18 (Esdras: "continue, ne t'arrête pas") - the strategy
+     comparison table already existed; this makes the same numbers
+     immediately scannable at a glance, side by side, instead of read
+     row-by-row. Deliberately a simple flex bar rather than a full SVG
+     diverging chart: bar length is |totalR| scaled against the largest
+     magnitude among all sources, colored green/red by sign - correct
+     relative magnitude even when a source is negative, just without a
+     true zero-centered axis (not needed for "which mechanism is pulling
+     its weight" at this number of rows). */
+  .bar-chart { margin-bottom: 14px; }
+  .bar-chart-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .bar-chart-label { width: 100px; font-size: 11px; color: var(--muted); flex-shrink: 0; font-family: var(--mono); }
+  .bar-chart-track { flex: 1; height: 16px; background: var(--bg-inset); border-radius: 2px; overflow: hidden; }
+  .bar-chart-fill { height: 100%; border-radius: 2px; min-width: 2px; }
+  .bar-chart-fill.win { background: var(--green); }
+  .bar-chart-fill.loss { background: var(--red); }
+  .bar-chart-value { width: 64px; text-align: right; font-size: 11px; font-family: var(--mono); flex-shrink: 0; }
+
   /* ---------- Calendrier mensuel (2026-09-15, Esdras: "un calendrier des
      jours du mois... genre le 📆 avec les chiffres totaux de chaque jour,
      gain ou perte, chiffre brut et %") - a real wall-calendar grid, one
@@ -393,6 +411,14 @@ const sourceLabel = (s) => {
   if (s.source === 'silverbullet') return 'Silver Bullet';
   if (s.source === 'fvg') return 'FVG';
   if (s.source === 'pyramid') return 'Pyramide';
+  // BUG FOUND 2026-09-18 (building the strategy bar chart above surfaced
+  // it immediately: a synthetic cbdr row rendered as "manuel/inconnu",
+  // which for a REAL cbdr trade would misreport it as an unattributed
+  // manual trade instead of the live CBDR mechanism it actually is). Same
+  // gap fixed in dealPairing.js's LABEL_SOURCE_RE, index.html's own 3
+  // label lookups, and both connectors' _notify() - see dealPairing.js's
+  // comment for the full list.
+  if (s.source === 'cbdr') return 'CBDR';
   return 'manuel/inconnu';
 };
 
@@ -792,6 +818,7 @@ function renderOverview(data) {
   `;
 
   const sources = Object.keys(data.bySource || {});
+  const barChart = renderStrategyBarChart(data.bySource);
   const strategyTable = sources.length === 0 ? '' : `
     <table class="strategy-table">
       <thead><tr><th>Stratégie</th><th>Trades</th><th>Taux</th><th>Total R</th></tr></thead>
@@ -810,7 +837,31 @@ function renderOverview(data) {
     </table>
   `;
 
-  el.innerHTML = tiles + renderEquityCurve(data.equityCurve) + strategyTable;
+  el.innerHTML = tiles + renderEquityCurve(data.equityCurve) + barChart + strategyTable;
+}
+
+/** See this file's own .bar-chart CSS comment for the design rationale. */
+function renderStrategyBarChart(bySource) {
+  const sources = Object.keys(bySource || {});
+  if (sources.length === 0) return '';
+  const sorted = [...sources].sort((a, b) => bySource[b].totalR - bySource[a].totalR);
+  const maxAbs = Math.max(1e-9, ...sorted.map((s) => Math.abs(bySource[s].totalR)));
+  return `
+    <div class="bar-chart">
+      ${sorted.map((source) => {
+        const b = bySource[source];
+        const netWinS = b.totalR >= 0;
+        const widthPct = Math.min(100, (Math.abs(b.totalR) / maxAbs) * 100);
+        return `
+          <div class="bar-chart-row">
+            <div class="bar-chart-label">${sourceLabel({ source })}</div>
+            <div class="bar-chart-track"><div class="bar-chart-fill ${netWinS ? 'win' : 'loss'}" style="width:${widthPct}%;"></div></div>
+            <div class="bar-chart-value ${netWinS ? 'win' : 'loss'}">${netWinS ? '+' : ''}${fmt(b.totalR)}R</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
 // Cached by refreshTradeLog() below, read by exportJournalPdf() - the PDF

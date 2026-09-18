@@ -378,3 +378,21 @@ test('buildComplianceChecklist: a pyramid source gets a clear "unité pyramide" 
   assert.doesNotMatch(signal.detail, /inconnu/i);
   assert.match(signal.detail, /pyramide/i);
 });
+
+// 2026-09-18: cbdr went live on US100 the same day this gap was found -
+// before the fix it fell into the generic default branch and showed
+// 'Mécanisme "cbdr" inconnu de cette checklist', which reads as a bug for
+// a real, live, independent mechanism (not accurate - unlike pyramid,
+// it's not a scale-in add-on with nothing of its own to check).
+test('buildComplianceChecklist: a cbdr source gets an honest "not yet built" message, not "unknown mechanism"', () => {
+  const trade = { source: 'cbdr', symbol: 'US100', direction: 'bullish', entryTime: 1, entryPrice: 100, stopPrice: 95, pnlUsd: 40, rMultiple: 2, balanceAfter: 10040 };
+  const { items } = buildComplianceChecklist({ trade, candles: [], cfg: null, h1Candles: null, expectedRiskPct: 0.5 });
+  const signal = items.find((i) => i.key === 'signal');
+  assert.equal(signal.applicable, false);
+  assert.doesNotMatch(signal.detail, /inconnu/i);
+  assert.match(signal.detail, /cbdr/i);
+  // The risk-sizing item must still be checked normally for cbdr trades -
+  // only the mechanism-specific criteria are unbuilt, not the whole checklist.
+  const risk = items.find((i) => i.key === 'risk' || i.key === 'riskSizing');
+  assert.ok(risk, 'expected a risk-sizing item to still be present for a cbdr trade');
+});

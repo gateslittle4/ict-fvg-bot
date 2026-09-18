@@ -734,6 +734,8 @@ export class MatchTraderDataSource {
         e.source === 'weeklysweep' ? 'Weekly Liquidity Sweep (GER40)' :
         e.source === 'breakerblock' ? 'Breaker Block (GER40)' :
         e.source === 'silverbullet' ? 'Silver Bullet (killzone 10h-11h NY)' :
+        // Same fix as cTraderDataSource.js's own _notify() - see its comment.
+        e.source === 'cbdr' ? 'CBDR (fenêtre 14h-20h NY)' :
         'FVG rempli';
       // Forward-test démo OBSERVATION ONLY (2026-09) - see cTraderDataSource.js's
       // own _notify() and accountRuntime.js's tagVolatilityObservation()/HANDOFF.md.

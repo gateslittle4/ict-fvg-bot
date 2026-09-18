@@ -480,6 +480,20 @@ export function buildComplianceChecklist({ trade, candles, cfg, h1Candles, expec
     case 'pyramid':
       items.push({ key: 'signal', applicable: false, label: 'Critères du mécanisme', detail: "Unité pyramide (ajout sur position gagnante) — pas un signal indépendant, rien à vérifier ici" });
       break;
+    // BUG FOUND 2026-09-18 (audit prompted by a source-label gap found
+    // elsewhere - see dealPairing.js's own comment on this same date): cbdr
+    // went live on US100 today but fell into the generic "unknown
+    // mechanism" branch below, which reads as a bug/error for a real,
+    // working, independent signal - not accurate. Unlike pyramid above,
+    // CBDR IS an independent entry with its own criteria; a full checklist
+    // (buildCbdrChecklist) just doesn't exist yet, so this says that
+    // honestly instead of pretending nothing needs checking OR fabricating
+    // criteria never verified against cbdr.js's actual logic. The risk-
+    // sizing check above (buildRiskItem) already applies regardless of
+    // this switch, so sizing IS still verified for these trades.
+    case 'cbdr':
+      items.push({ key: 'signal', applicable: false, label: 'Critères du mécanisme', detail: 'CBDR (Central Bank Dealer Range) — mécanisme réel et indépendant, mais sa checklist détaillée n\'est pas encore construite ici. Le dimensionnement du risque ci-dessus reste vérifié normalement.' });
+      break;
     // null/undefined (2026-09-17, found live on the real account: a manual
     // Buy/Sell click has no order label at all, so parseSourceFromLabel()
     // already returns null for it upstream in dealPairing.js - a real,

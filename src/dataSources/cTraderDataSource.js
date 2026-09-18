@@ -2742,6 +2742,13 @@ export class CTraderDataSource {
         e.source === 'weeklysweep' ? 'Weekly Liquidity Sweep (GER40)' :
         e.source === 'breakerblock' ? 'Breaker Block (GER40)' :
         e.source === 'silverbullet' ? 'Silver Bullet (killzone 10h-11h NY)' :
+        // BUG FOUND 2026-09-18: cbdr went live on US100 today but was
+        // missing here - every real CBDR alert would have been pushed as
+        // the generic "FVG rempli" fallback below, misleading Esdras about
+        // what actually fired. Same recurring gap already found once for
+        // breakerblock (dealPairing.js's own comment) - fixed at every
+        // downstream label site in the same pass, not just this one.
+        e.source === 'cbdr' ? 'CBDR (fenêtre 14h-20h NY)' :
         'FVG rempli';
       // Forward-test démo OBSERVATION ONLY (2026-09) - re-tags here rather than
       // reusing pushSignalEvents' already-tagged copy, so this stays a pure

@@ -128,6 +128,12 @@ test('parseSourceFromLabel: recognizes each auto-executed source', () => {
   // labeled auto-breakerblock-GER40 but this parser didn't recognize it yet,
   // so those trades would have reconciled as source: null.
   assert.equal(parseSourceFromLabel('auto-breakerblock-GER40'), 'breakerblock');
+  // 2026-09-18: same recurring failure mode as breakerblock above, found
+  // AGAIN - CBDR went live on US100 today (liveStrategyEngine.js) but this
+  // regex, and every downstream source-label site in the whole project,
+  // was never updated. Real broker orders labeled auto-cbdr-US100 would
+  // have reconciled as source: null exactly like breakerblock once did.
+  assert.equal(parseSourceFromLabel('auto-cbdr-US100'), 'cbdr');
   assert.equal(parseSourceFromLabel('pyramid-add-US100'), 'pyramid');
 });
 

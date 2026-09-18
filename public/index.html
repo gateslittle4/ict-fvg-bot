@@ -1112,6 +1112,9 @@ const sourceLabel = (s) => {
   if (s.source === 'silverbullet') return 'Silver Bullet';
   if (s.source === 'fvg') return 'FVG';
   if (s.source === 'pyramid') return 'Pyramide';
+  // Same gap as journal.html's own copy - see its comment (cbdr went live
+  // on US100 2026-09-18 but was missing from every label lookup).
+  if (s.source === 'cbdr') return 'CBDR';
   return 'manuel/inconnu';
 };
 
@@ -1257,7 +1260,14 @@ function renderStatus(data) {
   document.getElementById('settings-symbols-current').textContent = data.symbols.map((s) => s.symbol).join(' · ');
 }
 
-const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judasSwing: 'Judas Swing', weeklysweep: 'Weekly Sweep', breakerblock: 'Breaker Block', silverbullet: 'Silver Bullet' };
+// BUG FOUND 2026-09-18 (auditing source labels for the cbdr gap below
+// surfaced this too): the real signal source string is 'judaswing' (all
+// lowercase - see liveStrategyEngine.js), not 'judasSwing' - this object's
+// key never matched it, so reconciliationExplanation() below silently fell
+// through to the `|| r.source` raw-string fallback for every Judas Swing
+// mismatch alert instead of showing "Judas Swing". cbdr added alongside it
+// (went live on US100 today, was missing from this map entirely).
+const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judaswing: 'Judas Swing', weeklysweep: 'Weekly Sweep', breakerblock: 'Breaker Block', silverbullet: 'Silver Bullet', cbdr: 'CBDR' };
 function reconciliationExplanation(r) {
   if (r.status === 'match') return '✓ correspond';
   // 'none' (2026-09-14, bug réel trouvé par Esdras : "Écart bot/courtier ⚠
@@ -1494,7 +1504,9 @@ async function refreshAccount() {
   }
 }
 
-const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judasSwing: 'Judas', weeklysweep: 'W.Sweep', breakerblock: 'Breaker', silverbullet: 'SilverB.' };
+// Same two fixes as sourceLabelFull just above: 'judaswing' (lowercase, the
+// real source string), and cbdr added.
+const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judaswing: 'Judas', weeklysweep: 'W.Sweep', breakerblock: 'Breaker', silverbullet: 'SilverB.', cbdr: 'CBDR' };
 async function refreshOrderLog() {
   const bodyEl = document.getElementById('order-log-body');
   try {

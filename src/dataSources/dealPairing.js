@@ -21,9 +21,19 @@
 // (placed by hand, semi-automatic mode) or an unrecognized one is marked
 // source: null - NEVER guessed as one of the known strategies.
 
-const LABEL_SOURCE_RE = /^auto-(fvg|divergence|nwog|judaswing|weeklysweep|breakerblock|silverbullet)-/;
+// BUG FOUND 2026-09-18 (while building journal.html's strategy bar chart -
+// a synthetic CBDR row rendered as "manuel/inconnu"): cbdr was missing here
+// even though it went live on US100 today (see HANDOFF.md). Same gap found
+// in EVERY downstream source-label site in this project (dashboard,
+// journal, notification text, trade-compliance checklist, live-mechanism
+// status) - cbdr existed only in liveStrategyEngine.js, its actual signal
+// source, and nowhere a human-facing label is built from it. Fixed
+// everywhere in the same pass as this file, following the exact same
+// per-mechanism replication this project already did for NWOG/Judas Swing/
+// Weekly Sweep/Breaker Block/Silver Bullet when each of those went live.
+const LABEL_SOURCE_RE = /^auto-(fvg|divergence|nwog|judaswing|weeklysweep|breakerblock|silverbullet|cbdr)-/;
 
-/** @returns {string|null} 'fvg'|'divergence'|'nwog'|'judaswing'|'weeklysweep'|'breakerblock'|'silverbullet'|'pyramid', or null if the label doesn't identify a known source */
+/** @returns {string|null} 'fvg'|'divergence'|'nwog'|'judaswing'|'weeklysweep'|'breakerblock'|'silverbullet'|'cbdr'|'pyramid', or null if the label doesn't identify a known source */
 export function parseSourceFromLabel(label) {
   if (!label) return null;
   const m = LABEL_SOURCE_RE.exec(label);
