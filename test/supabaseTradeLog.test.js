@@ -203,6 +203,40 @@ test('fetchPerformanceBySymbol: overall/equityCurve reuse summarizeTrades() math
   assert.equal(equityCurve[2].cumulativeR, 7);
 });
 
+// BUG FOUND 2026-09-18 ("regarde le journal des trades"): this used to pass
+// `rMultiple: row.r_multiple ?? 0` into summarizeTrades() - a row whose
+// r_multiple is genuinely unknown (a real, reachable case - see
+// toTradeRow/cTraderDataSource.js's _handleExecutionEvent, which logs
+// `rMultiple: null` whenever riskAmount was 0) got silently counted as an
+// invented 0R, diluting overall.avgR/expectancyR toward zero (the figure
+// shown as "Espérance" on the journal page and as the dashboard hero
+// banner's totalR) - a real inconsistency with journal.html's OWN per-trade
+// list, which already excludes unknown-R trades from its own average.
+test('fetchPerformanceBySymbol: a row with an unknown r_multiple (null) does not dilute overall.avgR/expectancyR', async () => {
+  const client = fakeClient({
+    selectResult: {
+      data: [
+        { symbol: 'US500', source: 'fvg', outcome: 'loss', r_multiple: -1, exit_time: '2026-09-03T00:00:00Z' },
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: null, exit_time: '2026-09-02T00:00:00Z' }, // a real gap - riskAmount was 0 at close time
+        { symbol: 'US500', source: 'fvg', outcome: 'win', r_multiple: 5, exit_time: '2026-09-01T00:00:00Z' },
+      ],
+      error: null,
+    },
+  });
+  const { overall, equityCurve } = await fetchPerformanceBySymbol(client);
+  // The bug: (5 + 0 + -1) / 3 = 1.333...R. The fix: (5 + -1) / 2 = 2R -
+  // only the two trades with a REAL r_multiple count toward the average.
+  assert.equal(overall.avgR, 2);
+  assert.equal(overall.expectancyR, 2);
+  assert.equal(overall.totalSignals, 3, 'still counted in the total - outcome is always known');
+  // The unknown-R row is still a real equity-curve POINT (its own real
+  // exit_time/entryTime/pnlUsd must still be there for the calendar/session
+  // views) - it's a no-op step (cumulativeR unchanged from the point before
+  // it), never an invented value.
+  assert.equal(equityCurve.length, 3);
+  assert.equal(equityCurve[1].cumulativeR, 5); // unchanged from equityCurve[0] - the unknown trade added nothing
+});
+
 // 2026-09-15 (Esdras: "stats par session") - a trade's ICT session
 // (Asie/Londres/New York) is a property of when it was ENTERED, not when it
 // closed, so equityCurve must carry entry_time alongside exit_time/cumulativeR.

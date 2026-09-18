@@ -601,11 +601,31 @@ export function summarizeTrades(trades) {
 
   const winRate = resolved.length > 0 ? wins / resolved.length : null;
 
-  const sumR = trades.reduce((s, t) => s + t.rMultiple, 0);
-  const avgR = trades.length > 0 ? sumR / trades.length : null;
+  // BUG FOUND 2026-09-18 ("regarde le journal des trades"): every backtest
+  // caller of this function always has a real numeric rMultiple on every
+  // trade, but supabaseTradeLog.js's fetchPerformanceBySymbol feeds this
+  // REAL closed trades from the durable journal, where rMultiple CAN
+  // genuinely be null (a row logged before that column existed, or a
+  // degenerate sizing edge case - see cTraderDataSource.js's
+  // _handleExecutionEvent: `riskAmount > 0 ? pnl / riskAmount : null`). That
+  // caller used to default the unknown value to `?? 0` before calling this -
+  // silently treating "we don't know" as "exactly breakeven", which DILUTES
+  // avgR toward zero (the sum stays smaller while the denominator, trades.length,
+  // still counts it) - a real, currently-live distortion of the "Espérance"
+  // figure shown on the journal page and the dashboard hero banner.
+  // withR/hasKnownR below exclude such trades from every R-based STATISTIC
+  // (avgR/profitFactor's sum AND denominator alike) while still counting
+  // them in totalSignals/wins/losses/timeouts (all outcome-based, always
+  // known) - matching the same "never invent a number" principle
+  // journal.html's own per-trade list already applies for the identical gap.
+  const hasKnownR = (t) => typeof t.rMultiple === 'number' && Number.isFinite(t.rMultiple);
+  const withR = trades.filter(hasKnownR);
 
-  const grossWinR = trades.filter((t) => t.rMultiple > 0).reduce((s, t) => s + t.rMultiple, 0);
-  const grossLossR = Math.abs(trades.filter((t) => t.rMultiple < 0).reduce((s, t) => s + t.rMultiple, 0));
+  const sumR = withR.reduce((s, t) => s + t.rMultiple, 0);
+  const avgR = withR.length > 0 ? sumR / withR.length : null;
+
+  const grossWinR = withR.filter((t) => t.rMultiple > 0).reduce((s, t) => s + t.rMultiple, 0);
+  const grossLossR = Math.abs(withR.filter((t) => t.rMultiple < 0).reduce((s, t) => s + t.rMultiple, 0));
   const profitFactor = grossLossR > 0 ? grossWinR / grossLossR : grossWinR > 0 ? Infinity : null;
 
   let equity = 0;
@@ -613,7 +633,14 @@ export function summarizeTrades(trades) {
   let maxDrawdownR = 0;
   const equityCurve = [];
   for (const t of trades) {
-    equity += t.rMultiple;
+    // A trade with no known R doesn't move the equity line (a no-op step,
+    // not an invented 0R) - also hardens this shared primitive against a
+    // FUTURE caller that doesn't pre-guard with `?? 0` the way
+    // fetchPerformanceBySymbol used to: without this, a single raw
+    // null/undefined rMultiple would silently turn `equity` into NaN and
+    // poison every later point on the curve (Math.max(x, NaN) is always
+    // NaN) - not currently reachable live, but a real risk this makes moot.
+    if (hasKnownR(t)) equity += t.rMultiple;
     peak = Math.max(peak, equity);
     maxDrawdownR = Math.max(maxDrawdownR, peak - equity);
     equityCurve.push(equity);

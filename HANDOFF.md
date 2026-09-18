@@ -4929,3 +4929,23 @@ Esdras : "quand je suis dans le premier graphe, je bouge les prix dans le graphe
 **Preuve après correctif** (même scénario Playwright) : `autoScale` repasse bien à `true` après le switch vers US500, et la capture confirme un graphique US500 normal (échelle 5484-5508, bougies visibles, ligne de prix actuel à 5499.32 affichée dans la zone visible).
 
 **Fichiers** : `public/chart.html` (`focusOnCurrentPrice()`). Pas de test unitaire (même discipline que le bug précédent — JS inline non extrait en module testable, vérifié via Playwright avant livraison). `npm test` : 682/682 (inchangé).
+
+## Bug réel trouvé et corrigé : l'espérance moyenne (R) du journal était diluée par les trades sans R-multiple connu — 2026-09-18 (à la demande d'Esdras : "regarde le journal des trades")
+
+Audit ciblé sur le journal de trades, à la demande explicite d'Esdras. Repéré en comparant les DEUX vues du journal qui affichent des statistiques dérivées des mêmes données :
+
+- La liste de trades individuels (`renderJournalList` dans `journal.html`) exclut déjà correctement, depuis sa création, les trades sans R-multiple connu de son calcul de moyenne (`withR = filtered.filter(t => t.rMultiple !== null...)`) — et l'affiche même explicitement ("R-multiple indisponible").
+- Mais la vue "Overview" (courbe d'équité, case "Espérance", calendrier mensuel, bandeau héros du dashboard `index.html`) vient de `/api/trade-log` → `fetchPerformanceBySymbol()` (supabaseTradeLog.js), qui faisait `rMultiple: row.r_multiple ?? 0` — un trade dont le R-multiple est réellement inconnu en base (un cas réel et déjà documenté ailleurs : `cTraderDataSource.js`'s `_handleExecutionEvent` écrit `rMultiple: info.riskAmount > 0 ? pnl / info.riskAmount : null` — donc `null` dès que `riskAmount` était nul au moment de la clôture, ou une ligne journalisée avant l'existence de la colonne) était silencieusement traité comme **exactement 0R (breakeven)** plutôt qu'exclu.
+
+**Impact concret** : `summarizeTrades()` (backtestEngine.js, réutilisée par le journal) calcule `avgR = sumR / trades.length`. Un trade "inconnu" contribue `0` à `sumR` mais compte quand même dans `trades.length` — ça DILUE la vraie moyenne vers zéro. Exemple concret testé : 3 trades réels (+5R, -1R, et un dont le R est inconnu) → l'ancien calcul donnait **+1.33R** de moyenne au lieu du vrai **+2R** (moyenne des deux SEULS trades dont le R est vraiment connu). Cette figure "Espérance" est affichée deux fois sur la page journal (tuile "Espérance" + export PDF) et alimente aussi le bandeau héros d'`index.html` (`heroState.totalR = overall.finalEquityR` — celui-ci n'était PAS affecté, une somme n'est pas diluée par un ajout de 0, seule la MOYENNE l'était).
+
+**Corrigé** :
+- `summarizeTrades()` (backtestEngine.js) : nouveau garde `hasKnownR(t)` — exclut désormais les trades sans R-multiple numérique fini du calcul de `avgR`/`expectancyR`/`profitFactor` (numérateur ET dénominateur), tout en les gardant dans `totalSignals`/`wins`/`losses`/`timeouts` (basés sur `outcome`, toujours connu). La courbe d'équité les traite comme un palier plat (pas de contribution) au lieu d'un 0R inventé — et ce garde protège aussi la primitive contre un futur appelant qui, contrairement à celui d'aujourd'hui, n'aurait pas pré-filtré avec `?? 0` (un `NaN` non gardé aurait empoisonné TOUTE la suite de la courbe via `Math.max(x, NaN) === NaN`).
+- `supabaseTradeLog.js` : `fetchPerformanceBySymbol` ne masque plus l'inconnu — passe `row.r_multiple ?? null` (au lieu de `?? 0`) à `summarizeTrades()`, qui gère maintenant correctement ce cas.
+- Aucun autre appelant de `summarizeTrades()` (backtestEngine.js) n'est affecté : tous les autres (grid search, backtests) ont toujours un R-multiple réel sur chaque trade — comportement strictement identique pour eux.
+
+**Preuve avant correctif** : 3 nouveaux tests écrits d'abord (2 sur `summarizeTrades()` directement, 1 sur `fetchPerformanceBySymbol()` de bout en bout) — confirmés en échec contre le code non corrigé.
+
+**Preuve que le diff final attrape la régression** : `git stash` des deux fichiers source (`backtestEngine.js` + `supabaseTradeLog.js`, tests gardés) → 3 tests échouent → `git stash pop` → tout repasse au vert.
+
+`npm test` : 685/685 (682 + 3 nouveaux). **Fichiers** : `src/backtest/backtestEngine.js`, `src/dataSources/supabaseTradeLog.js`, `test/backtestEngine.test.js`, `test/supabaseTradeLog.test.js`.

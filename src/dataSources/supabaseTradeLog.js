@@ -271,8 +271,14 @@ export async function fetchPerformanceBySymbol(client, { days = null } = {}) {
   for (const b of Object.values(bySource)) finalizeBucket(b);
 
   const chronological = [...(data || [])].reverse();
+  // rMultiple: row.r_multiple (2026-09-18 fix, no more `?? 0`) - a row with
+  // a genuinely unknown r_multiple (see toTradeRow/cTraderDataSource.js's
+  // _handleExecutionEvent) must reach summarizeTrades() as the true
+  // null/undefined it is, not a silently-invented 0R - see that function's
+  // own comment for the avgR-dilution bug this used to cause. `?? null`
+  // normalizes an absent column the same way either shape would read.
   const overall = chronological.length > 0
-    ? summarizeTrades(chronological.map((row) => ({ outcome: row.outcome, rMultiple: row.r_multiple ?? 0 })))
+    ? summarizeTrades(chronological.map((row) => ({ outcome: row.outcome, rMultiple: row.r_multiple ?? null })))
     : null;
   // entryTime added 2026-09-15 (Esdras: "stats par session") - a trade's
   // TRADING SESSION (Asie/Londres/New York) is a property of when it was

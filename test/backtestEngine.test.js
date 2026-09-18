@@ -149,6 +149,55 @@ test('summarizeTrades computes win rate, profit factor and max drawdown correctl
   assert.equal(summary.finalEquityR, 1);
 });
 
+// BUG FOUND 2026-09-18 ("regarde le journal des trades"): a durable-journal
+// row can genuinely have an UNKNOWN r_multiple (a trade closed before this
+// column existed, or a degenerate sizing edge case where riskAmount was 0 -
+// see supabaseTradeLog.js's toTradeRow/cTraderDataSource.js's
+// _handleExecutionEvent: `rMultiple: info.riskAmount > 0 ? pnl / info.riskAmount : null`).
+// fetchPerformanceBySymbol (supabaseTradeLog.js) used to default that to
+// `?? 0` before calling summarizeTrades() - silently treating "we don't
+// know" as "exactly breakeven", which DILUTES avgR/expectancyR toward zero
+// (divides by trades.length, which still counts the unknown trade, while its
+// true contribution to the sum is invisible) - exactly the "ne doit ni
+// fausser la moyenne ni prétendre avoir un R inventé" principle
+// journal.html's own per-trade list already applies (it excludes unknown-R
+// trades from its own average), but the server-side aggregate (the
+// "Espérance" metric tile on the journal page, and index.html's hero banner
+// figure) did NOT - a real, currently-live inconsistency between the two
+// views of the SAME data.
+test('summarizeTrades excludes a trade with an unknown rMultiple (null/undefined) from avgR/profitFactor, without diluting the average or poisoning the equity curve', () => {
+  const trades = [
+    { rMultiple: 2, outcome: 'win' },
+    { rMultiple: null, outcome: 'win' }, // durable-journal row with no known risk amount
+    { rMultiple: -1, outcome: 'loss' },
+  ];
+  const summary = summarizeTrades(trades);
+
+  assert.equal(summary.totalSignals, 3, 'still counted in the total - outcome is always known even when rMultiple is not');
+  assert.equal(summary.wins, 2);
+  assert.equal(summary.losses, 1);
+  // The bug: (2 + 0 + -1) / 3 = 0.333...R. The fix: (2 + -1) / 2 = 0.5R -
+  // the unknown trade must not water down the average of the trades that
+  // DO have a real, known R.
+  assert.equal(summary.avgR, 0.5);
+  assert.equal(summary.expectancyR, 0.5);
+  assert.equal(summary.profitFactor, 2); // grossWin(2) / grossLoss(1), unaffected either way
+  assert.ok(summary.equityCurve.every((v) => Number.isFinite(v)), 'equity curve must stay finite - an unknown-R trade must never poison it with NaN');
+  assert.equal(summary.finalEquityR, 1); // 2 + (unknown: no-op) + -1 = 1 - unaffected, a sum is the same whether a 0 is added or skipped
+});
+
+test('summarizeTrades: every trade with an unknown rMultiple -> avgR/profitFactor are null, not NaN or a false 0', () => {
+  const trades = [
+    { rMultiple: undefined, outcome: 'win' },
+    { rMultiple: null, outcome: 'loss' },
+  ];
+  const summary = summarizeTrades(trades);
+  assert.equal(summary.avgR, null);
+  assert.equal(summary.expectancyR, null);
+  assert.equal(summary.profitFactor, null);
+  assert.equal(summary.finalEquityR, 0);
+});
+
 // entry=103, stop=100.8, distance=2.2 (from bullishSetup()); rrMultiple=3 -> target=109.6.
 // +1R trigger level = 103 + 2.2 = 105.2.
 
