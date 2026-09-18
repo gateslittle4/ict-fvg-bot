@@ -1,0 +1,10 @@
+[package]
+name = "apex-fvg-core"
+version = "0.1.0"
+edition = "2021"
+description = "Isolated, deterministic risk core for Apex FVG"
+license = "UNLICENSED"
+
+[lib]
+name = "apex_fvg_core"
+path = "src/lib.rs"
