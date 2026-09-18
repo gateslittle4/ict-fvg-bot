@@ -1,0 +1,56 @@
+# Surveillance externe du bot — voir src/watchdogDecision.js pour la logique.
+#
+# Pourquoi ici et pas sur Render : une sonde qui vit dans le process qu'elle
+# surveille ne peut pas signaler la mort de ce process. keepAlive.js peut
+# EMPÊCHER la mise en veille, jamais en sortir ni prévenir.
+name: watchdog
+
+on:
+  # Le cron sert de calendrier grossier : il ne tourne que quand le marché est
+  # susceptible d'être ouvert, pour ne pas alerter le week-end alors que le
+  # service dort volontairement. Quand le bot RÉPOND, c'est son champ
+  # marketOpen qui tranche (calendrier DST-aware, une seule source de vérité).
+  # Ce cron ne sert donc qu'au cas « il ne répond pas du tout ».
+  # Marché : dimanche 17h -> vendredi 17h New York.
+  schedule:
+    - cron: '*/10 * * * 1-4'      # lundi-jeudi, toute la journée
+    - cron: '*/10 0-20 * * 5'     # vendredi, jusqu'à 20h UTC (clôture NY = 21h/22h UTC)
+    - cron: '*/10 22-23 * * 0'    # dimanche soir, après la réouverture NY
+  workflow_dispatch:              # pour tester à la main
+
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # L'état précédent, pour n'alerter qu'au CHANGEMENT plutôt que toutes
+      # les 10 minutes. Une alarme qui se répète est une alarme qu'on coupe.
+      - name: Restaurer l'état précédent
+        uses: actions/cache/restore@v4
+        with:
+          path: .watchdog-state
+          key: watchdog-state-${{ github.run_id }}
+          restore-keys: watchdog-state-
+
+      - name: Interroger le bot
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          HEALTH_URL: https://ict-fvg-bot.onrender.com/healthz
+        run: node scripts/runWatchdog.js
+
+      - name: Sauvegarder l'état
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .watchdog-state
+          key: watchdog-state-${{ github.run_id }}
