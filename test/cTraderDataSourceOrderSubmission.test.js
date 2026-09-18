@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CTraderDataSource } from '../src/dataSources/cTraderDataSource.js';
+import { CTraderDataSource, toRelativeProtectionDistance, RELATIVE_PRICE_SCALE } from '../src/dataSources/cTraderDataSource.js';
 
 // DELIBERATE exception to cTraderDataSource.test.js's own stated convention
 // ("only the pure pieces are unit-tested here... everything else is network
@@ -344,4 +344,159 @@ test('_submitOrder: a refusal from an EARLIER order is not blamed on a later tim
 
   assert.equal(await second, null);
   assert.equal(ds._consecutiveOrderConfirmationTimeouts, 1, 'the second order got no answer at all - that is a real unconfirmed order');
+});
+
+// ---------------------------------------------------------------------------
+// MARKET orders must express protection as a RELATIVE distance (2026-09-18).
+// cTrader's own vendored message definition says absolute stopLoss/takeProfit
+// are "Not supported for the MARKER [sic] orders" - and every strategy order
+// but FVG is a MARKET order sent with exactly that. 0 of 3 ever reached the
+// broker; the 4 protection-less MARKET orders from /admin/test-order-cycle
+// filled in ~290ms each.
+// ---------------------------------------------------------------------------
+
+function createPayloadCapturingConnection() {
+  const sent = [];
+  const connection = createMockConnection({
+    sendCommand: async (name, data) => {
+      sent.push({ name, data });
+      return {};
+    },
+  });
+  connection._sent = sent;
+  return connection;
+}
+
+async function submitAndCapture(t, connection, overrides) {
+  const ds = makeDataSource(connection);
+  const promise = ds._submitOrder({
+    symbolId: 215,
+    tradeSide: 'BUY',
+    lots: 1,
+    symbolSpec: SYMBOL_SPEC,
+    label: 'auto-divergence-US500',
+    ...overrides,
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  t.mock.timers.tick(3000);
+  await promise;
+  return connection._sent.at(-1).data;
+}
+
+test('toRelativeProtectionDistance: a stop 20 points below entry becomes 20 price units of distance', () => {
+  assert.equal(toRelativeProtectionDistance(7640, 7620), 20 * RELATIVE_PRICE_SCALE);
+});
+
+test('toRelativeProtectionDistance: the sign is dropped - the broker derives the side from tradeSide', () => {
+  // A SELL's stop sits ABOVE entry, and must still be sent as a positive distance.
+  assert.equal(toRelativeProtectionDistance(7640, 7660), 20 * RELATIVE_PRICE_SCALE);
+});
+
+test('toRelativeProtectionDistance: a zero-distance or unusable protection is null, never 0', () => {
+  // 0 would encode as "no protection at all" and open an unguarded position.
+  assert.equal(toRelativeProtectionDistance(7640, 7640), null);
+  assert.equal(toRelativeProtectionDistance(undefined, 7620), null);
+  assert.equal(toRelativeProtectionDistance(7640, null), null);
+  assert.equal(toRelativeProtectionDistance(0, 7620), null);
+});
+
+test('_submitOrder: a MARKET order sends RELATIVE protection and no absolute prices at all', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const connection = createPayloadCapturingConnection();
+  const payload = await submitAndCapture(t, connection, {
+    orderType: 'MARKET',
+    stopLoss: 7620,
+    takeProfit: 7700,
+    referencePrice: 7640,
+  });
+
+  assert.equal(payload.relativeStopLoss, 20 * RELATIVE_PRICE_SCALE);
+  assert.equal(payload.relativeTakeProfit, 60 * RELATIVE_PRICE_SCALE);
+  assert.ok(!('stopLoss' in payload), 'an absolute stopLoss on a MARKET order is what the broker refuses');
+  assert.ok(!('takeProfit' in payload), 'same for an absolute takeProfit');
+});
+
+test('_submitOrder: a LIMIT order keeps ABSOLUTE protection (the form a pending order does accept)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const connection = createPayloadCapturingConnection();
+  const payload = await submitAndCapture(t, connection, {
+    orderType: 'LIMIT',
+    price: 7640,
+    stopLoss: 7620,
+    takeProfit: 7700,
+    referencePrice: 7640,
+  });
+
+  assert.equal(payload.stopLoss, 7620);
+  assert.equal(payload.takeProfit, 7700);
+  assert.equal(payload.limitPrice, 7640);
+  assert.ok(!('relativeStopLoss' in payload), 'FVG/LIMIT behaviour must be untouched by this change');
+});
+
+test('_submitOrder: a STOP order (the pyramid add-on) keeps ABSOLUTE protection too', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const connection = createPayloadCapturingConnection();
+  const payload = await submitAndCapture(t, connection, {
+    orderType: 'STOP',
+    price: 7660,
+    stopLoss: 7620,
+    takeProfit: 7700,
+  });
+
+  assert.equal(payload.stopLoss, 7620);
+  assert.equal(payload.takeProfit, 7700);
+  assert.equal(payload.stopPrice, 7660);
+  assert.ok(!('relativeStopLoss' in payload));
+});
+
+test('_submitOrder: a MARKET order with no usable anchor REFUSES rather than send an unprotected position', async () => {
+  const connection = createPayloadCapturingConnection();
+  const ds = makeDataSource(connection);
+
+  await assert.rejects(
+    ds._submitOrder({
+      symbolId: 215,
+      orderType: 'MARKET',
+      tradeSide: 'BUY',
+      lots: 1,
+      symbolSpec: SYMBOL_SPEC,
+      stopLoss: 7620,
+      takeProfit: 7700,
+      label: 'auto-divergence-US500',
+      // referencePrice deliberately absent, and a MARKET order has no `price`
+    }),
+    /cannot express stopLoss/
+  );
+  assert.equal(connection._sent.length, 0, 'nothing may reach the broker on this path');
+});
+
+test('_submitOrder: a MARKET order whose stop equals its entry REFUSES (a zero distance means no stop)', async () => {
+  const connection = createPayloadCapturingConnection();
+  const ds = makeDataSource(connection);
+
+  await assert.rejects(
+    ds._submitOrder({
+      symbolId: 215,
+      orderType: 'MARKET',
+      tradeSide: 'BUY',
+      lots: 1,
+      symbolSpec: SYMBOL_SPEC,
+      stopLoss: 7640,
+      referencePrice: 7640,
+      label: 'auto-divergence-US500',
+    }),
+    /cannot express stopLoss/
+  );
+  assert.equal(connection._sent.length, 0);
+});
+
+test('_submitOrder: a MARKET order with no protection at all sends neither form (the shape that already filled 4/4)', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const connection = createPayloadCapturingConnection();
+  const payload = await submitAndCapture(t, connection, { orderType: 'MARKET' });
+
+  assert.ok(!('stopLoss' in payload));
+  assert.ok(!('relativeStopLoss' in payload));
+  assert.equal(payload.orderType, 'MARKET');
 });

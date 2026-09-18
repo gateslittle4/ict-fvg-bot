@@ -88,6 +88,50 @@ const CTRADER_REQUEST_TIMEOUT_MS = 20000;
 // reuse the exact same fail-loud-not-silent wrapper for its own direct
 // ProtoOA* calls, instead of duplicating this logic or risking a hung HTTP
 // request against the live broker.
+// ProtoOANewOrderReq's own unit for relativeStopLoss/relativeTakeProfit:
+// "Specified in 1/100000 of unit of a price".
+export const RELATIVE_PRICE_SCALE = 100000;
+
+/**
+ * Converts an ABSOLUTE protection price (stop-loss or take-profit) into the
+ * relative DISTANCE a MARKET order has to express it as.
+ *
+ * 2026-09-18. cTrader's own message definition, vendored with the library at
+ * node_modules/@reiryoku/ctrader-layer/protobuf/OpenApiMessages.proto, says
+ * this outright on ProtoOANewOrderReq:
+ *
+ *   optional double stopLoss   = 11; // The absolute Stop Loss price (...). Not supported for the MARKER orders.
+ *   optional double takeProfit = 12; // The absolute Take Profit price (...). Unsupported for the MARKER orders.
+ *   optional int64 relativeStopLoss   = 19; // (...) for BUY stopLoss = entryPrice - relativeStopLoss, for SELL stopLoss = entryPrice + relativeStopLoss.
+ *   optional int64 relativeTakeProfit = 20; // (...) for BUY takeProfit = entryPrice + relativeTakeProfit, for SELL takeProfit = entryPrice - relativeTakeProfit.
+ *
+ * ("MARKER" is Spotware's own typo for "MARKET".) Every strategy order but
+ * FVG is a MARKET order and every one of them was sent with absolute
+ * stopLoss/takeProfit - which is why not one ever reached the broker, while
+ * the four /admin/test-order-cycle MARKET orders, which carry no protection
+ * at all, were accepted and filled in ~290ms each.
+ *
+ * Sign is deliberately dropped: the broker derives the side itself from
+ * tradeSide (see the quoted comments above), so what it wants is a positive
+ * DISTANCE. That also means the stop ends up anchored on the REAL fill
+ * price rather than on the signal's own entryPrice - which preserves the
+ * intended risk distance exactly, instead of letting 15 minutes of drift
+ * between the candle close and the fill silently widen or shrink the R this
+ * trade was sized for.
+ *
+ * @returns {number|null} the distance in 1/100000 price units, or null when
+ *   the inputs cannot produce a real one - never 0, since a zero-distance
+ *   protection reads as "no protection" and would open an unguarded position.
+ */
+export function toRelativeProtectionDistance(referencePrice, protectionPrice) {
+  const reference = Number(referencePrice);
+  const protection = Number(protectionPrice);
+  if (!Number.isFinite(reference) || reference <= 0) return null;
+  if (!Number.isFinite(protection) || protection <= 0) return null;
+  const distance = Math.round(Math.abs(protection - reference) * RELATIVE_PRICE_SCALE);
+  return distance > 0 ? distance : null;
+}
+
 export async function sendCommandWithTimeout(connection, payloadName, data, timeoutMs = CTRADER_REQUEST_TIMEOUT_MS) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -1911,7 +1955,7 @@ export class CTraderDataSource {
     });
   }
 
-  async _submitOrder({ symbolId, orderType, tradeSide, lots, symbolSpec, price, stopLoss, takeProfit, label, expirationTimestamp }) {
+  async _submitOrder({ symbolId, orderType, tradeSide, lots, symbolSpec, price, stopLoss, takeProfit, label, expirationTimestamp, referencePrice }) {
     const accountId = Number(this.accountId);
     // FIXED 2026-09-16. This was `lots * (symbolSpec.lotSize || 100000) * 100`,
     // and no spec in lotCalculator.js has ever defined a lotSize - so every
@@ -1941,9 +1985,40 @@ export class CTraderDataSource {
       }
       volume = Math.round(lots * lotSize);
     }
-    const payload = { ctidTraderAccountId: accountId, symbolId, orderType, tradeSide, volume, stopLoss, takeProfit, label };
+    const payload = { ctidTraderAccountId: accountId, symbolId, orderType, tradeSide, volume, label };
     if (orderType === 'STOP') payload.stopPrice = price;
     if (orderType === 'LIMIT') payload.limitPrice = price;
+    // 2026-09-18: a MARKET order must express its protection as a relative
+    // DISTANCE - absolute stopLoss/takeProfit are explicitly unsupported on
+    // this order type (see toRelativeProtectionDistance's own comment for the
+    // quoted message definition and the production evidence). LIMIT and STOP
+    // are pending orders with a known entry price, so they keep the absolute
+    // form the broker does accept from them, unchanged.
+    if (orderType === 'MARKET' && (stopLoss != null || takeProfit != null)) {
+      const anchor = referencePrice ?? price;
+      const relativeStopLoss = stopLoss == null ? null : toRelativeProtectionDistance(anchor, stopLoss);
+      const relativeTakeProfit = takeProfit == null ? null : toRelativeProtectionDistance(anchor, takeProfit);
+      // Refuse rather than send a MARKET order stripped of its protection.
+      // Same reasoning as the lotSize guard above: one loud failure to place
+      // an order beats one real unguarded position running on a live account.
+      if (stopLoss != null && relativeStopLoss == null) {
+        throw new Error(
+          `refusing to submit a MARKET order for symbolId=${symbolId}: cannot express stopLoss=${stopLoss} as a ` +
+            `relative distance from referencePrice=${anchor} (a MARKET order cannot carry an absolute stop)`
+        );
+      }
+      if (takeProfit != null && relativeTakeProfit == null) {
+        throw new Error(
+          `refusing to submit a MARKET order for symbolId=${symbolId}: cannot express takeProfit=${takeProfit} as a ` +
+            `relative distance from referencePrice=${anchor} (a MARKET order cannot carry an absolute target)`
+        );
+      }
+      if (relativeStopLoss != null) payload.relativeStopLoss = relativeStopLoss;
+      if (relativeTakeProfit != null) payload.relativeTakeProfit = relativeTakeProfit;
+    } else {
+      if (stopLoss != null) payload.stopLoss = stopLoss;
+      if (takeProfit != null) payload.takeProfit = takeProfit;
+    }
     if (expirationTimestamp) {
       payload.expirationTimestamp = expirationTimestamp;
       payload.timeInForce = 'GOOD_TILL_DATE'; // VERIFY exact enum name against a real API response
@@ -2167,6 +2242,12 @@ export class CTraderDataSource {
         price: isFvg ? signal.entryPrice : undefined,
         stopLoss: signal.stopPrice,
         takeProfit: signal.targetPrice,
+        // The anchor the stop/target distances are measured from on a MARKET
+        // order (2026-09-18 - see toRelativeProtectionDistance). Ignored on
+        // the FVG/LIMIT path, which keeps absolute prices. `price` is
+        // undefined for every MARKET source here, so this is the only place
+        // the intended entry level is still available at submission time.
+        referencePrice: signal.entryPrice,
         label: orderLabel,
         expirationTimestamp,
       });
