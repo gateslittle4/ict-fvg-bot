@@ -5122,3 +5122,21 @@ Esdras : **"Cable alors cbdr"**, après une vérification complète (demandée s
 - **Rien poussé vers `claude/lire-handoff-hxisa5` (branche de déploiement Render)** — ce changement câble un MÉCANISME LIVE RÉEL qui enverra de vrais ordres au broker dès que `hxisa5` est mis à jour et redéployé, ET puisque `AUTO_EXECUTE_ALWAYS_ON` est actif (confirmé plus tôt cette session via le dashboard), il commencerait à trader du capital réel immédiatement au prochain déploiement, sans phase d'observation. Chaque autre mécanisme de ce projet a été déployé de cette façon (direct auto-execute, sans phase d'alerte) mais toujours après une confirmation explicite et consciente d'Esdras au moment précis du déploiement — pas supposée ici à partir d'un "câble" qui portait sur le CODE, pas sur la mise en production. Demande explicite faite à Esdras avant de fast-forward `hxisa5`.
 
 **Fichiers** : `src/liveStrategyEngine.js`, `src/config.js`, `src/accountRegistry.js`, `src/accountRuntime.js`, `test/accountRegistry.test.js`, `test/liveStrategyEngine.test.js`. Poussé sur `claude/nouvelle-session-p1lxw4` uniquement — PAS sur la branche de déploiement.
+
+## EN COURS — déploiement bloqué par le classificateur de permissions (pas un problème de code) — 2026-09-18 (suite)
+
+Esdras a explicitement confirmé le déploiement (**"Oui, fast foward"**) après la section précédente. Le fast-forward lui-même est un simple push sans conflit, vérifié : `git merge-base --is-ancestor origin/claude/lire-handoff-hxisa5 origin/claude/nouvelle-session-p1lxw4` renvoie vrai — `hxisa5` est un ancêtre direct de `p1lxw4`, aucune divergence.
+
+**Commande bloquée à deux reprises** (même essai, deux fois, même résultat) :
+```
+git push origin origin/claude/nouvelle-session-p1lxw4:claude/lire-handoff-hxisa5
+```
+Erreur : *"Permission for this action was denied by the Claude Code auto mode classifier. Reason: [Production Deploy]."* — un garde-fou du mode auto de Claude Code lui-même (pas une erreur git, pas un problème d'authentification, pas un conflit de merge). N'a PAS été contourné avec une autre commande — le message de refus demande explicitement de ne pas chercher à contourner l'intention du blocage.
+
+**Ce qu'il faut pour débloquer, au choix d'Esdras** :
+1. Esdras fait le push lui-même (depuis sa machine ou l'interface GitHub) : `git push origin origin/claude/nouvelle-session-p1lxw4:claude/lire-handoff-hxisa5` (ou équivalent : fast-forward `claude/lire-handoff-hxisa5` sur le commit `d04f27f` de `claude/nouvelle-session-p1lxw4`).
+2. Esdras ajoute une règle de permission Bash dans les settings de Claude Code pour autoriser ce type d'action, si une prochaine session doit pouvoir le faire directement.
+
+**Pour la prochaine session Claude** : le code est prêt, testé (714/714), et committé sur `claude/nouvelle-session-p1lxw4` (commit `d04f27f` au moment de cette note). Il ne reste QUE ce push de fast-forward vers `claude/lire-handoff-hxisa5` à faire — retenter la même commande d'abord (le classificateur peut se comporter différemment selon le mode de permission de la session) ; si bloqué à nouveau, ne pas chercher de contournement, relayer le blocage à Esdras exactement comme ici.
+
+**Fichiers** : aucun changement de code — note de passation uniquement.
