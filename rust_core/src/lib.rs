@@ -189,7 +189,7 @@ mod tests {
 
     fn us100() -> SymbolSpec {
         SymbolSpec {
-            point_size: 0.1,
+            point_size: 1.0,
             value_per_point_per_lot: 1.0,
             min_volume: 0.01,
             volume_step: 0.01,
