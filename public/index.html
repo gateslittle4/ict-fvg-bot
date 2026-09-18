@@ -1196,11 +1196,12 @@ function renderStatus(data) {
     : '<span class="pill ok">OK — signaux actifs</span>';
   document.getElementById('guardrail-body').innerHTML = `
     <div class="stat-row"><span>${pill}</span></div>
-    <div class="stat-row"><span class="label">Trades aujourd'hui</span><span>${g.tradesToday} / ${g.maxTradesPerDay}</span></div>
+    <div class="stat-row"><span class="label">Trades clôturés aujourd'hui</span><span>${g.tradesToday} / ${g.maxTradesPerDay}</span></div>
     <div class="stat-row"><span class="label">Cooldown restant</span><span>${fmtDuration(g.cooldownRemainingMs)}</span></div>
     <div class="stat-row"><span class="label">P&L du jour</span><span>${fmt(g.dailyPnl)} (${fmt(g.dailyLossPct)}% / limite ${g.dailyLossLimitPct}%)</span></div>
     <div class="stat-row"><span class="label">Solde</span><span>${fmt(data.balance)}</span></div>
     ${g.blocked ? `<div class="warn">Raisons: ${g.blockReasons.join(', ')}</div>` : ''}
+    <div class="meta" style="margin-top:6px;">Ce compteur compte les trades RÉELLEMENT CLÔTURÉS aujourd'hui, pas les positions encore ouvertes (voir "Positions ouvertes" plus haut) — une position peut rester ouverte plusieurs jours, donc plusieurs positions sur des symboles différents peuvent être ouvertes en même temps sans que ce chiffre ne monte.</div>
   `;
   renderChallengeProgress(g, data.balance);
   recomputeLivePositions(data.symbols);
