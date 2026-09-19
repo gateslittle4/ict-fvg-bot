@@ -5582,3 +5582,104 @@ causes s'applique.
 `src/dataSources/cTraderDataSource.js`, `src/liveStrategyEngine.js`,
 `test/accountReconciliation.test.js`, `test/liveStrategyEngine.test.js`,
 `test/cTraderDataSourceStaleBeliefsSweep.test.js`.
+
+## Challenge HaitiForex (haitiforex.org) — règles trouvées, mécanismes compatibles identifiés, simulation 7 mois, recommandation de taille de risque — 2026-09-19
+
+Esdras : "Va sur haitiforex.com et regarde leur challenge... leur challenge
+est le plus difficile." `haitiforex.com`/`.net` n'existent pas (DNS
+introuvable) ; `www.haitiforex.org` répond (site Homestead SiteBuilder,
+ancien, HTTPS cassé côté proxy — récupéré en HTTP direct). **Recherche
+uniquement, aucun code live modifié** — trois scripts d'analyse ajoutés.
+
+**Règles réelles** (lues directement sur `Open-Account.html`/`Practice.html`,
+4 paliers de compte — le $100 000 est celui avec le plafond $2 200/jour
+qu'Esdras avait mentionné avant même que la recherche confirme le chiffre) :
+cible +10% du solde, perte max 5% du solde (compte annulé), **plafond de
+GAIN quotidien** ($1 100 à $5 500 selon le palier — AUCUNE limite de perte
+quotidienne par contre), min 5 jours de trading, max 30 jours de durée de
+compte, **toute position doit être fermée à 16h00 NY sinon compte annulé**
+(zéro swing/overnight), stop-loss obligatoire sur chaque trade (sinon le
+gain est annulé), no scalping (durée min 5 min/trade), pas de hedge, rapport
+manuel chaque vendredi après 17h. ⚠️ Signaux d'alerte notés (paiement via
+apps perso MonCash/Zelle/CashApp/Wise, témoignages invérifiables, page qui
+sollicite des "investisseurs" pour $3 000 + escrow $250 000) — communiqués
+à Esdras, à vérifier avant tout paiement réel, indépendant de la stratégie.
+
+**Étape 1 — `scripts/runHaitiForexSameDayComplianceAnalysis.js`** : rejoue
+`LiveStrategyEngine` (construit depuis `CONFIG`, donc code de production
+réel) sur les 7 mois de vraies données broker déjà dans ce repo, et vérifie
+pour chacun des 8 mécanismes live si ses trades se résolvent le même jour NY
+avant 16h. Résultat — 4 mécanismes déjà quasi-natifs à cette règle :
+**Judas Swing (100%), CBDR (92.5%), FVG (83.2%), Silver Bullet (80.9%)**,
+médianes de résolution 20-30 min. **Exclus** : Divergence (30.4%, médiane
+20.5h — conçu pour tenir plusieurs jours) et NWOG (0% conforme mais 80.5%
+"même jour après 16h" — trop tardif tel quel). Zone grise : Breaker Block
+(69.7%), Weekly Sweep (59.3%) — pas retenus pour rester strict.
+
+**Étape 2 — `scripts/runHaitiForexChallengeSimulation.js`** : simule le
+palier $100k complet en 2 phases. Phase 1 : un seul `warmUp()` (le chemin
+O(n) documenté par le moteur lui-même — un piège O(n²) a été découvert et
+évité en bouclant `ingestCandle()` manuellement par erreur au premier essai,
+voir le commentaire en tête du script) avec SEULEMENT les 4 mécanismes
+compatibles, puis un post-traitement léger qui force la clôture de tout
+trade non conforme à la dernière bougie avant 15h55 NY (marge de 5 min), et
+écarte purement les rares entrées qui démarrent déjà après 15h55 (surtout
+CBDR, dont la fenêtre va jusqu'à 20h NY). Phase 2 : cette liste de trades
+conforme est rejouée dans 8 fenêtres indépendantes de 30 jours calendaires
+(un compte $100k frais à chaque fois, comme si Esdras rachetait le
+challenge tous les mois), avec son propre plafond de gain quotidien
+(un trade peut être gardé dans une fenêtre et véto dans une autre, selon le
+gain déjà réalisé ce jour-là dans CETTE fenêtre précise).
+
+**Résultat à 0.5% de risque/trade (réglage par défaut du projet)** :
+3/8 fenêtres atteignent +10% (jour 4 à 16), **0/8 ne touchent jamais le
+plancher de -5%** — risque de bust faible, mais réussite pas garantie
+chaque mois.
+
+**Diagnostic demandé par Esdras ("c'est quoi le plus grand problème")** :
+son hypothèse ("il faudrait un meilleur win rate") a été testée et
+**infirmée** par les données. Instrumentation ajoutée (voir le commit) pour
+mesurer séparément l'argent perdu à la clôture forcée (`lostUsdFromForcedClose`
+— globalement neutre, s'annule sur l'ensemble des fenêtres) et l'argent
+jeté par le plafond quotidien (`missedUsdFromCap` — réel mais secondaire :
+juillet a manqué $2 077 au plafond pour un déficit de seulement ~$1 320 par
+rapport à la cible, mais février a $0 manqué au plafond et échoue quand
+même). Test de sensibilité sur `RISK_PCT_PER_TRADE` (maintenant un argv
+override, `node scripts/runHaitiForexChallengeSimulation.js <pct>`) :
+0.25%→1/8, 0.3%→2/8, 0.5%→3/8, **0.75%→5/8 (zéro bust)**, 1.0%→5/8 mais
+**1 fenêtre annulée (-5.30%)**. Conclusion : le vrai goulot d'étranglement
+est que 0.5% compose trop lentement pour 10% en seulement ~20 jours de
+trading utiles sur 30 — pas le win rate (cohérent avec la conversation
+précédente sur Midnight Open : un WR élevé n'a jamais été la bonne
+métrique dans ce projet). **0.75%/trade est le point optimal trouvé** :
+double le taux de réussite sans jamais toucher le plancher de -5%.
+
+**Quelle stratégie permet ça, concrètement** : aucun NOUVEAU mécanisme —
+la même combinaison **FVG + Judas Swing + CBDR + Silver Bullet** déjà
+backtestée et déjà partiellement live pour le compte principal (Judas
+Swing/CBDR/Silver Bullet le sont ; FVG l'est aussi), simplement filtrée aux
+4 qui se résolvent le même jour, avec une clôture forcée à 15h55 NY ajoutée
+par-dessus et un risque par trade porté à 0.75% au lieu de 0.5% pour ce
+compte spécifique.
+
+**Ce qui N'est PAS fait, pour la prochaine session** :
+- Aucune config de compte HaitiForex n'existe dans `src/propFirms/` — à
+  créer (`haitiforex-100k` ou similaire) une fois qu'Esdras confirme le
+  palier choisi, sur le modèle des fichiers existants (`ftmo.js`/`cti.js`).
+- Le plafond de gain quotidien et la clôture forcée à 16h ne sont PAS
+  encore dans `GuardrailEngine`/`LiveStrategyEngine` — modélisés seulement
+  dans ce script d'analyse autonome (même discipline "mesurer avant de
+  câbler" que CTI/GoatFundedTrader dans ce projet). Il faudrait les
+  implémenter réellement avant tout compte live sur cette firme.
+- Pas de vérification directe avec HaitiForex sur : ce qui se passe
+  EXACTEMENT si le plafond quotidien est dépassé (perte du gain excédentaire
+  seulement, ou annulation du compte ?), et si leur plafond compte le gain
+  BRUT ou NET des pertes du jour (lecture conservative — gain brut
+  uniquement — utilisée ici, non confirmée).
+- Les signaux d'alerte sur la légitimité du site (paiement par apps perso,
+  pas de régulation propre à HaitiForex) restent à vérifier par Esdras
+  avant tout paiement réel — indépendant de tout ce qui précède.
+
+**Fichiers** : `scripts/runHaitiForexSameDayComplianceAnalysis.js`,
+`scripts/runHaitiForexChallengeSimulation.js` (les deux nouveaux, recherche
+uniquement, aucun changement de comportement live).
