@@ -162,6 +162,31 @@ function main() {
   const inconclusive = results.length - passes - busts;
   console.log(`\n${passes}/${results.length} dates de départ auraient réussi | ${busts} auraient busté | ${inconclusive} inconclusif (données 2025 épuisées)`);
 
+  // Esdras's actual scenario, clarified: NOT 2 accounts trading
+  // simultaneously - one account trades, a SECOND is held in reserve and
+  // only deployed the moment the first busts (sequential, not parallel).
+  // That's a materially different question from the simultaneous case
+  // above: the reserve account starts trading AFTER the bad stretch that
+  // busted the first one is already over, so it isn't necessarily
+  // correlated with it the same way two same-day accounts would be.
+  // Tested directly: for every one of the busts found above, immediately
+  // chain a second real attempt starting the moment the first one busted
+  // (the exact "deploy the reserve now" moment) and see whether IT passes.
+  console.log("\nScénario réserve (compte n°2 déployé UNIQUEMENT au moment du bust du n°1, pas en parallèle) :");
+  console.log('| Bust du compte n°1 | Réserve déployée le | Résultat de la réserve | Fin | Trades |');
+  console.log('|---|---|---|---|---|');
+  let reserveSaves = 0;
+  const bustResults = results.filter((r) => r.outcome === 'bust');
+  for (const b of bustResults) {
+    const reserve = runOneAttempt(trades2025, b.endTime, effective);
+    if (reserve.outcome === 'pass') reserveSaves++;
+    console.log(`| ${fmtDate(b.start)} -> ${fmtDate(b.endTime)} | ${fmtDate(b.endTime)} | ${reserve.outcome} | ${fmtDate(reserve.endTime)} | ${reserve.trades} |`);
+  }
+  console.log(`\n-> ${reserveSaves}/${bustResults.length} fois où la réserve, déployée immédiatement après le bust du n°1, aurait réussi.`);
+  console.log("Combiné (au moins un des deux comptes réussit) : le n°1 réussit directement (pas de bust), OU le n°1 buste et la réserve réussit ensuite.");
+  const combinedAtLeastOne = passes + reserveSaves;
+  console.log(`Sur les ${results.length} dates de départ testées pour le compte n°1 : ${combinedAtLeastOne}/${results.length} auraient fini par réussir avec au moins un des deux comptes (${((100 * combinedAtLeastOne) / results.length).toFixed(1)}%).`);
+
   // Correlation check: do bust outcomes cluster around the same calendar
   // window (correlated - buying a 2nd account bought around the SAME time
   // doesn't diversify) or scatter through the year (independent enough
