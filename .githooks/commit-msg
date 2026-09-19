@@ -1,0 +1,16 @@
+#!/bin/sh
+# Adds "[skip render]" to a commit whose staged files are ALL documentation, because every push to
+# this branch redeploys Render and a redeploy restarts the LIVE trading bot (a docs-only push must not).
+# Forgotten by hand once (2026-09-18). Enable in a clone with: git config core.hooksPath .githooks
+msg_file="$1"
+grep -q '\[skip render\]' "$msg_file" && exit 0
+files=$(git diff --cached --name-only)
+[ -z "$files" ] && exit 0
+for f in $files; do
+  case "$f" in
+    *.md|docs/*) ;;
+    *) exit 0 ;;   # any non-doc file staged: leave the message alone
+  esac
+done
+# first line gets the tag so it stays visible in one-line logs
+sed -i '1s/$/ [skip render]/' "$msg_file"

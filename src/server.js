@@ -30,6 +30,7 @@ import { buildTradeDebrief } from './backtest/tradeDebrief.js';
 import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
 import { runLabJob } from './backtest/labClient.js';
 import { readDatasetMeta, listDatasets, deleteDataset, csvPathFor as labDatasetCsv, MAX_CUSTOM_DATASETS } from './backtest/labDatasets.js';
+import { m1PathFor } from './backtest/m1Store.js';
 import { isValidDatasetName, ImportError } from './backtest/m1Import.js';
 import { normalizeChallengeParams, normalizeGuardrails } from './backtest/labAnalytics.js';
 import { computeDailyLevels, rebaseLevels, SESSION_WINDOWS } from './backtest/dailyLevels.js';
@@ -37,6 +38,9 @@ import { LIVE_VARIANTS, MAX_VARIANTS_PER_RUN, liveFvgSymbols, liveFvgConfig, des
 import { TRAIN_TEST_CUTOFF } from './backtest/labRunner.js';
 import { signalContext } from './shared/tradeStats.js';
 import { normalizeRecipe, describeRecipe } from './backtest/legoStrategy.js';
+import { BOT_MECHANISMS, BOT_IDS, botMechanismsForSymbol } from './backtest/replaySignals.js';
+import { newsBetween, newsCoverage } from './backtest/newsCalendar.js';
+import { instrumentSpec, conversionPlan } from './backtest/instrumentSpecs.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -148,6 +152,12 @@ app.get('/api/sessions', (req, res) => {
 // served explicitly rather than exposing all of src/.
 app.get('/shared/tradeStats.js', (req, res) => {
   res.type('application/javascript').sendFile(path.join(__dirname, 'shared', 'tradeStats.js'));
+});
+app.get('/shared/replayBroker.js', (req, res) => {
+  res.type('application/javascript').sendFile(path.join(__dirname, 'shared', 'replayBroker.js'));
+});
+app.get('/shared/replayAuto.js', (req, res) => {
+  res.type('application/javascript').sendFile(path.join(__dirname, 'shared', 'replayAuto.js'));
 });
 
 // Deliberately the cheapest possible endpoint: no broker round-trip, no
@@ -290,6 +300,12 @@ function listLabSymbols() {
 function labCsvPath(symbol) {
   return path.join(LAB_DATA_DIR, `${symbol}.csv`);
 }
+// The REAL broker candles exported from production (2026-02-13 -> 2026-09-16, committed): the Simulateur's
+// "7 derniers mois" - the only months the backtests never saw. Ids look like "real:US100".
+const REAL_DATA_DIR = path.join(__dirname, '..', 'data', 'real-data-2026-02-to-09');
+function listRealSymbols() {
+  try { return fs.readdirSync(REAL_DATA_DIR).filter((n) => n.endsWith('.csv')).map((n) => n.replace(/\.csv$/, '')).sort(); } catch { return []; }
+}
 
 // Every computation below runs in a worker THREAD (labClient.js/labWorker.js),
 // never in this process's event loop: it shares a process with the live
@@ -342,6 +358,11 @@ function resolveLabDataset(id) {
     if (!meta || !fs.existsSync(labDatasetCsv(LAB_UPLOAD_DIR, name))) return null;
     return { key: id, csvPath: labDatasetCsv(LAB_UPLOAD_DIR, name), symbol: meta.symbol, spread: meta.spread, cutoff: meta.trainCutoff, meta };
   }
+  if (id.startsWith('real:')) {
+    const sym = id.slice(5);
+    if (!listRealSymbols().includes(sym)) return null;
+    return { key: id, csvPath: path.join(REAL_DATA_DIR, `${sym}.csv`), symbol: sym, spread: null, cutoff: null, meta: null };
+  }
   if (!listLabSymbols().includes(id)) return null;
   return { key: id, csvPath: labCsvPath(id), symbol: id, spread: null, cutoff: null, meta: null };
 }
@@ -358,8 +379,14 @@ app.get('/api/lab/meta', (req, res) => {
     res.json({
       strategies: listLabStrategies(),
       symbols: listLabSymbols(),
+      realSymbols: listRealSymbols(),
       customDatasets: listDatasets(LAB_UPLOAD_DIR).map((m) => ({ id: `custom:${m.name}`, ...m })),
       knownSpreads: DEFAULT_SPREADS,
+      replay: {
+        botMechanisms: Object.fromEntries([...new Set([...listLabSymbols(), ...listDatasets(LAB_UPLOAD_DIR).map((m) => m.symbol)])].map((sym) => [sym, botMechanismsForSymbol(sym)])),
+        botAll: BOT_IDS,
+        news: newsCoverage(),
+      },
       liveStrategy: {
         symbols: liveFvgSymbols(),
         variants: LIVE_VARIANTS.map(({ id, label, group }) => ({ id, label, group })),
@@ -510,6 +537,98 @@ app.post('/api/lab/lego', async (req, res) => {
   }
 });
 
+// "Simulateur": replay a window of the market bar by bar, with the strategies' trades to draw and the
+// red-news events (see replaySignals.js / newsCalendar.js). Several pairs share ONE window.
+// body: { symbol, extraSymbols?: string[] (max 5), from?: 'YYYY-MM-DD' (random when absent) | fromMs?: real UTC ms
+//         (exact window, used to add a pair to a replay already running), days?: 1..240, baseMinutes?: 1|5|15,
+//         strategyIds?: string[] ('bot-all' = the bot's mechanisms on each pair), news?: boolean }
+// Real time = engine time + 5 h, applied here so the page can hand it straight to the chart.
+const REPLAY_WARMUP_BARS = 400;
+const REAL_WARMUP_BARS = 96; // the real broker export is short (~7 months): a day of chart context is enough, the strategies run on the whole file anyway
+const REPLAY_MAX_PAIRS = 6;
+app.post('/api/lab/replay', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const OFFSET = FIXED_EST_TO_UTC_OFFSET_MS;
+    const days = Math.round(Number(body.days ?? 30));
+    if (!Number.isFinite(days) || days < 1 || days > 240) throw new ImportError('Durée de rejeu invalide (1 à 240 jours).');
+    let fromEngine = null;
+    if (body.fromMs !== undefined) {
+      fromEngine = Number(body.fromMs) - OFFSET;
+      if (!Number.isFinite(fromEngine)) throw new ImportError('Date de départ invalide.');
+    } else if (body.from) {
+      fromEngine = Date.parse(`${String(body.from).slice(0, 10)}T00:00:00Z`);
+      if (!Number.isFinite(fromEngine)) throw new ImportError('Date de départ invalide (AAAA-MM-JJ).');
+    }
+    const baseMinutes = Number(body.baseMinutes ?? 15);
+    if (![1, 5, 15].includes(baseMinutes)) throw new ImportError('Granularité de rejeu inconnue (1, 5 ou 15 minutes).');
+    const wanted = Array.isArray(body.strategyIds) ? body.strategyIds : [];
+    const extra = [...new Set(Array.isArray(body.extraSymbols) ? body.extraSymbols : [])].filter((x) => x !== body.symbol);
+    if (extra.length > REPLAY_MAX_PAIRS - 1) throw new ImportError(`Au plus ${REPLAY_MAX_PAIRS} paires à la fois.`);
+    if (wanted.length > 30) throw new ImportError('Trop de stratégies à la fois (30 max).');
+    for (const id of wanted) if (id !== 'bot-all' && !BOT_IDS.includes(id) && !LAB_STRATEGIES[id]) throw new ImportError(`Stratégie inconnue: "${id}"`);
+    const available = listLabSymbols();
+    const pair = CONFIG.divergence.pair;
+
+    async function loadPair(symbolId, { fromEng, strict }) {
+      const ds = resolveLabDataset(symbolId);
+      if (!ds) throw new ImportError(`Symbole inconnu ou sans données: "${symbolId}"`);
+      const ids = [...new Set(wanted.flatMap((id) => (id === 'bot-all' ? botMechanismsForSymbol(ds.symbol).map((m) => m.id) : [id])))];
+      let base = baseMinutes, m1 = null;
+      if (base < 15) {
+        const cap = base === 1 ? 30 : 120; // M15 goes up to 240 days (7 months)
+        if (!ds.meta?.m1 || days > cap) {
+          if (strict) {
+            if (!ds.meta?.m1) throw new ImportError(`Ce jeu n'a pas de M1 conservé${ds.meta?.m1Note ? ` (${ds.meta.m1Note})` : ' : seuls les jeux importés en M1 (avec « garder le M1 » coché) se rejouent en M1 ou M5'}.`);
+            throw new ImportError(`En M${base}, la durée est limitée à ${cap} jours.`);
+          }
+          base = 15; // an extra pair without M1 stays at M15 next to a finer main pair
+        } else m1 = { file: m1PathFor(LAB_UPLOAD_DIR, ds.meta.name), scale: ds.meta.m1.scale };
+      }
+      const real = symbolId.startsWith('real:');
+      const avail = real ? listRealSymbols() : available;
+      const csvOf = (sym) => (real ? path.join(REAL_DATA_DIR, `${sym}.csv`) : labCsvPath(sym));
+      const partner = pair.includes(ds.symbol) ? pair.find((x) => x !== ds.symbol) : null;
+      const partnerCsvPath = partner && avail.includes(partner) ? csvOf(partner) : null;
+      const spec = instrumentSpec(ds.symbol);
+      const plan = conversionPlan(spec.quote, avail);
+      const conversion = plan.status === 'ok' ? { status: 'ok', combine: plan.combine, legs: plan.legs.map((l) => ({ mode: l.mode, csvPath: csvOf(l.symbol) })) } : null;
+      const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine: fromEng, days, warmupBars: real ? REAL_WARMUP_BARS : REPLAY_WARMUP_BARS, baseMinutes: base, m1, conversion });
+      return {
+        out,
+        pair: {
+          id: symbolId, symbol: ds.symbol, dataset: datasetInfo(ds),
+          spread: ds.spread ?? DEFAULT_SPREADS[ds.symbol] ?? 0,
+          baseMinutes: base,
+          instrument: { ...spec, accountCurrency: 'USD', conversion: { status: plan.status, pair: plan.status === 'ok' ? plan.legs.map((l) => l.symbol).join(' / ') : null, rates: out.rates ? out.rates.map(([t, r]) => [Math.floor((t + OFFSET) / 1000), r]) : null } },
+          candles: out.candles.map(([t, o, h, l, c]) => [Math.floor((t + OFFSET) / 1000), o, h, l, c]),
+          trades: out.trades.map((t) => ({ ...t, entryTime: t.entryTime + OFFSET, exitTime: t.exitTime + OFFSET })),
+          notApplicable: out.notApplicable,
+        },
+      };
+    }
+
+    const first = await loadPair(body.symbol, { fromEng: fromEngine, strict: true });
+    const windowEng = first.out.window; // the exact window every other pair must share
+    const pairs = [first.pair];
+    for (const sym of extra) {
+      try {
+        pairs.push((await loadPair(sym, { fromEng: windowEng.from, strict: false })).pair);
+      } catch (err) {
+        pairs.push({ id: sym, symbol: sym, error: err.message });
+      }
+    }
+    res.json({
+      pairs,
+      window: { from: windowEng.from + OFFSET, to: windowEng.to + OFFSET, startTime: windowEng.startTime + OFFSET },
+      news: body.news === false ? [] : newsBetween(windowEng.startTime + OFFSET, windowEng.to + OFFSET),
+      newsCoverage: newsCoverage(),
+    });
+  } catch (err) {
+    sendAnalysisError(res, err);
+  }
+});
+
 app.post('/api/lab/analyze/heatmap', async (req, res) => {
   try {
     const { ds, ...run } = analysisRun(req.body);
@@ -590,6 +709,7 @@ app.post(
         spread: q.spread === undefined || q.spread === '' ? null : Number(q.spread),
         tz: q.tz || 'est',
         replace: q.replace === '1',
+        keepM1: q.keepM1 !== '0',
         filename: typeof q.filename === 'string' ? q.filename.slice(0, 120) : 'fichier',
       });
       res.json(out);

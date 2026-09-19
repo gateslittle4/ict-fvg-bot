@@ -10,12 +10,16 @@
 
 import { parentPort } from 'node:worker_threads';
 import fs from 'node:fs';
-import { loadCandlesFromCsv } from './csvLoader.js';
+import { loadCandlesFromCsv, loadResampledFromCsv } from './csvLoader.js';
+import { TIMEFRAME_MS } from './htfBias.js';
+import { readWindow, aggregateRows } from './m1Store.js';
+import { buildRateSeries } from './instrumentSpecs.js';
 import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF } from './labRunner.js';
 import { listLabStrategies } from './labRegistry.js';
 import { importIntoDataset } from './labDatasets.js';
 import { runLiveFvg, resolveVariantConfig, describeConfig } from './liveFvgRunner.js';
 import { runRecipe, describeRecipe } from './legoStrategy.js';
+import { runReplayStrategy, botMechanism } from './replaySignals.js';
 import { simulateChallenge, simulateMultiChallenge, buildHeatmap, analyzePortfolio, expectancyStats } from './labAnalytics.js';
 import { ImportError } from './m1Import.js';
 
@@ -26,7 +30,7 @@ let idleTimer = null;
 function loadCandles(csvPath) {
   const key = `${csvPath}:${fs.statSync(csvPath).mtimeMs}`;
   if (cache?.key === key) return cache.candles;
-  cache = null; // let the previous dataset go BEFORE parsing the next one - never two resident together
+  cache = null; // let the previous dataset go BEFORE parsing the next one - never two resident together (its per-dataset trade cache goes with it)
   const { candles } = loadCandlesFromCsv(csvPath);
   cache = { key, candles };
   return candles;
@@ -174,6 +178,58 @@ const handlers = {
       const r = simulateMultiChallenge(byStrategy, params, { guardrails, state, perSymbol: true, cone: i === 0 ? cone : 0 });
       return r.insufficient ? r : { ...r, perStrategy: undefined };
     });
+  },
+
+  // "Simulateur": a window of candles to replay plus the strategy trades that fall in it. The
+  // strategies are run on the WHOLE history (their signals need the warm-up before the window) and
+  // cached per dataset; only the trades overlapping the window are sent back. Times stay in engine
+  // time here - the route converts them for the browser.
+  replayWindow({ csvPath, symbol, partnerCsvPath = null, strategyIds = [], fromEngine = null, days, warmupBars, baseMinutes = 15, m1 = null, conversion = null }) {
+    const candles = loadCandles(csvPath);
+    const first = candles[0].time;
+    const last = candles[candles.length - 1].time;
+    const DAY = 86400000;
+    // random start when none is given: leave room for the warm-up before and the horizon after
+    const lo = first + warmupBars * 900000;
+    const hi = last - days * DAY;
+    if (hi <= lo) throw new Error('Ce jeu de données est trop court pour cette durée de rejeu.');
+    let from = fromEngine ?? lo + Math.floor(Math.random() * (hi - lo));
+    from = Math.min(Math.max(from, lo), hi);
+    const to = from + days * DAY;
+    const startTime = from - warmupBars * 900000;
+    let a = 0, b = candles.length;
+    { let l = 0, h = candles.length; while (l < h) { const m = (l + h) >> 1; if (candles[m].time >= startTime) h = m; else l = m + 1; } a = l; }
+    { let l = 0, h = candles.length; while (l < h) { const m = (l + h) >> 1; if (candles[m].time > to) h = m; else l = m + 1; } b = l; }
+    // Finer replay (M1/M5) reads the minute store for the same window; the strategies below still run on M15.
+    const slice = baseMinutes < 15 && m1
+      ? aggregateRows(readWindow(m1.file, m1.scale, startTime, to), baseMinutes)
+      : candles.slice(a, b).map((c) => [c.time, c.open, c.high, c.low, c.close]);
+
+    if (!cache.trades) cache.trades = new Map();
+    const trades = [];
+    const notApplicable = [];
+    for (const id of strategyIds) {
+      let all = cache.trades.get(`${symbol}:${id}`);
+      if (all === undefined) {
+        let partner = null;
+        if (botMechanism(id)?.needsPartner && partnerCsvPath) partner = loadResampledFromCsv(partnerCsvPath, TIMEFRAME_MS.H1); // hourly only, streamed: two full M15 series do not fit in this thread
+        all = runReplayStrategy(id, candles, symbol, partner);
+        partner = null;
+        // Kept for the next request only when small: 21 strategies x tens of thousands of trades each
+        // (RSI, MACD... on EURUSD) exceeded this thread's heap when everything was cached (measured 2026-09-19).
+        if (all === null || all.length <= 4000) cache.trades.set(`${symbol}:${id}`, all);
+      }
+      if (all === null) { notApplicable.push(id); continue; }
+      for (const t of all) if (t.exitTime >= startTime && t.entryTime <= to) trades.push(t);
+    }
+    // Conversion of quote-currency P&L into USD: the conversion pair(s) at M15, streamed and windowed, never resident.
+    let rates = null;
+    if (conversion && conversion.status === 'ok') {
+      const legs = conversion.legs.map((leg) => ({ mode: leg.mode, bars: loadResampledFromCsv(leg.csvPath, TIMEFRAME_MS.H1 / 4, { from: startTime - DAY, to }) }));
+      rates = buildRateSeries(conversion.combine, legs);
+      if (!rates.length) rates = null; // the conversion pair has no data over this window
+    }
+    return { range: { first, last }, window: { from, to, startTime }, candles: slice, trades, notApplicable, rates };
   },
 
   // Parses one uploaded file into a dataset (CPU-heavy, hence here and not in

@@ -181,11 +181,12 @@ function pickDelimiter(headerLine) {
  * candles - memory stays proportional to the number of M15 buckets.
  * @param {string} text
  * @param {ReturnType<typeof createAggregator>} aggregator
- * @param {{tz?: 'est'|'utc'}} [opts] 'est' = already engine time (HistData);
+ * @param {{tz?: 'est'|'utc', onRow?: (time:number, o:number, h:number, l:number, c:number) => void}} [opts] onRow gets every accepted row (engine time)
+ *   (this is how the M1 store is fed without a second pass); 'est' = already engine time (HistData);
  *   'utc' = genuine UTC (broker export), shifted to engine time
  * @returns {{format:'histdata'|'csv', rows:number, skipped:number, stepMinutes:number|null, firstTime:number, lastTime:number}}
  */
-export function parseM1Text(text, aggregator, { tz = 'est' } = {}) {
+export function parseM1Text(text, aggregator, { tz = 'est', onRow = null } = {}) {
   if (tz !== 'est' && tz !== 'utc') throw new ImportError(`Fuseau horaire inconnu: "${tz}" (attendu: est ou utc)`);
   const shift = tz === 'utc' ? FIXED_EST_TO_UTC_OFFSET_MS : 0;
   const len = text.length;
@@ -259,6 +260,7 @@ export function parseM1Text(text, aggregator, { tz = 'est' } = {}) {
     }
     const time = r[0] - shift;
     aggregator.addRow(time, r[1], r[2], r[3], r[4]);
+    if (onRow) onRow(time, r[1], r[2], r[3], r[4]);
     rows++;
     if (time < firstTime) firstTime = time;
     if (time > lastTime) lastTime = time;

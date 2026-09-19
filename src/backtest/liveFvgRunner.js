@@ -130,6 +130,15 @@ export function runLiveFvg(candles, symbol, cfg, spread = null) {
   };
 }
 
+/**
+ * The RAW trades (entry/stop/target prices, exit) of the live FVG config on a symbol - what a chart
+ * needs to DRAW the trades. Same engine as runLiveFvg(), no cost filtering, nothing rounded.
+ */
+export function runLiveFvgRawTrades(candles, symbol, cfg = liveFvgConfig(symbol)) {
+  if (!cfg) throw new ImportError(`${symbol} n'a pas de configuration FVG live : rien à rejouer ici.`);
+  return runBacktest({ candles, symbol, fvgEngine: buildEngine(candles, symbol, cfg), stopMode: cfg.stopMode, rrMultiple: cfg.rrMultiple });
+}
+
 /** What the page shows about a config: the parts that define it, without engine internals. */
 export function describeConfig(cfg) {
   return {
