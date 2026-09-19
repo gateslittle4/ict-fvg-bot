@@ -1603,6 +1603,57 @@ async function refreshSignals() {
   renderSignals(await res.json());
 }
 
+// 2026-09-19 (roadmap item 4): under each FVG signal, "how did signals like this one do?"
+// - the strategy's own 17-year history narrowed to this hour / direction / stop size.
+// A look-up, not a forecast (see shared/tradeStats.js signalContext), computed by the
+// server in its worker thread and cached per symbol; the answer for a given signal
+// never changes, so it is cached here too and survives the frequent re-renders.
+const signalContextCache = new Map(); // signal id -> html
+const signalDomId = (s) => `ctx-${String(s.id).replace(/[^\w-]/g, '_')}`;
+const hasSignalContext = (s) => s.source === 'fvg' && Number(s.entryPrice) > 0 && Number(s.distance) > 0 && s.validatedAt;
+
+function signalContextSlot(s) {
+  if (!hasSignalContext(s) || signalContextCache.get(s.id) === '') return '';
+  return `<div class="meta" id="${signalDomId(s)}" style="margin-top:3px;">${signalContextCache.get(s.id) ?? 'Contexte historique en cours de calcul…'}</div>`;
+}
+
+function signalContextHtml(ctx) {
+  const c = ctx.context;
+  if (!c) return 'Pas d\'historique pour ce signal.';
+  const p = c.primary;
+  const r = (v) => (v === null || v === undefined ? '—' : `${v >= 0 ? '+' : ''}${fmt(v)}R`);
+  const ci = p.ci95 ? ` (marge d'erreur ${r(p.ci95[0])} à ${r(p.ci95[1])})` : '';
+  const verdict = {
+    above: `<span class="win">✅ au-dessus de la moyenne de la stratégie (${r(c.baseline.expectancy)})</span>`,
+    below: `<span class="loss">⚠ en dessous de la moyenne de la stratégie (${r(c.baseline.expectancy)})</span>`,
+    similar: `<span>≈ pas distinguable de la moyenne de la stratégie (${r(c.baseline.expectancy)})</span>`,
+    baseline: '<span>aucun groupe assez fourni : c\'est la moyenne de toute la stratégie</span>',
+  }[c.verdict];
+  const split = p.trainN !== null && p.trainN > 0 && p.testN > 0 ? ` · avant 2024 ${r(p.trainExpectancy)} (${p.trainN}), depuis ${r(p.testExpectancy)} (${p.testN})` : '';
+  return `<strong>Historique de signaux comparables</strong> — ${p.label} : ${p.n} trades, ${r(p.expectancy)} en moyenne${ci}, ${fmt(p.winRate * 100, 0)} % de réussite${split}. ${verdict}. `
+    + '<span style="color:var(--faint)">Repère historique, pas une prévision : parmi tous les groupes possibles, certains paraissent bons ou mauvais par pur hasard.</span>';
+}
+
+async function loadSignalContext(s) {
+  if (!hasSignalContext(s) || signalContextCache.has(s.id)) return;
+  try {
+    const q = new URLSearchParams({ symbol: s.symbol, direction: s.direction, time: String(s.validatedAt), distance: String(s.distance), entryPrice: String(s.entryPrice) });
+    const res = await fetch(`/api/signal-context?${q}`);
+    const data = await res.json();
+    if (!res.ok) { // symbol without a live FVG history: no line at all, and never asked again
+      signalContextCache.set(s.id, '');
+      document.getElementById(signalDomId(s))?.remove();
+      return;
+    }
+    const html = signalContextHtml(data);
+    signalContextCache.set(s.id, html);
+    const el = document.getElementById(signalDomId(s));
+    if (el) el.innerHTML = html;
+  } catch {
+    document.getElementById(signalDomId(s))?.remove(); // no context is never worth an error on the signals card (asked again on the next render)
+  }
+}
+
 function renderSignals(data) {
   controlState.signals = data.actionable || [];
   renderExecutionAudit();
@@ -1625,10 +1676,13 @@ function renderSignals(data) {
         <span class="meta">[${sourceLabel(s)}]</span>
         ${s.actionable ? '<span class="badge-actionable">ACTIONNABLE</span>' : `<span class="badge-blocked">BLOQUÉ: ${s.blockedReasons.join(', ')}</span>`}
         <div class="meta">${detail} · validé ${fmtTime(s.validatedAt)}${volNote}</div>
+        ${signalContextSlot(s)}
       </li>
     `;
       }).join('')
     : '<li class="signal-item meta">Aucun pour l\'instant…</li>';
+
+  for (const s of data.actionable) loadSignalContext(s);
 
   const watchingList = document.getElementById('watching-list');
   watchingList.innerHTML = data.watching.length

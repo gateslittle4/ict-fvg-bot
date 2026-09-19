@@ -34,6 +34,7 @@ import { normalizeChallengeParams, normalizeGuardrails } from './backtest/labAna
 import { computeDailyLevels, rebaseLevels, SESSION_WINDOWS } from './backtest/dailyLevels.js';
 import { LIVE_VARIANTS, MAX_VARIANTS_PER_RUN, liveFvgSymbols, liveFvgConfig, describeConfig, normalizeCustomOverrides } from './backtest/liveFvgRunner.js';
 import { TRAIN_TEST_CUTOFF } from './backtest/labRunner.js';
+import { signalContext } from './shared/tradeStats.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -94,6 +95,46 @@ function withRealTimePosition(symbol, position, orderOutcomeLog) {
 function withRealTimeSignal(signal) {
   return { ...signal, validatedAt: toRealTime(signal.validatedAt) };
 }
+
+// "How did signals like this one do?" (2026-09-19, roadmap item 4). The strategy's
+// history on the project's own data (live config, costs included) is computed once
+// per symbol in the Labo's worker thread - never on the bot's event loop - and kept
+// for 12 h; each signal is then just an in-memory look-up (shared/tradeStats.js).
+const SIGNAL_HISTORY_TTL_MS = 12 * 60 * 60 * 1000;
+const signalHistoryCache = new Map(); // symbol -> { at, promise }
+function liveHistoryFor(symbol) {
+  const hit = signalHistoryCache.get(symbol);
+  if (hit && Date.now() - hit.at < SIGNAL_HISTORY_TTL_MS) return hit.promise;
+  const promise = runLabJob('runLiveFvg', {
+    csvPath: labCsvPath(symbol), symbol, spread: null, cutoff: null,
+    variants: [{ id: 'live', label: 'live', overrides: {} }],
+  }).then((out) => out.variants[0].trades);
+  signalHistoryCache.set(symbol, { at: Date.now(), promise });
+  promise.catch(() => signalHistoryCache.delete(symbol)); // a failure is not cached
+  return promise;
+}
+
+app.get('/api/signal-context', async (req, res) => {
+  try {
+    const { symbol, direction } = req.query;
+    const time = Number(req.query.time);
+    const distance = Number(req.query.distance);
+    const entryPrice = Number(req.query.entryPrice);
+    if (!liveFvgConfig(symbol) || !listLabSymbols().includes(symbol)) {
+      return res.status(400).json({ error: `Pas de contexte historique pour "${symbol}".` });
+    }
+    if (direction !== 'bullish' && direction !== 'bearish') return res.status(400).json({ error: 'Sens invalide.' });
+    if (![time, distance, entryPrice].every(Number.isFinite) || distance <= 0 || entryPrice <= 0) {
+      return res.status(400).json({ error: 'Signal incomplet (time, distance, entryPrice).' });
+    }
+    const trades = await liveHistoryFor(symbol);
+    // The signal's time arrives as a real UTC instant; the history is in engine time (UTC-5, fixed).
+    const context = signalContext(trades, { entryTime: time - FIXED_EST_TO_UTC_OFFSET_MS, direction, distance, entryPrice }, { cutoff: TRAIN_TEST_CUTOFF });
+    res.json({ symbol, historyTrades: trades.length, trainCutoff: TRAIN_TEST_CUTOFF, context });
+  } catch (err) {
+    sendLabError(res, err);
+  }
+});
 
 // The session windows the charts and the Niveaux page draw (New York local hours) -
 // one list, so a window can never differ between two pages.

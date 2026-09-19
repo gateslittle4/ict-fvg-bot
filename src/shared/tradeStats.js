@@ -272,3 +272,52 @@ export function monthlyTable(trades) {
 export function splitAt(trades, cutoff) {
   return { train: trades.filter((t) => t.entryTime < cutoff), test: trades.filter((t) => t.entryTime >= cutoff) };
 }
+
+// --- context of a live signal -----------------------------------------------------------
+
+/**
+ * "How did signals like this one do?" - for a fresh signal, the history of the same
+ * strategy narrowed down from the most specific description to the most general,
+ * stopping at the first one with enough trades to say anything. It is an empirical
+ * look-up, not a fitted model: nothing here can be over-fitted, and the number that
+ * comes out is simply what happened before, with its uncertainty.
+ *
+ * The verdict compares the chosen group with the strategy's overall average using the
+ * 95 % interval: "above"/"below" only when the interval clears that average, otherwise
+ * "similar" (the honest answer for most groups - by chance alone about one group in
+ * three looks better or worse than average).
+ *
+ * @param {Array} trades - the strategy's historical trades (see the header for the shape)
+ * @param {{entryTime:number, direction:'bullish'|'bearish', distance:number, entryPrice:number}} query - the signal, times in engine time
+ * @param {{minTrades?:number, cutoff?:number|null}} [opts] cutoff = train/test split, engine time
+ */
+export function signalContext(trades, query, { minTrades = 30, cutoff = null } = {}) {
+  if (!trades.length) return null;
+  const dims = buildDimensions(trades);
+  const keys = { hour: dims.hour.key(query), direction: dims.direction.key(query), stop: dims.stop.key(query) };
+  const same = (t, ...names) => names.every((n) => dims[n].key(t) === keys[n]);
+  const tiers = [
+    { id: 'hour-direction-stop', label: `${keys.hour} New York · ${keys.direction} · ${keys.stop.toLowerCase()}`, pick: (t) => same(t, 'hour', 'direction', 'stop') },
+    { id: 'hour-direction', label: `${keys.hour} New York · ${keys.direction}`, pick: (t) => same(t, 'hour', 'direction') },
+    { id: 'hour', label: `${keys.hour} New York`, pick: (t) => same(t, 'hour') },
+    { id: 'direction', label: keys.direction, pick: (t) => same(t, 'direction') },
+    { id: 'all', label: 'tous les trades de la stratégie', pick: () => true },
+  ].map((tier) => {
+    const list = trades.filter(tier.pick);
+    const c = cell(list);
+    const split = cutoff === null ? null : splitAt(list, cutoff);
+    return {
+      id: tier.id, label: tier.label, ...c,
+      trainExpectancy: split && split.train.length ? sum(split.train.map((t) => t.r)) / split.train.length : null,
+      testExpectancy: split && split.test.length ? sum(split.test.map((t) => t.r)) / split.test.length : null,
+      trainN: split ? split.train.length : null, testN: split ? split.test.length : null,
+    };
+  });
+  const baseline = tiers[tiers.length - 1];
+  const primary = tiers.find((t) => t.n >= minTrades) ?? baseline;
+  let verdict = 'similar';
+  if (primary.id === 'all') verdict = 'baseline';
+  else if (primary.ci95 && primary.ci95[0] > baseline.expectancy) verdict = 'above';
+  else if (primary.ci95 && primary.ci95[1] < baseline.expectancy) verdict = 'below';
+  return { keys, tiers, primary, baseline, verdict, minTrades };
+}
