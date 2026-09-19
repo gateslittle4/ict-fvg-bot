@@ -15,6 +15,7 @@ import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF }
 import { listLabStrategies } from './labRegistry.js';
 import { importIntoDataset } from './labDatasets.js';
 import { runLiveFvg, resolveVariantConfig, describeConfig } from './liveFvgRunner.js';
+import { runRecipe, describeRecipe } from './legoStrategy.js';
 import { simulateChallenge, simulateMultiChallenge, buildHeatmap, analyzePortfolio, expectancyStats } from './labAnalytics.js';
 import { ImportError } from './m1Import.js';
 
@@ -151,6 +152,16 @@ const handlers = {
         const cfg = resolveVariantConfig(symbol, overrides);
         return { id, label, config: describeConfig(cfg), ...runLiveFvg(candles, symbol, cfg, spread) };
       }),
+    };
+  },
+
+  // "Lego": one or more recipes (trigger + filters + exit) on one dataset, compact trades back.
+  runLego({ csvPath, symbol, spread = null, cutoff = null, variants }) {
+    const candles = loadCandles(csvPath);
+    return {
+      candleCount: candles.length,
+      trainCutoff: cutoff ?? TRAIN_TEST_CUTOFF,
+      variants: variants.map(({ id, label, recipe }) => ({ id, label, description: describeRecipe(recipe), recipe, ...runRecipe(candles, symbol, spread, recipe) })),
     };
   },
 

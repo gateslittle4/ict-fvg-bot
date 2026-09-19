@@ -239,6 +239,61 @@
       <label class="check"><input type="checkbox" id="lc-use" /> Ajouter cette combinaison à l'analyse</label>
     </details>
 
+    <div id="live-msg" class="meta"></div>
+  </details>
+
+  <details class="card" id="lego-card">
+    <summary><strong>Lego — construire ma propre stratégie</strong> <span class="meta">— cliquer pour ouvrir</span></summary>
+    <p class="hint">
+      Choisis un <strong>déclencheur</strong> (un des mécanismes du Labo : ses entrées et ses stops), ajoute des <strong>filtres</strong> (session, jours, sens, biais de la timeframe supérieure,
+      structure, balayage de liquidité), éventuellement un autre <strong>objectif</strong> et les <strong>garde-fous du bot</strong>. Le résultat est jugé comme tout le reste du Labo
+      (mêmes coûts, même coupure entraînement/test, mêmes statistiques) et comparé au déclencheur seul. Trois limites à connaître : les filtres s'appliquent aux trades
+      <em>après coup</em> (un trade retiré ne laisse pas sa place à un autre signal, contrairement à un filtre codé dans le moteur) ; un autre objectif remplace la sortie propre du mécanisme
+      (sans conséquence pour les mécanismes à objectif fixe, mais c'est une autre stratégie pour ceux qui suivent une tendance ou visent un niveau) ; et chaque recette essayée est une chance de plus
+      de trouver un résultat flatteur par hasard — le compteur ci-dessous les compte.
+    </p>
+    <div class="form-row">
+      <div class="form-field"><label for="lg-trigger">Déclencheur</label><select id="lg-trigger"></select></div>
+      <div class="form-field"><label for="lg-symbol">Symbole</label><select id="lg-symbol"></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label for="lg-session">Session</label>
+        <select id="lg-session"><option value="">Toute la journée</option><option value="custom">Fenêtre ci-contre</option></select></div>
+      <div class="form-field"><label for="lg-start">Début (h New York)</label><input type="text" id="lg-start" inputmode="decimal" value="8" /></div>
+      <div class="form-field"><label for="lg-end">Fin (h New York)</label><input type="text" id="lg-end" inputmode="decimal" value="12" /></div>
+      <div class="form-field"><label for="lg-direction">Sens</label>
+        <select id="lg-direction"><option value="both">Achats et ventes</option><option value="bullish">Achats seulement</option><option value="bearish">Ventes seulement</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label for="lg-bias">Biais de la timeframe supérieure</label>
+        <select id="lg-bias"><option value="baseline">Aucun</option><option value="H4_EMA200">H4 · EMA 200</option><option value="H4_EMA50">H4 · EMA 50</option><option value="H4_EMA20">H4 · EMA 20</option><option value="H1_EMA200">H1 · EMA 200</option><option value="H1_EMA50">H1 · EMA 50</option><option value="H1_EMA20">H1 · EMA 20</option></select></div>
+      <div class="form-field"><label for="lg-rr">Objectif (R:R)</label><input type="text" id="lg-rr" inputmode="decimal" placeholder="celui du mécanisme" /></div>
+    </div>
+    <div class="strat-checks" id="lg-days">
+      <label><input type="checkbox" value="1" checked /> Lundi</label><label><input type="checkbox" value="2" checked /> Mardi</label><label><input type="checkbox" value="3" checked /> Mercredi</label>
+      <label><input type="checkbox" value="4" checked /> Jeudi</label><label><input type="checkbox" value="5" checked /> Vendredi</label>
+      <label><input type="checkbox" value="0" checked /> Dimanche</label><label><input type="checkbox" value="6" checked /> Samedi</label>
+    </div>
+    <div class="strat-checks">
+      <label><input type="checkbox" id="lg-structure" /> Structure de marché (BOS) dans le sens du trade</label>
+      <label><input type="checkbox" id="lg-sweep" /> Balayage de liquidité récent</label>
+      <label><input type="checkbox" id="lg-guard" /> Garde-fous du bot (3 trades/jour, pause 30 min, perte du jour, une position)</label>
+    </div>
+    <button type="button" class="run-btn" id="lg-run-btn" onclick="runLego()">Tester ma recette</button>
+    <span class="meta" id="lg-counter" style="margin-left:10px;"></span>
+    <div id="lg-msg" class="meta" style="margin-top:8px;"></div>
+  </details>
+
+  <details class="card" id="grave-card">
+    <summary><strong>Cimetière des idées</strong> <span class="meta">— tout ce que j'ai testé, et combien d'essais cela fait</span></summary>
+    <p class="hint">Chaque combinaison lancée dans « Ma stratégie live » ou dans le Lego est notée ici (dans ce navigateur), avec son résultat sur la période test. Le compteur sert à garder la tête froide : si tu essaies 60 idées, environ 3 paraîtront significatives par pur hasard, même si aucune ne vaut rien. Une idée vraiment bonne tient dans plusieurs variantes voisines et sur la durée, pas sur un seul essai chanceux.</p>
+    <div id="grave-summary" class="meta" style="margin-bottom:8px;"></div>
+    <div id="grave-list"></div>
+    <button type="button" class="btn-ghost" onclick="clearGraveyard()" style="margin-top:8px;">Vider le cimetière</button>
+  </details>
+
+  <div class="card" id="results-card" hidden>
+    <h2>Analyse détaillée — <span id="live-source"></span></h2>
     <div id="live-out" hidden>
       <div class="form-row">
         <div class="form-field" style="flex:2 1 300px;"><label for="live-shown">Combinaison affichée</label><select id="live-shown" onchange="renderLive()"></select></div>
@@ -254,8 +309,7 @@
       </div>
       <div id="live-panel"></div>
     </div>
-    <div id="live-msg" class="meta"></div>
-  </details>
+  </div>
 
   <div class="card" id="adv-card">
     <h2>Analyses avancées <span class="meta">— sur la stratégie et le symbole choisis ci-dessus</span></h2>
@@ -460,6 +514,8 @@ async function loadMeta(preferId) {
     renderDatasetList(custom);
     renderAdvancedForm(data);
     renderLiveForm(data);
+    renderLegoForm(data);
+    renderGraveyard();
   } catch (err) {
     msgEl.innerHTML = `<span class="err">Erreur de chargement: ${err.message}</span>`;
   }
@@ -980,6 +1036,12 @@ let liveTab = 'summary';
 let liveCross = { row: 'weekday', col: 'hour', metric: 'expectancy' };
 let livePeriodDim = 'year';
 
+function showResultsCard() {
+  document.getElementById('results-card').hidden = false;
+  document.getElementById('live-out').hidden = false;
+  document.getElementById('results-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 async function ensureTradeStats() {
   if (!TS) TS = await import('/shared/tradeStats.js');
   return TS;
@@ -1060,8 +1122,10 @@ async function runLiveStrategy() {
     liveData = data;
     const shown = document.getElementById('live-shown');
     shown.innerHTML = data.variants.map((v) => `<option value="${v.id}">${v.label} — ${v.trades.length} trades</option>`).join('');
-    document.getElementById('live-out').hidden = false;
+    document.getElementById('live-source').textContent = `Ma stratégie live · ${document.getElementById('live-symbol').selectedOptions[0]?.textContent ?? ''}`;
+    showResultsCard();
     renderLive();
+    recordIdeas('live', document.getElementById('live-symbol').selectedOptions[0]?.textContent ?? '', data);
   } catch (err) {
     msg.innerHTML = `<span class="err">Erreur: ${err.message}</span>`;
   } finally {
@@ -1119,7 +1183,7 @@ function renderLiveSummary(v) {
   const hist = TS.histogram(all, 0.5);
   const maxBin = Math.max(...hist.map((h) => h.count));
   return `
-    <div class="meta" style="margin-bottom:8px;">${describeLiveConfig(v.config)}. ${v.rawCount} signaux, dont ${v.droppedAsNonViable} écartés car leur stop est trop proche du spread. Du ${fmtTime(s.firstTime)} au ${fmtTime(s.lastTime)}.</div>
+    <div class="meta" style="margin-bottom:8px;">${v.description ?? describeLiveConfig(v.config)}. ${v.afterFilters !== undefined ? `${v.rawCount} signaux du déclencheur, ${v.afterFilters} après les filtres${v.guardrailSkipped ? `, ${v.guardrailSkipped} refusés par les garde-fous` : ''}, ` : `${v.rawCount} signaux, `}dont ${v.droppedAsNonViable} écarté${v.droppedAsNonViable > 1 ? 's' : ''} car leur stop est trop proche du spread. Du ${fmtTime(s.firstTime)} au ${fmtTime(s.lastTime)}.</div>
     <div class="meta" style="margin-bottom:8px;">${confidenceLine(e)}</div>
     <div class="metric-tiles">
       ${tile('Trades', s.n)}
@@ -1283,6 +1347,121 @@ function downloadLiveTrades() {
   a.download = `strategie-live-${document.getElementById('live-symbol').value.replace(':', '-')}-${v.id}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+// ---------------------------------------------------------------------------
+// Lego — build a strategy from blocks. Results go to the shared "Analyse détaillée" card.
+// ---------------------------------------------------------------------------
+let legoRuns = 0;
+try { legoRuns = Number(localStorage.getItem('apexfvg_lego_runs') || 0); } catch {}
+
+function renderLegoForm(data) {
+  const trig = document.getElementById('lg-trigger');
+  if (!trig.options.length) trig.innerHTML = data.strategies.map((x) => `<option value="${x.id}">${x.label}</option>`).join('');
+  const sym = document.getElementById('lg-symbol');
+  const keep = sym.value;
+  const custom = data.customDatasets || [];
+  sym.innerHTML = `<optgroup label="Données du projet">${data.symbols.map((x) => `<option value="${x}">${x}</option>`).join('')}</optgroup>` +
+    (custom.length ? `<optgroup label="Mes données importées">${custom.map((d) => `<option value="${d.id}">${customLabel(d)}</option>`).join('')}</optgroup>` : '');
+  sym.value = [...sym.options].some((o) => o.value === keep) ? keep : (data.symbols.includes('US100') ? 'US100' : data.symbols[0]);
+  updateLegoCounter();
+}
+
+function updateLegoCounter() {
+  document.getElementById('lg-counter').textContent = legoRuns ? `${legoRuns} recette${legoRuns > 1 ? 's' : ''} essayée${legoRuns > 1 ? 's' : ''} depuis ce navigateur : plus on en essaie, plus une belle courbe peut être un hasard.` : '';
+}
+
+function currentRecipe() {
+  const v = (id) => document.getElementById(id).value.trim().replace(',', '.');
+  const days = [...document.querySelectorAll('#lg-days input:checked')].map((b) => Number(b.value));
+  const recipe = { trigger: v('lg-trigger'), direction: v('lg-direction'), bias: v('lg-bias'), structure: document.getElementById('lg-structure').checked, sweep: document.getElementById('lg-sweep').checked, weekdays: days };
+  if (v('lg-session') === 'custom') recipe.session = { startHour: v('lg-start'), endHour: v('lg-end') };
+  if (v('lg-rr')) recipe.rr = v('lg-rr');
+  if (document.getElementById('lg-guard').checked) recipe.guardrails = {};
+  return recipe;
+}
+
+async function runLego() {
+  const btn = document.getElementById('lg-run-btn');
+  const msg = document.getElementById('lg-msg');
+  msg.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Calcul en cours… (jusqu\'à ~1 min sur le serveur)';
+  try {
+    await ensureTradeStats();
+    const symbol = document.getElementById('lg-symbol').value;
+    const res = await fetch('/api/lab/lego', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol, recipe: currentRecipe() }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    liveData = data;
+    legoRuns++;
+    try { localStorage.setItem('apexfvg_lego_runs', String(legoRuns)); } catch {}
+    updateLegoCounter();
+    const shown = document.getElementById('live-shown');
+    shown.innerHTML = data.variants.map((v) => `<option value="${v.id}">${v.label} — ${v.trades.length} trades</option>`).join('');
+    shown.value = data.variants[data.variants.length - 1].id; // the recipe itself, not the bare trigger
+    document.getElementById('live-source').textContent = `Lego · ${document.getElementById('lg-symbol').selectedOptions[0]?.textContent ?? symbol}`;
+    liveTab = 'summary';
+    document.querySelectorAll('#live-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.lt === 'summary'));
+    showResultsCard();
+    renderLive();
+    recordIdeas('lego', document.getElementById('lg-symbol').selectedOptions[0]?.textContent ?? symbol, data);
+  } catch (err) {
+    msg.innerHTML = `<span class="err">Erreur: ${err.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Tester ma recette';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cimetière des idées: every variant run is noted (this browser only), with the
+// number of tries, because the more ideas are tried the more a flattering one is luck.
+// ---------------------------------------------------------------------------
+const GRAVE_KEY = 'apexfvg_idea_graveyard';
+function loadGraveyard() {
+  try { return JSON.parse(localStorage.getItem(GRAVE_KEY) || '[]'); } catch { return []; }
+}
+function saveGraveyard(list) {
+  try { localStorage.setItem(GRAVE_KEY, JSON.stringify(list.slice(-400))); } catch { /* not remembered, still shown this session */ }
+}
+function gradeVariant(v, cutoff) {
+  const { train, test } = TS.splitAt(v.trades, cutoff);
+  const st = TS.summarize(train), se = TS.summarize(test);
+  let verdict = 'not-enough-trades';
+  if (st && se && st.n >= 10 && se.n >= 10) verdict = se.expectancy.mean <= 0 ? 'fails' : st.expectancy.mean > 0 && se.expectancy.mean >= 0.3 * st.expectancy.mean ? 'holds' : 'weakened';
+  return { trainN: st ? st.n : 0, testN: se ? se.n : 0, trainExp: st ? st.expectancy.mean : null, testExp: se ? se.expectancy.mean : null, testCI: se ? se.expectancy.ci95 : null, significant: Boolean(se && se.expectancy.significant), verdict };
+}
+function recordIdeas(source, symbolLabel, data) {
+  const list = loadGraveyard();
+  for (const v of data.variants) {
+    const label = v.description ?? v.label;
+    const key = `${source}|${symbolLabel}|${label}|${data.trainCutoff}`;
+    const entry = { key, at: Date.now(), source, symbol: symbolLabel, label, ...gradeVariant(v, data.trainCutoff) };
+    const i = list.findIndex((x) => x.key === key);
+    if (i >= 0) list[i] = entry; else list.push(entry);
+  }
+  saveGraveyard(list);
+  renderGraveyard();
+}
+function clearGraveyard() {
+  if (!confirm('Vider tout le cimetière des idées de ce navigateur ?')) return;
+  saveGraveyard([]);
+  renderGraveyard();
+}
+function renderGraveyard() {
+  const list = loadGraveyard();
+  const sum = document.getElementById('grave-summary');
+  const el = document.getElementById('grave-list');
+  if (!list.length) { sum.textContent = 'Rien encore : lance une analyse ci-dessus.'; el.innerHTML = ''; return; }
+  const testable = list.filter((x) => x.verdict !== 'not-enough-trades');
+  const sig = testable.filter((x) => x.significant);
+  const holds = list.filter((x) => x.verdict === 'holds');
+  const chance = testable.length * 0.05;
+  sum.innerHTML = `<strong>${list.length}</strong> idées notées dont ${testable.length} assez fournies pour être jugées ; <strong>${holds.length}</strong> « tiennent » hors échantillon et <strong>${sig.length}</strong> ont une marge d'erreur test strictement positive. Le hasard seul en ferait paraître significatives environ <strong>${fmt(chance, 1)}</strong> (5 % des essais jugés) : ${sig.length > chance * 2 ? 'nettement plus, donc quelque chose mérite d\'être creusé.' : 'à peu près autant : rien ne prouve encore qu\'une idée est meilleure que la chance.'}`;
+  el.innerHTML = `<table class="strategy-table" style="min-width:720px"><thead><tr><th>Quand</th><th>Où</th><th>Idée</th><th>Trades test</th><th>Espérance test</th><th>Marge d'erreur</th><th>Verdict</th></tr></thead><tbody>${[...list].reverse().slice(0, 60).map((x) => `<tr>
+    <td>${new Date(x.at).toLocaleDateString('fr-FR')}</td><td>${x.source === 'lego' ? 'Lego' : 'Live'} · ${x.symbol}</td><td>${x.label}</td><td>${x.testN}</td>
+    <td class="${x.testExp >= 0 ? 'win' : 'loss'}">${x.testExp === null ? '—' : sgnR(x.testExp)}</td><td>${x.testCI ? ciBadge({ ci95: x.testCI, significant: x.significant }) : '—'}</td><td>${verdictCell(x.verdict, x.testCI ? { ci95: x.testCI, significant: x.significant } : null)}</td></tr>`).join('')}</tbody></table>${list.length > 60 ? `<div class="meta">Les 60 plus récentes sur ${list.length}.</div>` : ''}`;
 }
 
 loadMeta();

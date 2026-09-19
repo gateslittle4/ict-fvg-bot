@@ -36,6 +36,7 @@ import { computeDailyLevels, rebaseLevels, SESSION_WINDOWS } from './backtest/da
 import { LIVE_VARIANTS, MAX_VARIANTS_PER_RUN, liveFvgSymbols, liveFvgConfig, describeConfig, normalizeCustomOverrides } from './backtest/liveFvgRunner.js';
 import { TRAIN_TEST_CUTOFF } from './backtest/labRunner.js';
 import { signalContext } from './shared/tradeStats.js';
+import { normalizeRecipe, describeRecipe } from './backtest/legoStrategy.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -486,6 +487,23 @@ app.post('/api/lab/live-strategy', async (req, res) => {
     if (req.body.custom) variants.push({ id: 'custom', label: 'Ma combinaison', overrides: normalizeCustomOverrides(req.body.custom) });
     if (variants.length > MAX_VARIANTS_PER_RUN) throw new ImportError(`Au plus ${MAX_VARIANTS_PER_RUN} combinaisons à la fois.`);
     const out = await runLabJob('runLiveFvg', { csvPath: ds.csvPath, symbol: ds.symbol, spread: ds.spread, cutoff: ds.cutoff, variants });
+    res.json({ symbol: req.body.symbol, dataset: datasetInfo(ds), ...out, trainCutoff: ds.cutoff ?? TRAIN_TEST_CUTOFF });
+  } catch (err) {
+    sendAnalysisError(res, err);
+  }
+});
+
+// "Lego": a recipe = one of the Labo's triggers + filters + an optional other R:R (see
+// legoStrategy.js). The bare trigger is always run next to it so the effect of the blocks shows.
+app.post('/api/lab/lego', async (req, res) => {
+  try {
+    const ds = resolveLabDataset(req.body?.symbol);
+    if (!ds) throw new ImportError(`Symbole inconnu ou sans données: "${req.body?.symbol}"`);
+    const recipe = normalizeRecipe(req.body?.recipe);
+    const bare = normalizeRecipe({ trigger: recipe.trigger });
+    const variants = [{ id: 'base', label: `Déclencheur seul : ${describeRecipe(bare)}`, recipe: bare }];
+    if (JSON.stringify(recipe) !== JSON.stringify(bare)) variants.push({ id: 'recipe', label: 'Ma recette', recipe });
+    const out = await runLabJob('runLego', { csvPath: ds.csvPath, symbol: ds.symbol, spread: ds.spread, cutoff: ds.cutoff, variants });
     res.json({ symbol: req.body.symbol, dataset: datasetInfo(ds), ...out, trainCutoff: ds.cutoff ?? TRAIN_TEST_CUTOFF });
   } catch (err) {
     sendAnalysisError(res, err);
