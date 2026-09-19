@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Apex FVG — Salle de contrôle</title>
+<script src="/theme.js"></script>
+<script src="/chat-widget.js" defer></script>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#05070a" data-dark="#05070a" data-light="#f6f7f9" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Apex FVG" />
+<style>
+  /* 2026-09-18 - same "Apex FVG" terminal palette as every other page
+     (index.html's :root is the source of truth these all copy). */
+  :root {
+    --bg: #05070a;
+    --bg-inset: #0a0e13;
+    --panel: #0e141b;
+    --panel-border: #202b37;
+    --panel-border-strong: #2d3b49;
+    --text: #eaf0f6;
+    --muted: #8b98a5;
+    --faint: #5c6773;
+    --green: #2fd480;
+    --red: #ff5c5f;
+    --amber: #e8b339;
+    --blue: #4c9eff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --radius: 3px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f9; --bg-inset: #eef0f3; --panel: #ffffff; --panel-border: #dde1e6; --panel-border-strong: #c7cdd4;
+      --text: #101418; --muted: #5b6470; --faint: #8b95a1; --green: #1a9d5c; --red: #d93c3f; --amber: #b3790f;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f7f9; --bg-inset: #eef0f3; --panel: #ffffff; --panel-border: #dde1e6; --panel-border-strong: #c7cdd4;
+    --text: #101418; --muted: #5b6470; --faint: #8b95a1; --green: #1a9d5c; --red: #d93c3f; --amber: #b3790f;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); margin: 0; padding: 16px; max-width: 1000px; }
+  body { margin-left: auto; margin-right: auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+  .topnav { display: flex; align-items: center; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--panel-border); overflow-x: auto; }
+  .topnav a { color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600; padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px; font-family: var(--mono); text-transform: uppercase; flex-shrink: 0; }
+  .topnav a:hover { color: var(--text); }
+  .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; flex-shrink: 0; }
+  .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; overflow-x: auto; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; }
+  .meta { color: var(--muted); font-size: 11.5px; }
+  .err { color: var(--red); font-size: 12px; }
+  body { max-width: none; }
+  .room-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .room-bar h1 { margin: 0; font-size: 20px; }
+  .clock { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .clock strong { color: var(--text); font-size: 20px; margin-left: 4px; }
+  .room-bar .spacer { flex: 1; }
+  .pill { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--panel-border-strong); color: var(--muted); }
+  .pill.ok { color: var(--green); border-color: var(--green); } .pill.bad { color: var(--red); border-color: var(--red); } .pill.warn { color: var(--amber); border-color: var(--amber); }
+  .btn-ghost { background: none; border: 1px solid var(--panel-border-strong); color: var(--text); border-radius: var(--radius); padding: 5px 10px; cursor: pointer; font-family: var(--mono); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  @media (min-width: 1100px) { .grid { grid-template-columns: 2fr 1fr; } }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+  .tile { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 12px 14px; }
+  .tile.signal { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue) inset; animation: pulse 2s ease-in-out infinite; }
+  .tile.pos-up { border-left: 4px solid var(--green); } .tile.pos-down { border-left: 4px solid var(--red); }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 3px rgba(76,158,255,0.35) inset; } }
+  @media (prefers-reduced-motion: reduce) { .tile.signal { animation: none; } }
+  .tile .sym { font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+  .tile .px { font-family: var(--mono); font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 4px 0 6px; }
+  .tile .lv { font-family: var(--mono); font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+  .tile .lv .up { color: var(--green); } .tile .lv .down { color: var(--red); }
+  .tile .pos { margin-top: 6px; font-family: var(--mono); font-size: 12px; }
+  .gauge { margin: 10px 0; }
+  .gauge .row { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; margin-bottom: 4px; }
+  .gauge .bar { height: 10px; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: 2px; overflow: hidden; }
+  .gauge .bar > div { height: 100%; background: var(--green); transition: width .4s; }
+  .gauge.warn .bar > div { background: var(--amber); } .gauge.bad .bar > div { background: var(--red); }
+  .feed { list-style: none; margin: 0; padding: 0; font-size: 12.5px; max-height: 300px; overflow: auto; }
+  .feed li { padding: 6px 0; border-bottom: 1px solid var(--panel-border); }
+  .feed .t { font-family: var(--mono); color: var(--muted); font-size: 11px; margin-right: 8px; }
+  .timeline { position: relative; height: 44px; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin: 8px 0 22px; }
+  .timeline .win { position: absolute; top: 0; bottom: 0; opacity: 0.35; border-left: 1px solid rgba(255,255,255,0.25); }
+  .timeline .tick { position: absolute; bottom: -16px; font: 9.5px var(--mono); color: var(--muted); transform: translateX(-50%); }
+  .timeline .now { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--amber); }
+  .win-list { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; }
+  .win-list i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .win-list .live { color: var(--green); font-weight: 700; }
+  body.fullscreen-mode .topnav, body.fullscreen-mode .subtitle { display: none; }
+  body.fullscreen-mode { padding: 20px 28px; }
+  body.fullscreen-mode .tile .px { font-size: 40px; }
+</style>
+</head>
+<body>
+  <nav class="topnav">
+    <a href="/">Dashboard</a>
+    <a href="/chart.html">Graphique</a>
+    <a href="/niveaux.html">Niveaux</a>
+    <a href="/journal.html">Journal</a>
+    <a href="/accounts.html">Comptes</a>
+    <a href="/lab.html">Labo</a>
+    <a href="/salle.html" class="active">Salle</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
+  </nav>
+  <div class="room-bar">
+    <h1>Salle de contrôle</h1>
+    <span class="clock">New York <strong id="clock-ny">--:--:--</strong></span>
+    <span class="clock">Local <strong id="clock-local">--:--:--</strong></span>
+    <span class="spacer"></span>
+    <span class="pill" id="pill-link">connexion…</span>
+    <span class="pill" id="pill-account"></span>
+    <button type="button" class="btn-ghost" id="btn-sound" onclick="toggleSound()">🔇 Son coupé</button>
+    <button type="button" class="btn-ghost" onclick="toggleFullscreen()">⛶ Plein écran</button>
+  </div>
+  <div class="subtitle">Tout ce qui compte pour piloter, sur un seul écran fait pour rester ouvert : sessions, prix et niveaux, positions, garde-fous, alertes. Se met à jour tout seul.</div>
+
+  <div class="card">
+    <h2>Sessions — heure de New York</h2>
+    <div class="timeline" id="timeline"></div>
+    <div class="win-list" id="win-list"></div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="tiles" id="tiles"><div class="meta">Chargement…</div></div>
+      <div class="card" style="margin-top:12px;">
+        <h2>Signaux actionnables</h2>
+        <ul class="feed" id="signals"><li class="meta">Aucun pour l'instant…</li></ul>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Garde-fous <span class="meta" id="balance-line"></span></h2>
+        <div id="gauges"></div>
+      </div>
+      <div class="card">
+        <h2>Dernières alertes</h2>
+        <ul class="feed" id="alerts"><li class="meta">Aucune depuis le démarrage.</li></ul>
+      </div>
+    </div>
+  </div>
+
+<script>
+const WIN_COLOR = { cbdr: '#a78bfa', asia: '#4c9eff', london: '#2fd480', nyam: '#e8b339', silver: '#ff8c3c' };
+let sessions = [];
+let status = null;
+let levels = null;
+let signals = [];
+let alerts = [];
+let seenSignalIds = null;
+let lastAlertAt = null;
+let soundOn = false;
+try { soundOn = localStorage.getItem('apexfvg_room_sound') === '1'; } catch {}
+
+const pad = (n) => String(n).padStart(2, '0');
+function fmt(n, d = 2) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+const decimalsFor = (price) => (Math.abs(price) >= 1000 ? 1 : Math.abs(price) >= 100 ? 2 : 5);
+const fmtPx = (n) => (n === null || n === undefined ? '—' : fmt(n, decimalsFor(n)));
+const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// --- sound (only after the user clicked the button: browsers refuse audio before a gesture) ---
+let audioCtx = null;
+function beep(freq = 880, ms = 160) {
+  if (!soundOn) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    o.frequency.value = freq; g.gain.value = 0.06;
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + ms / 1000);
+  } catch {}
+}
+function renderSoundButton() { document.getElementById('btn-sound').textContent = soundOn ? '🔔 Son activé' : '🔇 Son coupé'; }
+function toggleSound() {
+  soundOn = !soundOn;
+  try { localStorage.setItem('apexfvg_room_sound', soundOn ? '1' : '0'); } catch {}
+  renderSoundButton();
+  if (soundOn) beep(660, 120);
+}
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.();
+}
+document.addEventListener('fullscreenchange', () => document.body.classList.toggle('fullscreen-mode', Boolean(document.fullscreenElement)));
+
+// --- clocks and sessions ---
+const nyFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function nyClock() {
+  const p = Object.fromEntries(nyFmt.formatToParts(new Date()).map((x) => [x.type, x.value]));
+  return { text: `${p.hour}:${p.minute}:${p.second}`, hours: Number(p.hour) + Number(p.minute) / 60 };
+}
+const hm = (h) => `${pad(Math.floor(h) % 24)}h${pad(Math.round((h % 1) * 60))}`;
+const untilText = (hours) => { const t = Math.round(hours * 60); return t >= 60 ? `${Math.floor(t / 60)} h ${pad(t % 60)}` : `${t} min`; };
+
+function tickClocks() {
+  const ny = nyClock();
+  document.getElementById('clock-ny').textContent = ny.text;
+  document.getElementById('clock-local').textContent = new Date().toLocaleTimeString('fr-FR');
+  if (!sessions.length) return;
+  const pos = (h) => `${(h / 24) * 100}%`;
+  let html = '';
+  for (const w of sessions) {
+    const segs = w.endHour > w.startHour ? [[w.startHour, w.endHour]] : [[w.startHour, 24], [0, w.endHour]];
+    for (const [a, b] of segs) html += `<div class="win" style="left:${pos(a)};width:${((b - a) / 24) * 100}%;background:${WIN_COLOR[w.key] || '#888'}"></div>`;
+  }
+  for (let h = 0; h < 24; h += 3) html += `<div class="tick" style="left:${pos(h)}">${h}h</div>`;
+  html += `<div class="now" style="left:${pos(ny.hours)}"></div>`;
+  document.getElementById('timeline').innerHTML = html;
+  document.getElementById('win-list').innerHTML = sessions.map((w) => {
+    const inside = ny.hours >= w.startHour && ny.hours < w.endHour;
+    const state = inside ? `<span class="live">en cours (finit dans ${untilText(w.endHour - ny.hours)})</span>` : `<span class="meta">dans ${untilText((w.startHour - ny.hours + 24) % 24)}</span>`;
+    return `<span><i style="background:${WIN_COLOR[w.key]}"></i>${w.label} ${hm(w.startHour)}–${hm(w.endHour)} · ${state}</span>`;
+  }).join('');
+}
+
+// --- tiles ---
+function levelsFor(symbol) { return levels && levels.symbols.find((s) => s.symbol === symbol); }
+
+function renderTiles() {
+  const el = document.getElementById('tiles');
+  if (!status) return;
+  const actionableSymbols = new Set(signals.map((s) => s.symbol));
+  el.innerHTML = status.symbols.map((s) => {
+    const lv = levelsFor(s.symbol);
+    const price = (lv && lv.price) ?? s.lastPrice;
+    const above = lv ? lv.levels.filter((l) => l.price >= price).slice(-1)[0] : null; // nearest above
+    const below = lv ? lv.levels.find((l) => l.price < price) : null; // nearest below
+    const line = (l, up) => (l ? `<span class="${up ? 'up' : 'down'}">${up ? '▲' : '▼'}</span> ${escapeHtml(l.label)} ${fmtPx(l.price)} <span>(${l.distancePct > 0 ? '+' : ''}${fmt(l.distancePct, 2)} %)</span>` : '');
+    const pos = s.openPosition;
+    let posHtml = '';
+    let cls = '';
+    if (pos && price && Math.abs(pos.entryPrice - pos.stopPrice) > 0) {
+      const risk = Math.abs(pos.entryPrice - pos.stopPrice);
+      const move = pos.direction === 'bullish' ? price - pos.entryPrice : pos.entryPrice - price;
+      const r = move / risk;
+      cls = r >= 0 ? 'pos-up' : 'pos-down';
+      posHtml = `<div class="pos"><span class="${r >= 0 ? 'up' : 'down'}" style="color:var(${r >= 0 ? '--green' : '--red'})">${pos.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'} ${r >= 0 ? '+' : ''}${fmt(r)}R</span> <span class="meta">entrée ${fmtPx(pos.entryPrice)} · stop ${fmtPx(pos.stopPrice)} · cible ${fmtPx(pos.targetPrice)}${pos.confirmed === false ? ' · ordre non confirmé' : ''}</span></div>`;
+    }
+    const sig = actionableSymbols.has(s.symbol);
+    return `<div class="tile ${sig ? 'signal' : ''} ${cls}">
+      <div class="sym"><span>${escapeHtml(s.symbol)}</span><span>${sig ? '● SIGNAL' : ''}${s.cooldownRemainingMs > 0 ? ` pause ${Math.ceil(s.cooldownRemainingMs / 60000)} min` : ''}</span></div>
+      <div class="px">${fmtPx(price)}</div>
+      <div class="lv">${line(above, true) || '<span class="meta">pas de niveau au-dessus</span>'}<br>${line(below, false) || '<span class="meta">pas de niveau en dessous</span>'}</div>
+      ${posHtml}
+    </div>`;
+  }).join('');
+}
+
+// --- gauges ---
+function gauge(label, value, max, valueText, invert = false) {
+  const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
+  const state = ratio >= 0.9 ? 'bad' : ratio >= 0.6 ? 'warn' : '';
+  return `<div class="gauge ${state}"><div class="row"><span>${label}</span><span>${valueText}</span></div><div class="bar"><div style="width:${ratio * 100}%"></div></div></div>`;
+}
+function renderGauges() {
+  if (!status) return;
+  const g = status.guardrail || {};
+  const bal = document.getElementById('balance-line');
+  bal.textContent = status.balance != null ? `— solde ${fmt(status.balance)}` : '';
+  let html = '';
+  html += gauge('Trades clôturés aujourd\'hui', g.tradesToday ?? 0, g.maxTradesPerDay ?? 0, `${g.tradesToday ?? 0} / ${g.maxTradesPerDay ?? '—'}`);
+  html += gauge('Perte du jour', g.dailyLossPct ?? 0, g.dailyLossLimitPct ?? 0, `${fmt(g.dailyLossPct ?? 0, 2)} % / ${fmt(g.dailyLossLimitPct ?? 0, 1)} %`);
+  if (g.overallDrawdownFloor != null && g.currentBalance != null && g.startingBalance) {
+    const room = g.currentBalance - g.overallDrawdownFloor;
+    const total = Math.max(1e-9, (g.startingBalance || g.currentBalance) - g.overallDrawdownFloor);
+    html += gauge('Plancher de drawdown (marge consommée)', Math.max(0, total - room), total, `marge ${fmt(room)}`);
+  }
+  if (g.cooldownRemainingMs > 0) html += `<div class="meta">⏸ Pause après perte : encore ${Math.ceil(g.cooldownRemainingMs / 60000)} min.</div>`;
+  html += g.blocked ? `<div class="pill bad" style="display:inline-block;margin-top:6px">⛔ Nouveaux trades bloqués : ${(g.blockReasons || []).join(', ')}</div>` : '<div class="pill ok" style="display:inline-block;margin-top:6px">✓ Nouveaux trades autorisés</div>';
+  document.getElementById('gauges').innerHTML = html;
+}
+
+function renderLists() {
+  const sigEl = document.getElementById('signals');
+  sigEl.innerHTML = signals.length ? signals.map((s) => `<li><span class="t">${new Date(s.validatedAt).toLocaleTimeString('fr-FR')}</span><strong style="color:var(${s.direction === 'bullish' ? '--green' : '--red'})">${s.direction === 'bullish' ? '▲ ACHAT' : '▼ VENTE'}</strong> ${escapeHtml(s.symbol)} <span class="meta">${s.entryPrice ? 'entrée ' + fmtPx(s.entryPrice) : ''}</span></li>`).join('') : '<li class="meta">Aucun pour l\'instant…</li>';
+  const alEl = document.getElementById('alerts');
+  alEl.innerHTML = alerts.length ? alerts.slice(0, 12).map((a) => `<li><span class="t">${new Date(a.at).toLocaleTimeString('fr-FR')}</span>${escapeHtml(a.text)}</li>`).join('') : '<li class="meta">Aucune depuis le démarrage.</li>';
+}
+
+function renderLink() {
+  const link = document.getElementById('pill-link');
+  if (!status) { link.textContent = 'hors ligne'; link.className = 'pill bad'; return; }
+  const live = status.liveConfigured && status.mode !== 'demo';
+  link.textContent = live ? 'courtier connecté' : 'mode démo';
+  link.className = 'pill ' + (live ? 'ok' : 'warn');
+  document.getElementById('pill-account').textContent = status.accountLabel || status.accountId || '';
+}
+
+// --- data ---
+async function getJson(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+async function refreshStatus() {
+  try { status = await getJson('/api/status'); } catch { status = null; }
+  renderLink(); renderTiles(); renderGauges();
+}
+async function refreshSignals() {
+  try {
+    const data = await getJson('/api/signals');
+    signals = data.actionable || [];
+    const ids = new Set(signals.map((s) => s.id));
+    if (seenSignalIds !== null && [...ids].some((id) => !seenSignalIds.has(id))) beep(988, 220); // a signal that was not there before
+    seenSignalIds = ids;
+  } catch { /* keep the last list */ }
+  renderTiles(); renderLists();
+}
+async function refreshLevels() {
+  try { levels = await getJson('/api/levels'); } catch { /* keep the last */ }
+  renderTiles();
+}
+async function refreshAlerts() {
+  try {
+    const data = await getJson('/api/alerts');
+    alerts = data.alerts || [];
+    const newest = alerts.length ? alerts[0].at : null;
+    if (lastAlertAt !== null && newest !== null && newest > lastAlertAt) beep(440, 260);
+    lastAlertAt = newest ?? lastAlertAt ?? 0;
+  } catch { /* keep the last list */ }
+  renderLists();
+}
+
+async function boot() {
+  renderSoundButton();
+  try { sessions = (await getJson('/api/sessions')).sessions || []; } catch { sessions = []; }
+  tickClocks();
+  await Promise.all([refreshStatus(), refreshSignals(), refreshLevels(), refreshAlerts()]);
+  setInterval(tickClocks, 1000);
+  const every = (fn, ms) => setInterval(() => { if (!document.hidden) fn(); }, ms);
+  every(refreshStatus, 4000); every(refreshSignals, 8000); every(refreshLevels, 20000); every(refreshAlerts, 10000);
+}
+boot();
+</script>
+</body>
+</html>
