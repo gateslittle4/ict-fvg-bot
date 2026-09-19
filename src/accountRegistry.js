@@ -51,6 +51,14 @@ export function buildEffectiveConfig(accountConfig) {
         targetPct: phase.targetPct,
         maxDrawdownPct: phase.maxDrawdownPct,
         maxDrawdownType: phase.maxDrawdownType,
+        // 2026-09-19, HaitiForex (see src/propFirms/haitiforex.js) - a
+        // program-level field, not per-phase (every firm cataloged so far
+        // has exactly one dailyGainCapUsd for its whole program, unlike
+        // targetPct/maxDrawdownPct which genuinely differ between a 2-step
+        // program's phases). `program.dailyGainCapUsd` is undefined for
+        // every other firm - GuardrailEngine's own `null` default already
+        // disables this check, so nothing changes for them.
+        dailyGainCapUsd: program.dailyGainCapUsd ?? null,
       }
     : accountConfig.guardrails;
 

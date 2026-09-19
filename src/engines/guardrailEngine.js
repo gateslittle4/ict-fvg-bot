@@ -19,6 +19,18 @@
 //     phase (Esdras adds a new account for that once the prop firm actually
 //     grants it) - it only exists so a caller can fire a one-time alert, via
 //     consumeTargetReachedEvent() below.
+//   - dailyGainCapUsd (2026-09-19, HaitiForex - see src/propFirms/haitiforex.js):
+//     once TODAY's realized GAIN (gross - losses do NOT buy back cap room,
+//     the conservative reading used throughout the HaitiForex research
+//     since the firm's own rules don't say either way) reaches this USD
+//     amount, all further signals are blocked until day rollover - same
+//     daily reset as dailyLossLimitPct. Modeled identically to the veto in
+//     scripts/runHaitiForexChallengeSimulation.js/
+//     runHaitiForexHistoricalChallengeSimulation.js (skip the trade, don't
+//     cancel the account or clip the P&L) - the most conservative of the
+//     plausible readings, and the one already used to produce every
+//     HaitiForex simulation result in HANDOFF.md. Optional - omitting it
+//     (the default) keeps every existing caller's behavior identical.
 //
 // The engine does not execute anything itself - it is a pure gate that the
 // dashboard/notifier consults before showing a signal as "actionable".
@@ -47,6 +59,9 @@ export class GuardrailEngine {
    *   Required (non-null) whenever maxDrawdownPct is set - an unrecognized/
    *   missing type disables the check entirely rather than guessing, since a
    *   wrong guess here could silently block (or fail to block) real trading.
+   * @param {number|null} [opts.dailyGainCapUsd] - e.g. 2200 for HaitiForex's
+   *   $100k tier. null (default) disables this check entirely - see the
+   *   class header for exactly what "reaching the cap" does.
    */
   constructor({
     maxTradesPerDay = 2,
@@ -56,6 +71,7 @@ export class GuardrailEngine {
     targetPct = null,
     maxDrawdownPct = null,
     maxDrawdownType = null,
+    dailyGainCapUsd = null,
   } = {}) {
     this.maxTradesPerDay = maxTradesPerDay;
     this.cooldownMinutesAfterLoss = cooldownMinutesAfterLoss;
@@ -64,6 +80,7 @@ export class GuardrailEngine {
     this.targetPct = targetPct;
     this.maxDrawdownPct = maxDrawdownPct;
     this.maxDrawdownType = maxDrawdownType;
+    this.dailyGainCapUsd = dailyGainCapUsd;
 
     this.dayKey = null;
     this.trades = []; // { time, pnl, isLoss } - account-wide, drives tradesToday/dailyLossPct (deliberately NOT scoped per symbol - those protect TOTAL account risk)
@@ -231,6 +248,10 @@ export class GuardrailEngine {
       this.startingBalance && this.startingBalance > 0 && dailyPnl < 0
         ? (-dailyPnl / this.startingBalance) * 100
         : 0;
+    // Gross realized gain only (losses don't buy back cap room) - see the
+    // class header's dailyGainCapUsd note for why.
+    const dailyGainUsd = this.trades.reduce((sum, t) => sum + Math.max(0, t.pnl), 0);
+    const dailyGainCapReached = this.dailyGainCapUsd != null && dailyGainUsd >= this.dailyGainCapUsd;
 
     const overallDrawdownFloor = this._overallDrawdownFloor();
     const overallDrawdownBreached =
@@ -244,6 +265,7 @@ export class GuardrailEngine {
     if (tradesToday >= this.maxTradesPerDay) blockReasons.push('max_trades_reached');
     if (cooldownRemainingMs > 0) blockReasons.push('cooldown_active');
     if (dailyLossPct >= this.dailyLossLimitPct) blockReasons.push('daily_loss_limit_reached');
+    if (dailyGainCapReached) blockReasons.push('daily_gain_cap_reached');
     // Not per-day like the check above - does NOT reset at day rollover.
     if (overallDrawdownBreached) blockReasons.push('overall_drawdown_breached');
     // Once a challenge target is reached, stop opening new trades. The flag
@@ -260,6 +282,9 @@ export class GuardrailEngine {
       dailyPnl,
       dailyLossPct,
       dailyLossLimitPct: this.dailyLossLimitPct,
+      dailyGainUsd,
+      dailyGainCapUsd: this.dailyGainCapUsd,
+      dailyGainCapReached,
       startingBalance: this.startingBalance,
       currentBalance: this.currentBalance,
       // Overall (not per-day) challenge tracking - null/false when

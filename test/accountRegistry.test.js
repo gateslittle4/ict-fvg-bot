@@ -38,6 +38,33 @@ test('buildEffectiveConfig: a propFirm phase WITH a real daily loss limit still 
   assert.equal(effective.guardrails.dailyLossLimitPct, 3); // FTMO's own 3%, not the account's 99 placeholder
 });
 
+// 2026-09-19: HaitiForex is the first program with a dailyGainCapUsd field
+// (a program-level property, not per-phase like targetPct/maxDrawdownPct) -
+// confirm it gets forwarded into effective guardrails, and that every OTHER
+// program's account still gets `null` (GuardrailEngine's own "disabled"
+// default), not `undefined` leaking through unexamined.
+test('buildEffectiveConfig: forwards a propFirm\'s dailyGainCapUsd (HaitiForex) into guardrails', () => {
+  const effective = buildEffectiveConfig({
+    id: 'test-haitiforex',
+    propFirmProgramId: 'haitiforex-100k',
+    phaseIndex: 0,
+    guardrails: { maxTradesPerDay: 2, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 2, dayBoundaryHourUTC: 0 },
+    riskPctPerTrade: 0.5,
+  });
+  assert.equal(effective.guardrails.dailyGainCapUsd, 2200);
+});
+
+test('buildEffectiveConfig: a propFirm program with no dailyGainCapUsd (every firm except HaitiForex) forwards null, not undefined', () => {
+  const effective = buildEffectiveConfig({
+    id: 'test-ftmo-gain-cap',
+    propFirmProgramId: 'ftmo-1step',
+    phaseIndex: 0,
+    guardrails: { maxTradesPerDay: 2, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 99, dayBoundaryHourUTC: 0 },
+    riskPctPerTrade: 0.5,
+  });
+  assert.equal(effective.guardrails.dailyGainCapUsd, null);
+});
+
 test('buildEffectiveConfig: no propFirmProgramId means the account\'s own guardrails pass through untouched', () => {
   const guardrails = { maxTradesPerDay: 5, cooldownMinutesAfterLoss: 15, dailyLossLimitPct: 1.5, dayBoundaryHourUTC: 0 };
   const effective = buildEffectiveConfig({ id: 'test-plain', propFirmProgramId: null, guardrails, riskPctPerTrade: 0.3 });

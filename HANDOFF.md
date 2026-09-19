@@ -5806,6 +5806,107 @@ Les résultats du Lego et de « Ma stratégie live » s'affichent dans une **car
 
 **Cimetière des idées** (carte repliée « Cimetière des idées ») : chaque combinaison lancée (live ou Lego) est notée **dans le navigateur** (`localStorage`, 400 dernières) avec son résultat sur la période test. Le résumé compte les idées jugées, celles qui « tiennent » et celles dont la marge d'erreur test est strictement positive, et donne combien le hasard seul en ferait paraître (5 % des essais jugés). Le Lego affiche aussi un compteur de recettes essayées. **Limite** : par navigateur, pas partagé ni durable entre appareils — un registre durable demanderait une table Supabase (non créée sans accord).
 
+## Challenge HaitiForex (haitiforex.org) — règles trouvées, mécanismes compatibles identifiés, simulation 7 mois, recommandation de taille de risque — 2026-09-19
+
+Esdras : "Va sur haitiforex.com et regarde leur challenge... leur challenge
+est le plus difficile." `haitiforex.com`/`.net` n'existent pas (DNS
+introuvable) ; `www.haitiforex.org` répond (site Homestead SiteBuilder,
+ancien, HTTPS cassé côté proxy — récupéré en HTTP direct). **Recherche
+uniquement, aucun code live modifié** — trois scripts d'analyse ajoutés.
+
+**Règles réelles** (lues directement sur `Open-Account.html`/`Practice.html`,
+4 paliers de compte — le $100 000 est celui avec le plafond $2 200/jour
+qu'Esdras avait mentionné avant même que la recherche confirme le chiffre) :
+cible +10% du solde, perte max 5% du solde (compte annulé), **plafond de
+GAIN quotidien** ($1 100 à $5 500 selon le palier — AUCUNE limite de perte
+quotidienne par contre), min 5 jours de trading, max 30 jours de durée de
+compte, **toute position doit être fermée à 16h00 NY sinon compte annulé**
+(zéro swing/overnight), stop-loss obligatoire sur chaque trade (sinon le
+gain est annulé), no scalping (durée min 5 min/trade), pas de hedge, rapport
+manuel chaque vendredi après 17h. ⚠️ Signaux d'alerte notés (paiement via
+apps perso MonCash/Zelle/CashApp/Wise, témoignages invérifiables, page qui
+sollicite des "investisseurs" pour $3 000 + escrow $250 000) — communiqués
+à Esdras, à vérifier avant tout paiement réel, indépendant de la stratégie.
+
+**Étape 1 — `scripts/runHaitiForexSameDayComplianceAnalysis.js`** : rejoue
+`LiveStrategyEngine` (construit depuis `CONFIG`, donc code de production
+réel) sur les 7 mois de vraies données broker déjà dans ce repo, et vérifie
+pour chacun des 8 mécanismes live si ses trades se résolvent le même jour NY
+avant 16h. Résultat — 4 mécanismes déjà quasi-natifs à cette règle :
+**Judas Swing (100%), CBDR (92.5%), FVG (83.2%), Silver Bullet (80.9%)**,
+médianes de résolution 20-30 min. **Exclus** : Divergence (30.4%, médiane
+20.5h — conçu pour tenir plusieurs jours) et NWOG (0% conforme mais 80.5%
+"même jour après 16h" — trop tardif tel quel). Zone grise : Breaker Block
+(69.7%), Weekly Sweep (59.3%) — pas retenus pour rester strict.
+
+**Étape 2 — `scripts/runHaitiForexChallengeSimulation.js`** : simule le
+palier $100k complet en 2 phases. Phase 1 : un seul `warmUp()` (le chemin
+O(n) documenté par le moteur lui-même — un piège O(n²) a été découvert et
+évité en bouclant `ingestCandle()` manuellement par erreur au premier essai,
+voir le commentaire en tête du script) avec SEULEMENT les 4 mécanismes
+compatibles, puis un post-traitement léger qui force la clôture de tout
+trade non conforme à la dernière bougie avant 15h55 NY (marge de 5 min), et
+écarte purement les rares entrées qui démarrent déjà après 15h55 (surtout
+CBDR, dont la fenêtre va jusqu'à 20h NY). Phase 2 : cette liste de trades
+conforme est rejouée dans 8 fenêtres indépendantes de 30 jours calendaires
+(un compte $100k frais à chaque fois, comme si Esdras rachetait le
+challenge tous les mois), avec son propre plafond de gain quotidien
+(un trade peut être gardé dans une fenêtre et véto dans une autre, selon le
+gain déjà réalisé ce jour-là dans CETTE fenêtre précise).
+
+**Résultat à 0.5% de risque/trade (réglage par défaut du projet)** :
+3/8 fenêtres atteignent +10% (jour 4 à 16), **0/8 ne touchent jamais le
+plancher de -5%** — risque de bust faible, mais réussite pas garantie
+chaque mois.
+
+**Diagnostic demandé par Esdras ("c'est quoi le plus grand problème")** :
+son hypothèse ("il faudrait un meilleur win rate") a été testée et
+**infirmée** par les données. Instrumentation ajoutée (voir le commit) pour
+mesurer séparément l'argent perdu à la clôture forcée (`lostUsdFromForcedClose`
+— globalement neutre, s'annule sur l'ensemble des fenêtres) et l'argent
+jeté par le plafond quotidien (`missedUsdFromCap` — réel mais secondaire :
+juillet a manqué $2 077 au plafond pour un déficit de seulement ~$1 320 par
+rapport à la cible, mais février a $0 manqué au plafond et échoue quand
+même). Test de sensibilité sur `RISK_PCT_PER_TRADE` (maintenant un argv
+override, `node scripts/runHaitiForexChallengeSimulation.js <pct>`) :
+0.25%→1/8, 0.3%→2/8, 0.5%→3/8, **0.75%→5/8 (zéro bust)**, 1.0%→5/8 mais
+**1 fenêtre annulée (-5.30%)**. Conclusion : le vrai goulot d'étranglement
+est que 0.5% compose trop lentement pour 10% en seulement ~20 jours de
+trading utiles sur 30 — pas le win rate (cohérent avec la conversation
+précédente sur Midnight Open : un WR élevé n'a jamais été la bonne
+métrique dans ce projet). **0.75%/trade est le point optimal trouvé** :
+double le taux de réussite sans jamais toucher le plancher de -5%.
+
+**Quelle stratégie permet ça, concrètement** : aucun NOUVEAU mécanisme —
+la même combinaison **FVG + Judas Swing + CBDR + Silver Bullet** déjà
+backtestée et déjà partiellement live pour le compte principal (Judas
+Swing/CBDR/Silver Bullet le sont ; FVG l'est aussi), simplement filtrée aux
+4 qui se résolvent le même jour, avec une clôture forcée à 15h55 NY ajoutée
+par-dessus et un risque par trade porté à 0.75% au lieu de 0.5% pour ce
+compte spécifique.
+
+**Ce qui N'est PAS fait, pour la prochaine session** :
+- Aucune config de compte HaitiForex n'existe dans `src/propFirms/` — à
+  créer (`haitiforex-100k` ou similaire) une fois qu'Esdras confirme le
+  palier choisi, sur le modèle des fichiers existants (`ftmo.js`/`cti.js`).
+- Le plafond de gain quotidien et la clôture forcée à 16h ne sont PAS
+  encore dans `GuardrailEngine`/`LiveStrategyEngine` — modélisés seulement
+  dans ce script d'analyse autonome (même discipline "mesurer avant de
+  câbler" que CTI/GoatFundedTrader dans ce projet). Il faudrait les
+  implémenter réellement avant tout compte live sur cette firme.
+- Pas de vérification directe avec HaitiForex sur : ce qui se passe
+  EXACTEMENT si le plafond quotidien est dépassé (perte du gain excédentaire
+  seulement, ou annulation du compte ?), et si leur plafond compte le gain
+  BRUT ou NET des pertes du jour (lecture conservative — gain brut
+  uniquement — utilisée ici, non confirmée).
+- Les signaux d'alerte sur la légitimité du site (paiement par apps perso,
+  pas de régulation propre à HaitiForex) restent à vérifier par Esdras
+  avant tout paiement réel — indépendant de tout ce qui précède.
+
+**Fichiers** : `scripts/runHaitiForexSameDayComplianceAnalysis.js`,
+`scripts/runHaitiForexChallengeSimulation.js` (les deux nouveaux, recherche
+uniquement, aucun changement de comportement live).
+
 ## 2026-09-19 (fin de session, INACHEVÉ) — Probabilité de finir le challenge en cours (roadmap n° 1) : backend prêt, interface à faire
 
 Session interrompue par manque de jetons ; reprise prévue depuis un autre compte. **État exact :**
@@ -5813,12 +5914,60 @@ Session interrompue par manque de jetons ; reprise prévue depuis un autre compt
 - FAIT mais **pas vérifié de bout en bout** : `GET /api/accounts/:id/challenge-outlook` (`server.js`, dans le routeur de compte) + op `outlook` du thread du Labo. Il lit l'état réel via `store.guardrail` (`initialBalance`, `peakEodBalance`, `getStatus()`), utilise l'historique FVG live de US100/US500/XAUUSD (`liveHistoryFor`) filtré par les garde-fous du compte, et lance 3 scénarios (tel quel, après −1R, après +1R). Ne répond `available:false` avec une raison que si le compte n'a pas de challenge ou de solde connu. Essayé en local avec `ACCOUNTS_JSON='[{"id":"default","label":"FTMO test","platform":"mock","propFirmProgramId":"ftmo-1step","accountMode":"challenge"}]'` : répond « solde pas encore connu » (la démo mock n'alimente pas `initialBalance`) → **le chemin qui calcule n'a jamais tourné**. À faire : soit simuler `setBalance()` sur ce compte de test, soit tester en production avec le vrai compte ; puis **écrire la carte du dashboard** (`index.html`) : probabilité de réussir/casser, jours pour finir, cône en éventail (`lineChartSvg` de `lab.html` peut servir de base), et « un mauvais jour (−1R) te coûte X points de probabilité » (`ifLoss` contre `base`). `trailing-locks-at-start-balance` est approximé par `trailing-eod` (flag `approximate`).
 - Reste de la liste (voir la mémoire « roadmap 2026-09-18 ») : 2 compte fantôme (table Supabase, **accord explicite d'Esdras d'abord**), 5 plan du jour, A répartition du risque, D alertes de confluence, E calendrier économique, F track record vérifiable, hook git `[skip render]`, briefing du matin et rapport du vendredi (ntfy), chat qui agit. `ANTHROPIC_API_KEY` manque sur Render (mentor inactif).
 
+## Fusion de la recherche HaitiForex (branche `claude/commit-access-a7k1hw`) et première étape du "pas encore fait" — 2026-09-19 (suite)
+
+Esdras : retrouve la session HaitiForex (précédente entrée ci-dessus, faite sur une autre branche que celle-ci) et demande de la fusionner ici et de continuer dessus. Fusionné (`git merge`, un conflit sur `HANDOFF.md` — les deux branches avaient ajouté du contenu en fin de fichier, les deux gardés), puis re-vérifié que les deux scripts (`runHaitiForexSameDayComplianceAnalysis.js`, `runHaitiForexChallengeSimulation.js`) reproduisent bien les mêmes résultats documentés (3/8 à 0.5% de risque, 5/8 à 0.75%) sur le code actuel de cette branche — confirmé, aucune régression.
+
+**Première tâche de la liste "pas encore fait" traitée** : `src/propFirms/haitiforex.js` créé (nouveau), sur le modèle de `ftmo.js`/`cti.js` — palier $100k uniquement (le seul dont les règles ont été vérifiées avec la même rigueur ; les 3 autres paliers existent sur le site mais n'ont été lus qu'en plage de plafond, $1 100-$5 500, pas en détail). Deux écarts par rapport à la forme standard documentée dans `index.js` : aucune limite de perte quotidienne (`dailyLossLimitPct: null`, confirmé, pas un oubli), et un plancher `static` sur les $100 000 d'origine (pas un plancher glissant — confirmé par la propre logique du script de simulation). Trois champs spécifiques à HaitiForex, sans équivalent dans la forme standard, ajoutés en toute transparence plutôt que forcés dans un champ existant : `dailyGainCapUsd` (2200 — un plafond de GAIN, l'inverse de tous les autres firms déjà catalogués, qui plafonnent tous la PERTE), `maxAccountDurationDays` (30 — une échéance calendaire, différente de `minTradingDays`), `forcedCloseNyHour` (16). **Aucun de ces trois champs n'est câblé dans `GuardrailEngine`/`LiveStrategyEngine`** — documentés pour mémoire seulement, même discipline « mesurer avant de câbler » déjà appliquée à CTI/GoatFundedTrader. Signaux d'alerte sur la légitimité du site reportés dans le même fichier, à la suite des champs de règles.
+
+**Test ajouté** (`test/propFirms.test.js`) : vérifie les valeurs du palier $100k ET que les 3 nouveaux champs (`dailyGainCapUsd`/`maxAccountDurationDays`/`forcedCloseNyHour`) n'existent sur AUCUN autre programme déjà catalogué — protège contre un futur ajout qui réutiliserait ces noms de champ pour autre chose.
+
+`npm test` : 942/942 (941 + 1 nouveau). **Fichiers** : `src/propFirms/haitiforex.js` (nouveau), `src/propFirms/index.js`, `test/propFirms.test.js`.
+
+**Reste de la liste "pas encore fait"** (voir l'entrée précédente pour le détail complet) : câblage réel du plafond de gain quotidien et de la fermeture forcée dans `GuardrailEngine`/`LiveStrategyEngine`, vérification directe avec HaitiForex sur le mécanisme exact du plafond, et les signaux d'alerte de légitimité toujours à vérifier par Esdras avant tout paiement réel.
+
+## HaitiForex : simulation multi-années (correction d'un résultat trop optimiste) + câblage réel du plafond de gain — 2026-09-19 (suite)
+
+Esdras : "c'est le plus petit challenge qu'on pourrait prendre. Avant tout, teste le combo actuel sur plusieurs années pour voir les chances statistiques d'arriver à 10% dans un mois", puis câbler le plafond de gain dans `GuardrailEngine`.
+
+### Simulation historique (205 fenêtres au lieu de 8) — la conclusion précédente était trop optimiste
+
+**Nouveau script `scripts/runHaitiForexHistoricalChallengeSimulation.js`** : réutilise EXACTEMENT la même méthode en 2 phases que `runHaitiForexChallengeSimulation.js` (mêmes règles HaitiForex, mêmes 4 mécanismes compatibles FVG/Judas Swing/CBDR/Silver Bullet, même clôture forcée 15h55 NY), mais rejoue sur les CSV historiques complets (`data/backtest-input/`, jusqu'à ~15 ans pour US100/GER40/XAUUSD) au lieu des 7 mois de données réelles — **205 fenêtres indépendantes de 30 jours** au lieu de 8. Les CSV historiques sont déjà dans la convention "heure moteur" du projet (contrairement à l'export réel en UTC véritable), donc aucune conversion de fuseau horaire nécessaire ici, contrairement à l'autre script.
+
+**Résultat, sensibilité au risque/trade** :
+
+| Risque/trade | Cible +10% atteinte | Compte annulé (-5%) | Ni l'un ni l'autre |
+|---|---|---|---|
+| 0.25% | 3.4% (7/205) | 2.0% (4/205) | 94.6% |
+| 0.3% | 7.8% (16/205) | 3.4% (7/205) | 88.8% |
+| **0.5% (défaut du projet)** | **23.9% (49/205)** | **16.6% (34/205)** | 59.5% |
+| 0.75% | 34.1% (70/205) | 31.2% (64/205) | 34.6% |
+| 1.0% | 40.0% (82/205) | 42.9% (88/205) | 17.1% |
+
+**Correction importante par rapport à la conclusion du 7-mois** : ce dernier disait "0.75%/trade est le point optimal, double le taux de réussite sans jamais toucher le plancher de -5%" — un résultat porté par seulement 8 fenêtres qui n'ont, par chance, jamais enchaîné une mauvaise série. Sur 205 fenêtres, le bust est réel et croît quasiment au même rythme que la réussite à mesure que le risque augmente (à 1.0%, le bust dépasse même la réussite). **0.5% reste le meilleur ratio réussite/bust trouvé** (~1.44 réussite pour 1 bust), pas 0.75% (~1.09 pour 1). Aucune limite de perte quotidienne chez HaitiForex (confirmé) explique en partie ce risque : rien ne freine une mauvaise séquence à l'intérieur d'une même journée avant que le plancher statique de -5% ne soit atteint.
+
+**Conclusion honnête à donner à Esdras avant toute décision** : ce n'est pas un "petit challenge sans risque" comme le test à 7 mois le suggérait — c'est un vrai pari où échouer signifie perdre le prix du ticket (2 500 gourdes) à peu près aussi souvent que réussir, au risque par défaut du projet. La décision de tenter ce challenge reste la sienne, avec ce chiffre en main plutôt que le "zéro bust" trop optimiste d'avant.
+
+### Câblage réel du plafond de gain quotidien dans `GuardrailEngine`
+
+Jusqu'ici, le plafond de gain n'existait que dans les scripts de simulation autonomes (`Phase 2`, vétant un trade une fois le plafond atteint) — jamais dans le vrai moteur. **Corrigé** : nouveau paramètre optionnel `dailyGainCapUsd` (défaut `null` = désactivé, comportement de tout appelant existant inchangé) dans `GuardrailEngine` — une fois le gain RÉALISÉ BRUT du jour (les pertes du jour ne rachètent PAS de marge, lecture conservative déjà utilisée par les scripts de simulation) atteint ce montant, tous les nouveaux signaux sont bloqués (`daily_gain_cap_reached`) jusqu'au lendemain (même reset quotidien que `dailyLossLimitPct`). Nouveaux champs exposés dans `getStatus()` : `dailyGainUsd`, `dailyGainCapUsd`, `dailyGainCapReached` — remontent automatiquement dans `/api/status` (qui expose déjà l'objet complet de `getStatus()`, aucun changement de `server.js` nécessaire).
+
+`accountRegistry.js`'s `buildEffectiveConfig()` transmet maintenant `program.dailyGainCapUsd` (un champ de PROGRAMME, pas par phase, contrairement à `targetPct`/`maxDrawdownPct` — chaque firme cataloguée n'a qu'un seul plafond pour tout le programme) — `null` pour toutes les autres firmes (aucun changement de comportement pour elles).
+
+**Preuve que chaque nouveau test attrape vraiment une régression** (même discipline que tout le reste de cette session) : cassé puis restauré individuellement — la condition de blocage dans `GuardrailEngine` (`if (false && dailyGainCapReached)`) et le transfert dans `accountRegistry.js` (`dailyGainCapUsd: null` au lieu de `program.dailyGainCapUsd ?? null`) — chaque fois les tests correspondants échouent puis repassent au vert après restauration, diff vérifié identique à l'original.
+
+**Ce qui reste** : la fermeture forcée à 16h NY n'est toujours PAS câblée dans `LiveStrategyEngine`/`AccountRuntime` (seulement modélisée dans les scripts de simulation) — prochaine étape logique si Esdras veut avancer vers un vrai compte HaitiForex.
+
+`npm test` : 948/948 (942 + 4 dans `guardrailEngine.test.js`, 2 dans `accountRegistry.test.js`). **Fichiers** : `scripts/runHaitiForexHistoricalChallengeSimulation.js` (nouveau), `src/engines/guardrailEngine.js`, `src/accountRegistry.js`, `test/guardrailEngine.test.js`, `test/accountRegistry.test.js`.
+
 ## 2026-09-19 (suite, terminé) — Probabilité de finir le challenge en cours (roadmap n° 1) : bout en bout, carte dashboard écrite
 
-Reprise de l'entrée précédente (interrompue par manque de jetons). Trouvé et corrigé au passage : **le mode démo n'alimentait jamais le solde du garde-fou** — `mockDataSource.js` appelait `account.strategyEngine.setBalance()` directement au lieu de `account.setBalance()` (la méthode d'`AccountRuntime` qui alimente AUSSI `guardrail.setBalance()`), contrairement à cTrader/MatchTrader qui passent tous les deux par `store.setBalance()`. Conséquence réelle, indépendante de cette fonctionnalité : le suivi objectif/drawdown global (`GuardrailEngine._overallDrawdownFloor`/`_targetBalance`) n'a jamais fonctionné pour un compte démo configuré avec un programme de prop firm. Corrigé (commit séparé), 941/941 tests toujours verts.
+Reprise de l'entrée "INACHEVÉ" plus haut, sur une branche fusionnée séparément avec le travail HaitiForex ci-dessus (voir le commit de fusion). Trouvé et corrigé au passage : **le mode démo n'alimentait jamais le solde du garde-fou** — `mockDataSource.js` appelait `account.strategyEngine.setBalance()` directement au lieu de `account.setBalance()` (la méthode d'`AccountRuntime` qui alimente AUSSI `guardrail.setBalance()`), contrairement à cTrader/MatchTrader qui passent tous les deux par `store.setBalance()`. Conséquence réelle, indépendante de cette fonctionnalité : le suivi objectif/drawdown global (`GuardrailEngine._overallDrawdownFloor`/`_targetBalance`) n'a jamais fonctionné pour un compte démo configuré avec un programme de prop firm. Corrigé (commit séparé), tous les tests de la branche restaient verts au moment du commit.
 
 Avec ce correctif, `GET /api/accounts/:id/challenge-outlook` tourne enfin de bout en bout : testé en local avec `ACCOUNTS_JSON='[{"id":"default","label":"FTMO test","platform":"mock","propFirmProgramId":"ftmo-1step","accountMode":"challenge"}]'` — 3000 tirages en ~170 ms en local (donc largement sous le délai de 420 s même en prod), `/healthz` reste sous 7 ms pendant le calcul. Vérifié aussi qu'un programme sans `targetPct` configuré (FTMO funded, FundingPips Zero) répond honnêtement `available:false` plutôt que de simuler un objectif qui n'existe pas.
 
 **Carte dashboard** (`index.html`, « Probabilité de finir le challenge », visible seulement quand `available:true`) : cône en éventail (bandes 5-95 % et 25-75 %, médiane, ligne d'objectif et de plancher de drawdown — mêmes % que le vrai compte), trois tuiles de scénario (tel quel / après un jour à −1R / après un jour à +1R, avec le delta en points de probabilité par rapport au scénario de référence). Rafraîchi une fois à l'ouverture puis toutes les 15 min (calcul réel dans le thread du Labo, pas la peine de le refaire à chaque poll de 30 s). Erreur du premier chargement = carte reste cachée (cas le plus courant : compte sans challenge) ; erreur après un premier succès = message `.err` visible, comme les autres cartes de la page.
 
 Piège rencontré en testant : `page.route()` de Playwright n'intercepte pas les requêtes servies par le service worker du projet (`sw.js`, qui ne fait QUE relayer vers le réseau sans jamais cacher — comportement voulu et déjà documenté dans son en-tête) ; il a fallu router au niveau du `BrowserContext` pour vérifier honnêtement le chemin d'erreur. Pas un bug de l'appli — mais `fetch(..., {cache:'no-store'})` a été ajouté quand même sur cet appel précis, en ceinture et bretelles, puisque son intérêt entier est de refléter le solde réel du compte à l'instant présent.
+
+**À faire pour cette branche fusionnée** : rejouer `npm test` au complet (les deux threads avaient chacun leur propre compte de tests avant la fusion) avant de pousser.

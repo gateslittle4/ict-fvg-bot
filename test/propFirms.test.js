@@ -5,6 +5,7 @@ import { FTMO_1STEP, FTMO_1STEP_FUNDED, FTMO_2STEP } from '../src/propFirms/ftmo
 import { FUNDINGPIPS_2STEP_STANDARD, FUNDINGPIPS_1STEP_FLEX, FUNDINGPIPS_ZERO } from '../src/propFirms/fundingPips.js';
 import { GOATFUNDEDTRADER_1STEP, GOATFUNDEDTRADER_INSTANT_PREMIUM, GOATFUNDEDTRADER_INSTANT_HERO } from '../src/propFirms/goatFundedTrader.js';
 import { CTI_1STEP } from '../src/propFirms/cti.js';
+import { HAITIFOREX_100K } from '../src/propFirms/haitiforex.js';
 
 // The last two types here ('trailing-realtime-equity-never-resets',
 // GoatFundedTrader Instant Premium/HERO; 'trailing-on-every-close', CTI
@@ -125,4 +126,21 @@ test('CTI 1-Step: +8% target, 5% drawdown (tightest of the 4 firms), no daily lo
   assert.equal(CTI_1STEP.phases[0].dailyLossLimitPct, null);
   assert.equal(CTI_1STEP.timeLimitDays, null);
   assert.equal(CTI_1STEP.consistencyRule, null);
+});
+
+test('HaitiForex $100k: +10% target, 5% static drawdown, no daily loss limit, and the firm-specific fields no other program has', () => {
+  assert.equal(HAITIFOREX_100K.phases.length, 1);
+  assert.equal(HAITIFOREX_100K.phases[0].targetPct, 10);
+  assert.equal(HAITIFOREX_100K.phases[0].maxDrawdownPct, 5);
+  assert.equal(HAITIFOREX_100K.phases[0].maxDrawdownType, 'static');
+  assert.equal(HAITIFOREX_100K.phases[0].dailyLossLimitPct, null);
+  assert.equal(HAITIFOREX_100K.phases[0].minTradingDays, 5);
+  // A daily GAIN cap, a hard account-age deadline, and a forced same-day
+  // close time - none of the other programs in this directory have any of
+  // these fields (they all cap losses, not gains, and none has a clock).
+  assert.equal(HAITIFOREX_100K.dailyGainCapUsd, 2200);
+  assert.equal(HAITIFOREX_100K.maxAccountDurationDays, 30);
+  assert.equal(HAITIFOREX_100K.forcedCloseNyHour, 16);
+  const others = Object.values(PROP_FIRM_PROGRAMS).filter((p) => p.id !== HAITIFOREX_100K.id);
+  assert.ok(others.every((p) => p.dailyGainCapUsd === undefined && p.forcedCloseNyHour === undefined));
 });
