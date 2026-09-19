@@ -162,3 +162,36 @@ export function chatErrorStatus(err) {
   if (err instanceof Anthropic.APIError) return { status: 502, message: `Erreur de l'assistant IA : ${err.message}` };
   return { status: 500, message: err.message };
 }
+
+// --- Mentor : un commentaire par trade clôturé (2026-09-19, roadmap n° 6) -----------------
+// Le modèle ne calcule RIEN et ne voit que le débrief déjà établi par tradeDebrief.js
+// (faits chiffrés, rédigés en phrases) : il les reformule en conseil de mentor. Même
+// modèle et même client que le chat, donc même ANTHROPIC_API_KEY ; sans clé, la fonction
+// lève l'erreur habituelle et le débrief factuel reste affiché tel quel.
+const MENTOR_SYSTEM_PROMPT = `Tu es le mentor de trading d'Esdras. On te donne UN trade clôturé du bot Apex FVG et un débrief factuel déjà calculé (session, niveaux proches, excursions du prix, historique de trades comparables). Écris un commentaire de mentor en français, en 90 mots maximum, ton direct et bienveillant, en tutoyant.
+
+RÈGLES STRICTES :
+1. N'utilise QUE les faits fournis. N'invente aucun chiffre, aucun niveau, aucune cause. Si un fait manque, ne le mentionne pas.
+2. Structure : une chose bien faite (ou neutre si rien), puis UNE chose à regarder, puis une phrase qui rappelle qu'un seul trade est un échantillon minuscule.
+3. Jamais de conseil financier personnalisé ni de promesse de résultat. Ne suggère pas de changer une règle du bot sur la base d'un seul trade.
+4. Explique tout terme technique en quelques mots.`;
+
+/** Le message utilisateur envoyé au mentor - séparé pour pouvoir être vérifié sans appel réseau. */
+export function buildMentorPrompt(trade, debrief) {
+  const lines = debrief.notes.map((n) => `- ${n.text}`).join('\n');
+  return `Trade : ${trade.direction === 'bullish' ? 'achat' : 'vente'} ${trade.symbol}, stratégie ${trade.source ?? 'inconnue'}, `
+    + `résultat ${trade.rMultiple === null || trade.rMultiple === undefined ? 'inconnu en R' : `${trade.rMultiple} R`}.\nDébrief factuel :\n${lines}`;
+}
+
+export async function answerTradeMentor({ trade, debrief }) {
+  const anthropic = getClient();
+  if (!anthropic) throw new Error("L'assistant IA n'est pas configuré sur ce serveur (ANTHROPIC_API_KEY manquant).");
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 400,
+    system: MENTOR_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: buildMentorPrompt(trade, debrief) }],
+  });
+  const textBlock = response.content.find((b) => b.type === 'text');
+  return textBlock ? textBlock.text : '';
+}

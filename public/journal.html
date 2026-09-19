@@ -140,6 +140,13 @@
   /* ---------- Trade journal (2026-09-15: own page now, so the chart can be
      genuinely LARGE - was 240px squeezed next to a dozen other cards,
      now ~2x that, full page width) ---------- */
+  .debrief-out { margin-top: 8px; font-size: 12.5px; line-height: 1.55; }
+  .debrief-out ul { margin: 6px 0 0; padding-left: 0; list-style: none; }
+  .debrief-out li { padding: 3px 0 3px 22px; position: relative; color: var(--muted); }
+  .debrief-out li::before { position: absolute; left: 2px; content: '•'; }
+  .debrief-out li.good { color: var(--text); } .debrief-out li.good::before { content: '✅'; left: 0; }
+  .debrief-out li.warn { color: var(--amber); } .debrief-out li.warn::before { content: '⚠'; left: 2px; }
+  .mentor-box { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--blue); background: var(--bg-inset); color: var(--text); white-space: pre-wrap; }
   .journal-item {
     background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius);
     padding: 14px 16px; margin-bottom: 14px;
@@ -1116,6 +1123,53 @@ function filteredJournalTrades() {
   );
 }
 
+// 2026-09-19 (roadmap: auto-annotated journal + mentor): one click on a closed trade gives
+// the facts around it (session, nearby levels, how far price went for/against, how comparable
+// trades did historically) and, when the server has an AI key, a short mentor comment written
+// from those same facts. Trades are addressed by their index in the list currently displayed.
+let journalDebriefTrades = [];
+function tradeDebriefBody(t) {
+  return { symbol: t.symbol, direction: t.direction, source: t.source ?? null, entryTime: t.entryTime, exitTime: t.exitTime, entryPrice: t.entryPrice, exitPrice: t.exitPrice, rMultiple: t.rMultiple ?? null, pnl: t.pnl };
+}
+async function loadDebrief(index, btn) {
+  const t = journalDebriefTrades[index];
+  const out = btn.parentElement.querySelector('.debrief-out');
+  if (!t) return;
+  btn.disabled = true;
+  out.innerHTML = '<div class="meta">Analyse du trade…</div>';
+  try {
+    const res = await fetch('/api/trade-debrief', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tradeDebriefBody(t)) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    out.innerHTML = `<ul>${data.notes.map((n) => `<li class="${n.level}">${n.text}</li>`).join('')}</ul>
+      <div style="margin-top:8px;">${data.mentorAvailable
+        ? '<button type="button" class="btn-ghost" onclick="askMentor(' + index + ', this)">Avis du mentor</button>'
+        : '<span class="meta">Avis rédigé du mentor : nécessite la variable ANTHROPIC_API_KEY sur le serveur (non configurée pour l\'instant) — le débrief ci-dessus n\'en a pas besoin.</span>'}</div>
+      <div class="mentor-out"></div>`;
+  } catch (err) {
+    out.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function askMentor(index, btn) {
+  const t = journalDebriefTrades[index];
+  const target = btn.parentElement.parentElement.querySelector('.mentor-out');
+  btn.disabled = true;
+  target.innerHTML = '<div class="meta">Le mentor réfléchit…</div>';
+  try {
+    const res = await fetch('/api/trade-mentor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(tradeDebriefBody(t)) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    target.innerHTML = `<div class="mentor-box"></div>`;
+    target.firstChild.textContent = data.comment; // text, never HTML: it is model output
+  } catch (err) {
+    target.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function renderJournalList() {
   const list = document.getElementById('journal-list');
   const summaryEl = document.getElementById('journal-summary');
@@ -1144,6 +1198,7 @@ function renderJournalList() {
     <div class="stat-row"><span class="label">R moyen${withR.length < filtered.length ? ` (${withR.length}/${filtered.length} trades)` : ''}</span><span class="journal-pnl ${avgR === null ? '' : avgR >= 0 ? 'win' : 'loss'}">${avgR === null ? '—' : (avgR >= 0 ? '+' : '') + fmt(avgR) + 'R'}</span></div>
   `;
 
+  journalDebriefTrades = filtered;
   list.innerHTML = filtered.map((t) => {
     const d = priceDecimals(t.symbol);
     const win = t.pnl >= 0;
@@ -1174,6 +1229,10 @@ function renderJournalList() {
         <div class="proof-layout">
           ${renderTradeChart(t, d)}
           ${renderComplianceChecklist(t)}
+        </div>
+        <div style="margin-top:10px;">
+          <button type="button" class="btn-ghost" onclick="loadDebrief(${journalDebriefTrades.indexOf(t)}, this)">Débrief automatique</button>
+          <div class="debrief-out"></div>
         </div>
       </div>
     `;

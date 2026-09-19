@@ -25,7 +25,8 @@ import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, 
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
 import { getPropFirmProgram, listPropFirmPrograms } from './propFirms/index.js';
-import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus } from './chatAssistant.js';
+import { isChatConfigured, buildChatContext, answerChatQuestion, chatErrorStatus, answerTradeMentor } from './chatAssistant.js';
+import { buildTradeDebrief } from './backtest/tradeDebrief.js';
 import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
 import { runLabJob } from './backtest/labClient.js';
 import { readDatasetMeta, listDatasets, deleteDataset, csvPathFor as labDatasetCsv, MAX_CUSTOM_DATASETS } from './backtest/labDatasets.js';
@@ -995,6 +996,65 @@ function createAccountRouter(getStore) {
       res.json({ trades, summary: summarizeTrades(trades) });
     } catch (err) {
       res.status(502).json({ error: err.message });
+    }
+  });
+
+  // Automatic debrief of one closed trade (roadmap: auto-annotated journal / mentor).
+  // body: { symbol, direction, source?, entryTime, exitTime (real UTC ms), entryPrice, exitPrice?, rMultiple?, pnl? }
+  // Facts only (tradeDebrief.js); the optional AI comment is a separate call (/trade-mentor).
+  async function debriefFromRequest(store, b) {
+    if (!CONFIG.symbols.includes(b.symbol)) throw new ImportError(`Symbole inconnu: "${b.symbol}"`);
+    if (b.direction !== 'bullish' && b.direction !== 'bearish') throw new ImportError('Sens invalide.');
+    const entryTime = Number(b.entryTime);
+    const exitTime = Number(b.exitTime);
+    const entryPrice = Number(b.entryPrice);
+    if (![entryTime, exitTime, entryPrice].every(Number.isFinite) || entryPrice <= 0 || exitTime < entryTime) throw new ImportError('Trade incomplet (entryTime, exitTime, entryPrice).');
+    const offsetMs = store.liveDataSource?.candleTimeOffsetMs ?? 0;
+    const entryEngine = entryTime - offsetMs;
+    const trade = {
+      symbol: b.symbol, direction: b.direction, source: typeof b.source === 'string' ? b.source : null, entryPrice,
+      exitPrice: Number.isFinite(Number(b.exitPrice)) ? Number(b.exitPrice) : null,
+      rMultiple: b.rMultiple === null || b.rMultiple === undefined || !Number.isFinite(Number(b.rMultiple)) ? null : Number(b.rMultiple),
+      pnl: Number.isFinite(Number(b.pnl)) ? Number(b.pnl) : null,
+    };
+    // Historical look-up only for the FVG mechanism on a symbol that has a live FVG history.
+    let context = null;
+    if ((trade.source === 'fvg' || !trade.source) && liveFvgConfig(trade.symbol) && listLabSymbols().includes(trade.symbol)) {
+      try {
+        const history = await liveHistoryFor(trade.symbol);
+        context = signalContext(history, { entryTime: entryEngine, direction: trade.direction, distance: 0, entryPrice }, { cutoff: TRAIN_TEST_CUTOFF });
+      } catch {
+        context = null; // the debrief is still useful without it
+      }
+    }
+    const debrief = buildTradeDebrief({
+      trade, candles: store.strategyEngine.getHistory(trade.symbol), entryEngine, exitEngine: exitTime - offsetMs,
+      config: liveFvgConfig(trade.symbol), context,
+    });
+    return { trade, debrief };
+  }
+
+  router.post('/trade-debrief', async (req, res) => {
+    try {
+      const { debrief } = await debriefFromRequest(getStore(req), req.body || {});
+      res.json({ ...debrief, mentorAvailable: isChatConfigured() });
+    } catch (err) {
+      if (err instanceof ImportError) return res.status(400).json({ error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/trade-mentor', async (req, res) => {
+    if (!isChatConfigured()) {
+      return res.status(503).json({ error: "L'assistant IA n'est pas configuré sur ce serveur (ANTHROPIC_API_KEY manquant)." });
+    }
+    try {
+      const { trade, debrief } = await debriefFromRequest(getStore(req), req.body || {});
+      res.json({ comment: await answerTradeMentor({ trade, debrief }) });
+    } catch (err) {
+      if (err instanceof ImportError) return res.status(400).json({ error: err.message });
+      const { status, message } = chatErrorStatus(err);
+      res.status(status).json({ error: message });
     }
   });
 
