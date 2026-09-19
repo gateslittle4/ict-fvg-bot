@@ -48,7 +48,11 @@ test('against real historical data: every trade resolves to a valid outcome and 
   for (const t of report.trades) {
     assert.ok(['win', 'loss', 'timeout'].includes(t.outcome));
     assert.ok(['fvg', 'divergence'].includes(t.source));
-    assert.ok(t.exitTime > t.entryTime);
+    // 2026-09-19: exit can now legitimately equal entry - a stop/target hit
+    // within the entry candle's OWN range is caught immediately instead of
+    // waiting for a later candle (see LiveStrategyEngine._resolveOpenPosition's
+    // fix) - it can never be BEFORE entry, so >= is the real invariant now.
+    assert.ok(t.exitTime >= t.entryTime);
     // 2026-09-14 ("on fait tout de facon honnete"): rMultiple is now NET of
     // a real spread cost - grossRMultiple keeps the old idealized value
     // (exactly the configured RR on a win, exactly -1 on a loss) so these

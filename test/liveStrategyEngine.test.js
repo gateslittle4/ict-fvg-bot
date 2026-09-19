@@ -274,7 +274,42 @@ function secondGapCandles() {
     c(9 * M15, 106.5, 109, 108, 108.5), // c3: c1.high(107) < c3.low(108) -> gap [107,108]
   ];
 }
-const SECOND_GAP_REENTRY = c(10 * M15, 108.5, 108.6, 106, 107); // low dips back into [107,108]
+// low dips back into [107,108] but stays above the gap's own lower edge (107,
+// the fvg-edge stop) - 2026-09-19: a low of 106 (below the stop) used to be
+// "safe" only because the entry candle's own range was never checked against
+// the stop (see LiveStrategyEngine._resolveOpenPosition's fix) - now it would
+// correctly stop the position out immediately, which isn't what this test is
+// checking (netting after a still-open second position, not an instant loss).
+const SECOND_GAP_REENTRY = c(10 * M15, 108.5, 108.6, 107.4, 107.9);
+
+test('LiveStrategyEngine: a stop breached WITHIN the entry candle itself (not a later one) resolves as an immediate loss on that same candle - the 2026-09-19 same-candle-stop fix', () => {
+  const guardrail = permissiveGuardrail();
+  const engine = new LiveStrategyEngine({
+    symbols: ['TEST1'],
+    fvgConfig: { TEST1: BASELINE_FVG_CFG },
+    divergenceConfig: null,
+    guardrail,
+    riskPctPerTrade: 1,
+  });
+
+  engine.ingestCandle('TEST1', c(0, 100, 101, 99, 100));
+  engine.ingestCandle('TEST1', c(M15, 100, 102, 100, 101));
+  engine.ingestCandle('TEST1', c(2 * M15, 102, 105, 103, 104)); // bullish gap [101,103]
+
+  // Entry candle: low=100 dips into (and well past) the zone -> validates,
+  // AND its own low(100) is already below the computed stop (100.8,
+  // fvg-edge, same numbers as the very first test in this file) - the
+  // position must close as a loss on THIS SAME candle, never surviving to
+  // be checked on a later one (the bug this fix corrects).
+  const events = engine.ingestCandle('TEST1', c(3 * M15, 104, 104, 100, 101));
+  const validated = events.find((e) => e.type === 'validated');
+  assert.ok(validated, 'expected the touch to still validate the signal');
+  const closed = events.find((e) => e.type === 'closed');
+  assert.ok(closed, 'expected the stop breach on the entry candle to close it immediately, not stay silently open');
+  assert.equal(closed.outcome, 'loss');
+  assert.equal(closed.exitTime, 3 * M15, 'closes on the SAME candle as entry, not a later one');
+  assert.equal(engine.getOpenPosition('TEST1'), null, 'position is gone - it never survives past its own entry candle');
+});
 
 test('LiveStrategyEngine: deferCloseToRealConfirmation defaults to false (warm-up/backtest/every other caller unchanged) - a simulated target hit clears the belief immediately, netting does not block a new signal', () => {
   const guardrail = permissiveGuardrail();

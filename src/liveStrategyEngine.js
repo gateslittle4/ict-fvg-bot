@@ -431,6 +431,13 @@ export class LiveStrategyEngine {
       events.push(...this._detectCbdrSignal(symbol, candle, guardrailNow));
     }
 
+    // Second pass (see _resolveOpenPosition's 2026-09-19 comment): catches a
+    // position a mechanism above JUST opened THIS candle, against this same
+    // candle's own high/low - idempotent for a pre-existing position (the
+    // first call above already checked it against this same data) and a
+    // no-op when nothing is open.
+    this._resolveOpenPosition(symbol, candle, events, deferCloseToRealConfirmation);
+
     return events;
   }
 
@@ -456,9 +463,34 @@ export class LiveStrategyEngine {
   // there is no real broker confirmation loop to eventually release a
   // deferred belief in those contexts, so deferring there would strand it
   // forever instead of fixing anything.
+  //
+  // 2026-09-19, real bug found (another Claude Code session, verified here):
+  // this method used to require `candle.time > open.entryTime` (STRICTLY
+  // after), which meant the ENTRY candle's own high/low - the price action
+  // that happens right after the entry fills, within that same bar - was
+  // NEVER checked against the stop/target. ingestCandle()/the warm-up loop
+  // only ever called this method ONCE per candle, BEFORE that candle's own
+  // mechanism detection could open a brand-new position, so a position that
+  // opens on candle N only ever got its first stop/target check on candle
+  // N+1's range - any adverse move violent enough to breach the stop WITHIN
+  // candle N itself (a real, observed case: US100 CBDR sell on 2026-02-25
+  // 09:45, whose own candle ranged +5.75pt above its open) was invisible to
+  // every backtest AND to the live signal log/notifications. Fixed by (a)
+  // relaxing the guard to allow `candle.time === open.entryTime` through,
+  // and (b) calling this method a SECOND time, right after detection, from
+  // both ingestCandle() and the warm-up loop - so a freshly-opened position
+  // is immediately checked against its OWN entry candle. Safe for every
+  // OTHER case: a pre-existing position re-checked against the same candle
+  // it was already checked against earlier in the same call is idempotent
+  // (same data, same result), and a symbol with no open position is a no-op
+  // either way (`!open` returns immediately). This affects every historical
+  // backtest/analysis in this project that used LiveStrategyEngine - all
+  // slightly (or not-so-slightly) optimistic to some degree, since a same-
+  // candle stop-out silently became "still open, resolved later" instead of
+  // an immediate loss. See HANDOFF.md for the re-run comparison.
   _resolveOpenPosition(symbol, candle, events, deferCloseToRealConfirmation = false) {
     const open = this.openPositions.get(symbol);
-    if (!open || candle.time <= open.entryTime) return;
+    if (!open || candle.time < open.entryTime) return;
     if (open.awaitingRealClose) return; // already simulated-resolved, waiting on the real broker close - see header above
 
     const bullish = open.direction === 'bullish';
@@ -1661,6 +1693,14 @@ export class LiveStrategyEngine {
           if (onEvent) onEvent(signal, candle);
         }
       }
+
+      // Second pass (see _resolveOpenPosition's 2026-09-19 comment): catches
+      // a position a mechanism above JUST opened THIS candle, against this
+      // same candle's own high/low - idempotent for a pre-existing position
+      // already checked earlier this same iteration, no-op when nothing is open.
+      const secondPassEvents = [];
+      this._resolveOpenPosition(symbol, candle, secondPassEvents);
+      if (onEvent) for (const e of secondPassEvents) onEvent(e, candle);
     }
   }
 }

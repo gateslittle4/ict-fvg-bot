@@ -6150,3 +6150,28 @@ Esdras : "avec les 8 strategy live, verifie [...] leur performance globale dans 
 **Semaine dernière (2026-09-10→17)** : A = 12 trades/+$1008.84 (identique au rapport précédent). B = **0 trade** cette semaine précise sur ce passage.
 
 **Fichiers** : `scripts/runComboVsPyramidAccountImpact.js` (nouveau), `data/real-data-2026-02-to-09/combo-vs-pyramid-account-impact.md` (nouveau). Aucun changement de code live. `npm test` : 714/714 (scripts d'analyse uniquement, aucun fichier source modifié).
+
+## Correctif majeur : le moteur ne vérifiait jamais le stop sur la bougie d'entrée elle-même — TOUS les résultats historiques suspects — 2026-09-19 (suite)
+
+Trouvé par une AUTRE session Claude Code (terminal local, pas celle-ci), qui comparait le résultat du script ci-dessus à son propre simulateur bougie par bougie et trouvait un écart énorme (17 021 $ contre 8 927 $ sur les mêmes 347 trades). Vérifié ici indépendamment, confirmé réel : ce n'était pas une erreur de CE script, mais un vrai bug dans `LiveStrategyEngine` lui-même — le moteur central utilisé par TOUS les mécanismes et TOUS les backtests de ce projet depuis le début.
+
+**Le bug** : `_resolveOpenPosition()` exigeait `candle.time > open.entryTime` avant de vérifier stop/cible/timeout. Un trade ouvre à l'OUVERTURE d'une bougie ; le reste du mouvement de CETTE MÊME bougie (après l'ouverture) n'était jamais comparé au stop — la vérification ne commençait qu'à la bougie SUIVANTE. Concrètement : si le prix va suffisamment contre le trade dans la bougie même où il vient d'ouvrir pour toucher le stop, ce n'est jamais détecté ; le trade reste "ouvert" jusqu'à ce qu'une bougie plus tard décide de son sort — et remonte parfois en gagnant par pur hasard. Exemple réel vérifié : US100, vente CBDR, 25 fév. 2026 09:45 (données broker réelles), bougie d'entrée qui monte de +5.75 points au-dessus de son ouverture — largement de quoi toucher un stop serré, jamais vu par le moteur.
+
+**Corrigé** (`src/liveStrategyEngine.js`) : (1) le garde passe de `candle.time <= open.entryTime` à `candle.time < open.entryTime` (laisse passer l'égalité), et (2) un second appel à `_resolveOpenPosition()` ajouté après la détection de signal, dans `ingestCandle()` ET dans la boucle de `warmUp()` — pour qu'une position qui vient tout juste de s'ouvrir CETTE bougie soit immédiatement vérifiée contre le haut/bas de CETTE MÊME bougie. Sans danger pour une position déjà ouverte plus tôt (deuxième vérification sur les mêmes données, idempotente) ni pour un symbole sans position ouverte (no-op).
+
+**Conséquence sur le script de comparaison ci-dessus** (rejoué avec le correctif) :
+
+| | Avant (bug) | Après (corrigé) |
+|---|---|---|
+| A — 8 mécanismes (prod actuelle) | 347 trades, WR 29.1%, **+70.2%** ($17 021.57) | 347 trades, WR 23.6%, **+7.3%** ($10 731.74) |
+| B — 7 mécanismes + pyramidage | 87 trades, **-0.54%** ($9 946.15) | 85 trades, **-4.4%** ($9 563.61) |
+
+Le combo à 8 mécanismes garde un edge réel positif après correction (+7.3% sur 7 mois n'est pas rien), mais les +70% annoncés étaient en grande partie un artefact du bug, pas un vrai résultat. Le franchissement du drawdown trailing de 10% le 2026-09-02 reste vrai après correction (même date, chiffres légèrement différents) — ce constat-là tient.
+
+**Portée honnête** : ce bug touchait le moteur central depuis le début — TOUS les résultats historiques de ce fichier obtenus via `LiveStrategyEngine`/`warmUp()` (la quasi-totalité des simulations de compte, forward-tests, et comparaisons de combo documentées plus haut) sont potentiellement optimistes à des degrés variables, pas seulement la comparaison ci-dessus. L'ampleur exacte dépend de la fréquence des retournements violents intra-bougie pour chaque mécanisme/instrument — impossible à quantifier sans rejouer chaque analyse individuellement, ce qui n'a pas été fait ici (trop volumineux pour cette session). **Les mécanismes de recherche autonomes dans `src/backtest/*.js` (ceux qui ne passent pas par `LiveStrategyEngine` — EQH/EQL, Star Patterns, HTF Support Reversal, etc.) ont leur PROPRE logique de résolution, avec le même biais structurel** (`if (open && i > open.entryIndex)` — même motif, jamais corrigé ici, hors du périmètre de cette session).
+
+**Tests** : 2 corrigés (`test/liveStrategyEngine.test.js` — une bougie de fixture qui descendait accidentellement sous le stop du fvg-edge, symptôme direct du bug, ajustée pour rester au-dessus ; `test/recentPerformanceReport.test.js` — `exitTime > entryTime` devient `>=`, une sortie peut désormais légitimement arriver sur la même bougie que l'entrée). 1 nouveau test de régression ajouté (cassé puis restauré pour vérifier qu'il attrape vraiment la régression : une position dont le stop est déjà franchi par sa propre bougie d'entrée se ferme immédiatement en perte, `exitTime === entryTime`, plutôt que de rester ouverte).
+
+`npm test` : 965/965 (964 + 1 nouveau). **Fichiers** : `src/liveStrategyEngine.js`, `test/liveStrategyEngine.test.js`, `test/recentPerformanceReport.test.js`, `data/real-data-2026-02-to-09/combo-vs-pyramid-account-impact.md` (rejoué avec les chiffres corrigés).
+
+**Reste à faire** (pas fait ici, à prioriser avec Esdras) : rejouer les analyses historiques dont la décision dépend réellement du chiffre exact (challenge FTMO en cours, décision HaitiForex déjà abandonnée donc pas urgent) ; appliquer le même correctif aux mécanismes de recherche autonomes de `src/backtest/*.js` si on veut aussi corriger leurs propres résultats (EQH/EQL, Star Patterns, HTF Support Reversal — tous partagent le même motif `i > entryIndex`).
