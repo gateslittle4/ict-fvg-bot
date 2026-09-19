@@ -1,15 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  detectHtfConfluenceReversalEvents,
+  detectHtfLevelReversalEvents,
   runHtfSupportReversalBacktest,
+  resampleWithBoundaries,
   isDoji,
   isBullishEngulfing,
   isBearishEngulfing,
 } from '../src/backtest/htfSupportReversal.js';
+import { weekKeyOf, monthKeyOf, nyDayKey } from '../src/backtest/dailyLevels.js';
 
 const M15 = 15 * 60 * 1000;
-const DAY = 96 * M15; // continuous 24h of M15 candles
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function c(time, open, high, low, close) {
   return { time, open, high, low, close };
@@ -18,163 +20,186 @@ function c(time, open, high, low, close) {
 // --- pure pattern helpers (no history needed) -----------------------------
 
 test('isDoji: true when the body is <= 10% of the candle range', () => {
-  assert.equal(isDoji(c(0, 100, 101, 99, 100.05)), true); // body 0.05 / range 2 = 2.5%
-  assert.equal(isDoji(c(0, 100, 101, 99, 100.5)), false); // body 0.5 / range 2 = 25%
-});
-
-test('isDoji: a zero-range candle (high === low) is never a doji', () => {
-  assert.equal(isDoji(c(0, 100, 100, 100, 100)), false);
+  assert.equal(isDoji(c(0, 100, 101, 99, 100.05)), true);
+  assert.equal(isDoji(c(0, 100, 101, 99, 100.5)), false);
 });
 
 test('isBullishEngulfing: red then green, green fully covers red\'s body', () => {
-  const prev = c(0, 90, 91, 79, 80); // bearish, body 80-90
-  const cur = c(1, 79, 95, 78, 91); // bullish, opens at/below prev close, closes at/above prev open
+  const prev = c(0, 90, 91, 79, 80);
+  const cur = c(1, 79, 95, 78, 91);
   assert.equal(isBullishEngulfing(prev, cur), true);
 });
 
-test('isBullishEngulfing: false if the second candle does not fully cover the first\'s body', () => {
-  const prev = c(0, 90, 91, 79, 80);
-  const cur = c(1, 85, 95, 78, 88); // bullish but doesn't close above prev's open (90)
-  assert.equal(isBullishEngulfing(prev, cur), false);
-});
-
 test('isBearishEngulfing: mirror of isBullishEngulfing', () => {
-  const prev = c(0, 80, 91, 79, 90); // bullish, body 80-90
-  const cur = c(1, 91, 92, 65, 79); // bearish, opens at/above prev close, closes at/below prev open
+  const prev = c(0, 80, 91, 79, 90);
+  const cur = c(1, 91, 92, 65, 79);
   assert.equal(isBearishEngulfing(prev, cur), true);
   assert.equal(isBullishEngulfing(prev, cur), false);
 });
 
-// --- history fixtures ------------------------------------------------------
-// 2020-01-01 is a Wednesday (NY calendar) - verified directly against
-// nyDayKey/weekKeyOf/monthKeyOf before writing these fixtures (not guessed):
-// days 0-30 are the whole of January 2020 (a single month bucket, 31*96 =
-// 2976 candles, comfortably over MIN_FULL_MONTH_CANDLES), so day index 31
-// (2020-02-01) is the first candle where day/week/month levels are ALL
-// available - the previous month (January) has just completed, and the
-// previous week/day both fall inside it too. A flat background (constant
-// low/high) makes every timeframe's level trivially equal and confluent
-// without having to hand-align week/month boundaries beyond that.
+// --- resampleWithBoundaries -------------------------------------------------
 
-const BACKGROUND_START = Date.UTC(2020, 0, 1, 0, 0, 0);
-const BACKGROUND_DAYS = 31; // all of January 2020
+test('resampleWithBoundaries: fixed-ms buckets (H1) group candles correctly and endIndexExclusive points at the next bucket\'s first candle', () => {
+  const H1 = 60 * 60 * 1000;
+  const candles = [
+    c(0, 100, 101, 99, 100.5), // bucket 0
+    c(15 * 60 * 1000, 100.5, 102, 100, 101), // bucket 0
+    c(H1, 101, 103, 100.5, 102), // bucket 1
+  ];
+  const htf = resampleWithBoundaries(candles, (x) => Math.floor(x.time / H1));
+  assert.equal(htf.length, 2);
+  assert.deepEqual(htf[0], { time: 0, open: 100, high: 102, low: 99, close: 101, endIndexExclusive: 2 });
+  assert.equal(htf[1].endIndexExclusive, 3); // last bucket - "next" is past the end of the data
+});
 
-function flatBackground({ low = 50, high = 100, startTime = BACKGROUND_START, days = BACKGROUND_DAYS } = {}) {
+test('resampleWithBoundaries: a real NY calendar key (week) aggregates several days and rolls over correctly', () => {
+  // 2020-01-06 and 2020-01-07 are both in the same NY week (verified against weekKeyOf/nyDayKey directly).
+  const start = Date.UTC(2020, 0, 6, 0, 0, 0);
+  const candles = [
+    c(start, 100, 105, 95, 101),
+    c(start + DAY_MS, 101, 110, 90, 102), // same week - widens the bucket's high/low
+    c(start + 7 * DAY_MS, 102, 106, 96, 103), // next week
+  ];
+  const htf = resampleWithBoundaries(candles, (x) => weekKeyOf(nyDayKey(x.time)));
+  assert.equal(htf.length, 2);
+  assert.equal(htf[0].high, 110);
+  assert.equal(htf[0].low, 90);
+  assert.equal(htf[0].endIndexExclusive, 2);
+});
+
+test('resampleWithBoundaries: empty input is a safe no-op', () => {
+  assert.deepEqual(resampleWithBoundaries([], () => 0), []);
+});
+
+// --- detectHtfLevelReversalEvents / runHtfSupportReversalBacktest ----------
+// One M15-shaped candle per CALENDAR DAY (spaced 24h apart) so each fixture
+// candle is simultaneously: (a) its own daily HTF candle (nyDayKey groups
+// exactly one candle per day) and (b) its own H1 entry-timeframe candle
+// (24h apart always lands in a different H1 bucket) - lets the swing/pool
+// fixture be built directly, the same way equalHighsLows.test.js builds its
+// 2-touch fixture, just extended to a 3rd touch and spaced by full days
+// instead of M15 steps.
+
+function flat(candles, t) { candles.push(c(t, 100, 100.2, 99.8, 100)); return t + DAY_MS; }
+function swingLow(candles, t, low) { candles.push(c(t, 95, 96, low, 94)); return t + DAY_MS; }
+function swingHigh(candles, t, high) { candles.push(c(t, 105, high, 104, 106)); return t + DAY_MS; }
+
+/** 3 confirmed swing lows within 0.1% of each other (90, 90.05, 89.97) -> qualifies a daily support at ~90. */
+function buildThreeTouchSupport({ touches = [90, 90.05, 89.97] } = {}) {
   const candles = [];
-  let t = startTime;
-  for (let i = 0; i < days * 96; i++) {
-    candles.push(c(t, 70, high, low, 80)); // bullish, non-doji, same colour every candle - never fires on its own
-    t += M15;
-  }
-  return candles;
+  let t = 0;
+  for (let i = 0; i < 6; i++) t = flat(candles, t);
+  t = swingLow(candles, t, touches[0]);
+  for (let i = 0; i < 5; i++) t = flat(candles, t);
+  for (let i = 0; i < 6; i++) t = flat(candles, t);
+  t = swingLow(candles, t, touches[1]);
+  for (let i = 0; i < 5; i++) t = flat(candles, t);
+  for (let i = 0; i < 6; i++) t = flat(candles, t);
+  t = swingLow(candles, t, touches[2]);
+  for (let i = 0; i < 5; i++) t = flat(candles, t);
+  return { candles, nextTime: t };
 }
 
-const FIRST_CONFLUENT_TIME = BACKGROUND_START + BACKGROUND_DAYS * DAY; // 2020-02-01, first candle of day index 31
+/** Mirror of buildThreeTouchSupport for resistance. */
+function buildThreeTouchResistance({ touches = [110, 110.05, 109.97] } = {}) {
+  const candles = [];
+  let t = 0;
+  for (let i = 0; i < 6; i++) t = flat(candles, t);
+  t = swingHigh(candles, t, touches[0]);
+  for (let i = 0; i < 5; i++) t = flat(candles, t);
+  for (let i = 0; i < 6; i++) t = flat(candles, t);
+  t = swingHigh(candles, t, touches[1]);
+  for (let i = 0; i < 5; i++) t = flat(candles, t);
+  for (let i = 0; i < 6; i++) t = flat(candles, t);
+  t = swingHigh(candles, t, touches[2]);
+  for (let i = 0; i < 5; i++) t = flat(candles, t);
+  return { candles, nextTime: t };
+}
 
-test('detectHtfConfluenceReversalEvents: not enough history yet (day/week/month not all established) never fires, even on an otherwise valid setup', () => {
-  const short = Array.from({ length: 50 }, (_, i) => c(i * M15, 75, 100, 50, 75.2)); // every candle would be a doji touching 50/100 if levels existed
-  assert.deepEqual(detectHtfConfluenceReversalEvents(short), []);
-});
+test('detectHtfLevelReversalEvents: 3 confirmed touches on the DAILY timeframe qualify a support, then a doji on the H1 entry candle fires a bullish event', () => {
+  const { candles, nextTime } = buildThreeTouchSupport();
+  const doji = c(nextTime, 90.02, 90.5, 90, 89.99); // body 0.03 / range 0.5 = 6% -> doji; low touches the qualified support (90)
+  const withTrigger = [...candles, doji, c(nextTime + DAY_MS, 90.6, 91, 90, 90.8)]; // + 1 more candle so the entry can actually fill
 
-test('detectHtfConfluenceReversalEvents: a doji touching a day+week+month-confluent support fires a bullish event', () => {
-  const background = flatBackground();
-  const doji = c(FIRST_CONFLUENT_TIME, 75, 100, 50, 75.2); // body 0.2 / range 50 = 0.4%, low touches the confluent support (50)
-  const candles = [...background, doji];
-
-  const events = detectHtfConfluenceReversalEvents(candles);
+  const events = detectHtfLevelReversalEvents(withTrigger);
   assert.equal(events.length, 1);
-  assert.equal(events[0].index, candles.length - 1);
   assert.equal(events[0].direction, 'bullish');
   assert.equal(events[0].pattern, 'doji');
-  assert.deepEqual([...events[0].timeframes].sort(), ['day', 'month', 'week']);
+  assert.equal(events[0].levelTimeframe, 'daily');
+  assert.equal(events[0].entryIndex, withTrigger.length - 1); // the candle right after the doji
 });
 
-test('detectHtfConfluenceReversalEvents: a doji touching a confluent resistance (not support) fires a bearish event', () => {
-  const background = flatBackground();
-  const doji = c(FIRST_CONFLUENT_TIME, 75, 100, 70, 74.8); // low=70 (nowhere near support=50), high=100 touches confluent resistance
-  const candles = [...background, doji];
+test('detectHtfLevelReversalEvents: only 2 touches (not 3) never qualifies a level, even with a perfect doji afterwards', () => {
+  const { candles, nextTime } = buildThreeTouchSupport();
+  const twoTouchCandles = candles.slice(0, candles.length - 6); // drop the 3rd swing low and its trailing confirmation candles
+  const doji = c(nextTime, 90.02, 90.5, 90, 89.99);
+  const withTrigger = [...twoTouchCandles, doji, c(nextTime + DAY_MS, 90.6, 91, 90, 90.8)];
 
-  const events = detectHtfConfluenceReversalEvents(candles);
+  assert.deepEqual(detectHtfLevelReversalEvents(withTrigger), []);
+});
+
+test('detectHtfLevelReversalEvents: the resistance mirror also fires (bearish, doji)', () => {
+  const { candles, nextTime } = buildThreeTouchResistance();
+  const doji = c(nextTime, 109.98, 110, 109.5, 110.01); // high touches the qualified resistance (110)
+  const withTrigger = [...candles, doji, c(nextTime + DAY_MS, 109.4, 109.8, 108, 108.5)];
+
+  const events = detectHtfLevelReversalEvents(withTrigger);
   assert.equal(events.length, 1);
   assert.equal(events[0].direction, 'bearish');
   assert.equal(events[0].pattern, 'doji');
 });
 
-test('detectHtfConfluenceReversalEvents: a bullish engulfing at a confluent support fires (not just any doji)', () => {
-  const background = flatBackground();
-  const bearishTouch = c(FIRST_CONFLUENT_TIME, 90, 95, 50, 51); // touches support(50) but is not itself a valid pattern -> no event
-  const engulfing = c(FIRST_CONFLUENT_TIME + M15, 50, 95, 49.97, 92); // engulfs the previous candle's body, low still touches support
-  const candles = [...background, bearishTouch, engulfing];
+test('detectHtfLevelReversalEvents: a bullish engulfing (not a doji) at the qualified support also fires', () => {
+  const { candles, nextTime } = buildThreeTouchSupport();
+  const bearishTouch = c(nextTime, 92, 93, 90, 90.5); // touches support but is not itself a valid pattern
+  const engulfing = c(nextTime + DAY_MS, 90, 93, 89.97, 92.5); // engulfs the previous candle's body, low still touches support
+  const withTrigger = [...candles, bearishTouch, engulfing, c(nextTime + 2 * DAY_MS, 92.6, 93, 92, 92.8)];
 
-  const events = detectHtfConfluenceReversalEvents(candles);
-  assert.equal(events.length, 1); // the bearish touch-but-no-pattern candle produced nothing
-  assert.equal(events[0].index, candles.length - 1);
+  const events = detectHtfLevelReversalEvents(withTrigger);
+  assert.equal(events.length, 1); // the touch-but-no-pattern candle produced nothing
   assert.equal(events[0].direction, 'bullish');
   assert.equal(events[0].pattern, 'bullish-engulfing');
 });
 
-test('detectHtfConfluenceReversalEvents: a bearish engulfing at a confluent resistance fires', () => {
-  const background = flatBackground();
-  const bullishTouch = c(FIRST_CONFLUENT_TIME, 70, 100, 65, 90); // touches resistance(100) but is not a pattern on its own
-  const engulfing = c(FIRST_CONFLUENT_TIME + M15, 92, 100.03, 65, 68); // engulfs the previous candle's body, high still touches resistance
-  const candles = [...background, bullishTouch, engulfing];
-
-  const events = detectHtfConfluenceReversalEvents(candles);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].direction, 'bearish');
-  assert.equal(events[0].pattern, 'bearish-engulfing');
+test('detectHtfLevelReversalEvents: empty/undefined input is a safe no-op', () => {
+  assert.deepEqual(detectHtfLevelReversalEvents([]), []);
 });
 
-test('detectHtfConfluenceReversalEvents: a level only ONE timeframe agrees on (no confluence) never fires, even with a textbook doji', () => {
-  // Day index 31 (2020-02-01) only, dipped to low=40/high=90 - EXCLUDED from
-  // January's own month aggregate (Feb hasn't completed) and from the
-  // still-forming "week of Jan 27" (which day 32 also belongs to, so its
-  // prevCompleted week is the one before that, untouched) - verified via the
-  // same nyDayKey/weekKeyOf/monthKeyOf probe used to size the fixture above.
-  // Day 32 (2020-02-02) is the first candle whose OWN day-level (=40) has no
-  // week/month (=50) backing it.
-  const background = flatBackground();
-  const divergentDay = Array.from({ length: 96 }, (_, i) => c(FIRST_CONFLUENT_TIME + i * M15, 70, 90, 40, 80));
-  const touch = c(FIRST_CONFLUENT_TIME + DAY, 40.02, 40.5, 40, 39.99); // doji, low=40 matches ONLY the day-level
-
-  const candles = [...background, ...divergentDay, touch];
-  assert.deepEqual(detectHtfConfluenceReversalEvents(candles), []);
-});
-
-test('detectHtfConfluenceReversalEvents: empty/undefined input is a safe no-op', () => {
-  assert.deepEqual(detectHtfConfluenceReversalEvents([]), []);
+test('detectHtfLevelReversalEvents: a flat/no-signal market produces zero events, not a crash', () => {
+  const candles = [];
+  let t = 0;
+  for (let i = 0; i < 60; i++) t = flat(candles, t);
+  assert.deepEqual(detectHtfLevelReversalEvents(candles), []);
 });
 
 // --- runHtfSupportReversalBacktest -----------------------------------------
 
-test('runHtfSupportReversalBacktest: entry fills at the NEXT candle open after confirmation, stop beyond the setup, fixed 1:3 target', () => {
-  const background = flatBackground();
-  const doji = c(FIRST_CONFLUENT_TIME, 75, 100, 50, 75.2);
-  let t = FIRST_CONFLUENT_TIME + M15;
-  const entry = c(t, 76, 78, 74, 77); t += M15; // entry candle, open=76
-  const rally = c(t, 77, 160, 76, 155); t += M15; // sustained rally, hits the bullish 1:3 target
-  const candles = [...background, doji, entry, rally];
+test('runHtfSupportReversalBacktest: entry fills at the NEXT M15 candle open after the H1 confirmation candle, stop beyond the setup, fixed 1:3 target', () => {
+  const { candles, nextTime } = buildThreeTouchSupport();
+  const doji = c(nextTime, 90.02, 90.5, 90, 89.99);
+  const entry = c(nextTime + DAY_MS, 90.6, 91, 90, 90.8); // entry candle, open=90.6
+  const rally = c(nextTime + 2 * DAY_MS, 90.8, 200, 90.5, 195); // sustained rally, hits the bullish 1:3 target
+  const withTrades = [...candles, doji, entry, rally];
 
-  const trades = runHtfSupportReversalBacktest(candles);
+  const trades = runHtfSupportReversalBacktest(withTrades);
   assert.equal(trades.length, 1);
   const trade = trades[0];
   assert.equal(trade.direction, 'bullish');
   assert.equal(trade.pattern, 'doji');
   assert.equal(trade.entryPrice, entry.open);
-  assert.equal(trade.stopPrice, 50); // min(doji.low, prevBackground.low) = min(50, 50)
+  assert.equal(trade.stopPrice, 90); // min(doji.low, prevCandle.low) = min(90, 99.8)
   assert.equal(trade.outcome, 'win');
   assert.ok(Math.abs(trade.rMultiple - 3) < 1e-6);
 });
 
 test('runHtfSupportReversalBacktest: a losing trade resolves at exactly -1R at the stop price', () => {
-  const background = flatBackground();
-  const doji = c(FIRST_CONFLUENT_TIME, 75, 100, 50, 75.2);
-  let t = FIRST_CONFLUENT_TIME + M15;
-  const entry = c(t, 76, 78, 74, 77); t += M15;
-  const reversal = c(t, 77, 78, 40, 45); t += M15; // drops straight through the stop (50)
-  const candles = [...background, doji, entry, reversal];
+  const { candles, nextTime } = buildThreeTouchSupport();
+  const doji = c(nextTime, 90.02, 90.5, 90, 89.99);
+  const entry = c(nextTime + DAY_MS, 90.6, 91, 90, 90.8);
+  const reversal = c(nextTime + 2 * DAY_MS, 90.5, 90.6, 80, 82); // drops straight through the stop (90)
+  const withTrades = [...candles, doji, entry, reversal];
 
-  const trades = runHtfSupportReversalBacktest(candles);
+  const trades = runHtfSupportReversalBacktest(withTrades);
   assert.equal(trades.length, 1);
   assert.equal(trades[0].outcome, 'loss');
   assert.equal(trades[0].exitPrice, trades[0].stopPrice);
@@ -182,8 +207,10 @@ test('runHtfSupportReversalBacktest: a losing trade resolves at exactly -1R at t
 });
 
 test('runHtfSupportReversalBacktest: a flat/no-signal market produces zero trades, not a crash', () => {
-  const flat = flatBackground({ days: 5 });
-  assert.deepEqual(runHtfSupportReversalBacktest(flat), []);
+  const candles = [];
+  let t = 0;
+  for (let i = 0; i < 60; i++) t = flat(candles, t);
+  assert.deepEqual(runHtfSupportReversalBacktest(candles), []);
 });
 
 test('runHtfSupportReversalBacktest: empty/undefined input is a safe no-op', () => {

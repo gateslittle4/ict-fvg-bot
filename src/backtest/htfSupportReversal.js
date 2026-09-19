@@ -1,58 +1,60 @@
 // htfSupportReversal.js
-// "Support/résistance multi-timeframe + confirmation par pattern de
-// renversement" (2026-09-19, Esdras: "T'as entendu parler des daily supports,
-// weekly and monthly support? Ensuite confirme par une pattern de renversemet
-// genre doji, bullish engolfing etc?"). Deliberately NOT "3 touches = niveau
-// plus fort" (a widely-repeated retail claim without real evidence — each
-// extra touch consumes some of the resting liquidity at a level, so more
-// tests plausibly WEAKEN it rather than strengthen it). What IS a real,
-// separate idea worth testing on its own: does requiring confluence across
-// several independent timeframes (a bigger, less noisy sample of positioning
-// than any single one), confirmed by a reversal candle, do better than the
-// project's existing FVG/Judas Swing/CBDR/Silver Bullet combo, or than any
-// one of them alone?
+// "Support/résistance validé par 3 touches sur UNE timeframe (jour, semaine
+// OU mois - n'importe laquelle), puis confirmation par pattern de
+// renversement sur une timeframe plus basse (H1 ou H4)" (2026-09-19, Esdras
+// - correction après une première lecture trop littérale de sa demande
+// initiale : "le prix frappe un support 3 fois dans daily, weekly et
+// monthly timeframe, n'importe lequel, ensuite on descend sur 4hr ou 1hr
+// pour le doji ou bullish engulfing pour l'entrée"). PAS une exigence de
+// confluence entre les 3 timeframes (la version précédente, rejetée - voir
+// HANDOFF.md) : ICI un niveau qualifie dès qu'IL EST TOUCHÉ 3 FOIS SUR UNE
+// SEULE de ces timeframes, chacune évaluée indépendamment.
 //
-// Method (fixed BEFORE looking at any result on this project's data - same
-// discipline as equalHighsLows.js/starPatterns.js):
-//   1. Levels: previous COMPLETED day/week/month's high (resistance) and low
-//      (support) - the same PDH/PDL/PWH/PWL definitions already used by
-//      dailyLevels.js's "Niveaux du jour" page, extended with a monthly
-//      PMH/PML pair computed the same way. Computed ROLLING here (one value
-//      per candle, from whatever period had already closed as of that
-//      candle) rather than dailyLevels.js's single latest-snapshot use - a
-//      backtest needs the level as it stood at every point in time, not just
-//      "now".
-//   2. Confluence: a level counts as tradeable only if ANOTHER timeframe's
-//      level of the same kind (support or resistance) sits within
-//      TOLERANCE_PCT of it - i.e. at least 2 of {day, week, month} agree.
-//      Same 0.1%-of-price tolerance already used for EQH/EQL's own
-//      "equal levels" test (equalHighsLows.js) - not a new number invented
-//      for this file.
-//   3. Touch: a candle's low reaches within TOLERANCE_PCT of a confluent
-//      support (mirror: high reaches a confluent resistance).
-//   4. Confirmation: on the SAME touch candle, either a doji (body <=
-//      DOJI_BODY_RATIO of its own range - the exact threshold already used
-//      by starPatterns.js's "Doji Star" variant) or a bullish/bearish
-//      engulfing pattern against the immediately preceding candle (standard
-//      textbook definition: opposite colour, body fully covers the prior
-//      candle's body - e.g. Bulkowski's "Encyclopedia of Candlestick
-//      Charts"/Investopedia, not tuned on this project's data).
-//   5. Entry at the OPEN of the candle after confirmation (no-lookahead,
-//      same convention as every other mechanism here). Stop beyond the
-//      touch candle's own extreme (and the preceding candle's, for the
-//      engulfing case - "the candles that created the setup define its own
-//      risk", already used by NWOG/Star Patterns). Fixed 1:3 R:R, 480 M15-
-//      candle timeout (same conventions as FVG/Judas Swing/NWOG/EQH-EQL).
+// Méthode (fixée avant de voir un résultat, même discipline que
+// equalHighsLows.js dont ce fichier reprend directement la logique de
+// "pool" de swings — étendue de 2 à 3 touches, et appliquée à des bougies
+// Jour/Semaine/Mois au lieu du M15 natif) :
+//   1. Reconstruit les bougies Jour/Semaine/Mois à partir du même flux M15
+//      (mêmes clés de calendrier NY que dailyLevels.js - nyDayKey/weekKeyOf/
+//      monthKeyOf - jamais un découpage en secondes fixes qui ignorerait le
+//      calendrier réel).
+//   2. Sur CHAQUE timeframe séparément : détecte les pivots de swing
+//      (detectSwingPoints, lookback=5 - même détection fractale déjà
+//      utilisée par marketStructure.js/equalHighsLows.js), regroupe les
+//      pivots du même type (haut ou bas) à moins de 0.1% l'un de l'autre
+//      (même tolérance qu'equalHighsLows.js) en "pools", et qualifie un pool
+//      dès que sa 3e touche est confirmée (MIN_TOUCHES=3, contre 2 pour
+//      EQH/EQL). Le niveau reste actif indéfiniment ensuite (contrairement à
+//      EQH/EQL, pas "consommé" au premier retest - un niveau validé par 3
+//      touches reste une zone structurelle tant que les données durent).
+//   3. Fusionne les niveaux qualifiés des 3 timeframes (avec leur heure
+//      d'activation propre - date de la 3e confirmation) en une seule liste
+//      chronologique.
+//   4. Reconstruit une bougie H1 ou H4 (au choix, opts.entryTimeframe) à
+//      partir du même flux M15. Pour chaque bougie de cette timeframe
+//      d'entrée, si elle touche un niveau DÉJÀ ACTIF (support via son low,
+//      résistance via son high) et forme un doji (corps <= 10% du range -
+//      même seuil que starPatterns.js) ou un engulfing haussier/baissier
+//      (définition manuel standard), c'est un signal.
+//   5. Exécution ramenée sur M15 (grain le plus fin disponible) : entrée à
+//      l'ouverture de la PREMIÈRE bougie M15 après la clôture de la bougie
+//      H1/H4 de confirmation (pas de lookahead), stop au-delà de l'extrême
+//      de cette bougie (et de la précédente pour un engulfing), cible fixe
+//      1:3, timeout 480 bougies M15 (mêmes conventions que partout
+//      ailleurs). Résolution (stop/cible/timeout) faite sur le M15, pas sur
+//      le H1/H4 - plus précis pour détecter ce qui a été touché en premier.
 
 import { nyDayKey, weekKeyOf, monthKeyOf } from './dailyLevels.js';
+import { detectSwingPoints } from './marketStructure.js';
 
+export const SWING_LOOKBACK = 5; // same as equalHighsLows.js/marketStructure.js
 export const TOLERANCE_PCT = 0.001; // 0.1% of price - same as equalHighsLows.js's EQUAL_TOLERANCE_PCT
+export const MIN_TOUCHES = 3; // the one deliberate difference from EQH/EQL's 2
 export const DOJI_BODY_RATIO = 0.1; // same as starPatterns.js's DOJI_BODY_RATIO
-export const MIN_FULL_DAY_CANDLES = 24; // same as dailyLevels.js
-export const MIN_FULL_WEEK_CANDLES = 200; // same as dailyLevels.js
-export const MIN_FULL_MONTH_CANDLES = 800; // ~4x the week threshold above (a month is ~4 weeks) - same discipline, not tuned
 export const RR_MULTIPLE = 3;
-export const MAX_HOLDING_CANDLES = 480;
+export const MAX_HOLDING_CANDLES = 480; // M15 candles
+export const ENTRY_TIMEFRAME_MS = { H1: 60 * 60 * 1000, H4: 4 * 60 * 60 * 1000 };
+export const DEFAULT_ENTRY_TIMEFRAME = 'H1';
 
 function body(c) { return Math.abs(c.close - c.open); }
 function range(c) { return c.high - c.low; }
@@ -76,101 +78,125 @@ export function isBearishEngulfing(prev, cur) {
 }
 
 /**
- * One entry per candle: the previous COMPLETED period's {high, low}, or null
- * before the first full period closes. No lookahead - the value at index i
- * only ever reflects periods that closed strictly before candle i's own period.
+ * Resamples M15 candles into another timeframe defined by `keyOf` (a fixed-ms
+ * bucket for H1/H4, or a real NY calendar key for day/week/month). Each output
+ * candle also carries `endIndexExclusive` - the M15 index of the first candle
+ * belonging to the NEXT bucket, i.e. the earliest point at which this bucket's
+ * close is known (no lookahead) - so callers never need separate time-based
+ * bookkeeping to map an HTF event back onto the M15 series.
  */
-function buildRollingLevels(candles, keyOf, minFullCandles) {
-  const perCandle = new Array(candles.length).fill(null);
+export function resampleWithBoundaries(candles, keyOf) {
+  const out = [];
+  let current = null;
   let currentKey = null;
-  let currentGroup = null;
-  let prevCompleted = null;
-
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
     const k = keyOf(c);
     if (k !== currentKey) {
-      if (currentGroup && currentGroup.count >= minFullCandles) {
-        prevCompleted = { high: currentGroup.high, low: currentGroup.low };
-      }
+      if (current) { current.endIndexExclusive = i; out.push(current); }
+      current = { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
       currentKey = k;
-      currentGroup = { high: c.high, low: c.low, count: 1 };
     } else {
-      currentGroup.high = Math.max(currentGroup.high, c.high);
-      currentGroup.low = Math.min(currentGroup.low, c.low);
-      currentGroup.count++;
+      current.high = Math.max(current.high, c.high);
+      current.low = Math.min(current.low, c.low);
+      current.close = c.close;
     }
-    perCandle[i] = prevCompleted;
   }
-  return perCandle;
+  if (current) { current.endIndexExclusive = candles.length; out.push(current); }
+  return out;
 }
 
 /**
- * Among a timeframe-tagged list of levels of the same kind (all supports, or
- * all resistances), find one that BOTH (a) the given price is within
- * tolerance of, and (b) at least one other timeframe's level is also within
- * tolerance of - i.e. a confluent zone actually being touched right now.
+ * Pools this timeframe's confirmed swing points (same type, within
+ * tolerance) and returns one event per pool the moment its Nth touch
+ * confirms - the level then stays "active" (tradeable) forever after.
+ * @returns {Array<{time:number, direction:'support'|'resistance', price:number}>}
  */
-function findConfluentTouch(levels, price, tolerancePct) {
-  for (const lvl of levels) {
-    if (Math.abs(price - lvl.price) / lvl.price > tolerancePct) continue;
-    const agreeing = levels.filter((o) => o !== lvl && Math.abs(o.price - lvl.price) / lvl.price <= tolerancePct);
-    if (agreeing.length > 0) return { price: lvl.price, timeframes: [lvl.tf, ...agreeing.map((o) => o.tf)] };
+function findQualifiedLevels(htf, { lookback = SWING_LOOKBACK, tolerancePct = TOLERANCE_PCT, minTouches = MIN_TOUCHES } = {}) {
+  const swingPoints = detectSwingPoints(htf, lookback).sort((a, b) => a.confirmedIndex - b.confirmedIndex);
+  const highPools = [];
+  const lowPools = [];
+  const qualified = [];
+
+  for (const p of swingPoints) {
+    const pools = p.type === 'high' ? highPools : lowPools;
+    let pool = pools.find((pl) => Math.abs(pl.price - p.price) / pl.price <= tolerancePct);
+    if (!pool) {
+      pool = { price: p.price, count: 0, emitted: false };
+      pools.push(pool);
+    }
+    pool.count++;
+    if (pool.count >= minTouches && !pool.emitted) {
+      pool.emitted = true;
+      qualified.push({
+        time: htf[p.confirmedIndex].time,
+        direction: p.type === 'high' ? 'resistance' : 'support',
+        price: pool.price,
+      });
+    }
   }
-  return null;
+  return qualified;
 }
 
 /**
- * @param {Array} candles
+ * @param {Array} candles - M15, oldest first
  * @param {object} [opts]
- * @param {number} [opts.tolerancePct]
- * @returns {Array<{index:number, direction:'bullish'|'bearish', stopReference:number, pattern:string, timeframes:string[]}>}
+ * @param {'H1'|'H4'} [opts.entryTimeframe]
+ * @returns {Array<{entryIndex:number, direction:'bullish'|'bearish', stopReference:number, pattern:string, levelTimeframe:string, levelPrice:number}>}
+ *   one event per M15 index at which an entry should fire (already mapped from the HTF confirmation candle).
  */
-export function detectHtfConfluenceReversalEvents(candles, { tolerancePct = TOLERANCE_PCT } = {}) {
-  const dayLevels = buildRollingLevels(candles, (c) => nyDayKey(c.time), MIN_FULL_DAY_CANDLES);
-  const weekLevels = buildRollingLevels(candles, (c) => weekKeyOf(nyDayKey(c.time)), MIN_FULL_WEEK_CANDLES);
-  const monthLevels = buildRollingLevels(candles, (c) => monthKeyOf(nyDayKey(c.time)), MIN_FULL_MONTH_CANDLES);
+export function detectHtfLevelReversalEvents(candles, { entryTimeframe = DEFAULT_ENTRY_TIMEFRAME, lookback = SWING_LOOKBACK, tolerancePct = TOLERANCE_PCT, minTouches = MIN_TOUCHES } = {}) {
+  const dailyHtf = resampleWithBoundaries(candles, (c) => nyDayKey(c.time));
+  const weeklyHtf = resampleWithBoundaries(candles, (c) => weekKeyOf(nyDayKey(c.time)));
+  const monthlyHtf = resampleWithBoundaries(candles, (c) => monthKeyOf(nyDayKey(c.time)));
+
+  const levels = [
+    ...findQualifiedLevels(dailyHtf, { lookback, tolerancePct, minTouches }).map((l) => ({ ...l, timeframe: 'daily' })),
+    ...findQualifiedLevels(weeklyHtf, { lookback, tolerancePct, minTouches }).map((l) => ({ ...l, timeframe: 'weekly' })),
+    ...findQualifiedLevels(monthlyHtf, { lookback, tolerancePct, minTouches }).map((l) => ({ ...l, timeframe: 'monthly' })),
+  ].sort((a, b) => a.time - b.time);
+
+  const bucketMs = ENTRY_TIMEFRAME_MS[entryTimeframe];
+  const entryHtf = resampleWithBoundaries(candles, (c) => Math.floor(c.time / bucketMs));
 
   const events = [];
-  for (let i = 1; i < candles.length; i++) {
-    const d = dayLevels[i];
-    const w = weekLevels[i];
-    const m = monthLevels[i];
-    if (!d || !w || !m) continue; // not enough history yet for all three timeframes
+  for (let i = 1; i < entryHtf.length; i++) {
+    const cur = entryHtf[i];
+    const prev = entryHtf[i - 1];
+    if (cur.endIndexExclusive >= candles.length) break; // data ends before this candle's entry could fill
 
-    const c = candles[i];
-    const prev = candles[i - 1];
+    const activeSupports = levels.filter((l) => l.direction === 'support' && l.time <= cur.time);
+    const activeResistances = levels.filter((l) => l.direction === 'resistance' && l.time <= cur.time);
 
-    const supports = [{ tf: 'day', price: d.low }, { tf: 'week', price: w.low }, { tf: 'month', price: m.low }];
-    const resistances = [{ tf: 'day', price: d.high }, { tf: 'week', price: w.high }, { tf: 'month', price: m.high }];
-
-    const supportTouch = findConfluentTouch(supports, c.low, tolerancePct);
-    if (supportTouch) {
-      const doji = isDoji(c);
-      const engulfing = isBullishEngulfing(prev, c);
+    const supportHit = activeSupports.find((l) => Math.abs(cur.low - l.price) / l.price <= tolerancePct);
+    if (supportHit) {
+      const doji = isDoji(cur);
+      const engulfing = isBullishEngulfing(prev, cur);
       if (doji || engulfing) {
         events.push({
-          index: i,
+          entryIndex: cur.endIndexExclusive,
           direction: 'bullish',
-          stopReference: Math.min(c.low, prev.low),
+          stopReference: Math.min(cur.low, prev.low),
           pattern: doji ? 'doji' : 'bullish-engulfing',
-          timeframes: supportTouch.timeframes,
+          levelTimeframe: supportHit.timeframe,
+          levelPrice: supportHit.price,
         });
-        continue; // one event per candle - don't also test resistance on the same bar
+        continue;
       }
     }
 
-    const resistanceTouch = findConfluentTouch(resistances, c.high, tolerancePct);
-    if (resistanceTouch) {
-      const doji = isDoji(c);
-      const engulfing = isBearishEngulfing(prev, c);
+    const resistanceHit = activeResistances.find((l) => Math.abs(cur.high - l.price) / l.price <= tolerancePct);
+    if (resistanceHit) {
+      const doji = isDoji(cur);
+      const engulfing = isBearishEngulfing(prev, cur);
       if (doji || engulfing) {
         events.push({
-          index: i,
+          entryIndex: cur.endIndexExclusive,
           direction: 'bearish',
-          stopReference: Math.max(c.high, prev.high),
+          stopReference: Math.max(cur.high, prev.high),
           pattern: doji ? 'doji' : 'bearish-engulfing',
-          timeframes: resistanceTouch.timeframes,
+          levelTimeframe: resistanceHit.timeframe,
+          levelPrice: resistanceHit.price,
         });
       }
     }
@@ -181,8 +207,8 @@ export function detectHtfConfluenceReversalEvents(candles, { tolerancePct = TOLE
 /** @returns {Array} raw (pre-cost) trades, on M15 candles */
 export function runHtfSupportReversalBacktest(candles, opts = {}) {
   const { rrMultiple = RR_MULTIPLE, maxHoldingCandles = MAX_HOLDING_CANDLES } = opts;
-  const events = detectHtfConfluenceReversalEvents(candles, opts);
-  const eventByIndex = new Map(events.map((e) => [e.index, e]));
+  const events = detectHtfLevelReversalEvents(candles, opts);
+  const eventByEntryIndex = new Map(events.map((e) => [e.entryIndex, e]));
 
   const trades = [];
   let open = null;
@@ -208,8 +234,7 @@ export function runHtfSupportReversalBacktest(candles, opts = {}) {
     }
 
     if (!open) {
-      const signalIndex = i - 1;
-      const event = signalIndex >= 0 ? eventByIndex.get(signalIndex) : undefined;
+      const event = eventByEntryIndex.get(i);
       if (event) {
         const bullish = event.direction === 'bullish';
         const entryPrice = candle.open;
@@ -228,7 +253,8 @@ export function runHtfSupportReversalBacktest(candles, opts = {}) {
             distance,
             rrMultiple,
             pattern: event.pattern,
-            timeframes: event.timeframes,
+            levelTimeframe: event.levelTimeframe,
+            levelPrice: event.levelPrice,
           };
         }
       }
