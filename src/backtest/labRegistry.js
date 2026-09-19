@@ -30,6 +30,7 @@ import { runCbdrBacktest } from './cbdr.js';
 import { runDmiTrendBacktest } from './dmiTrend.js';
 import { runEqualHighsLowsBacktest } from './equalHighsLows.js';
 import { runGapContinuationBacktest, DAILY_GAP_HOURS } from './gapContinuation.js';
+import { runHtfSupportReversalBacktest } from './htfSupportReversal.js';
 import { runJudasSwingBacktest } from './judasSwing.js';
 import { runMacdTrendBacktest } from './macdTrend.js';
 import { runMidnightOpenRetracementBacktest } from './midnightOpen.js';
@@ -53,6 +54,7 @@ export const LAB_STRATEGIES = {
   'dmi-trend': { label: 'DMI Trend', run: (c) => runDmiTrendBacktest(c) },
   'equal-highs-lows': { label: 'Equal Highs / Equal Lows', run: (c) => runEqualHighsLowsBacktest(c) },
   'gap-continuation': { label: 'Gap Continuation (quotidien)', run: (c) => runGapContinuationBacktest(c, DAILY_GAP_HOURS) },
+  'htf-support-reversal': { label: 'Support HTF (jour/semaine/mois) + renversement', run: (c) => runHtfSupportReversalBacktest(c) },
   'judas-swing': { label: 'Judas Swing', run: (c) => runJudasSwingBacktest(c) },
   'macd-trend': { label: 'MACD Trend', run: (c) => runMacdTrendBacktest(c) },
   'midnight-open': { label: 'Midnight Open Retracement', run: (c) => runMidnightOpenRetracementBacktest(c) },

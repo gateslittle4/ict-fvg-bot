@@ -42,10 +42,15 @@ export function nyDayKey(engineTime) {
 }
 
 /** The Monday (YYYY-MM-DD) of the week that NY day belongs to. */
-function weekKeyOf(dayKey) {
+export function weekKeyOf(dayKey) {
   const d = new Date(`${dayKey}T00:00:00Z`);
   const back = (d.getUTCDay() + 6) % 7; // Monday = 0
   return new Date(d.getTime() - back * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The NY calendar month (YYYY-MM) that day belongs to - htfSupportReversal.js's monthly level. */
+export function monthKeyOf(dayKey) {
+  return dayKey.slice(0, 7);
 }
 
 function groupExtremes(candles, keyOf) {

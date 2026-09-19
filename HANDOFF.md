@@ -1,6 +1,6 @@
 # Handoff — assistant ICT/trading semi-automatisé (FundingPips/FTMO via cTrader)
 
-Ce fichier résume l'état du projet pour reprendre le travail dans une nouvelle session Cowork (autre compte). Donne-le à Claude en premier message : "voici mon projet, lis HANDOFF.md et continue avec moi."
+Ce fichier résume l'état du projet pour reprendre le travail dans une nouvelle session Cowork (autre compte). Donne-le à Claude en premier message : "voici mon projet, lis HANDOFF.md et continue avec moi." Pour l'état technique courant (démarrage, variables d'environnement, pages du site, déploiement Render), aller directement à la section « Référence technique vérifiée le 2026-09-17 » — le reste du fichier est un journal chronologique, où une note ancienne peut avoir été dépassée par une plus récente.
 
 ## Contexte du projet
 
@@ -218,7 +218,7 @@ Question d'Esdras juste après : « où se trouve la majorité de nos trades ? O
 
 **Variables d'environnement Render actives** : `KEEP_ALIVE=true`, `CTRADER_ACCOUNT_ID=48587457`.
 
-> ⚠️ **CORRIGÉ LE 2026-09-18** — cette ligne affirmait aussi que `KEEP_ALIVE_WINDOWS=Mon-Fri@06:30-12:00,Sun@17:00-22:00` était actif sur Render. **C'était faux** : la variable n'a jamais été posée sur le service. Seul `KEEP_ALIVE=true` l'est, donc c'est le gate LARGE heures-de-marché qui s'applique (dimanche 17h → vendredi 17h NY), pas les fenêtres resserrées décrites ci-dessus. Le code de `parseKeepAliveWindows()`/`isWithinKeepAliveWindows()` reste valide et testé — il est simplement inutilisé en production. Preuve et décision : voir la section « Vérification du keep-alive en production » en fin de fichier.
+> ⚠️ **CORRIGÉ LE 2026-09-18** — cette ligne affirmait aussi que `KEEP_ALIVE_WINDOWS=Mon-Fri@06:30-12:00,Sun@17:00-22:00` était actif sur Render. **C'était faux** : la variable n'a jamais été posée sur le service. Seul `KEEP_ALIVE=true` l'est, donc c'est le gate LARGE heures-de-marché qui s'applique (dimanche 17h → vendredi 17h NY), pas les fenêtres resserrées décrites ci-dessus. Le code de `parseKeepAliveWindows()`/`isWithinKeepAliveWindows()` reste valide et testé — il est simplement inutilisé en production. Preuve et décision : voir la section « Vérification du keep-alive en production » en fin de fichier. (Même constat fait indépendamment le 2026-09-17 par une autre session, voir « Référence technique vérifiée le 2026-09-17 » plus bas — double confirmation.)
 
 **Marge volontaire** : la fenêtre démarre à 06:30 alors que le premier FVG tire à 07h — le réveil (boot + warm-up + connexion cTrader) prend ~20-25 s et les pings sont espacés de 10 min, donc cette demi-heure garantit que le bot est chaud avant la première entrée possible.
 
@@ -507,13 +507,123 @@ Deux ajouts faits juste avant la fin de session, à la demande explicite de l'ut
 
 ## Structure du repo (après extraction du zip)
 
-- `scripts/` — tous les scripts d'analyse/backtest en Node.js (`node scripts/run....js data/backtest-input`).
-- `data/backtest-input/*.csv` — données M15 historiques (US100, US500, XAUUSD, EURUSD, GBPUSD).
-- `data/backtest-input/*.md` — tous les rapports de résultats déjà générés (à relire avant de retester quoi que ce soit).
-- `src/` — moteurs (FvgEngine, GuardrailEngine, LiveStrategyEngine), filtres (htfBias, marketStructure, nySession, liquiditySweep, weekdayFilter), `gridRunner.js` (logique de grid-search partagée), `correlation.js` (helpers partagés z-score/alignement pour Divergence). `dataSources/` contient `cTraderDataSource.js` (**plateforme PRINCIPALE de nouveau depuis l'approbation Spotware**, avec découverte automatique du compte via `pickAccountOrThrow()` — voir section dédiée) et `matchTraderDataSource.js` (connecteur de secours, écrit et testé mais jamais utilisé en live, bloqué sur des identifiants FundingPips non obtenus). Note : l'exclusion de jours calendaires (`runCalendarExclusionAnalysis.js`) est implémentée en ligne dans le script lui-même, pas comme un filtre `src/backtest/dateExclusion.js` séparé — corrigé ici après vérification, aucun tel fichier n'existe dans le repo.
-- `test/` — 179 tests au 2026-09-08 (168 au 2026-09-07 + 11 pour `dealPairing.js`, voir section "Journal de trading"), `npm test` doit rester au vert après CHAQUE modification d'un fichier `src/`.
+**Mise à jour 2026-09-17 : section relue fichier par fichier contre le code réel. Les chiffres et chemins ci-dessous sont vérifiés ; ceux qui étaient périmés sont corrigés sur place avec la valeur d'origine entre parenthèses. Voir aussi la section « Référence technique vérifiée le 2026-09-17 » juste en dessous pour le démarrage, les variables d'environnement, les pages et Render.**
+
+- `scripts/` — 140 scripts d'analyse/backtest en Node.js (`node scripts/run....js data/backtest-input`).
+- `data/backtest-input/*.csv` — données M15 historiques, **13 instruments** : US100, US500, XAUUSD, EURUSD, GBPUSD, GER40, USDJPY (+ `USDJPY_M5.csv` pour le test scalp M5), USDCAD, NZDJPY, AUDUSD, UKX, AUX — plus `macro-vix-daily.csv` (filtre de régime macro). (Écrit « US100, US500, XAUUSD, EURUSD, GBPUSD » le 2026-09-08 : exact à l'époque, 8 instruments ont été ajoutés depuis.)
+- `data/backtest-input/*.md` — 119 rapports de résultats déjà générés (à relire avant de retester quoi que ce soit). Autres dossiers de données : `data/forward-test-2026/`, `data/real-data-2026-02-to-09/`, `data/real-data-2026-09-17/` (vraies bougies courtier) et `data/backtest-summary.json`.
+- `src/` — `config.js` (tous les réglages : symboles, garde-fous, risque, mécanismes), `server.js` (Express + API + service des fichiers statiques), `accountRegistry.js` / `accountRuntime.js` (multi-compte), `liveStrategyEngine.js` (moteur live), `chatAssistant.js` (assistant IA du dashboard), `keepAlive.js` (anti-veille Render).
+  - `src/engines/` — `fvgEngine.js`, `guardrailEngine.js`, `lotCalculator.js`.
+  - `src/backtest/` — **correction de chemin** : les filtres (`htfBias.js`, `marketStructure.js`, `nySession.js`, `liquiditySweep.js`, `weekdayFilter.js`), `gridRunner.js` (grid-search partagé) et `correlation.js` (helpers z-score/alignement pour Divergence) vivent ici, pas à la racine de `src/` comme cette section l'écrivait. 42 fichiers en tout (un par mécanisme testé + les helpers partagés).
+  - `src/dataSources/` — `cTraderDataSource.js` (**plateforme PRINCIPALE depuis l'approbation Spotware**, découverte automatique du compte via `pickAccountOrThrow()`), `matchTraderDataSource.js` (connecteur de secours, écrit et testé mais jamais utilisé en live, bloqué sur des identifiants FundingPips non obtenus), `mockDataSource.js` (mode démo), `supabaseAccountStore.js` / `supabaseTradeLog.js` (comptes dynamiques + journal durable), `accountReconciliation.js`, `dealPairing.js`, `tradeCompliance.js`.
+  - `src/propFirms/` — profils de prop firms (`ftmo.js`, `fundingPips.js`, `cti.js`, `goatFundedTrader.js`, `index.js`).
+  - Note conservée : l'exclusion de jours calendaires (`runCalendarExclusionAnalysis.js`) est implémentée en ligne dans le script lui-même, pas comme un filtre `src/backtest/dateExclusion.js` séparé — aucun tel fichier n'existe dans le repo.
+- `public/` — les **4 pages** du dashboard (`index.html`, `chart.html`, `journal.html`, `accounts.html`) + les assets partagés (`theme.js`, `chat-widget.js`, `sw.js`, `manifest.json`, `icons/`). Détail dans « Pages de l'interface » ci-dessous.
+- `test/` — 56 fichiers, **645 tests, tous au vert le 2026-09-17** (et non « 179 tests » comme écrit ici le 2026-09-08). `npm test` doit rester au vert après CHAQUE modification d'un fichier `src/`.
+- `docs/` — `CTRADER_SETUP.md`, `MATCHTRADER_SETUP.md`, `STRATEGY.md`.
 
 Après extraction : `npm install` (reconstruit `node_modules`, pas inclus dans l'export), puis `npm test` pour vérifier que tout fonctionne avant de continuer.
+
+⚠️ `README.md` (racine) n'a PAS été mis à jour avec le reste du projet : il décrit encore un assistant sur 4 instruments, en « mode démo », avec un dashboard d'une seule page. Ne pas s'y fier — cette section et la suivante sont la référence.
+
+## Référence technique vérifiée le 2026-09-17 — démarrage, variables d'environnement, pages, Render
+
+Section ajoutée parce que ces quatre informations étaient éparpillées dans le journal chronologique ci-dessous, en partie périmées. Tout ce qui suit a été vérifié le 2026-09-17 : lecture du code, `npm test` relancé, serveur démarré en local en mode démo, service et logs Render relus. Ce qui n'a PAS pu être vérifié est dit explicitement.
+
+### 1. Démarrage du serveur
+
+- `npm install` puis `npm start` — `npm start` = `node src/server.js` (`package.json`, `scripts.start`). Pas de build, pas de bundler.
+- Port : `PORT` si défini, sinon **3000** (`server.js`). Au démarrage : `ICT-FVG assistant listening on :<port>`.
+- **Sans identifiants broker, le serveur démarre quand même** en mode démo (données simulées) : `[boot:default] no broker credentials configured — starting in demo mode.` → `startMockDataSource()`. C'est la façon normale de lancer en local. Vérifié le 2026-09-17 : les 4 pages et `/api/status`, `/api/accounts`, `/healthz` répondent 200 dans ce mode.
+- `NODE_ENV=test` : le module n'appelle PAS `app.listen()` (c'est ce qui permet aux tests d'importer `server.js` sans ouvrir de port).
+- Ordre du boot (fin de `server.js`) : `app.listen()` → `startKeepAlive()` (armé en premier, avant les connexions broker plus lentes, parce que c'est le minuteur de veille Render qui tue le process) → chargement des comptes stockés dans Supabase → `bootAccount()` pour chaque compte (cTrader / Match-Trader / démo selon `platform`) → `armAutoExecuteIfConfigured()` sur chaque compte, y compris ceux retombés en mode démo après un échec de connexion.
+- Santé : `GET /healthz` → `{"ok":true,"uptimeSec":…,"accountsConnected":…,"accountsTotal":…}`.
+- `npm test` : **645/645 au vert** le 2026-09-17 (35 s, `node --test test/*.test.js`).
+  ⚠️ Piège d'environnement à connaître : sans `node_modules` installé, 2 fichiers de test échouent au CHARGEMENT (`cTraderDataSource.test.js` et `supabaseTradeLog.test.js` → `ERR_MODULE_NOT_FOUND` sur `@reiryoku/ctrader-layer` et `@supabase/supabase-js`) et le total tombe à 591/645 avec « 2 fail ». Ce n'est pas une régression : `npm install` puis `npm test` redonne 645/645. Ne pas partir en chasse au bug sur ce signal.
+
+### 2. Variables d'environnement attendues
+
+Liste complète, relue dans le code (aucune autre `process.env.*` n'existe dans `src/`). Toutes sont **optionnelles** : aucune n'est requise pour que le process démarre.
+
+**Courtier cTrader (plateforme principale)**
+| Variable | Effet | Défaut |
+| --- | --- | --- |
+| `CTRADER_CLIENT_ID` / `CTRADER_CLIENT_SECRET` / `CTRADER_ACCESS_TOKEN` | Les 3 identifiants OAuth. Sans eux : mode démo. | aucun |
+| `CTRADER_ACCOUNT_ID` | Fixe le compte. Absent → découverte automatique (`pickAccountOrThrow()`), l'id retenu apparaît dans les logs. | découverte auto |
+| `CTRADER_HOST` | Hôte API. | `demo.ctraderapi.com` (mettre `live.ctraderapi.com` pour un compte réel non-démo) |
+
+**Courtier Match-Trader (secours, jamais utilisé en live)**
+| Variable | Effet |
+| --- | --- |
+| `MATCHTRADER_EMAIL`, `MATCHTRADER_PASSWORD`, `MATCHTRADER_BROKER_ID`, `MATCHTRADER_PLATFORM_URL`, `MATCHTRADER_SYSTEM_UUID` | Les identifiants de connexion. |
+| `MATCHTRADER_ACCOUNT_ID` | Optionnel : choisit un sous-compte précis dans la réponse de login. |
+| `BROKER_PLATFORM` | Force la plateforme (`ctrader` / `matchtrader`). ⚠️ Sans ce forçage, `getConfiguredPlatform()` **préfère Match-Trader** si ses 4 identifiants sont posés. |
+
+**Comptes et exécution**
+| Variable | Effet | Défaut |
+| --- | --- | --- |
+| `ACCOUNTS_JSON` | Tableau JSON de comptes (multi-compte par variable d'env). JSON invalide ou tableau vide → repli sur le compte `default` + message d'erreur dans les logs. | un seul compte `default` |
+| `DISABLED_ACCOUNT_IDS` | Liste d'ids séparés par des virgules à ignorer au boot. Vaut pour les comptes venant d'`ACCOUNTS_JSON` **et** de Supabase. Garde-fou : si la liste désactiverait TOUS les comptes env, elle est ignorée. | aucun |
+| `ACCOUNT_MODE` | `challenge` ou `live` — change uniquement le risque par défaut (0.5% vs 0.3%). Valeur inconnue → `challenge`. | `challenge` |
+| `RISK_PCT_PER_TRADE` | Surcharge durable du risque par trade, borné à [0.05, 2]. | selon `ACCOUNT_MODE` |
+| `AUTO_EXECUTE_ALWAYS_ON` | `true` → « mode indisponible » (exécution auto) réarmé pour 7 jours à CHAQUE boot, sur tous les comptes. | off |
+| `PYRAMID_ENABLED` | `true` → active le pyramidage. | off |
+
+**Persistance, IA, notifications, admin**
+| Variable | Effet | Défaut |
+| --- | --- | --- |
+| `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` | Journal de trades durable **et** comptes ajoutés depuis la page Comptes. Absents → persistance silencieusement désactivée, `/api/trade-log` répond `not configured`. | off |
+| `ANTHROPIC_API_KEY` | Active les réponses de l'assistant IA du dashboard. Absente → le bouton de chat existe mais répond « pas configuré » (comportement voulu). | off |
+| `NTFY_TOPIC` | Topic ntfy.sh pour les notifications push. | aucun |
+| `DEMO_PUSH_NOTIFICATIONS` | `true` → envoie aussi les push en mode démo. | off |
+| `ADMIN_EXPORT_TOKEN` | **Ouvre toutes les routes `/api/admin/*`** (export de bougies, spread, liste de symboles, réconciliation brute, ordre de test, fermeture de position). Non définie → ces routes répondent `404 not enabled`. C'est le token que demande la page Comptes. | off (routes fermées) |
+| `PORT`, `NODE_ENV` | Voir « Démarrage » ci-dessus. | 3000 / — |
+
+**Anti-veille Render (`keepAlive.js`)**
+| Variable | Effet | Défaut |
+| --- | --- | --- |
+| `KEEP_ALIVE` | `true` requis pour activer le ping. Sinon : `[keep-alive] disabled - KEEP_ALIVE is not set to "true"`. | off |
+| `KEEP_ALIVE_URL` | Cible du ping ; sinon `RENDER_EXTERNAL_URL` (posée automatiquement par Render). Aucune des deux → désactivé (cas normal en local). | `RENDER_EXTERNAL_URL` |
+| `KEEP_ALIVE_MINUTES` | Intervalle du ping (borné dans le code). | 10 min |
+| `KEEP_ALIVE_ALWAYS` | `true` → ping 24/7 au lieu des seules heures de marché. | off (heures de marché : dim 17:00 → ven 17:00 NY) |
+| `KEEP_ALIVE_WINDOWS` | Fenêtres actives plus étroites, ex. `Mon-Fri@06:30-12:00,Sun@17:00-22:00` — **remplace** la grille heures-de-marché. Spec malformée → avertissement et repli sur les heures de marché (jamais un bot muet). | non défini |
+
+**État réellement posé sur Render** (lu dans les logs de boot du 2026-09-17 22:33 UTC, pas dans le dashboard Render — l'API MCP ne permet pas de relire les variables) :
+- `KEEP_ALIVE=true` → `[keep-alive] enabled - pinging https://ict-fvg-bot.onrender.com/healthz every 10 min while the market is open (Sun 17:00 -> Fri 17:00 NY)`. ⚠️ **`KEEP_ALIVE_WINDOWS` n'est PLUS posée** : le message de log serait « only during the configured active-trade windows » si elle l'était. La section « INCIDENT DE PRODUCTION (2026-09-09) » plus haut dans ce fichier l'annonce encore comme active — c'est périmé.
+- `AUTO_EXECUTE_ALWAYS_ON=true` → `[boot:default] AUTO_EXECUTE_ALWAYS_ON=true - mode indisponible armed until 2026-09-24T22:34:03Z`.
+- `DISABLED_ACCOUNT_IDS` contient `cti-freetrial` → `[boot] Supabase account "cti-freetrial" skipped via DISABLED_ACCOUNT_IDS`.
+- `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` posées (les comptes Supabase sont bien lus au boot).
+- Les 3 identifiants cTrader + un compte : `[cTrader] account 48587457 authenticated`, 1002 symboles chargés, solde lu chez le courtier `11016.69`, abonnement live sur US100, US500, XAUUSD, EURUSD, GER40.
+- **Non vérifiable depuis cette session** : `ACCOUNT_MODE`, `RISK_PCT_PER_TRADE`, `ADMIN_EXPORT_TOKEN`, `ANTHROPIC_API_KEY`, `CTRADER_HOST` (rien dans les logs, pas de lecture des variables via l'API, et le site est injoignable depuis ce réseau — voir § 4). La section « ACCOUNT_MODE=live déployé sur Render » (2026-09-12) reste la dernière information connue sur `ACCOUNT_MODE`.
+
+### 3. Pages de l'interface
+
+Servies en statique depuis `public/` par `server.js`. Même barre de navigation sur les 4 pages : **Dashboard** (`/`), **Graphique** (`/chart.html`), **Journal** (`/journal.html`), **Comptes** (`/accounts.html`), + un bouton de bascule de thème. Titre commun « Apex FVG ».
+
+- **Dashboard (`/`)** — cartes : Vue d'ensemble tous comptes (masquée tant qu'il n'y a qu'un compte), Garde-fous, Progression du challenge, Compte réel (cTrader), Mode indisponible (exécution auto), Signaux d'entrée validés, FVG en surveillance, Ordres envoyés (résultat réel), Performance récente (90 jours, hypothétique), Réglages, Calculateur de lot.
+- **Graphique (`/chart.html`)** — graphique Lightweight Charts, sélecteur de symbole (US100, US500, XAUUSD, EURUSD, GER40) et de timeframe, prix/heure/OHLC en direct, **panneau « Calques » à droite** avec 3 cases indépendantes (Zones FVG, Signaux, Entrée/Stop/Cible — état gardé par navigateur dans `localStorage`, clé `chartOverlayToggles`), légende, compteurs d'overlays, et la checklist de conformité du trade en attente sous le graphique.
+- **Journal (`/journal.html`)** — performance globale du journal durable, détail par instrument, calendrier mensuel, statistiques par heure / jour de semaine / session, temps de récupération après un creux, qualité d'exécution. Export PDF via jsPDF.
+- **Comptes (`/accounts.html`)** — Token admin (saisi une fois, gardé dans `localStorage` sous `apexfvg_admin_token`, validé contre `/api/admin/accounts`), Comptes déjà enregistrés, Ajouter / mettre à jour un compte, Appliquer les changements (redémarrage), et **Tester la connexion broker** (voir juste en dessous).
+- Assets partagés : `theme.js` (thème clair/sombre), `chat-widget.js` (assistant IA, dépend d'`ANTHROPIC_API_KEY`), `sw.js` + `manifest.json` + `icons/` (installable en PWA ; le service worker ne met **rien** en cache, délibérément, pour ne jamais afficher un prix périmé).
+- Les librairies front sont servies depuis `node_modules` par des montages Express : `/vendor/lightweight-charts`, `/vendor/jspdf`, `/vendor/jspdf-autotable`.
+
+**Bouton « Tester la connexion broker » (page Comptes)** — état au 2026-09-17, récupéré depuis `challenge/fundingpips-zero` le jour même (section dédiée en fin de fichier) :
+- Carte « Tester la connexion broker » : un menu déroulant (US100, US500, XAUUSD, EURUSD, GER40) et un bouton « Passer un ordre de test ». Appelle `POST /api/admin/test-order-cycle?symbol=…` avec le token admin, puis affiche soit `✅ Succès! Ordre <SYMBOLE> passé et fermé. PnL: …`, soit `❌ Erreur: <message>`.
+- Conditions côté serveur : `ADMIN_EXPORT_TOKEN` posée (sinon `404 not enabled`), token correct (sinon `403`), et une connexion broker live active (sinon `503 not connected to a live broker`).
+- ⚠️ Ce bouton passe un **VRAI ordre** au plus petit lot possible, ouvert puis fermé immédiatement, et il **compte dans le quota du garde-fou** (max 3 trades/jour). À utiliser avec parcimonie, ce n'est pas un « ping ».
+- ⚠️ Détail à connaître : la route garde `BTCUSD` comme symbole par défaut quand AUCUN symbole n'est passé (`req.query.symbol || req.body?.symbol || 'BTCUSD'`), alors que BTCUSD a été retiré des symboles du bot le 2026-09-16. Le bouton du dashboard envoie toujours un symbole explicite, donc il n'est pas concerné ; seul un `curl` manuel sans `?symbol=` tomberait sur BTCUSD. Laissé tel quel (constat de documentation, pas de changement de code).
+
+### 4. Déploiement sur Render
+
+Relu directement sur l'API Render le 2026-09-17 :
+
+- Service **`ict-fvg-bot`** = `srv-dafkaav40ujc73bm3cl0`, workspace `tea-d9h2bivlk1mc738tli3g`, région Oregon, plan **free**, URL https://ict-fvg-bot.onrender.com, dashboard https://dashboard.render.com/web/srv-dafkaav40ujc73bm3cl0.
+- Runtime `node`, `buildCommand` = `npm install`, `startCommand` = `npm start`, 1 instance, pas de healthCheckPath configuré côté Render (le `/healthz` du code existe mais n'est pas branché comme sonde Render).
+- **Branche déployée : `claude/lire-handoff-hxisa5`**, auto-déploiement **activé** à chaque commit. Pousser sur une autre branche ne déploie RIEN — c'est le piège de process déjà documenté plus bas, toujours d'actualité.
+- Dernier déploiement live au moment de cette note : `dep-dam6l7v40ujc73aps0f0`, commit `632063f` (« Document the cherry-picked test-order button in HANDOFF.md »), passé `live` le 2026-09-17 à 22:33 UTC, déclenché par le commit.
+- Boot de production correspondant (logs Render) : keep-alive armé, cTrader `account 48587457 authenticated`, 1002 symboles chargés, specs de contrat lues chez le courtier (US100/US500/GER40 `lotSize=100`, XAUUSD `10000`, EURUSD `10000000`, tous `minLots=0.01`), solde `11016.69`, warm-up de 8639 bougies M15 par symbole, abonnement live sur les 5 symboles, exécution auto réarmée, `cti-freetrial` ignoré.
+- **Accès réseau depuis une session de code** : le 2026-09-17, `curl https://ict-fvg-bot.onrender.com/...` est **REFUSÉ** par le proxy de sortie (`connect_rejected`), donc ni `curl` ni WebFetch. La note du 2026-09-10 (« l'accès à onrender.com n'est PLUS bloqué ») ne vaut donc pas pour toutes les sessions. **Conclusion durable : re-tester à chaque session, ne rien supposer dans un sens ni dans l'autre.** Quand c'est bloqué, l'état réel de la prod se lit par les **logs Render** (outils MCP Render) — c'est comme ça que tous les faits ci-dessus ont été vérifiés.
+- Branches distantes existantes : `claude/lire-handoff-hxisa5` (déployée), `challenge/fundingpips-zero` (autre challenge, sans service Render), `claude/lire-le-handoff-8bbrxx`, `claude/nouvelle-session-p1lxw4`. ⚠️ `claude/nouvelle-session-p1lxw4` porte encore 25 commits dont le SHA n'est pas dans la branche déployée — possiblement des changements déjà repris ailleurs par cherry-pick/rebase, non vérifiés un par un (le point 7 de la « check-list de reprise rapide » plus bas parle de cette branche).
 
 ## Compte réel (équité/marge/réconciliation) + graphique de marché — 2026-09-08, suite
 
@@ -720,7 +830,7 @@ Session démarrée sur la branche de travail **`claude/nouvelle-session-p1lxw4`*
 4. Le garde-fou "2 min autour des news majeures" reste à construire si l'utilisatrice le demande — voir ci-dessus, ne pas confondre avec l'exclusion de journées déjà rejetée.
 5. Toujours vérifier quelle branche Render déploie RÉELLEMENT avant de pousser quoi que ce soit en pensant que ça suffira (voir bug de process ci-dessus).
 6. **Le courtier actif en prod est cTrader**, pas Match-Trader — le commentaire de `config.js` est périmé (voir section 2026-09-09 « Câblage live vérifié… »). Vérifier le vrai courtier dans les logs de boot (`[cTrader] connected…` vs `[matchtrader] connected…`) avant de raisonner sur un comportement live. Rappel : `getConfiguredPlatform()` préfère Match-Trader si ses 4 identifiants sont posés.
-7. Les correctifs « prix live » + « échelle dynamique » + « session 5h Match-Trader » sont sur `claude/nouvelle-session-p1lxw4`. Pour les déployer, faire avancer la branche que Render suit (`hxisa5`) dessus — demander l'accord de l'utilisatrice d'abord.
+7. Les correctifs « prix live » + « échelle dynamique » + « session 5h Match-Trader » sont sur `claude/nouvelle-session-p1lxw4`. Pour les déployer, faire avancer la branche que Render suit (`hxisa5`) dessus — demander l'accord de l'utilisatrice d'abord. **Mise à jour 2026-09-17** : la branche suivie par Render est toujours `claude/lire-handoff-hxisa5` (vérifié sur l'API Render), et `claude/nouvelle-session-p1lxw4` existe encore avec 25 commits dont le SHA n'est pas dans la branche déployée — non vérifiés un par un, une partie a pu être reprise ailleurs.
 8. Avant d'activer pyramide / mode indisponible / tout ordre réel : confirmer l'unité `volume`/lot contre une VRAIE réponse API (cTrader `ProtoOASymbolsListReq.symbol.lotSize` ; Match-Trader specs FundingPips). Toujours non vérifié.
 9. **Mise à jour 2026-09-10 : le forward-test NWOG "silencieux" décidé le 2026-09-09 (point ci-dessus, gardé pour l'historique) a été DÉPASSÉ par les événements, pas implémenté tel quel.** Une session suivante a d'abord codé NWOG en alerte visible (Phase 1), puis Esdras a demandé directement l'exécution automatique complète le jour même ("rend tout automatique... je vais pas avoir le temps pour trader") — voir sections "NWOG intégré en mode ALERTE" et sa suite plus haut. **État réel actuel : NWOG est en exécution automatique complète sur US100, pair à part entière de FVG/Divergence (même netting partagé, même garde-fous)**, pas en mode silencieux/observation. Ne pas recoder le mode silencieux sans lui redemander explicitement si c'est encore ce qu'elle veut.
    - **Piste de recherche sur la cible étendue (1:4/1:5) — toujours ouverte, pas reprise depuis** : voir la section "Question ouverte d'Esdras" plus haut (juste après "Cible étendue"). Vérifié empiriquement que 100% de la baisse du taux de gain à cible étendue vient de trades DÉJÀ gagnants qui redonnent tout jusqu'au stop d'origine — pas de nouvelles pertes directes. Piste proposée pour prédire à l'avance si un trade ira jusqu'à 1:4/1:5 : distance au prochain bassin de liquidité/swing opposé (ICT "draw on liquidity"), pour une cible DYNAMIQUE au lieu d'un multiple R fixe. Pas commencé.
@@ -5960,6 +6070,35 @@ Jusqu'ici, le plafond de gain n'existait que dans les scripts de simulation auto
 
 `npm test` : 948/948 (942 + 4 dans `guardrailEngine.test.js`, 2 dans `accountRegistry.test.js`). **Fichiers** : `scripts/runHaitiForexHistoricalChallengeSimulation.js` (nouveau), `src/engines/guardrailEngine.js`, `src/accountRegistry.js`, `test/guardrailEngine.test.js`, `test/accountRegistry.test.js`.
 
+## Support HTF (jour/semaine/mois) + confirmation par pattern de renversement — testé et rejeté — 2026-09-19 (suite)
+
+Esdras : "T'as entendu parler des daily supports, weekly and monthly support ? Ensuite confirme par une pattern de renversement genre doji, bullish engulfing etc ?" puis "Non, on drop HaitiForex. On teste cette idée sur notre infrastructure" — cohérent avec sa décision (voir l'entrée fusionnée juste en dessous) d'abandonner le challenge HaitiForex : le combo FVG/Judas Swing/CBDR/Silver Bullet reste en l'état, ce qui suit est une piste distincte testée sur l'infrastructure de backtest générale du projet, pas sur HaitiForex.
+
+**Mise en garde donnée avant tout code** : la croyance retail "un niveau touché 3 fois est plus fort" n'a pas été retenue - chaque touche consomme une partie de la liquidité resting sur ce niveau, donc plus de tests plausiblement AFFAIBLIT un niveau plutôt que de le renforcer. Ce qui est une idée distincte et réellement testable : la CONFLUENCE entre plusieurs timeframes indépendants (jour/semaine/mois, qui reflètent un positionnement accumulé sur des échelles de temps différentes, pas juste le même niveau revu plusieurs fois) confirmée par un pattern de chandelier de renversement.
+
+**Nouveau mécanisme `src/backtest/htfSupportReversal.js`** (méthode fixée AVANT de voir un seul résultat, même discipline que `equalHighsLows.js`/`starPatterns.js`) :
+- Niveaux : plus haut/bas de la période COMPLÈTE précédente (jour/semaine/mois - mêmes définitions PDH/PDL/PWH/PWL que la page "Niveaux du jour" de `dailyLevels.js`, plus l'équivalent mensuel PMH/PML), calculés en continu (une valeur par bougie, sans lookahead - jamais la période en cours).
+- Confluence : un niveau n'est tradable QUE si au moins un AUTRE timeframe s'accorde dessus à 0.1% près (même tolérance déjà utilisée par `equalHighsLows.js` pour ses niveaux "égaux" - pas un nouveau chiffre inventé ici).
+- Confirmation : sur la bougie qui touche le niveau confluent, un doji (corps <= 10% du range - même seuil que la variante "Doji Star" de `starPatterns.js`) OU un engulfing haussier/baissier (définition manuel standard, ex. Bulkowski/Investopedia - pas ajustée sur les données du projet).
+- Entrée à l'ouverture de la bougie suivante, stop au-delà de l'extrême de la bougie (et de la précédente pour un engulfing), cible fixe 1:3, timeout 480 bougies M15 (mêmes conventions que partout ailleurs).
+- Enregistré dans `labRegistry.js` (`htf-support-reversal`) - disponible dans le Labo du dashboard, testable en Lego avec les autres filtres.
+
+**Résultat (`scripts/runHtfSupportReversalStrategyAnalysis.js`, écran TRAIN avant 2024-01-01 / vérification TEST 2024-2025, 12 instruments)** :
+
+| Symbole | Trades train | WR train | Espérance train (R) | Trades test | WR test | Espérance test (R) | Verdict |
+|---|---|---|---|---|---|---|---|
+| US100 | 747 | 30.1% | +0.06 | 169 | 27.2% | +0.03 | ✅ tient (marginal) |
+| US500/GER40/EURUSD/AUDUSD | — | — | — | — | — | — | ⚠️ affaibli (signe contradictoire train/test) |
+| XAUUSD/GBPUSD/USDJPY/USDCAD/UKX/AUX/NZDJPY | — | — | négative | — | — | — | ❌ ne tient pas |
+
+**Verdict : rejeté.** 1 seul instrument sur 12 "tient" (US100, marginal), 7 échouent nettement, 4 "affaiblis" avec des signes contradictoires train/test (probablement du bruit, pas un edge réel). Les win rates observés (24-33%) tournent tous autour du seuil de rentabilité pour un R:R 1:3 (25% de breakeven) - aucun edge statistiquement démontré, cohérent avec la littérature académique sur les patterns de chandeliers isolés (peu ou pas d'edge significatif après coûts, ex. Marshall/Young/Rose 2006). Confirme l'avertissement donné avant l'implémentation : la confluence multi-timeframe + confirmation candle, prise seule, ne bat pas le hasard sur ce projet.
+
+**Tests ajoutés** (`test/htfSupportReversal.test.js`, 16 tests) : helpers purs (`isDoji`/`isBullishEngulfing`/`isBearishEngulfing`), détection d'événements (confluence day/week/month + doji/engulfing sur support et résistance), le garde-fou de confluence lui-même (un niveau où UN SEUL timeframe est présent ne déclenche jamais, même avec un pattern parfait - vérifié en cassant volontairement la condition : le test dédié échoue, confirmant qu'il attrape vraiment la régression), et la résolution des trades (`runHtfSupportReversalBacktest` - entrée/stop/cible/timeout).
+
+`npm test` : 964/964 (948 + 16 nouveaux). **Fichiers** : `src/backtest/htfSupportReversal.js` (nouveau), `src/backtest/dailyLevels.js` (`weekKeyOf` exporté, `monthKeyOf` ajouté), `src/backtest/labRegistry.js`, `scripts/runHtfSupportReversalStrategyAnalysis.js` (nouveau), `test/htfSupportReversal.test.js` (nouveau).
+
+**Prochaine étape possible si Esdras veut creuser encore** : au lieu d'un mécanisme autonome, tester la confluence HTF comme FILTRE additionnel sur le combo FVG/Judas Swing/CBDR/Silver Bullet déjà validé (via le Lego du Labo) - est-ce que exiger "signal près d'un niveau HTF confluent" améliore ou dégrade ce combo précis, plutôt que de le remplacer.
+
 ## 2026-09-19 (suite, terminé) — Probabilité de finir le challenge en cours (roadmap n° 1) : bout en bout, carte dashboard écrite
 
 Reprise de l'entrée "INACHEVÉ" plus haut, sur une branche fusionnée séparément avec le travail HaitiForex ci-dessus (voir le commit de fusion). Trouvé et corrigé au passage : **le mode démo n'alimentait jamais le solde du garde-fou** — `mockDataSource.js` appelait `account.strategyEngine.setBalance()` directement au lieu de `account.setBalance()` (la méthode d'`AccountRuntime` qui alimente AUSSI `guardrail.setBalance()`), contrairement à cTrader/MatchTrader qui passent tous les deux par `store.setBalance()`. Conséquence réelle, indépendante de cette fonctionnalité : le suivi objectif/drawdown global (`GuardrailEngine._overallDrawdownFloor`/`_targetBalance`) n'a jamais fonctionné pour un compte démo configuré avec un programme de prop firm. Corrigé (commit séparé), tous les tests de la branche restaient verts au moment du commit.
@@ -5977,3 +6116,41 @@ Piège rencontré en testant : `page.route()` de Playwright n'intercepte pas les
 ## 2026-09-19 (suite) — Hook git : `[skip render]` automatique sur les commits de documentation seule
 
 `.githooks/commit-msg` ajoute ` [skip render]` à la première ligne du message quand **tous** les fichiers indexés sont de la documentation (`*.md`, `docs/*`) — chaque push sur cette branche redéploie Render et un redéploiement redémarre le bot LIVE (oubli à la main le 2026-09-18). Un seul fichier non-doc dans le commit, ou un message qui contient déjà le tag : rien n'est touché. Testé dans un dépôt jetable sur les 4 cas. Activé automatiquement par `npm install` / `npm run prepare` (`git config core.hooksPath .githooks`, silencieux et sans échec si Render n'a pas de `.git`) ; dans un clone existant : `npm run prepare`. Ne protège que les commits faits avec ce clone configuré.
+
+## Support HTF + renversement, correction du mécanisme (la 1ère lecture était fausse) — testé et rejeté à nouveau — 2026-09-19 (suite)
+
+Esdras, après la première version (confluence jour+semaine+mois exigée simultanément, rejetée ci-dessus) : "Peut-être que tu n'as pas bien compris la stratégie. Genre le prix frappe un support 3 fois dans daily, weekly et monthly timeframe, n'importe lequel, ensuite on descend sur 4hr ou 1hr pour le doji ou bullish engulfing pour l'entrée." **Correction confirmée** : ce n'est PAS une confluence entre les 3 timeframes - c'est un niveau validé par **3 touches sur UNE SEULE** de ces timeframes (n'importe laquelle, indépendamment des deux autres), puis une descente sur une timeframe d'entrée plus basse (H1 ou H4) pour chercher le pattern de renversement qui déclenche l'entrée.
+
+**`src/backtest/htfSupportReversal.js` entièrement réécrit** (même fichier, mécanisme différent - l'ancienne version reposait sur une lecture erronée) :
+- Reconstruit les bougies Jour/Semaine/Mois à partir du M15 (mêmes clés calendaires NY que `dailyLevels.js`).
+- Sur CHAQUE timeframe séparément : détecte les pivots de swing (`detectSwingPoints`, lookback=5 - même détection que `marketStructure.js`/`equalHighsLows.js`), regroupe les pivots du même type à moins de 0.1% l'un de l'autre (même tolérance qu'`equalHighsLows.js`) en pools, qualifie un pool dès sa **3e** touche confirmée (`MIN_TOUCHES=3`, contre 2 pour EQH/EQL) - le niveau reste actif indéfiniment ensuite, pas consommé au premier retest (contrairement à EQH/EQL) : un niveau à 3 touches reste une zone structurelle.
+- Fusionne les niveaux qualifiés des 3 timeframes en une seule liste chronologique (avec leur timeframe d'origine gardée pour le reporting).
+- Reconstruit une bougie H1 OU H4 (`opts.entryTimeframe`, les deux testées) à partir du même M15 ; dès qu'elle touche un niveau déjà actif et forme un doji ou un engulfing, c'est un signal.
+- Exécution ramenée sur M15 (grain le plus fin) : entrée à l'ouverture de la première bougie M15 après la clôture de la bougie H1/H4 de confirmation, stop au-delà de son extrême, cible fixe 1:3, timeout 480 bougies M15.
+- Nouvelle fonction générique `resampleWithBoundaries()` (bucket par ms fixe OU par clé calendaire réelle, au choix de l'appelant) qui porte aussi `endIndexExclusive` — l'index M15 de la 1ère bougie du bucket SUIVANT, donc le mapping HTF→M15 sans lookahead ne demande plus de recalcul de date séparé.
+
+**Résultat (`scripts/runHtfSupportReversalStrategyAnalysis.js`, H1 ET H4, écran TRAIN avant 2024-01-01 / vérification TEST 2024-2025, 12 instruments = 24 lignes)** : **rejeté, encore plus nettement que la version précédente.** Sur les 24 combinaisons (12 instruments × 2 timeframes d'entrée), 15 n'ont pas assez de trades TEST pour conclure (souvent 0, faute de niveaux à 3 touches assez fréquents sur la fenêtre 2024-2025), et parmi les **9 restantes qui ont assez de données, ZÉRO ne "tient"** — 8 échouent nettement (espérance test négative), 1 seule "affaiblie" avec un signe contradictoire train/test (bruit). Aucune combinaison H1 ni H4 ne montre un edge confirmé. Les win rates (20-35%) restent proches ou sous le seuil de rentabilité 1:3 (25%).
+
+**Tests réécrits** (`test/htfSupportReversal.test.js`, 16 tests, même nombre mais logique différente) : `resampleWithBoundaries` (bucket ms fixe ET clé calendaire réelle), qualification à 3 touches sur la timeframe jour (support et résistance, doji et engulfing), **le garde-fou central lui-même** - seulement 2 touches ne qualifie JAMAIS un niveau même avec un pattern parfait ensuite (vérifié en cassant `MIN_TOUCHES` à 2 : le test dédié échoue, confirmant qu'il attrape vraiment la régression), et la résolution des trades. Fixture construite avec une bougie M15 par jour calendaire (mêmes valeurs OHLC servant à la fois de bougie "jour" et de bougie "H1" puisqu'espacées de 24h, donc toujours dans des buckets distincts) - simplifie la construction sans perdre en rigueur.
+
+`npm test` : 964/964 (même compte qu'avant - les 16 tests remplacent 1 pour 1 ceux de l'ancienne lecture). **Fichiers** : `src/backtest/htfSupportReversal.js` (réécrit), `scripts/runHtfSupportReversalStrategyAnalysis.js` (réécrit, teste H1 et H4), `test/htfSupportReversal.test.js` (réécrit).
+
+**Conclusion à donner à Esdras** : même la version correcte de l'idée (3 touches sur une seule timeframe, entrée sur H1/H4) ne montre aucun edge démontrable sur les données de ce projet - ce n'est pas une question de mauvaise implémentation de la première tentative, l'idée elle-même ne bat pas le hasard ici, dans ses deux lectures.
+
+## Comparaison 8 mécanismes vs 7 mécanismes (sans CBDR) + pyramidage — ET correction importante du rapport précédent — 2026-09-19
+
+Esdras : "avec les 8 strategy live, verifie [...] leur performance globale dans un compte 10k vs la performance sans les derniers ajouts et pyramid enable", corrigé ensuite pour reprendre la fenêtre des 7 mois + la semaine dernière (même fenêtre que la section précédente) plutôt que 8 semaines.
+
+**Correction d'un résultat annoncé la veille, pas balayée sous le tapis** : la simulation précédente ("passage réel", cible FTMO active) disait "drawdown max 10% jamais franchi" — vrai, mais UNIQUEMENT parce que la cible +10% avait été atteinte le 2026-07-06 et que le bot réel s'arrête de trader à ce moment-là (règle `profit_target_reached`). En désactivant ce blocage de cible pour cette nouvelle comparaison (nécessaire pour comparer deux scénarios sur toute la fenêtre sans que l'un s'arrête artificiellement avant l'autre), le MÊME combo à 8 mécanismes **franchit le drawdown trailing de 10% le 2026-09-02** (solde $17021.57 <= plancher $17098.79, calculé par le vrai `GuardrailEngine`, pas une approximation). Vérifié par une trace de solde indépendante (pic ~$18600 début septembre, repli ensuite) — cohérent avec un dépassement intraday. **Constat honnête, pas un bug** : le combo aurait "gagné" le challenge en juillet ET aurait ensuite fait sauter le compte en septembre s'il avait continué à trader après avoir gagné — exactement le genre de chose que ce garde-fou (arrêt automatique à la cible) existe pour éviter en réel.
+
+**Nouveau script `scripts/runComboVsPyramidAccountImpact.js`** — deux scénarios, mêmes données (fusion réelle 2026-02-10→2026-09-17, comme la section précédente), mêmes garde-fous réels (via `accountRegistry.buildEffectiveConfig`), cible FTMO désactivée dans les DEUX passages pour une comparaison de performance pure sur fenêtre fixe (perte quotidienne 3%/drawdown 10% restent actifs) :
+- **A — 8 mécanismes actuels (avec CBDR), pyramidage OFF** (état de production actuel) : 347 trades, WR 29.1%, solde final **+70.22%** ($17021.57), drawdown 10% franchi le 2026-09-02 (voir ci-dessus).
+- **B — 7 mécanismes sans CBDR (le dernier ajouté), pyramidage ON** : seulement 87 trades, WR 21.8%, solde final **-0.54%** ($9946.15), drawdown 10% franchi ENCORE PLUS TÔT (2026-06-29).
+
+**Pourquoi B a tellement moins de trades (87 contre 347), pas juste "moins CBDR"** : retirer CBDR n'explique que 47 trades de moins. Le reste vient d'un effet de compétition pour le quota `maxTradesPerDay: 3` (garde-fou du bot, PARTAGÉ entre tous les mécanismes, pas par symbole) — chaque trade pyramidé compte comme un trade de plus dans ce même quota serré de 3/jour, donc active plus souvent la limite journalière et évince les AUTRES mécanismes ce jour-là. Le pyramidage lui-même : 20 trades, 1 seul gagnant, espérance -0.76R, -$812.82 net — nettement pire que la recherche historique de ce projet sur le pyramidage (50-60% WR attendu une fois le filtre de cooldown appliqué, voir `config.js`'s `pyramid` comment) ; échantillon de 20 trades sur une seule fenêtre de 7 mois, pas assez pour trancher si c'est cette fenêtre précise qui est défavorable ou un vrai signal — à ne pas généraliser sans un test plus large.
+
+**Limite méthodologique assumée sur le pyramidage** : `LiveStrategyEngine` ne résout pas lui-même les trades pyramidés (une fois la demande envoyée, "le moteur n'a plus rien à suivre" — la résolution réelle passe par les événements du broker en production). Simulé ici : remplissage immédiat au prix calculé, résolution par scan des bougies suivantes (stop/cible/timeout 480 bougies) — même convention que tous les autres modules de backtest du projet, mais reconstruit à la main pour ce script, pas la logique de production elle-même.
+
+**Semaine dernière (2026-09-10→17)** : A = 12 trades/+$1008.84 (identique au rapport précédent). B = **0 trade** cette semaine précise sur ce passage.
+
+**Fichiers** : `scripts/runComboVsPyramidAccountImpact.js` (nouveau), `data/real-data-2026-02-to-09/combo-vs-pyramid-account-impact.md` (nouveau). Aucun changement de code live. `npm test` : 714/714 (scripts d'analyse uniquement, aucun fichier source modifié).
