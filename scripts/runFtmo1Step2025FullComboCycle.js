@@ -211,11 +211,53 @@ function main() {
     console.log(`| ${c.n} | ${fmtDate(c.startTime)} | ${fmtDate(c.endTime)} | ${days} | ${c.trades.length} | ${c.outcome} | $${c.balance.toFixed(2)} |`);
   }
 
-  console.log('\nDétail des trades du premier cycle (exemple) :');
-  console.log('| Date entrée | Symbole | Mécanisme | Sens | PnL | Solde après |');
-  console.log('|---|---|---|---|---|---|');
-  for (const t of cycles[0].trades) {
-    console.log(`| ${fmtDate(t.entryTime)} | ${t.symbol} | ${t.source} | ${t.direction} | ${fmtMoney(t.pnl)} | $${t.balanceAfter.toFixed(2)} |`);
+  // Esdras: "regarde pourquoi on a bust en mars a mai" - full post-mortem
+  // for every busted cycle: per-mechanism/symbol breakdown (which source
+  // actually did the damage), the real trailing-EOD floor at bust time
+  // (not just "-10% of starting balance" - trailing-eod means the floor
+  // is 10% below the highest END-OF-DAY balance ever reached IN this
+  // cycle, so a cycle that ran up first has a HIGHER floor than $9000),
+  // the longest losing streak, and the full trade list.
+  for (const c of busts) {
+    console.log(`\n--- Post-mortem cycle ${c.n} (${fmtDate(c.startTime)} -> ${fmtDate(c.endTime)}, ${c.trades.length} trades) ---`);
+
+    const bySource = new Map();
+    for (const t of c.trades) {
+      if (!bySource.has(t.source)) bySource.set(t.source, []);
+      bySource.get(t.source).push(t);
+    }
+    console.log('\nPar mécanisme :');
+    console.log('| Mécanisme | Symbole(s) | Trades | Gagnants | PnL |');
+    console.log('|---|---|---|---|---|');
+    for (const [source, list] of [...bySource.entries()].sort((a, b) => a[1].reduce((s, t) => s + t.pnl, 0) - b[1].reduce((s, t) => s + t.pnl, 0))) {
+      const syms = [...new Set(list.map((t) => t.symbol))].join(', ');
+      const w = list.filter((t) => t.pnl > 0).length;
+      const pnl = list.reduce((s, t) => s + t.pnl, 0);
+      console.log(`| ${source} | ${syms} | ${list.length} | ${w} | ${fmtMoney(pnl)} |`);
+    }
+
+    // Longest consecutive losing streak (by trade sequence, not calendar).
+    let streak = 0, maxStreak = 0, maxStreakEnd = null, maxStreakLossUsd = 0, runLossUsd = 0;
+    let peakBalance = STARTING_BALANCE;
+    let peakDay = fmtDate(c.startTime);
+    for (const t of c.trades) {
+      if (t.balanceAfter > peakBalance) { peakBalance = t.balanceAfter; peakDay = fmtDate(t.exitTime); }
+      if (t.pnl < 0) {
+        streak++; runLossUsd += t.pnl;
+        if (streak > maxStreak) { maxStreak = streak; maxStreakEnd = t.exitTime; maxStreakLossUsd = runLossUsd; }
+      } else {
+        streak = 0; runLossUsd = 0;
+      }
+    }
+    console.log(`\nPic du cycle : $${peakBalance.toFixed(2)} (atteint le ${peakDay}) -> plancher trailing-EOD réel = $${(peakBalance * 0.9).toFixed(2)} (10% sous ce pic, pas sous le solde de départ)`);
+    console.log(`Plus longue série de pertes consécutives : ${maxStreak} trades, ${fmtMoney(maxStreakLossUsd)}, se terminant le ${fmtDate(maxStreakEnd)}`);
+
+    console.log('\nTous les trades du cycle :');
+    console.log('| Date entrée | Symbole | Mécanisme | Sens | Résultat | PnL | Solde après |');
+    console.log('|---|---|---|---|---|---|---|');
+    for (const t of c.trades) {
+      console.log(`| ${fmtDate(t.entryTime)} | ${t.symbol} | ${t.source} | ${t.direction} | ${t.pnl >= 0 ? 'win' : 'loss'} | ${fmtMoney(t.pnl)} | $${t.balanceAfter.toFixed(2)} |`);
+    }
   }
 }
 
