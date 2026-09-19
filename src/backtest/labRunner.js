@@ -7,6 +7,7 @@
 import { LAB_STRATEGIES } from './labRegistry.js';
 import { summarizeTrades } from './backtestEngine.js';
 import { DEFAULT_SPREADS } from './transactionCosts.js';
+import { expectancyStats } from './labAnalytics.js';
 
 // Same convention as every scripts/run<Name>StrategyAnalysis.js in this
 // project: a trade whose stop distance is too close to the spread is not a
@@ -107,6 +108,9 @@ export function flattenTrainTestForScreen(trainTest) {
     expectancyR: trainTest.test.summary.expectancyR,
     finalEquityR: trainTest.test.summary.finalEquityR,
     profitFactor: trainTest.test.summary.profitFactor,
+    // Same expectancy with its 95 % interval, so a table can say "holds, but
+    // statistically indistinguishable from zero" instead of just "holds".
+    testExpectancy: expectancyStats(trainTest.test.trades),
     verdict: trainTest.verdict,
   };
 }

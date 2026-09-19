@@ -223,6 +223,18 @@
         <div class="form-field"><label for="pf-mindays">Jours minimum</label><input type="text" id="pf-mindays" inputmode="numeric" value="0" /></div>
         <div class="form-field" style="flex:0 0 auto;min-width:0;"><button type="button" class="run-btn" id="pf-btn" onclick="runChallenge()">Simuler 4 000 challenges</button></div>
       </div>
+      <details class="card" id="pf-multi" style="margin:10px 0;">
+        <summary><strong>Plusieurs stratégies ensemble, avec les garde-fous du bot</strong> <span class="meta">— optionnel</span></summary>
+        <p class="hint">Sans rien cocher, la stratégie choisie tout en haut est simulée seule. Coche 2 stratégies ou plus pour les faire trader ensemble sur ce symbole ; le « poids » multiplie le risque d'une stratégie (0,5 = moitié moins). Avec les garde-fous, chaque trade est d'abord filtré comme le fait le bot en vrai : nombre de trades clôturés par jour, pause après une perte, perte journalière du bot, une seule position ouverte par symbole. Sans eux, tous les signaux sont pris — un chiffre trop beau.</p>
+        <div class="strat-checks" id="pf-checks"></div>
+        <label class="check"><input type="checkbox" id="pf-guard" checked /> Appliquer les garde-fous du bot</label>
+        <div class="form-row">
+          <div class="form-field"><label for="pf-g-max">Trades max / jour</label><input type="text" id="pf-g-max" inputmode="numeric" value="3" /></div>
+          <div class="form-field"><label for="pf-g-cool">Pause après une perte (min)</label><input type="text" id="pf-g-cool" inputmode="numeric" value="30" /></div>
+          <div class="form-field"><label for="pf-g-loss">Perte journalière du bot (%)</label><input type="text" id="pf-g-loss" inputmode="decimal" value="2" /></div>
+          <div class="form-field"><label class="check" style="margin-top:18px;"><input type="checkbox" id="pf-g-one" checked /> Une seule position ouverte par symbole</label></div>
+        </div>
+      </details>
       <div id="pf-out"></div>
     </div>
 
@@ -330,9 +342,31 @@ function verdictBadge(verdict) {
   const v = VERDICT_LABELS[verdict] || VERDICT_LABELS['not-enough-trades'];
   return `<span class="metric-value ${v.cls}" style="font-size:13px;">${v.text}</span>`;
 }
-function verdictCell(verdict) {
+// 95 % confidence interval of an average result (see labAnalytics.expectancyStats).
+const sgn = (v) => (v >= 0 ? '+' : '') + fmt(v);
+function ciText(st) {
+  if (!st || !st.ci95) return 'trop peu de trades pour une marge d\'erreur';
+  return `${sgn(st.ci95[0])} à ${sgn(st.ci95[1])}R`;
+}
+// One line saying whether the average can be told apart from luck, and if not what it would take.
+function confidenceLine(st) {
+  if (!st || st.mean === null) return '';
+  if (!st.ci95) return `Marge d'erreur : ${ciText(st)}.`;
+  if (st.significant) return `Intervalle à 95 % : ${ciText(st)} — <span class="win">distinct de zéro</span>.`;
+  const more = st.moreTradesNeeded === null ? 'l\'espérance est négative ou nulle : aucun nombre de trades ne la confirmera'
+    : `il faudrait environ ${fmt(st.moreTradesNeeded, 0)} trades de plus au rythme actuel pour le confirmer`;
+  return `Intervalle à 95 % : ${ciText(st)} — <span class="loss">pas distinguable de zéro</span> (${more}).`;
+}
+function ciBadge(st) {
+  if (!st || !st.ci95) return '<span class="meta">—</span>';
+  return `<span class="${st.significant ? 'win' : 'meta'}" title="${ciText(st)}">${st.significant ? '✓ ' : '≈0 '}<span class="meta">${ciText(st)}</span></span>`;
+}
+function verdictCell(verdict, expectancyStats) {
   const v = VERDICT_LABELS[verdict] || VERDICT_LABELS['not-enough-trades'];
-  return `<span class="${v.cls}">${v.text}</span>`;
+  // "Holds" out of sample is only news if the average is also distinguishable from luck.
+  const caveat = verdict === 'holds' && expectancyStats && expectancyStats.ci95 && !expectancyStats.significant
+    ? ' <span class="meta" title="La marge d\'erreur à 95 % inclut zéro : il faut plus de trades pour conclure.">⚠ non significatif</span>' : '';
+  return `<span class="${v.cls}">${v.text}</span>${caveat}`;
 }
 
 let labMeta = null;
@@ -530,6 +564,7 @@ async function runLab() {
         <div class="metric-tile"><div class="metric-label">Drawdown max</div><div class="metric-value loss">-${fmt(test.maxDrawdownR)}R</div></div>
         <div class="metric-tile"><div class="metric-label">Total en R (test)</div><div class="metric-value ${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(test.finalEquityR)}R</div></div>
       </div>
+      <div class="meta" style="margin-bottom:6px;">${confidenceLine(data.test.expectancy)}</div>
       <div class="meta">Pour référence — entraînement (${train.totalSignals} trades avant ${cutoffLabel}) : espérance ${train.expectancyR >= 0 ? '+' : ''}${fmt(train.expectancyR)}R, total ${train.finalEquityR >= 0 ? '+' : ''}${fmt(train.finalEquityR)}R.</div>
     `;
     equityEl.innerHTML = renderEquityCurve(data.test.equityCurve);
@@ -591,14 +626,15 @@ async function runScreen() {
           <td>${r.testSignals} <span class="meta">(${r.trainSignals} entraînement)</span></td>
           <td>${r.winRate === null ? '—' : fmt(r.winRate * 100, 0) + '%'}</td>
           <td class="${r.expectancyR >= 0 ? 'win' : 'loss'}">${r.expectancyR === null ? '—' : (r.expectancyR >= 0 ? '+' : '') + fmt(r.expectancyR)}R</td>
+          <td>${ciBadge(r.testExpectancy)}</td>
           <td class="${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(r.finalEquityR)}R</td>
-          <td>${verdictCell(r.verdict)}</td>
+          <td>${verdictCell(r.verdict, r.testExpectancy)}</td>
         </tr>
       `;
     }).join('');
     tableEl.innerHTML = `
       <table class="strategy-table">
-        <thead><tr><th>Symbole</th><th>Trades (test)</th><th>Taux</th><th>Espérance (test)</th><th>Total R (test)</th><th>Verdict</th></tr></thead>
+        <thead><tr><th>Symbole</th><th>Trades (test)</th><th>Taux</th><th>Espérance (test)</th><th>Marge d'erreur 95 %</th><th>Total R (test)</th><th>Verdict</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     `;
@@ -638,14 +674,15 @@ async function runStrategyScreen() {
           <td>${r.testSignals} <span class="meta">(${r.trainSignals} entraînement)</span></td>
           <td>${r.winRate === null ? '—' : fmt(r.winRate * 100, 0) + '%'}</td>
           <td class="${r.expectancyR >= 0 ? 'win' : 'loss'}">${r.expectancyR === null ? '—' : (r.expectancyR >= 0 ? '+' : '') + fmt(r.expectancyR)}R</td>
+          <td>${ciBadge(r.testExpectancy)}</td>
           <td class="${netWin ? 'win' : 'loss'}">${netWin ? '+' : ''}${fmt(r.finalEquityR)}R</td>
-          <td>${verdictCell(r.verdict)}</td>
+          <td>${verdictCell(r.verdict, r.testExpectancy)}</td>
         </tr>
       `;
     }).join('');
     tableEl.innerHTML = `
       <table class="strategy-table">
-        <thead><tr><th>Stratégie</th><th>Trades (test)</th><th>Taux</th><th>Espérance (test)</th><th>Total R (test)</th><th>Verdict</th></tr></thead>
+        <thead><tr><th>Stratégie</th><th>Trades (test)</th><th>Taux</th><th>Espérance (test)</th><th>Marge d'erreur 95 %</th><th>Total R (test)</th><th>Verdict</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     `;
@@ -675,10 +712,18 @@ function renderAdvancedForm(data) {
   const keep = presetEl.value;
   presetEl.innerHTML = options.join('');
   presetEl.value = [...presetEl.options].some((o) => o.value === keep) ? keep : '';
+  const pfChecks = document.getElementById('pf-checks');
+  if (!pfChecks.children.length) {
+    pfChecks.innerHTML = data.strategies.map((s) => `<label><input type="checkbox" value="${s.id}" onchange="limitChallengeChecks(this)" /> ${s.label} <input type="text" class="pf-w" data-id="${s.id}" value="1" inputmode="decimal" title="poids du risque" style="width:44px;padding:3px 5px;" /></label>`).join('');
+  }
   const checks = document.getElementById('pt-checks');
   if (!checks.children.length) {
     checks.innerHTML = data.strategies.map((s) => `<label><input type="checkbox" value="${s.id}" onchange="limitPortfolioChecks(this)" /> ${s.label}</label>`).join('');
   }
+}
+
+function limitChallengeChecks(box) {
+  if (document.querySelectorAll('#pf-checks input[type=checkbox]:checked').length > 6) box.checked = false;
 }
 
 function limitPortfolioChecks(box) {
@@ -731,8 +776,16 @@ async function runChallenge() {
   out.innerHTML = '<div class="meta">Calcul en cours (quelques secondes, jusqu\'à ~1 min sur le serveur)…</div>';
   const v = (id) => document.getElementById(id).value.trim().replace(',', '.');
   try {
+    const ticked = [...document.querySelectorAll('#pf-checks input[type=checkbox]:checked')].map((b) => b.value);
+    const strategyIds = ticked.length ? ticked : [selectedRun().strategyId];
+    const weights = {};
+    for (const id of strategyIds) weights[id] = document.querySelector(`#pf-checks .pf-w[data-id="${id}"]`)?.value.trim().replace(',', '.') || '1';
+    const guardrails = document.getElementById('pf-guard').checked ? {
+      maxTradesPerDay: v('pf-g-max'), cooldownMinutesAfterLoss: v('pf-g-cool'), dailyLossLimitPct: v('pf-g-loss'), oneOpenPerSymbol: document.getElementById('pf-g-one').checked,
+    } : null;
     const data = await postAnalysis('challenge', {
-      ...selectedRun(),
+      symbol: selectedRun().symbol,
+      strategyIds, weights, ...(guardrails ? { guardrails } : {}),
       sample: document.getElementById('pf-sample').value,
       params: {
         targetPct: v('pf-target'), dailyLossLimitPct: v('pf-daily'), maxDrawdownPct: v('pf-dd'), maxDrawdownType: document.getElementById('pf-ddtype').value,
@@ -747,13 +800,15 @@ async function runChallenge() {
     const seg = (n, color, title) => `<div style="width:${(n / data.runs) * 100}%;background:${color}" title="${title}"></div>`;
     const good = data.passRate >= 0.5;
     out.innerHTML = `
-      <div class="meta" style="margin-bottom:8px;">${selectedLabel()} — ${data.tradeCount} trades sur ${data.tradingDays} jours de trading (${data.sample === 'test' ? 'période test' : 'tout l\'historique'}), espérance ${data.expectancyR >= 0 ? '+' : ''}${fmt(data.expectancyR)}R par trade.</div>
+      <div class="meta" style="margin-bottom:8px;">${data.perStrategy ? data.perStrategy.map((x) => x.label + (x.weight !== 1 ? ` ×${fmt(x.weight, 1)}` : '')).join(' + ') + ' — ' + document.getElementById('lab-symbol').value : selectedLabel()} — ${data.tradeCount} trades sur ${data.tradingDays} jours de trading (${data.sample === 'test' ? 'période test' : 'tout l\'historique'}), espérance ${data.expectancyR >= 0 ? '+' : ''}${fmt(data.expectancyR)}R par trade.</div>
+      <div class="meta" style="margin-bottom:8px;">${confidenceLine(data.expectancy)}</div>
       <div class="metric-tiles">
         <div class="metric-tile"><div class="metric-label">Challenges réussis</div><div class="metric-value ${good ? 'win' : 'loss'}">${pct(data.passRate)}</div></div>
         <div class="metric-tile"><div class="metric-label">Compte cassé</div><div class="metric-value loss">${pct(data.failRate)}</div></div>
         <div class="metric-tile"><div class="metric-label">Jours pour réussir (médiane)</div><div class="metric-value">${data.daysToPass.median ?? '—'}</div></div>
         <div class="metric-tile"><div class="metric-label">…dans 90 % des cas</div><div class="metric-value">${data.daysToPass.p90 ?? '—'}</div></div>
       </div>
+      ${data.perStrategy && data.guardrails ? `<div class="meta" style="margin-bottom:10px;">Garde-fous du bot : sur <strong>${data.offeredTrades}</strong> signaux proposés, <strong>${data.acceptedTrades}</strong> auraient été pris (${pct(data.acceptedTrades / data.offeredTrades)}). ${data.perStrategy.map((x) => `${x.label} : ${x.accepted}/${x.offered}`).join(' · ')}.</div>` : ''}
       <div class="stack-bar">
         ${seg(c.pass, 'var(--green)', 'Réussis')}${seg(c.timeout, 'var(--amber)', 'Temps écoulé')}${seg(c.failDaily, '#c0392b', 'Perte journalière')}${seg(c.failDrawdown, 'var(--red)', 'Drawdown max')}
       </div>
@@ -823,7 +878,7 @@ async function runPortfolio() {
     const data = await postAnalysis('portfolio', { symbol: document.getElementById('lab-symbol').value, strategyIds: ids }, btn, 'Calcul…', 'Analyser ce portefeuille');
     const c = data.combined;
     const short = (label) => (label.length > 16 ? `${label.slice(0, 15)}…` : label);
-    const stratRows = data.strategies.map((s) => `<tr><td>${s.label}</td><td>${s.trades}</td><td class="${s.expectancyR >= 0 ? 'win' : 'loss'}">${s.expectancyR === null ? '—' : (s.expectancyR >= 0 ? '+' : '') + fmt(s.expectancyR) + 'R'}</td><td class="${s.totalR >= 0 ? 'win' : 'loss'}">${s.totalR >= 0 ? '+' : ''}${fmt(s.totalR)}R</td><td class="loss">-${fmt(s.maxDrawdownR)}R</td></tr>`).join('');
+    const stratRows = data.strategies.map((s) => `<tr><td>${s.label}</td><td>${s.trades}</td><td class="${s.expectancyR >= 0 ? 'win' : 'loss'}">${s.expectancyR === null ? '—' : (s.expectancyR >= 0 ? '+' : '') + fmt(s.expectancyR) + 'R'}</td><td>${ciBadge(s.expectancy)}</td><td class="${s.totalR >= 0 ? 'win' : 'loss'}">${s.totalR >= 0 ? '+' : ''}${fmt(s.totalR)}R</td><td class="loss">-${fmt(s.maxDrawdownR)}R</td></tr>`).join('');
     const corrHead = `<tr><th></th>${data.strategies.map((s) => `<th>${short(s.label)}</th>`).join('')}</tr>`;
     const corrRows = data.strategies.map((s, i) => `<tr><th style="text-align:left;">${short(s.label)}</th>${data.correlation[i].map((v, j) => `<td style="background:${i === j ? 'var(--bg-inset)' : corrColor(v)}">${v === null ? 'n/a' : fmt(v)}</td>`).join('')}</tr>`).join('');
     const red = data.drawdownReduction;
@@ -838,10 +893,11 @@ async function runPortfolio() {
         <div class="metric-tile"><div class="metric-label">Corrélation moyenne</div><div class="metric-value">${data.avgCorrelation === null ? '—' : fmt(data.avgCorrelation)}</div></div>
         <div class="metric-tile"><div class="metric-label">Positions simultanées max</div><div class="metric-value">${c.maxConcurrent}</div></div>
       </div>
+      <div class="meta" style="margin-bottom:6px;">Portefeuille combiné — ${confidenceLine(c.expectancy)}</div>
       <div class="meta" style="margin-bottom:6px;">« Gain sur le drawdown » : de combien le drawdown du portefeuille est plus petit que la somme de ceux de chaque stratégie (0 % = aucune protection mutuelle). « Positions simultanées max » : le plus de trades ouverts en même temps, à garder en tête pour le risque total.</div>
       <div class="metric-tiles">${half(data.train, 'Entraînement')}${half(data.test, 'Test (hors échantillon)')}</div>
       ${renderEquityCurve(data.equityCurve)}
-      <table class="strategy-table" style="margin-bottom:14px;"><thead><tr><th>Stratégie</th><th>Trades</th><th>Espérance</th><th>Total R</th><th>Drawdown max</th></tr></thead><tbody>${stratRows}</tbody></table>
+      <table class="strategy-table" style="margin-bottom:14px;"><thead><tr><th>Stratégie</th><th>Trades</th><th>Espérance</th><th>Marge d'erreur 95 %</th><th>Total R</th><th>Drawdown max</th></tr></thead><tbody>${stratRows}</tbody></table>
       <div class="meta" style="margin-bottom:6px;">Corrélation des résultats journaliers (jours où au moins l'une des deux trade). Vert = se compensent, rouge = bougent ensemble, n/a = trop peu de jours communs.</div>
       <table class="strategy-table corr" style="min-width:0;"><thead>${corrHead}</thead><tbody>${corrRows}</tbody></table>`;
   } catch (err) {

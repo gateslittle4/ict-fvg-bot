@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mulberry32, normalizeChallengeParams, groupTradesByDay, simulateChallenge, buildHeatmap, analyzePortfolio } from '../src/backtest/labAnalytics.js';
+import { mulberry32, normalizeChallengeParams, groupTradesByDay, simulateChallenge, buildHeatmap, analyzePortfolio, applyGuardrailsToDay, normalizeGuardrails, simulateMultiChallenge, DEFAULT_GUARDRAILS } from '../src/backtest/labAnalytics.js';
 import { ImportError } from '../src/backtest/m1Import.js';
 
 const DAY = 86400000;
@@ -144,4 +144,119 @@ test('analyzePortfolio: splits the combined result into train and test halves', 
   assert.equal(p.train.trades, 3);
   assert.equal(p.test.trades, 2);
   assert.equal(p.test.totalR, -2);
+});
+
+// --- guardrails / multi-strategy challenge ------------------------------------
+
+const MINUTE = 60000;
+// A trade at `startMin` minutes after midnight lasting `lenMin`, worth `r`.
+const tr = (startMin, lenMin, r, id = 'a') => ({ id, entryTime: MON + startMin * MINUTE, exitTime: MON + (startMin + lenMin) * MINUTE, r });
+const G = { maxTradesPerDay: 3, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 2, oneOpenPerSymbol: true };
+
+test('normalizeGuardrails: defaults match the live bot (3 trades, 30 min, 2 %, one open per symbol)', () => {
+  assert.deepEqual(normalizeGuardrails({}), { maxTradesPerDay: 3, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 2, oneOpenPerSymbol: true });
+  assert.deepEqual(normalizeGuardrails({}), DEFAULT_GUARDRAILS);
+  assert.equal(normalizeGuardrails({ oneOpenPerSymbol: false }).oneOpenPerSymbol, false);
+  assert.throws(() => normalizeGuardrails({ maxTradesPerDay: 0 }), ImportError);
+});
+
+test('applyGuardrailsToDay: the day stops after maxTradesPerDay CLOSED trades', () => {
+  const day = [0, 60, 120, 180, 240].map((m) => tr(m, 10, 1));
+  assert.equal(applyGuardrailsToDay(day, G, 1).length, 3);
+});
+
+test('applyGuardrailsToDay: open trades do not count toward the cap (the project\'s documented semantics) - only "one open per symbol" holds them back', () => {
+  const overlapping = [0, 1, 2, 3, 4].map((m) => tr(m, 600, 1)); // all still open when the next signal fires
+  assert.equal(applyGuardrailsToDay(overlapping, { ...G, oneOpenPerSymbol: false }, 1).length, 5);
+  assert.equal(applyGuardrailsToDay(overlapping, G, 1).length, 1);
+});
+
+test('applyGuardrailsToDay: after a loss the next entry waits out the cooldown, measured from the CLOSE of that loss', () => {
+  const day = [tr(0, 10, -1), tr(20, 10, 1), tr(41, 10, 1)]; // loss closes at 10 -> entries before minute 40 are refused
+  const kept = applyGuardrailsToDay(day, G, 0.5); // 0.5 % risk: one -1R loss is only -0.5 %, far from the daily limit
+  assert.deepEqual(kept.map((t) => t.entryTime - MON), [0, 41 * MINUTE]);
+});
+
+test('applyGuardrailsToDay: once today\'s closed loss reaches the daily limit, nothing more is taken', () => {
+  // two -1R losses at 1 % risk = -2 % = the limit; the third trade (after cooldown) is refused
+  const day = [tr(0, 10, -1), tr(60, 10, -1), tr(200, 10, 1)];
+  const kept = applyGuardrailsToDay(day, { ...G, maxTradesPerDay: 10 }, 1);
+  assert.equal(kept.length, 2);
+});
+
+test('simulateMultiChallenge: guardrails thin the offered trades and say by how much, per strategy', () => {
+  const trades = (id, offset) => Array.from({ length: 40 }, (_, d) => Array.from({ length: 4 }, (_, k) => ({ entryTime: MON + d * DAY + (offset + k * 90) * MINUTE, exitTime: MON + d * DAY + (offset + k * 90 + 10) * MINUTE, rMultiple: 0.5 }))).flat();
+  const by = { a: { label: 'A', trades: trades('a', 0) }, b: { label: 'B', trades: trades('b', 30) } };
+  const free = simulateMultiChallenge(by, RULES);
+  const gated = simulateMultiChallenge(by, RULES, { guardrails: {} });
+  assert.equal(free.offeredTrades, 320);
+  assert.equal(free.acceptedTrades, 320); // no guardrails: every signal is taken
+  assert.equal(gated.offeredTrades, 320);
+  assert.ok(gated.acceptedTrades < 320 && gated.acceptedTrades >= 40 * 3 - 40, `accepted ${gated.acceptedTrades}`);
+  assert.equal(gated.perStrategy.reduce((n, s) => n + s.accepted, 0), gated.acceptedTrades);
+  assert.equal(gated.guardrails.maxTradesPerDay, 3);
+});
+
+test('simulateMultiChallenge: a strategy\'s risk weight scales its results', () => {
+  const t = Array.from({ length: 40 }, (_, d) => ({ entryTime: MON + d * DAY, exitTime: MON + d * DAY + 10 * MINUTE, rMultiple: 1 }));
+  const double = simulateMultiChallenge({ a: { trades: t } }, RULES, { weights: { a: 2 } });
+  const single = simulateMultiChallenge({ a: { trades: t } }, RULES);
+  assert.equal(single.daysToPass.median, 10); // +1 % a day
+  assert.equal(double.daysToPass.median, 5); // +2 % a day
+  assert.equal(double.perStrategy[0].weight, 2);
+});
+
+test('simulateMultiChallenge: too few accepted trades is reported as insufficient, not simulated', () => {
+  const t = [{ entryTime: MON, exitTime: MON + MINUTE, rMultiple: 1 }];
+  assert.equal(simulateMultiChallenge({ a: { trades: t } }, RULES, { guardrails: {} }).insufficient, true);
+});
+
+// --- confidence intervals -------------------------------------------------------
+
+import { expectancyStats } from '../src/backtest/labAnalytics.js';
+
+test('expectancyStats: nothing, or fewer than 10 trades, gives no interval (never a confident-looking number on scraps)', () => {
+  assert.equal(expectancyStats([]).n, 0);
+  const few = expectancyStats([1, 2, -1]);
+  assert.equal(few.ci95, null);
+  assert.equal(few.significant, false);
+  assert.equal(few.mean, 2 / 3);
+});
+
+test('expectancyStats: a clear edge is significant and needs no more trades', () => {
+  const r = expectancyStats(Array.from({ length: 100 }, (_, i) => (i % 2 ? 0 : 2))); // mean 1, sd ~1
+  assert.ok(Math.abs(r.mean - 1) < 1e-9);
+  assert.ok(r.ci95[0] > 0.75 && r.ci95[1] < 1.25);
+  assert.equal(r.significant, true);
+  assert.equal(r.moreTradesNeeded, 0);
+});
+
+test('expectancyStats: a small edge on 100 trades is NOT significant, and the answer says how many more it would take', () => {
+  const r = expectancyStats(Array.from({ length: 100 }, (_, i) => (i % 2 ? -0.9 : 1.1))); // mean 0.1, sd ~1
+  assert.ok(Math.abs(r.mean - 0.1) < 1e-9);
+  assert.ok(r.ci95[0] < 0 && r.ci95[1] > 0);
+  assert.equal(r.significant, false);
+  const expected = Math.ceil((1.96 * r.sd / 0.1) ** 2);
+  assert.equal(r.tradesToConfirm, expected);
+  assert.equal(r.moreTradesNeeded, expected - 100);
+  assert.ok(expected > 300 && expected < 450);
+});
+
+test('expectancyStats: a losing average can never be "confirmed" (no trade count is promised)', () => {
+  const r = expectancyStats(Array.from({ length: 50 }, (_, i) => (i % 2 ? -1.2 : 1)));
+  assert.equal(r.tradesToConfirm, null);
+  assert.equal(r.moreTradesNeeded, null);
+});
+
+test('expectancyStats: accepts trade objects as well as plain numbers, skipping non-finite R', () => {
+  const objs = Array.from({ length: 20 }, (_, i) => ({ rMultiple: i % 2 ? 1 : 0 })).concat([{ rMultiple: NaN }]);
+  assert.equal(expectancyStats(objs).n, 20);
+});
+
+test('simulateChallenge and portfolio results carry the interval too', () => {
+  const t = dailyTrades(Array.from({ length: 40 }, (_, i) => (i % 2 ? 0 : 2)));
+  assert.equal(simulateChallenge(t, RULES).expectancy.n, 40);
+  const p = analyzePortfolio({ a: { label: 'A', train: t, test: [] } });
+  assert.equal(p.strategies[0].expectancy.n, 40);
+  assert.equal(p.combined.expectancy.n, 40);
 });

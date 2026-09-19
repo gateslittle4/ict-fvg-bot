@@ -14,7 +14,7 @@ import { loadCandlesFromCsv } from './csvLoader.js';
 import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF } from './labRunner.js';
 import { listLabStrategies } from './labRegistry.js';
 import { importIntoDataset } from './labDatasets.js';
-import { simulateChallenge, buildHeatmap, analyzePortfolio } from './labAnalytics.js';
+import { simulateChallenge, simulateMultiChallenge, buildHeatmap, analyzePortfolio, expectancyStats } from './labAnalytics.js';
 import { ImportError } from './m1Import.js';
 
 const IDLE_RELEASE_MS = 60_000;
@@ -42,6 +42,7 @@ function scheduleRelease() {
 function toPayload(result) {
   return {
     summary: result.summary,
+    expectancy: expectancyStats(result.trades),
     equityCurve: result.equityCurve,
     droppedAsNonViable: result.droppedAsNonViable,
     recentTrades: result.trades.slice(-100).reverse(),
@@ -101,10 +102,23 @@ const handlers = {
   },
 
   // Monte Carlo of one strategy's trades against prop-firm rules.
-  analyzeChallenge({ sample = 'all', params, ...run }) {
-    const { train, test, candleCount } = tradesTrainTest(run);
-    const trades = sample === 'test' ? test : [...train, ...test];
-    return { candleCount, sample, ...simulateChallenge(trades, params) };
+  // With `strategyIds` (2+) the strategies are traded together, optionally through
+  // the bot's guardrails and per-strategy risk weights; without, one strategy alone.
+  analyzeChallenge({ sample = 'all', params, strategyIds = null, guardrails = null, weights = {}, ...run }) {
+    const pick = ({ train, test }) => (sample === 'test' ? test : [...train, ...test]);
+    if (!strategyIds) {
+      const one = tradesTrainTest(run);
+      return { candleCount: one.candleCount, sample, ...simulateChallenge(pick(one), params) };
+    }
+    const labels = Object.fromEntries(listLabStrategies().map(({ id, label }) => [id, label]));
+    const byStrategy = {};
+    let candleCount = 0;
+    for (const strategyId of strategyIds) {
+      const t = tradesTrainTest({ ...run, strategyId });
+      candleCount = t.candleCount;
+      byStrategy[strategyId] = { label: labels[strategyId] ?? strategyId, trades: pick(t) };
+    }
+    return { candleCount, sample, ...simulateMultiChallenge(byStrategy, params, { guardrails, weights }) };
   },
 
   analyzeHeatmap(run) {

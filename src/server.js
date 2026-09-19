@@ -30,7 +30,7 @@ import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
 import { runLabJob } from './backtest/labClient.js';
 import { readDatasetMeta, listDatasets, deleteDataset, csvPathFor as labDatasetCsv, MAX_CUSTOM_DATASETS } from './backtest/labDatasets.js';
 import { isValidDatasetName, ImportError } from './backtest/m1Import.js';
-import { normalizeChallengeParams } from './backtest/labAnalytics.js';
+import { normalizeChallengeParams, normalizeGuardrails } from './backtest/labAnalytics.js';
 import { computeDailyLevels, rebaseLevels, SESSION_WINDOWS } from './backtest/dailyLevels.js';
 import { getRecentAlerts } from './alertHistory.js';
 
@@ -365,14 +365,43 @@ function sendAnalysisError(res, err) {
   return sendLabError(res, err);
 }
 
+// One or several strategies (strategyIds) - several are traded together, optionally
+// through the bot's guardrails (body.guardrails = {} for the live defaults) and with
+// a risk weight per strategy (body.weights = {id: 0..5}).
+function parseStrategyIds(body) {
+  const ids = [...new Set(Array.isArray(body.strategyIds) ? body.strategyIds : [])].map(knownStrategy);
+  if (ids.length > MAX_PORTFOLIO_STRATEGIES) throw new ImportError(`Choisis au plus ${MAX_PORTFOLIO_STRATEGIES} stratégies.`);
+  return ids;
+}
+
+function parseWeights(raw, ids) {
+  const weights = {};
+  for (const id of ids) {
+    const v = raw && raw[id] !== undefined && raw[id] !== '' ? Number(raw[id]) : 1;
+    if (!Number.isFinite(v) || v < 0 || v > 5) throw new ImportError(`Poids invalide pour ${id} (entre 0 et 5).`);
+    weights[id] = v;
+  }
+  return weights;
+}
+
 app.post('/api/lab/analyze/challenge', async (req, res) => {
   try {
     const { ds, ...run } = analysisRun(req.body);
-    const strategyId = knownStrategy(req.body.strategyId);
     const params = normalizeChallengeParams(req.body.params);
     const sample = req.body.sample === 'test' ? 'test' : 'all';
-    const out = await runLabJob('analyzeChallenge', { ...run, strategyId, params, sample });
-    res.json({ strategyId, symbol: req.body.symbol, dataset: datasetInfo(ds), ...out });
+    const ids = parseStrategyIds(req.body);
+    let extra;
+    if (ids.length >= 2 || (ids.length === 1 && req.body.guardrails)) {
+      extra = {
+        strategyIds: ids,
+        weights: parseWeights(req.body.weights, ids),
+        guardrails: req.body.guardrails ? normalizeGuardrails(req.body.guardrails) : null,
+      };
+    } else {
+      extra = { strategyId: knownStrategy(ids[0] ?? req.body.strategyId) };
+    }
+    const out = await runLabJob('analyzeChallenge', { ...run, ...extra, params, sample });
+    res.json({ symbol: req.body.symbol, dataset: datasetInfo(ds), ...extra, ...out });
   } catch (err) {
     sendAnalysisError(res, err);
   }

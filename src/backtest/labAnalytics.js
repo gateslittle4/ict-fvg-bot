@@ -30,6 +30,33 @@ export function mulberry32(seed) {
   };
 }
 
+/**
+ * How much a set of trade results (in R) can be trusted: the average with its
+ * 95 % confidence interval, and how many trades it would take to know the average
+ * is really above zero. Normal approximation on the mean (fine from ~30 trades;
+ * below 10 no interval is given) - and trades are treated as independent, which
+ * overlapping trades are not quite, so read the interval as slightly optimistic.
+ * @param {Array<number|{rMultiple:number}>} results
+ * @returns {{n:number, mean:number|null, sd:number|null, ci95:[number,number]|null, significant:boolean, tradesToConfirm:number|null, moreTradesNeeded:number|null}}
+ */
+export function expectancyStats(results) {
+  const xs = results.map((t) => (typeof t === 'number' ? t : t?.rMultiple)).filter((x) => Number.isFinite(x));
+  const n = xs.length;
+  if (n === 0) return { n: 0, mean: null, sd: null, ci95: null, significant: false, tradesToConfirm: null, moreTradesNeeded: null };
+  const mean = xs.reduce((a, b) => a + b, 0) / n;
+  if (n < 10) return { n, mean, sd: null, ci95: null, significant: false, tradesToConfirm: null, moreTradesNeeded: null };
+  const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / (n - 1));
+  const half = 1.96 * (sd / Math.sqrt(n));
+  const ci95 = [mean - half, mean + half];
+  const tradesToConfirm = mean > 0 && sd > 0 ? Math.ceil((1.96 * sd / mean) ** 2) : null;
+  return {
+    n, mean, sd, ci95,
+    significant: ci95[0] > 0,
+    tradesToConfirm,
+    moreTradesNeeded: tradesToConfirm === null ? null : Math.max(0, tradesToConfirm - n),
+  };
+}
+
 function percentile(sorted, p) {
   if (sorted.length === 0) return null;
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
@@ -92,7 +119,11 @@ export function groupTradesByDay(trades) {
  */
 export function simulateChallenge(trades, rawParams) {
   const p = normalizeChallengeParams(rawParams);
-  const days = groupTradesByDay(trades);
+  return runChallengeSimulation(groupTradesByDay(trades), p);
+}
+
+/** The Monte Carlo itself, on days already grouped as arrays of R. Shared by the single- and multi-strategy entry points. */
+function runChallengeSimulation(days, p) {
   const tradeCount = days.reduce((n, d) => n + d.length, 0);
   if (tradeCount < MIN_TRADES) {
     return { insufficient: true, tradeCount, minTrades: MIN_TRADES, params: p };
@@ -142,6 +173,7 @@ export function simulateChallenge(trades, rawParams) {
     tradeCount,
     tradingDays: days.length,
     expectancyR: totalR / tradeCount,
+    expectancy: expectancyStats(days.flat()),
     runs: p.runs,
     counts,
     passRate: counts.pass / p.runs,
@@ -149,6 +181,97 @@ export function simulateChallenge(trades, rawParams) {
     daysToPass: { median: percentile(passDays, 50), p90: percentile(passDays, 90) },
     drawdownPct: { p50: percentile(worstDrawdowns, 50), p95: percentile(worstDrawdowns, 95), p99: percentile(worstDrawdowns, 99) },
     endBalancePct: { p5: percentile(endBalances, 5), p50: percentile(endBalances, 50), p95: percentile(endBalances, 95) },
+  };
+}
+
+// --- 1b. several strategies through the bot's real guardrails ----------------
+
+/** Same defaults as CONFIG.guardrails (config.js) - what the live bot enforces per account. */
+export const DEFAULT_GUARDRAILS = { maxTradesPerDay: 3, cooldownMinutesAfterLoss: 30, dailyLossLimitPct: 2, oneOpenPerSymbol: true };
+
+export function normalizeGuardrails(raw = {}) {
+  return {
+    maxTradesPerDay: Math.round(num(raw.maxTradesPerDay, 'Trades max par jour', { min: 1, max: 50, dflt: DEFAULT_GUARDRAILS.maxTradesPerDay })),
+    cooldownMinutesAfterLoss: Math.round(num(raw.cooldownMinutesAfterLoss, 'Pause après une perte (minutes)', { min: 0, max: 1440, dflt: DEFAULT_GUARDRAILS.cooldownMinutesAfterLoss })),
+    dailyLossLimitPct: num(raw.dailyLossLimitPct, 'Perte journalière du bot (%)', { min: 0.1, max: 100, dflt: DEFAULT_GUARDRAILS.dailyLossLimitPct }),
+    oneOpenPerSymbol: raw.oneOpenPerSymbol !== false && raw.oneOpenPerSymbol !== 'false',
+  };
+}
+
+/**
+ * Replays one trading day through the SAME rules GuardrailEngine/LiveStrategyEngine
+ * apply before a signal becomes a trade: at each entry, a trade is refused when
+ *  - the day already has maxTradesPerDay CLOSED trades (open ones do not count -
+ *    documented, accepted semantics of this project, see HANDOFF),
+ *  - the last CLOSED trade was a loss and cooldownMinutesAfterLoss has not elapsed,
+ *  - today's CLOSED loss has reached dailyLossLimitPct,
+ *  - (oneOpenPerSymbol) another accepted trade on this symbol is still open
+ *    (LiveStrategyEngine's "netting": one believed position per symbol).
+ * All of it depends only on the day's own trades, so it is decided once per day,
+ * not once per simulated run.
+ * @param {Array<{entryTime:number, exitTime:number, r:number}>} dayTrades r = risk-weighted result in R
+ * @returns {Array} accepted trades, ordered by exit time
+ */
+export function applyGuardrailsToDay(dayTrades, g, riskPct) {
+  const byEntry = [...dayTrades].sort((a, b) => a.entryTime - b.entryTime);
+  const kept = [];
+  const cooldownMs = g.cooldownMinutesAfterLoss * 60000;
+  for (const t of byEntry) {
+    const closed = kept.filter((k) => k.exitTime <= t.entryTime);
+    if (closed.length >= g.maxTradesPerDay) continue;
+    if (g.oneOpenPerSymbol && kept.some((k) => k.exitTime > t.entryTime)) continue;
+    const lastClosed = closed.reduce((best, k) => (!best || k.exitTime > best.exitTime ? k : best), null);
+    if (lastClosed && lastClosed.r < 0 && t.entryTime < lastClosed.exitTime + cooldownMs) continue;
+    const dayPnlPct = closed.reduce((sum, k) => sum + k.r * riskPct, 0);
+    if (-dayPnlPct >= g.dailyLossLimitPct) continue;
+    kept.push(t);
+  }
+  return kept.sort((a, b) => a.exitTime - b.exitTime);
+}
+
+/**
+ * Prop-firm challenge Monte Carlo on SEVERAL strategies traded together on one
+ * symbol, optionally filtered through the bot's guardrails first - so the answer
+ * is what the bot would really do, not "every signal of every strategy gets taken".
+ * @param {Record<string, {label?:string, trades:Array}>} byStrategy
+ * @param {object} rawParams - challenge rules (normalizeChallengeParams)
+ * @param {{guardrails?: object|null, weights?: Record<string, number>}} [opts]
+ *   guardrails null/undefined = no filtering; weights = risk multiplier per strategy id (default 1)
+ */
+export function simulateMultiChallenge(byStrategy, rawParams, { guardrails = null, weights = {} } = {}) {
+  const p = normalizeChallengeParams(rawParams);
+  const g = guardrails ? normalizeGuardrails(guardrails) : null;
+  const perDay = new Map();
+  const offered = {};
+  for (const [id, { trades }] of Object.entries(byStrategy)) {
+    const w = Number.isFinite(weights[id]) && weights[id] >= 0 ? weights[id] : 1;
+    offered[id] = 0;
+    for (const t of trades) {
+      if (!Number.isFinite(t.rMultiple) || !Number.isFinite(t.entryTime)) continue;
+      const exitTime = t.exitTime ?? t.entryTime;
+      const d = Math.floor(exitTime / DAY_MS);
+      if (!perDay.has(d)) perDay.set(d, []);
+      perDay.get(d).push({ id, entryTime: t.entryTime, exitTime, r: t.rMultiple * w });
+      offered[id]++;
+    }
+  }
+  const acceptedById = Object.fromEntries(Object.keys(byStrategy).map((id) => [id, 0]));
+  const days = [];
+  let totalOffered = 0;
+  for (const dayTrades of perDay.values()) {
+    totalOffered += dayTrades.length;
+    const kept = g ? applyGuardrailsToDay(dayTrades, g, p.riskPct) : [...dayTrades].sort((a, b) => a.exitTime - b.exitTime);
+    if (kept.length === 0) continue;
+    for (const k of kept) acceptedById[k.id]++;
+    days.push(kept.map((k) => k.r));
+  }
+  const totalAccepted = Object.values(acceptedById).reduce((a, b) => a + b, 0);
+  return {
+    ...runChallengeSimulation(days, p),
+    guardrails: g,
+    offeredTrades: totalOffered,
+    acceptedTrades: totalAccepted,
+    perStrategy: Object.keys(byStrategy).map((id) => ({ id, label: byStrategy[id].label ?? id, offered: offered[id], accepted: acceptedById[id], weight: Number.isFinite(weights[id]) ? weights[id] : 1 })),
   };
 }
 
@@ -284,7 +407,7 @@ export function analyzePortfolio(byStrategy) {
   const strategies = ids.map((id) => {
     const ordered = [...all[id]].sort(byExit);
     const totalR = ordered.reduce((s, t) => s + t.rMultiple, 0);
-    return { id, label: byStrategy[id].label, trades: ordered.length, totalR, expectancyR: ordered.length ? totalR / ordered.length : null, maxDrawdownR: maxDrawdownR(ordered.map((t) => t.rMultiple)) };
+    return { id, label: byStrategy[id].label, trades: ordered.length, totalR, expectancyR: ordered.length ? totalR / ordered.length : null, expectancy: expectancyStats(ordered), maxDrawdownR: maxDrawdownR(ordered.map((t) => t.rMultiple)) };
   });
 
   const correlation = ids.map((a) => ids.map((b) => {
@@ -301,6 +424,7 @@ export function analyzePortfolio(byStrategy) {
   const equityCurve = merged.map((t) => ({ time: t.exitTime ?? t.entryTime, cumulativeR: (eq += t.rMultiple) }));
   const combined = {
     trades: merged.length, totalR, expectancyR: merged.length ? totalR / merged.length : null,
+    expectancy: expectancyStats(merged),
     maxDrawdownR: maxDrawdownR(merged.map((t) => t.rMultiple)),
     maxConcurrent: maxConcurrent(merged),
   };
