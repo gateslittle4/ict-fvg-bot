@@ -156,6 +156,9 @@ app.get('/shared/tradeStats.js', (req, res) => {
 app.get('/shared/replayBroker.js', (req, res) => {
   res.type('application/javascript').sendFile(path.join(__dirname, 'shared', 'replayBroker.js'));
 });
+app.get('/shared/replayAuto.js', (req, res) => {
+  res.type('application/javascript').sendFile(path.join(__dirname, 'shared', 'replayAuto.js'));
+});
 
 // Deliberately the cheapest possible endpoint: no broker round-trip, no
 // engine work, no allocation of anything meaningful. It exists so the

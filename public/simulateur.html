@@ -103,6 +103,16 @@
   .session-hours input { width: 64px; padding: 2px 4px; }
   #chart-wrap { position: relative; }
   #chart-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 20px; pointer-events: none; }
+  .pairtabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+  .pairtab { background: var(--bg-inset); border: 1px solid var(--panel-border); color: var(--text); border-radius: var(--radius); padding: 5px 10px; cursor: pointer; text-align: left; font-family: var(--mono); font-size: 12px; }
+  .pairtab small { display: block; color: var(--muted); font-size: 10px; }
+  .pairtab.active { border-color: var(--blue); background: var(--panel); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; background: var(--panel-border); border: 1px solid var(--panel-border); margin: 8px 0; }
+  .kpis div { background: var(--bg-inset); padding: 6px 8px; font-family: var(--mono); font-size: 12.5px; }
+  .kpis small { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; }
+  .modebox { border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 8px; margin-bottom: 8px; background: var(--bg-inset); }
+  .locked { opacity: .45; pointer-events: none; }
+  @media (max-width: 600px) { #chart { height: 360px; } body { padding: 12px 16px; } }
 </style>
 </head>
 <body>
@@ -124,7 +134,8 @@
     <div class="form-row">
       <div class="form-field"><label for="sim-symbol">Paire</label><select id="sim-symbol"></select></div>
       <div class="form-field"><label for="sim-from">Date de départ</label><input type="date" id="sim-from" /></div>
-      <div class="form-field"><label for="sim-days">Durée (jours)</label><input type="number" id="sim-days" value="30" min="1" max="120" /></div>
+      <div class="form-field"><label for="sim-to">Date de fin</label><input type="date" id="sim-to" /></div>
+      <div class="form-field" style="min-width:120px;"><label for="sim-balance">Solde de départ</label><input type="number" id="sim-balance" value="10000" min="100" step="100" /></div>
       <div class="form-field"><label for="sim-base">Précision du rejeu</label><select id="sim-base"><option value="15">M15 (toutes les paires)</option><option value="5">M5 (jeux importés en M1)</option><option value="1">M1 (jeux importés en M1, 30 j max)</option></select></div>
       <div class="form-field" style="flex:0 0 auto;min-width:0;display:flex;gap:6px;">
         <button type="button" class="run-btn" id="sim-load" onclick="loadReplay(false)">Charger</button>
@@ -136,6 +147,8 @@
       <p class="hint">« Les 8 du bot » = les mécanismes que le bot trade réellement sur cette paire, avec ses réglages (objectif, sens autorisé). Tu peux en plus cocher n'importe quelle stratégie du Labo (réglages par défaut). Les stratégies qui n'existent pas sur cette paire sont signalées, jamais inventées.</p>
       <label class="check" style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:4px;"><input type="checkbox" id="sim-botall" checked /> <strong>Les 8 stratégies du bot</strong> <span class="meta" id="sim-bot-which"></span></label>
       <div class="strat-list" id="sim-strats"></div>
+      <div style="margin:6px 0;"><strong style="font-size:12.5px;">Autres paires en même temps</strong> <span class="meta" id="sim-extra-count"></span> <span class="meta">(3 au plus ; tu pourras aussi en ajouter pendant le rejeu)</span></div>
+      <div class="strat-list" id="sim-extras"></div>
       <label class="check" style="display:flex;gap:8px;align-items:center;font-size:12.5px;"><input type="checkbox" id="sim-news" checked /> Afficher les annonces (news) sur le graphique <span class="meta" id="sim-news-cov"></span></label>
     </details>
     <div class="meta" id="sim-msg" style="margin-top:6px;"></div>
@@ -166,12 +179,19 @@
           <div class="grp" id="tf-grp" title="M1 et M5 : seulement pour les jeux importés avec le M1 conservé">
             <button class="tb" data-tf="60">M1</button><button class="tb" data-tf="300">M5</button><button class="tb active" data-tf="900">M15</button><button class="tb" data-tf="1800">M30</button><button class="tb" data-tf="3600">H1</button><button class="tb" data-tf="7200">H2</button><button class="tb" data-tf="14400">H4</button><button class="tb" data-tf="21600">H6</button><button class="tb" data-tf="43200">H12</button><button class="tb" data-tf="86400">D1</button><button class="tb" data-tf="604800">W1</button>
           </div>
+          <div class="grp" title="Retour en arrière : la simulation revient exactement à cet instant">
+            <button class="tb" onclick="restart()" title="Retour au début">⏮ début</button>
+            <button class="tb" data-back="1440">◀ 1 j</button><button class="tb" data-back="240">◀ 4 h</button><button class="tb" data-back="60">◀ 1 h</button><button class="tb" data-back="15">◀ 1 bougie</button>
+          </div>
           <div class="grp">
             <button class="tb" id="btn-play" onclick="togglePlay()" title="Lecture / pause">▶ Lecture</button>
             <button class="tb" onclick="stepBars(1)" title="Une bougie M15">+1 bougie</button>
             <button class="tb" onclick="stepMinutes(60)">+1 h</button>
             <button class="tb" onclick="stepMinutes(240)">+4 h</button>
             <button class="tb" onclick="stepMinutes(1440)">+1 jour</button>
+          </div>
+          <div class="grp" title="Zoom du graphique">
+            <button class="tb" onclick="zoomChart(0.6)">＋</button><button class="tb" onclick="zoomChart(1.6)">－</button><button class="tb" onclick="fitChart()" title="Recentrer">⌖</button>
           </div>
           <div class="grp">
             <button class="tb" onclick="jumpNext('signal')" title="Avance jusqu'au prochain signal d'une stratégie affichée">→ signal</button>
@@ -182,6 +202,7 @@
           </div>
           <div class="clock" id="clock">—</div>
         </div>
+        <div class="pairtabs" id="pair-tabs"></div>
         <div id="chart-wrap"><div id="chart"></div><div id="chart-empty">Choisis une paire et une date, puis « Charger ».</div></div>
         <div class="meta" id="chart-legend" style="margin-top:6px;"></div>
         <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;"><strong>Sessions sur le graphique</strong> <span class="meta" id="session-note"></span></summary>
@@ -189,6 +210,7 @@
           <div id="session-list" class="strat-list"></div>
           <button type="button" class="btn-ghost" id="session-reset" style="margin-top:4px;">Réinitialiser les sessions</button>
         </details>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;"><select id="add-pair" style="width:auto;max-width:100%;"></select><button type="button" class="btn-ghost" onclick="addPair()">＋ Ajouter cette paire</button> <span class="meta" id="add-msg"></span></div>
         <div class="meta" style="margin-top:6px;">Astuce : glisse les lignes de stop (rouge), d'objectif (verte) ou d'ordre en attente directement sur le graphique.</div>
       </div>
       <div class="card"><h2>Signaux des stratégies <span class="meta" id="sig-summary"></span></h2><div id="sig-list" style="max-height:260px;overflow:auto;"></div></div>
@@ -197,16 +219,27 @@
 
     <div>
       <div class="card">
-        <h2>Ton compte simulé</h2>
+        <h2>Ton compte simulé <span class="meta" id="acct-cur"></span></h2>
+        <div class="kpis" id="kpis"><div><small>Équité</small>—</div></div>
         <div class="acct">
           <div><small>Solde</small><span id="a-bal">—</span></div><div><small>Équité</small><span id="a-eq">—</span></div>
           <div><small>P&amp;L flottant</small><span id="a-fl">—</span></div><div><small>Prix (bid / ask)</small><span id="a-px">—</span></div>
         </div>
+        <div class="meta" id="conv-note" style="margin-bottom:8px;"></div>
+        <div class="modebox">
+          <div class="fld"><label for="mode">Qui trade ?</label><select id="mode"><option value="manual">Moi (manuel)</option><option value="auto">Le bot seul (rejoue les stratégies cochées)</option></select></div>
+          <div id="auto-opts" hidden>
+            <div class="fld"><label for="auto-risk">Risque par trade (% du solde)</label><input type="number" id="auto-risk" value="1" step="0.05" min="0.05" max="10" /></div>
+          </div>
+          <label id="auto-guard-wrap" class="check" style="display:none;gap:6px;align-items:center;font-size:11.5px;"><input type="checkbox" id="auto-guard" /> Appliquer les garde-fous du bot (3 trades/j, pause après une perte, 2 % de perte/j, 1 position par paire)</label>
+          <div class="meta" id="mode-note" style="margin-top:6px;"></div>
+        </div>
         <div class="row2">
-          <div class="fld"><label for="o-balance">Solde de départ</label><input type="number" id="o-balance" value="10000" min="100" step="100" /></div>
           <div class="fld"><label for="o-spread">Spread (unités de prix)</label><input type="number" id="o-spread" step="any" /></div>
+          <div class="fld"><label for="o-contract">Taille du lot (unités)</label><input type="number" id="o-contract" step="any" min="0" /></div>
         </div>
         <button class="btn-ghost" style="width:100%;margin-bottom:8px;" onclick="resetAccount()">Remettre le compte à zéro</button>
+        <div id="manual-box">
         <div class="fld"><label for="o-type">Type d'ordre</label><select id="o-type"><option value="market">Au marché</option><option value="limit">Limite</option><option value="stop">Stop</option></select></div>
         <div class="fld" id="o-price-wrap" hidden><label for="o-price">Prix de l'ordre</label><input type="number" id="o-price" step="any" /></div>
         <div class="row2">
@@ -218,58 +251,87 @@
           <div class="fld"><label for="o-trail">Stop suiveur (distance)</label><input type="number" id="o-trail" step="any" min="0" /></div>
         </div>
         <div class="row2">
-          <div class="fld"><label for="o-mode">Taille</label><select id="o-mode"><option value="risk">Risque en % du solde</option><option value="units">Unités</option></select></div>
+          <div class="fld"><label for="o-mode">Taille</label><select id="o-mode"><option value="risk">Risque en % du solde</option><option value="lots">Lots</option><option value="units">Unités</option></select></div>
           <div class="fld"><label for="o-size" id="o-size-l">Risque (%)</label><input type="number" id="o-size" value="1" step="any" min="0" /></div>
         </div>
         <div class="ord-side"><button class="buy" id="btn-buy" onclick="order('buy')" disabled>ACHETER</button><button class="sell" id="btn-sell" onclick="order('sell')" disabled>VENDRE</button></div>
         <div class="meta" id="o-msg"></div>
         <button class="btn-ghost" style="width:100%;margin-top:6px;" onclick="closeEverything()">Tout fermer</button>
+        </div>
       </div>
-      <div class="card"><h2>Positions et ordres</h2><div id="pos-list" class="meta">Aucune.</div></div>
-      <div class="card"><h2>Résultats <span class="meta" id="res-summary"></span></h2><div id="hist-list" style="max-height:220px;overflow:auto;" class="meta">—</div></div>
+      
+<div class="card"><h2>Positions et ordres</h2><div id="pos-list" class="meta">Aucune.</div></div>
+      <div class="card"><h2>Résultats <span class="meta" id="res-summary"></span></h2><div id="strat-res" style="margin-bottom:8px;"></div><div id="hist-list" style="max-height:220px;overflow:auto;" class="meta">—</div></div>
       <div class="card"><h2>Journal</h2><div id="log" class="log"></div></div>
     </div>
   </div>
-  <p class="hint">Limites à connaître : le rejeu avance par bougies M15 (pas tick par tick) — un stop et un objectif touchés dans la même bougie donnent le stop, comme dans tous les backtests du projet ; le P&amp;L est en points de prix × unités, dans la devise de cotation, sans conversion (exact pour les indices, approché pour les paires forex) ; les annonces ne sont disponibles que pour 2024-2025.</p>
+  <p class="hint">Limites à connaître : en M15 un stop et un objectif touchés dans la même bougie donnent le stop (importe en M1 pour trancher) ; les annonces nommées ne couvrent que 2024-2025 ; les jeux importés sont stockés temporairement (effacés au redéploiement) ; le retour en arrière rejoue la simulation depuis un point de reprise, sans approximation.</p>
+
+
+
 
 <script src="/vendor/lightweight-charts/lightweight-charts.standalone.production.js"></script>
 <script type="module">
 import * as B from '/shared/replayBroker.js';
+import * as A from '/shared/replayAuto.js';
 const LW = window.LightweightCharts;
 const $ = (id) => document.getElementById(id);
 const fmt = (n, d = 2) => (n === null || n === undefined || Number.isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const decimalsFor = (p) => (Math.abs(p) >= 1000 ? 1 : Math.abs(p) >= 100 ? 2 : Math.abs(p) >= 10 ? 3 : 5);
 const px = (n) => fmt(n, decimalsFor(n));
-const nyText = (sec) => new Date(sec * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' NY';
+const sgn = (v, d = 2) => `${v >= 0 ? '+' : ''}${fmt(v, d)}`;
+const nyOpts = { timeZone: 'America/New_York' };
+const nyText = (sec) => new Date(sec * 1000).toLocaleString('fr-FR', { ...nyOpts, weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' NY';
+const nyShort = (sec) => new Date(sec * 1000).toLocaleString('fr-FR', { ...nyOpts, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+const DAY = 86400;
 
+// ---------------------------------------------------------------- state
 let meta = null;
-let data = null;          // the last /api/lab/replay response
-let base = [];            // [{t, o, h, l, c}] real-time seconds
-let cur = -1;             // index of the last revealed base bar
+let data = null;              // last /api/lab/replay response (window, news...)
+let P = {};                   // pairs by id
+let order = [];               // pair ids, order[0] = the master (its bars are the clock)
+let active = null;            // pair shown on the chart
+let now = 0;                  // simulated time, seconds (real UTC)
+let startSec = 0, startStep = 0;
+let acct = null, autoState = null;
+let actions = [], snaps = [], userMarkers = {};
+let cfg = { mode: 'manual', risk: 1, guard: false };
 let tfSec = 900;
-let acct = null;
 let tfLast = null;
-let baseMin = 15;         // minutes per base bar of the loaded replay (15, 5 or 1)
 let playing = false, timer = null, speed = 6;
+let silent = false;           // true while a rewind silently re-simulates
 let strategyLabels = {};
-let lines = [];           // price lines of the user's positions
-let userMarkers = [];
-let revealedExits = new Set();
+let priceLines = [], dragLines = [], drag = null;
+const SNAP_MAX = 500;
+let snapEvery = 32;
 
-// ---------- chart ----------
+const master = () => P[order[0]];
+const act = () => P[active];
+const bidOf = (p) => (p && p.cur >= 0 ? p.base[p.cur].c : null);
+const bidsMap = () => Object.fromEntries(order.filter((id) => P[id].cur >= 0).map((id) => [id, bidOf(P[id])]));
+const shortName = (id) => (strategyLabels[id] || id).split(' (')[0].slice(0, 14);
+const COLORS = ['#4c9eff', '#a78bfa', '#2fd480', '#e8b339', '#ff8c3c', '#ff5c5f', '#22d3ee', '#f472b6', '#84cc16', '#fb923c', '#38bdf8', '#c084fc'];
+const colorOf = (() => { const m = new Map(); return (id) => { if (!m.has(id)) m.set(id, COLORS[m.size % COLORS.length]); return m.get(id); }; })();
+const log = (text, cls = '') => {
+  if (silent) return;
+  const el = $('log');
+  el.insertAdjacentHTML('afterbegin', `<div class="${cls}">${now ? nyShort(now) + ' · ' : ''}${text}</div>`);
+  while (el.children.length > 100) el.lastChild.remove();
+};
+
+// ---------------------------------------------------------------- chart
 const chart = LW.createChart($('chart'), {
   layout: { background: { color: '#0e141b' }, textColor: '#8b98a5', attributionLogo: false },
   grid: { vertLines: { color: '#1c2530' }, horzLines: { color: '#1c2530' } },
   rightPriceScale: { borderColor: '#202b37', autoScale: true },
   timeScale: { borderColor: '#202b37', timeVisible: true, secondsVisible: false, rightOffset: 8 },
   crosshair: { mode: 0 },
-  localization: { locale: 'fr-FR', timeFormatter: (ts) => new Date(ts * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' NY' },
+  localization: { locale: 'fr-FR', timeFormatter: (ts) => nyShort(ts) + ' NY' },
   autoSize: true,
 });
 const series = chart.addSeries(LW.CandlestickSeries, { upColor: '#2fd480', downColor: '#ff5c5f', borderUpColor: '#2fd480', borderDownColor: '#ff5c5f', wickUpColor: '#2fd480', wickDownColor: '#ff5c5f', priceLineVisible: true, lastValueVisible: true });
-const markers = LW.createSeriesMarkers(series, []);
-// Weekly bars start on Monday 00:00 UTC (the epoch is a Thursday, so weeks are offset by 4 days); every other frame is aligned on UTC.
-const WEEK = 604800, MONDAY_OFFSET = 4 * 86400;
+const markersApi = LW.createSeriesMarkers(series, []);
+const WEEK = 604800, MONDAY_OFFSET = 4 * DAY; // the epoch is a Thursday: weekly bars start on Monday 00:00 UTC
 const snap = (sec) => (tfSec === WEEK ? Math.floor((sec - MONDAY_OFFSET) / WEEK) * WEEK + MONDAY_OFFSET : Math.floor(sec / tfSec) * tfSec);
 
 class OverlayPrimitive {
@@ -312,207 +374,7 @@ class OverlayPrimitive {
 const overlay = new OverlayPrimitive();
 series.attachPrimitive(overlay);
 
-// ---------- data ----------
-const shortName = (id) => (strategyLabels[id] || id).split(' (')[0].slice(0, 14);
-const COLORS = ['#4c9eff', '#a78bfa', '#2fd480', '#e8b339', '#ff8c3c', '#ff5c5f', '#22d3ee', '#f472b6', '#84cc16', '#fb923c', '#38bdf8', '#c084fc'];
-const colorOf = (() => { const m = new Map(); return (id) => { if (!m.has(id)) m.set(id, COLORS[m.size % COLORS.length]); return m.get(id); }; })();
-
-function timeframeData() {
-  const out = []; let last = null;
-  for (let i = 0; i <= cur; i++) {
-    const b = base[i]; const key = snap(b.t);
-    if (last && last.time === key) { last.high = Math.max(last.high, b.h); last.low = Math.min(last.low, b.l); last.close = b.c; }
-    else { last = { time: key, open: b.o, high: b.h, low: b.l, close: b.c }; out.push(last); }
-  }
-  tfLast = last;
-  return out;
-}
-function pushBar(i) {
-  const b = base[i]; const key = snap(b.t);
-  if (tfLast && tfLast.time === key) { tfLast.high = Math.max(tfLast.high, b.h); tfLast.low = Math.min(tfLast.low, b.l); tfLast.close = b.c; }
-  else tfLast = { time: key, open: b.o, high: b.h, low: b.l, close: b.c };
-  series.update({ ...tfLast });
-}
-const nowSec = () => (cur >= 0 ? base[cur].t : 0);
-const bid = () => base[cur].c;
-
-function visibleTrades() {
-  if (!data) return [];
-  const t = nowSec();
-  return data.trades.filter((x) => x.entrySec <= t);
-}
-function redraw({ resetView = false } = {}) {
-  if (cur < 0) return;
-  if (resetView) { series.setData(timeframeData()); }
-  const t = nowSec();
-  const mk = [];
-  const drawn = [];
-  for (const x of visibleTrades()) {
-    const closed = x.exitSec <= t;
-    const dirBuy = x.direction === 'bullish';
-    mk.push({ time: snap(x.entrySec), position: dirBuy ? 'belowBar' : 'aboveBar', shape: dirBuy ? 'arrowUp' : 'arrowDown', color: colorOf(x.strategyId), text: shortName(x.strategyId) });
-    if (closed) mk.push({ time: snap(x.exitSec), position: dirBuy ? 'aboveBar' : 'belowBar', shape: 'circle', color: x.rMultiple >= 0 ? '#2fd480' : '#ff5c5f', text: `${x.rMultiple >= 0 ? '+' : ''}${fmt(x.rMultiple, 1)}R` });
-    drawn.push({ entrySec: x.entrySec, exitSec: closed ? x.exitSec : null, entry: x.entryPrice, stop: x.stopPrice, target: x.targetPrice });
-  }
-  for (const m of userMarkers) if (m.sec <= t) mk.push({ time: snap(m.sec), position: m.pos, shape: m.shape, color: m.color, text: m.text });
-  mk.sort((a, b) => a.time - b.time);
-  markers.setMarkers(mk);
-  const news = data && $('sim-news').checked ? data.news.filter((n) => n.sec <= t) : [];
-  overlay.set(drawn, news, tfLast ? tfLast.time : null);
-  renderLines(); renderPanel(); renderSignals(); renderNews(); redrawSessions();
-  $('clock').innerHTML = `<strong>${nyText(t)}</strong> · M${baseMin} · bougie ${cur + 1}/${base.length}`;
-}
-
-// ---------- replay control ----------
-function advanceOne() {
-  if (cur >= base.length - 1) return false;
-  cur++;
-  const b = base[cur];
-  const events = B.onCandle(acct, { time: b.t, open: b.o, high: b.h, low: b.l, close: b.c });
-  pushBar(cur);
-  for (const e of events) handleEvent(e, b);
-  return true;
-}
-function handleEvent(e, b) {
-  if (e.type === 'filled') { log(`Ordre exécuté à ${px(e.price)} (#${e.id})`, 'info'); userMarkers.push({ sec: b.t, pos: e.side === 'buy' ? 'belowBar' : 'aboveBar', shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' }); }
-  if (e.type === 'closed') { log(`#${e.id} fermé (${e.reason}) à ${px(e.price)} : ${e.pnl >= 0 ? '+' : ''}${fmt(e.pnl)}`, e.pnl >= 0 ? 'win' : 'loss'); userMarkers.push({ sec: b.t, pos: 'aboveBar', shape: 'circle', color: e.pnl >= 0 ? '#2fd480' : '#ff5c5f', text: `Toi ${e.pnl >= 0 ? '+' : ''}${fmt(e.pnl, 0)}` }); }
-}
-window.stepMinutes = (m) => window.stepBars(Math.max(1, Math.round(m / baseMin)));
-window.stepBars = (n) => { stopPlay(); for (let i = 0; i < n && advanceOne(); i++); redraw(); if (cur >= base.length - 1) endNotice(); };
-function endNotice() { if (cur >= base.length - 1) log('Fin de la période chargée.', 'info'); }
-function stopPlay() { playing = false; clearInterval(timer); $('btn-play').textContent = '▶ Lecture'; }
-window.togglePlay = () => {
-  if (cur < 0) return;
-  if (playing) return stopPlay();
-  playing = true; $('btn-play').textContent = '⏸ Pause';
-  timer = setInterval(() => {
-    const n = Math.max(1, Math.round((speed / 4) * (15 / baseMin)));
-    for (let i = 0; i < n; i++) if (!advanceOne()) { stopPlay(); endNotice(); break; }
-    redraw();
-  }, 250);
-};
-window.jumpNext = (kind) => {
-  if (cur < 0) return; stopPlay();
-  const target = kind === 'signal' ? data.trades.map((x) => x.entrySec).filter((s) => s > nowSec()).sort((a, b) => a - b)[0] : data.news.map((n) => n.sec).filter((s) => s > nowSec()).sort((a, b) => a - b)[0];
-  if (target === undefined) { log(kind === 'signal' ? 'Plus aucun signal dans la période chargée.' : 'Plus aucune annonce dans la période chargée.', 'info'); return; }
-  while (cur < base.length - 1 && base[cur].t < target) advanceOne();
-  redraw();
-};
-$('tf-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-tf]'); if (!b) return; tfSec = Number(b.dataset.tf); document.querySelectorAll('#tf-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); redraw({ resetView: true }); const n = tfDataLength(); if (n < 140) chart.timeScale().fitContent(); else chart.timeScale().setVisibleLogicalRange({ from: n - 140, to: n + 8 }); });
-$('speed-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; speed = Number(b.dataset.speed); document.querySelectorAll('#speed-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); });
-
-// ---------- account / orders ----------
-function newAccount() { acct = B.createAccount({ balance: Number($('o-balance').value) || 10000, spread: Number($('o-spread').value) || 0 }); userMarkers = []; }
-window.resetAccount = () => { newAccount(); log('Compte remis à zéro.', 'info'); redraw(); };
-$('o-type').addEventListener('change', () => { $('o-price-wrap').hidden = $('o-type').value === 'market'; });
-$('o-mode').addEventListener('change', () => { $('o-size-l').textContent = $('o-mode').value === 'risk' ? 'Risque (%)' : 'Unités'; $('o-size').value = $('o-mode').value === 'risk' ? 1 : 1; });
-function orderMsg(t, bad) { $('o-msg').innerHTML = t ? `<span class="${bad ? 'loss' : 'win'}">${t}</span>` : ''; }
-function place(side, { slDist, tpDist, rr, trail, mode, size, type, price }) {
-  const spread = acct.spread;
-  const marketNow = side === 'buy' ? bid() + spread : bid();
-  const entry = type === 'market' ? marketNow : price;
-  const sl = slDist > 0 ? (side === 'buy' ? entry - slDist : entry + slDist) : null;
-  let tpD = tpDist > 0 ? tpDist : (rr > 0 && slDist > 0 ? rr * slDist : 0);
-  const tp = tpD > 0 ? (side === 'buy' ? entry + tpD : entry - tpD) : null;
-  let units;
-  if (mode === 'risk') {
-    if (!(slDist > 0)) throw new Error('Pour dimensionner au risque, indique la distance du stop.');
-    units = B.sizeFromRisk({ balance: acct.balance, riskPct: size, entry, stop: sl });
-  } else units = size;
-  const common = { side, units, sl, tp, trail: trail > 0 ? trail : null };
-  if (type === 'market') return B.placeMarket(acct, { ...common, bid: bid(), time: nowSec() });
-  return B.placePending(acct, { ...common, type, price, bid: bid() });
-}
-function readOrder() {
-  const v = (id) => Number($(id).value);
-  return { slDist: v('o-sl') || 0, tpDist: v('o-tp') || 0, rr: v('o-rr') || 0, trail: v('o-trail') || 0, mode: $('o-mode').value, size: v('o-size'), type: $('o-type').value, price: v('o-price') };
-}
-window.order = (side) => {
-  try {
-    const o = place(side, readOrder());
-    const isPos = acct.positions.includes(o);
-    log(isPos ? `${side === 'buy' ? 'Achat' : 'Vente'} #${o.id} à ${px(o.entry)} (${fmt(o.units, 2)} u.)` : `Ordre ${o.type} #${o.id} posé à ${px(o.price)}`, 'info');
-    if (isPos) userMarkers.push({ sec: nowSec(), pos: side === 'buy' ? 'belowBar' : 'aboveBar', shape: side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' });
-    orderMsg('');
-  } catch (err) { orderMsg(err.message, true); }
-  redraw();
-};
-window.takeSignal = (i) => {
-  const x = data.trades[i];
-  if (!x) return;
-  try {
-    const side = x.direction === 'bullish' ? 'buy' : 'sell';
-    const slDist = Math.abs(x.entryPrice - x.stopPrice);
-    const tpDist = x.targetPrice != null ? Math.abs(x.targetPrice - x.entryPrice) : 0;
-    const o = place(side, { slDist, tpDist, rr: 0, trail: 0, mode: $('o-mode').value, size: Number($('o-size').value), type: 'market', price: 0 });
-    log(`Signal ${shortName(x.strategyId)} pris : #${o.id} à ${px(o.entry)}`, 'info');
-    userMarkers.push({ sec: nowSec(), pos: side === 'buy' ? 'belowBar' : 'aboveBar', shape: side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' });
-    orderMsg('');
-  } catch (err) { orderMsg(err.message, true); }
-  redraw();
-};
-window.closeOne = (id, frac) => { try { B.closePosition(acct, id, { bid: bid(), time: nowSec(), fraction: frac }); log(`#${id} ${frac < 1 ? 'partiellement ' : ''}fermé à la main`, 'info'); userMarkers.push({ sec: nowSec(), pos: 'aboveBar', shape: 'circle', color: '#ffffff', text: 'Toi' }); } catch (e) { orderMsg(e.message, true); } redraw(); };
-window.beOne = (id) => { B.breakEven(acct, id); log(`#${id} : stop remis au point d'entrée`, 'info'); redraw(); };
-window.cancelOne = (id) => { B.cancelPending(acct, id); redraw(); };
-window.moveStop = (id) => { const pos = acct.positions.find((p) => p.id === id); const v = prompt('Nouveau stop (prix) :', pos.sl ?? ''); if (v === null) return; try { B.modifyPosition(acct, id, { sl: v === '' ? null : Number(v) }); } catch (e) { orderMsg(e.message, true); } redraw(); };
-window.moveTarget = (id) => { const pos = acct.positions.find((p) => p.id === id); const v = prompt('Nouvel objectif (prix) :', pos.tp ?? ''); if (v === null) return; try { B.modifyPosition(acct, id, { tp: v === '' ? null : Number(v) }); } catch (e) { orderMsg(e.message, true); } redraw(); };
-window.closeEverything = () => { if (cur < 0) return; B.closeAll(acct, { bid: bid(), time: nowSec() }); log('Tout fermé.', 'info'); redraw(); };
-
-function renderLines() {
-  for (const l of lines) series.removePriceLine(l);
-  lines = []; dragLines = [];
-  if (!acct) return;
-  const add = (price, color, title, dash = 0, dragInfo = null) => { if (price == null) return; const line = series.createPriceLine({ price, color, lineWidth: 1, lineStyle: dash, axisLabelVisible: true, title }); lines.push(line); if (dragInfo) dragLines.push({ ...dragInfo, price, line }); };
-  for (const p of acct.positions) { add(p.entry, '#ffffff', `#${p.id} ${p.side === 'buy' ? '▲' : '▼'}`); add(p.sl, '#ff5c5f', `SL #${p.id}`, 2, { id: p.id, kind: 'sl' }); add(p.tp, '#2fd480', `TP #${p.id}`, 2, { id: p.id, kind: 'tp' }); }
-  for (const o of acct.pending) add(o.price, '#e8b339', `${o.type} #${o.id}`, 1, { id: o.id, kind: 'pending' });
-}
-function renderPanel() {
-  const has = cur >= 0 && acct;
-  $('btn-buy').disabled = !has; $('btn-sell').disabled = !has;
-  if (!has) return;
-  const fl = B.floatingPnl(acct, bid());
-  $('a-bal').textContent = fmt(acct.balance);
-  $('a-eq').textContent = fmt(acct.balance + fl);
-  $('a-fl').innerHTML = `<span class="${fl >= 0 ? 'win' : 'loss'}">${fl >= 0 ? '+' : ''}${fmt(fl)}</span>`;
-  $('a-px').textContent = `${px(bid())} / ${px(bid() + acct.spread)}`;
-  const rows = acct.positions.map((p) => {
-    const f = (p.side === 'buy' ? bid() - p.entry : p.entry - (bid() + acct.spread)) * p.units;
-    return `<tr><td>#${p.id} ${p.side === 'buy' ? '▲' : '▼'}</td><td>${fmt(p.units, 2)}</td><td>${px(p.entry)}</td><td>${p.sl != null ? px(p.sl) : '—'}</td><td>${p.tp != null ? px(p.tp) : '—'}</td><td class="${f >= 0 ? 'win' : 'loss'}">${f >= 0 ? '+' : ''}${fmt(f)}</td></tr>
-      <tr><td colspan="6"><button class="mini" onclick="closeOne(${p.id},1)">Fermer</button> <button class="mini" onclick="closeOne(${p.id},0.5)">50 %</button> <button class="mini" onclick="beOne(${p.id})">Break-even</button> <button class="mini" onclick="moveStop(${p.id})">Stop</button> <button class="mini" onclick="moveTarget(${p.id})">Objectif</button></td></tr>`;
-  }).join('');
-  const pend = acct.pending.map((o) => `<tr><td>#${o.id} ${o.side === 'buy' ? '▲' : '▼'} ${o.type}</td><td>${fmt(o.units, 2)}</td><td>${px(o.price)}</td><td>${o.sl != null ? px(o.sl) : '—'}</td><td>${o.tp != null ? px(o.tp) : '—'}</td><td><button class="mini" onclick="cancelOne(${o.id})">Annuler</button></td></tr>`).join('');
-  $('pos-list').innerHTML = rows || pend ? `<table class="tbl"><thead><tr><th>Position</th><th>Taille</th><th>Entrée</th><th>Stop</th><th>Obj.</th><th>P&amp;L</th></tr></thead><tbody>${rows}${pend}</tbody></table>` : 'Aucune.';
-  const s = B.stats(acct);
-  $('res-summary').textContent = s.trades ? `— ${s.trades} trades, ${fmt(s.winRate * 100, 0)} % gagnants, ${s.netPnl >= 0 ? '+' : ''}${fmt(s.netPnl)}${s.tradesWithR ? `, ${fmt(s.totalR, 1)}R` : ''}, drawdown ${fmt(s.maxDrawdown)}` : '';
-  $('hist-list').innerHTML = acct.history.length ? `<table class="tbl"><thead><tr><th>#</th><th>Sens</th><th>Entrée</th><th>Sortie</th><th>P&amp;L</th><th>R</th><th>Cause</th></tr></thead><tbody>${[...acct.history].reverse().map((t) => `<tr><td>${t.id}</td><td>${t.side === 'buy' ? '▲' : '▼'}</td><td>${px(t.entry)}</td><td>${px(t.exit)}</td><td class="${t.pnl >= 0 ? 'win' : 'loss'}">${t.pnl >= 0 ? '+' : ''}${fmt(t.pnl)}</td><td>${t.r === null ? '—' : fmt(t.r, 1)}</td><td>${t.reason}</td></tr>`).join('')}</tbody></table>` : 'Aucun trade fermé.';
-}
-function renderSignals() {
-  if (!data) return;
-  const t = nowSec();
-  const seen = data.trades.map((x, i) => ({ x, i })).filter(({ x }) => x.entrySec <= t);
-  const closed = seen.filter(({ x }) => x.exitSec <= t);
-  const totalR = closed.reduce((s, { x }) => s + x.rMultiple, 0);
-  $('sig-summary').textContent = data.trades.length ? `— ${seen.length} apparus sur ${data.trades.length}${closed.length ? ` · résultat des ${closed.length} terminés : ${totalR >= 0 ? '+' : ''}${fmt(totalR, 1)}R` : ''}` : '— aucun signal dans la période';
-  if (!seen.length) { $('sig-list').innerHTML = '<div class="meta">Aucun signal apparu pour le moment — avance dans le temps ou utilise « → signal ».</div>'; return; }
-  $('sig-list').innerHTML = `<table class="tbl"><thead><tr><th>Quand (NY)</th><th>Stratégie</th><th>Sens</th><th>Entrée</th><th>Stop</th><th>Obj.</th><th>Résultat</th><th></th></tr></thead><tbody>${[...seen].reverse().map(({ x, i }) => `<tr>
-    <td>${new Date(x.entrySec * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
-    <td><span class="chip" style="background:${colorOf(x.strategyId)}">${shortName(x.strategyId)}</span></td><td>${x.direction === 'bullish' ? '▲' : '▼'}</td><td>${px(x.entryPrice)}</td><td>${px(x.stopPrice)}</td><td>${x.targetPrice != null ? px(x.targetPrice) : '—'}</td>
-    <td>${x.exitSec <= t ? `<span class="${x.rMultiple >= 0 ? 'win' : 'loss'}">${x.rMultiple >= 0 ? '+' : ''}${fmt(x.rMultiple, 1)}R</span>` : '<span class="meta">en cours…</span>'}</td>
-    <td>${x.exitSec > t ? `<button class="mini" onclick="takeSignal(${i})">Prendre</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
-}
-function renderNews() {
-  if (!data) return;
-  const t = nowSec();
-  if (!data.news.length) { $('news-list').innerHTML = data.newsCoverage ? `Aucune annonce dans cette période (les annonces connues couvrent ${new Date(data.newsCoverage.from).getUTCFullYear()}–${new Date(data.newsCoverage.to).getUTCFullYear()} seulement).` : '—'; return; }
-  const past = data.news.filter((n) => n.sec <= t).slice(-4);
-  const next = data.news.filter((n) => n.sec > t).slice(0, 3);
-  const row = (n, cls) => `<div class="${cls}">📰 <strong>${n.label}</strong> — ${n.name} · ${new Date(n.sec * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} NY</div>`;
-  $('news-list').innerHTML = (next.length ? '<div>À venir :</div>' + next.map((n) => row(n, 'win')).join('') : '') + (past.length ? '<div style="margin-top:6px;">Passées :</div>' + past.map((n) => row(n, '')).join('') : '');
-}
-function log(text, cls = '') { const el = $('log'); el.insertAdjacentHTML('afterbegin', `<div class="${cls}">${cur >= 0 ? new Date(nowSec() * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' · ' : ''}${text}</div>`); while (el.children.length > 80) el.lastChild.remove(); }
-
-
-// ---------- sessions layer (same windows and per-viewer settings as chart.html) ----------
+// ---------------------------------------------------------------- sessions layer (same windows and settings as chart.html)
 const SESSION_RGB = { cbdr: '167,139,250', asia: '76,158,255', london: '47,212,128', nyam: '232,179,57', silver: '255,140,60' };
 let sessionDefs = [];
 function loadSessionState() { try { const r = JSON.parse(localStorage.getItem('chartSessionState') || '{}'); return { master: r.master !== false, enabled: r.enabled || {}, hours: r.hours || {} }; } catch { return { master: true, enabled: {}, hours: {} }; } }
@@ -520,12 +382,13 @@ let sessionState = loadSessionState();
 const saveSessionState = () => { try { localStorage.setItem('chartSessionState', JSON.stringify(sessionState)); } catch {} };
 const sessionOn = (k) => sessionState.master && sessionState.enabled[k] !== false;
 const sessionHours = (d) => ({ ...d, ...(sessionState.hours[d.key] || {}) });
-const nyParts = (() => { const f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); return (ms) => { const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return { y: +p.year, m0: +p.month - 1, d: +p.day, minutes: +p.hour * 60 + +p.minute }; }; })();
+const nyParts = (() => { const f = new Intl.DateTimeFormat('en-US', { ...nyOpts, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); return (ms) => { const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return { y: +p.year, m0: +p.month - 1, d: +p.day, minutes: +p.hour * 60 + +p.minute }; }; })();
 function nyLocalToUtcMs(y, m0, d, hourFloat) { const minutes = Math.round(hourFloat * 60); const guess = Date.UTC(y, m0, d) + minutes * 60000 + 5 * 3600000; const g = nyParts(guess); return guess + ((Date.UTC(y, m0, d) / 60000 + minutes) - (Date.UTC(g.y, g.m0, g.d) / 60000 + g.minutes)) * 60000; }
 function computeSessionBands() {
-  if (cur < 0 || !sessionState.master || tfSec > 3600) return [];
-  const first = nyParts(base[0].t * 1000), lastMs = base[cur].t * 1000, bands = [];
-  const idx = (ms) => { let lo = 0, hi = cur + 1; while (lo < hi) { const m = (lo + hi) >> 1; if (base[m].t * 1000 >= ms) hi = m; else lo = m + 1; } return lo; };
+  const p = act();
+  if (!p || p.cur < 0 || !sessionState.master || tfSec > 3600) return [];
+  const first = nyParts(p.base[0].t * 1000), lastMs = p.base[p.cur].t * 1000, bands = [];
+  const idx = (ms) => { let lo = 0, hi = p.cur + 1; while (lo < hi) { const m = (lo + hi) >> 1; if (p.base[m].t * 1000 >= ms) hi = m; else lo = m + 1; } return lo; };
   for (let dayMs = Date.UTC(first.y, first.m0, first.d); dayMs <= lastMs + 86400000; dayMs += 86400000) {
     const day = new Date(dayMs);
     for (const b of sessionDefs) {
@@ -533,8 +396,8 @@ function computeSessionBands() {
       const def = sessionHours(b);
       const i0 = idx(nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.startHour));
       const i1 = idx(nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.endHour)) - 1;
-      if (i0 > i1 || i0 > cur) continue;
-      bands.push({ key: def.key, label: def.label, startSec: snap(base[i0].t), endSec: snap(base[Math.min(i1, cur)].t) });
+      if (i0 > i1 || i0 > p.cur) continue;
+      bands.push({ key: def.key, label: def.label, startSec: snap(p.base[i0].t), endSec: snap(p.base[Math.min(i1, p.cur)].t) });
     }
   }
   return bands;
@@ -568,6 +431,7 @@ series.attachPrimitive(sessionsPrim);
 function renderSessionPanel() {
   $('session-list').innerHTML = sessionDefs.map((b) => { const d = sessionHours(b); return `<div class="session-row" data-key="${b.key}"><label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" data-role="on" ${sessionState.enabled[b.key] !== false ? 'checked' : ''} /><span style="border-left:3px solid rgb(${SESSION_RGB[b.key] || '150,150,150'});padding-left:6px;">${b.label}</span></label><div class="session-hours"><input type="number" data-role="start" min="0" max="23.75" step="0.25" value="${d.startHour}" /> → <input type="number" data-role="end" min="0.25" max="24" step="0.25" value="${d.endHour}" /> h NY</div></div>`; }).join('');
 }
+function redrawSessions() { sessionsPrim.setBands(computeSessionBands()); $('session-note').textContent = tfSec > 3600 ? '— visibles de M1 à H1 seulement' : ''; }
 $('toggle-sessions').addEventListener('change', (e) => { sessionState.master = e.currentTarget.checked; saveSessionState(); redrawSessions(); });
 $('session-list').addEventListener('change', (e) => {
   const row = e.target.closest('.session-row'); if (!row) return;
@@ -581,46 +445,470 @@ $('session-list').addEventListener('change', (e) => {
   saveSessionState(); redrawSessions();
 });
 $('session-reset').addEventListener('click', () => { sessionState = { master: true, enabled: {}, hours: {} }; saveSessionState(); $('toggle-sessions').checked = true; renderSessionPanel(); redrawSessions(); });
-function redrawSessions() { sessionsPrim.setBands(computeSessionBands()); $('session-note').textContent = tfSec > 3600 ? '— visibles de M1 à H1 seulement' : ''; }
 fetch('/api/sessions').then((r) => r.json()).then((d) => { sessionDefs = d.sessions || []; renderSessionPanel(); redrawSessions(); }).catch(() => {});
 
-// ---------- drag the stop / target / pending-order lines with the mouse ----------
-let dragLines = []; // {id, kind:'sl'|'tp'|'pending', price, line}
-let drag = null;
+// ---------------------------------------------------------------- pairs
+const idxAtOrBefore = (arr, t, key) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (key(arr[m]) <= t) lo = m + 1; else hi = m; } return lo - 1; };
+const curFromTime = (p, t) => idxAtOrBefore(p.base, t, (b) => b.t);
+function rateFor(p, t) {
+  const r = p.rates;
+  if (!r || !r.length) return 1;
+  const i = idxAtOrBefore(r, t, (x) => x[0]);
+  return r[Math.max(0, i)][1];
+}
+function initPair(pd, fromSec) {
+  const p = {
+    id: pd.id, symbol: pd.symbol, dataset: pd.dataset, spread: pd.spread, baseMin: pd.baseMinutes || 15,
+    instrument: pd.instrument, rates: pd.instrument.conversion.rates, contract: pd.instrument.contractSize,
+    base: pd.candles.map(([t, o, h, l, c]) => ({ t, o, h, l, c })),
+    trades: pd.trades.map((x) => ({ ...x, entrySec: Math.floor(x.entryTime / 1000), exitSec: Math.floor(x.exitTime / 1000) })).sort((a, b) => a.entrySec - b.entrySec),
+    notApplicable: pd.notApplicable || [], cur: -1, fromSec,
+  };
+  p.byKey = new Map(p.trades.map((t) => [A.tradeKey(p.id, t), t]));
+  return p;
+}
+const label = (p) => p.dataset && p.dataset.name ? p.dataset.name : p.id;
+
+// ---------------------------------------------------------------- simulation core
+function feedBar(p, i) {
+  const b = p.base[i];
+  acct.spreads[p.id] = p.spread;
+  acct.rates[p.id] = rateFor(p, b.t);
+  const events = B.onCandle(acct, { time: b.t, open: b.o, high: b.h, low: b.l, close: b.c }, p.id);
+  for (const e of events) onBrokerEvent(e, p, b);
+  if (cfg.mode === 'auto') autoStep(p, b.t);
+  if (p.id === active && !silent) pushBar(p, i);
+}
+function marker(p, m) { (userMarkers[p.id] ||= []).push(m); }
+function onBrokerEvent(e, p, b) {
+  if (e.type === 'filled') { log(`${label(p)} : ordre exécuté à ${px(e.price)} (#${e.id})`, 'info'); marker(p, { sec: b.t, pos: e.side === 'buy' ? 'belowBar' : 'aboveBar', shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' }); }
+  if (e.type === 'closed') { const who = e.tag ? shortName(e.tag) : 'Toi'; log(`${label(p)} : #${e.id} ${who} fermé (${e.reason}) à ${px(e.price)} : ${sgn(e.pnl)}`, e.pnl >= 0 ? 'win' : 'loss'); marker(p, { sec: b.t, pos: 'aboveBar', shape: 'circle', color: e.pnl >= 0 ? '#2fd480' : '#ff5c5f', text: `${who} ${sgn(e.pnl, 0)}` }); }
+}
+function autoStep(p, t) {
+  const events = A.stepAuto(acct, autoState, p.id, p.trades, t, { fromSec: p.fromSec, riskPct: cfg.risk, guard: cfg.guard ? A.DEFAULT_GUARD : null });
+  for (const e of events) {
+    if (e.type === 'opened') { log(`${label(p)} : le bot prend ${shortName(e.trade.strategyId)} ${e.trade.direction === 'bullish' ? '▲' : '▼'} à ${px(e.pos.entry)}`, 'info'); marker(p, { sec: t, pos: e.trade.direction === 'bullish' ? 'belowBar' : 'aboveBar', shape: e.trade.direction === 'bullish' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Bot' }); }
+    if (e.type === 'closed') { log(`${label(p)} : ${shortName(e.trade.strategyId)} clôturé par la stratégie : ${sgn(e.pnl)}`, e.pnl >= 0 ? 'win' : 'loss'); marker(p, { sec: t, pos: 'aboveBar', shape: 'circle', color: e.pnl >= 0 ? '#2fd480' : '#ff5c5f', text: `Bot ${sgn(e.pnl, 0)}` }); }
+    if (e.type === 'skipped') log(`${label(p)} : ${shortName(e.trade.strategyId)} non pris — ${e.reason}`, 'info');
+  }
+}
+/** Moves the clock one master bar forward; the other pairs follow to the same instant. */
+function advanceOne() {
+  const m = master();
+  if (m.cur >= m.base.length - 1) return false;
+  m.cur++;
+  now = m.base[m.cur].t;
+  feedBar(m, m.cur);
+  for (const id of order.slice(1)) {
+    const p = P[id];
+    while (p.cur + 1 < p.base.length && p.base[p.cur + 1].t <= now) { p.cur++; feedBar(p, p.cur); }
+  }
+  B.recordEquity(acct, bidsMap(), now);
+  if (!silent && (m.cur - startStep) % snapEvery === 0) takeSnapshot();
+  return true;
+}
+
+// snapshots + actions = rewind: restore the nearest earlier snapshot, re-run the bars (the auto trader is
+// deterministic) and re-apply the user's own orders at the bar they were placed on
+function takeSnapshot() {
+  const { equityCurve, ...rest } = acct;
+  snaps.push({ step: master().cur, now, eqLen: equityCurve.length, acct: structuredClone(rest), auto: structuredClone(autoState), markers: structuredClone(userMarkers), cfg: { ...cfg } });
+  if (snaps.length > SNAP_MAX) snaps.splice(1, 1); // keep the very first, thin the rest
+}
+function restoreSnapshot(s) {
+  acct = { ...structuredClone(s.acct), equityCurve: acct.equityCurve.slice(0, s.eqLen) };
+  autoState = structuredClone(s.auto);
+  userMarkers = structuredClone(s.markers);
+  cfg = { ...s.cfg };
+  now = s.now;
+  for (const id of order) { const p = P[id]; p.cur = curFromTime(p, now); acct.spreads[id] = p.spread; acct.rates[id] = rateFor(p, now); }
+  syncCfgUi();
+}
+function rewindTo(targetStep) {
+  stopPlay();
+  const m = master();
+  targetStep = Math.max(startStep, Math.min(targetStep, m.cur));
+  const s = [...snaps].reverse().find((x) => x.step <= targetStep) || snaps[0];
+  const drop = m.cur - targetStep;
+  silent = true;
+  restoreSnapshot(s);
+  replayActionsAt(s.step);
+  while (m.cur < targetStep && advanceOne()) replayActionsAt(m.cur);
+  silent = false;
+  actions = actions.filter((a) => a.step <= targetStep);
+  snaps = snaps.filter((x) => x.step <= targetStep);
+  if (!snaps.length || snaps[snaps.length - 1].step !== targetStep) { /* the next periodic snapshot will cover it */ }
+  log(drop > 0 ? `Retour en arrière de ${drop} bougie(s)` : 'Retour au point de départ', 'info');
+  redraw({ resetView: true });
+}
+const replayActionsAt = (step) => { for (const a of actions) if (a.step === step) { try { applyAction(a); } catch { /* an order that was valid then is valid again; ignore */ } } };
+
+// ---------------------------------------------------------------- actions (every user operation goes through here so it can be replayed)
+function doAction(a) {
+  a.step = master().cur;
+  const res = applyAction(a); // throws on an invalid order: nothing is logged then
+  actions.push(a);
+  return res;
+}
+function applyAction(a) {
+  const p = a.pairId ? P[a.pairId] : null;
+  switch (a.k) {
+    case 'cfg': cfg = { ...a.cfg }; syncCfgUi(); return null;
+    case 'place': return placeOrder(p, a.side, a.o);
+    case 'take': return takeTrade(p, a.key, a.o);
+    case 'close': B.closePosition(acct, a.id, { bid: bidOf(P[posSymbol(a.id)]), time: now, fraction: a.frac }); marker(P[posSymbolOrLast(a)], { sec: now, pos: 'aboveBar', shape: 'circle', color: '#ffffff', text: 'Toi' }); return null;
+    case 'be': B.breakEven(acct, a.id); return null;
+    case 'cancel': B.cancelPending(acct, a.id); return null;
+    case 'modify': B.modifyPosition(acct, a.id, a.patch); return null;
+    case 'movePending': B.movePending(acct, a.id, { price: a.price, bid: bidOf(P[pendSymbol(a.id)]) }); return null;
+    case 'closeAll': B.closeAll(acct, { bids: bidsMap(), time: now }); return null;
+    default: throw new Error(`Action inconnue: ${a.k}`);
+  }
+}
+const posSymbol = (id) => (acct.positions.find((p) => p.id === id) || {}).symbol;
+const posSymbolOrLast = (a) => a.pairId || active;
+const pendSymbol = (id) => (acct.pending.find((o) => o.id === id) || {}).symbol;
+function orderGeometry(p, side, o) {
+  const spread = p.spread;
+  const marketNow = side === 'buy' ? bidOf(p) + spread : bidOf(p);
+  const entry = o.type === 'market' ? marketNow : o.price;
+  const sl = o.slDist > 0 ? (side === 'buy' ? entry - o.slDist : entry + o.slDist) : null;
+  const tpD = o.tpDist > 0 ? o.tpDist : (o.rr > 0 && o.slDist > 0 ? o.rr * o.slDist : 0);
+  const tp = tpD > 0 ? (side === 'buy' ? entry + tpD : entry - tpD) : null;
+  return { entry, sl, tp };
+}
+function sizeUnits(p, o, entry, sl) {
+  if (o.mode === 'lots') return o.size * (o.contract > 0 ? o.contract : p.contract);
+  if (o.mode === 'units') return o.size;
+  if (!(o.slDist > 0)) throw new Error('Pour dimensionner au risque, indique la distance du stop.');
+  return B.sizeFromRisk({ balance: acct.balance, riskPct: o.size, entry, stop: sl, rate: acct.rates[p.id] ?? 1 });
+}
+function placeOrder(p, side, o) {
+  if (!p || p.cur < 0) throw new Error('Charge une simulation d\'abord.');
+  const { entry, sl, tp } = orderGeometry(p, side, o);
+  const units = sizeUnits(p, o, entry, sl);
+  const common = { side, units, sl, tp, trail: o.trail > 0 ? o.trail : null, symbol: p.id };
+  const res = o.type === 'market' ? B.placeMarket(acct, { ...common, bid: bidOf(p), time: now }) : B.placePending(acct, { ...common, type: o.type, price: o.price, bid: bidOf(p) });
+  if (acct.positions.includes(res)) marker(p, { sec: now, pos: side === 'buy' ? 'belowBar' : 'aboveBar', shape: side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' });
+  log(acct.positions.includes(res) ? `${label(p)} : ${side === 'buy' ? 'achat' : 'vente'} #${res.id} à ${px(res.entry)} (${fmt(res.units / (p.contract || 1), 2)} lot)` : `${label(p)} : ordre ${res.type} #${res.id} posé à ${px(res.price)}`, 'info');
+  return res;
+}
+function takeTrade(p, key, o) {
+  const t = p.byKey.get(key);
+  if (!t) throw new Error('Signal introuvable.');
+  const side = t.direction === 'bullish' ? 'buy' : 'sell';
+  const slDist = Math.abs(t.entryPrice - t.stopPrice);
+  const tpDist = t.targetPrice != null ? Math.abs(t.targetPrice - t.entryPrice) : 0;
+  const res = placeOrder(p, side, { ...o, slDist, tpDist, rr: 0, trail: 0, type: 'market', price: 0 });
+  log(`Signal ${shortName(t.strategyId)} pris à la main`, 'info');
+  return res;
+}
+function readOrder() {
+  const v = (id) => Number($(id).value);
+  return { slDist: v('o-sl') || 0, tpDist: v('o-tp') || 0, rr: v('o-rr') || 0, trail: v('o-trail') || 0, mode: $('o-mode').value, size: v('o-size'), contract: v('o-contract') || 0, type: $('o-type').value, price: v('o-price') };
+}
+const orderMsg = (t, bad) => { $('o-msg').innerHTML = t ? `<span class="${bad ? 'loss' : 'win'}">${t}</span>` : ''; };
+function tryAction(a) { try { doAction(a); orderMsg(''); } catch (err) { orderMsg(err.message, true); } redraw(); }
+window.order = (side) => { if (cfg.mode === 'auto') return; tryAction({ k: 'place', pairId: active, side, o: readOrder() }); };
+window.takeSignal = (key) => { if (cfg.mode === 'auto') return; const o = readOrder(); tryAction({ k: 'take', pairId: active, key, o: { mode: o.mode, size: o.size, contract: o.contract } }); };
+window.closeOne = (id, frac) => tryAction({ k: 'close', id, frac, pairId: posSymbol(id) });
+window.beOne = (id) => tryAction({ k: 'be', id });
+window.cancelOne = (id) => tryAction({ k: 'cancel', id });
+window.moveStop = (id) => { const pos = acct.positions.find((x) => x.id === id); const v = prompt('Nouveau stop (prix) :', pos.sl ?? ''); if (v === null) return; tryAction({ k: 'modify', id, patch: { sl: v === '' ? null : Number(v) } }); };
+window.moveTarget = (id) => { const pos = acct.positions.find((x) => x.id === id); const v = prompt('Nouvel objectif (prix) :', pos.tp ?? ''); if (v === null) return; tryAction({ k: 'modify', id, patch: { tp: v === '' ? null : Number(v) } }); };
+window.closeEverything = () => { if (!acct) return; tryAction({ k: 'closeAll' }); log('Tout fermé.', 'info'); };
+
+// ---------------------------------------------------------------- mode
+function syncCfgUi() {
+  $('mode').value = cfg.mode; $('auto-risk').value = cfg.risk; $('auto-guard').checked = cfg.guard;
+  const auto = cfg.mode === 'auto';
+  $('auto-opts').hidden = !auto; $('auto-guard-wrap').style.display = auto ? 'flex' : 'none';
+  $('manual-box').classList.toggle('locked', auto);
+  $('mode-note').textContent = auto
+    ? 'Le bot rejoue seul les stratégies cochées : chaque signal est pris quand l\'horloge l\'atteint, le P&L bouge en direct. Les ordres manuels et le bouton « Prendre » sont désactivés.'
+    : 'Tu passes les ordres toi-même. Passe en « bot seul » pour le voir rejouer tout seul les stratégies cochées, avec le P&L en direct.';
+}
+function cfgFromUi() { return { mode: $('mode').value, risk: Math.min(10, Math.max(0.05, Number($('auto-risk').value) || 1)), guard: $('auto-guard').checked }; }
+for (const id of ['mode', 'auto-risk', 'auto-guard']) $(id).addEventListener('change', () => { if (!acct) { cfg = cfgFromUi(); syncCfgUi(); return; } doAction({ k: 'cfg', cfg: cfgFromUi() }); redraw(); });
+$('o-type').addEventListener('change', () => { $('o-price-wrap').hidden = $('o-type').value === 'market'; });
+$('o-mode').addEventListener('change', () => { const m = $('o-mode').value; $('o-size-l').textContent = m === 'risk' ? 'Risque (%)' : m === 'lots' ? 'Lots' : 'Unités'; $('o-size').value = m === 'risk' ? 1 : m === 'lots' ? 0.1 : 1; });
+$('o-contract').addEventListener('change', () => { const p = act(); if (p) p.contract = Number($('o-contract').value) || p.instrument.contractSize; });
+$('o-spread').addEventListener('change', () => { const p = act(); if (p) { p.spread = Number($('o-spread').value) || 0; acct.spreads[p.id] = p.spread; } });
+
+// ---------------------------------------------------------------- chart data + drawing
+function timeframeData(p) {
+  const out = []; let last = null;
+  for (let i = 0; i <= p.cur; i++) {
+    const b = p.base[i]; const key = snap(b.t);
+    if (last && last.time === key) { last.high = Math.max(last.high, b.h); last.low = Math.min(last.low, b.l); last.close = b.c; }
+    else { last = { time: key, open: b.o, high: b.h, low: b.l, close: b.c }; out.push(last); }
+  }
+  tfLast = last;
+  return out;
+}
+function pushBar(p, i) {
+  const b = p.base[i]; const key = snap(b.t);
+  if (tfLast && tfLast.time === key) { tfLast.high = Math.max(tfLast.high, b.h); tfLast.low = Math.min(tfLast.low, b.l); tfLast.close = b.c; }
+  else tfLast = { time: key, open: b.o, high: b.h, low: b.l, close: b.c };
+  series.update({ ...tfLast });
+}
+const tfCount = (p) => { const set = new Set(); for (let i = 0; i <= p.cur; i++) set.add(snap(p.base[i].t)); return set.size; };
+function fitChart() { const p = act(); if (!p) return; const n = tfCount(p); if (n < 140) chart.timeScale().fitContent(); else chart.timeScale().setVisibleLogicalRange({ from: n - 140, to: n + 8 }); }
+window.fitChart = fitChart;
+window.zoomChart = (f) => { const r = chart.timeScale().getVisibleLogicalRange(); if (!r) return; chart.timeScale().setVisibleLogicalRange({ from: r.to - (r.to - r.from) * f, to: r.to }); };
+
+function redraw({ resetView = false } = {}) {
+  const p = act();
+  if (!p || p.cur < 0) return;
+  if (tfSec < p.baseMin * 60) tfSec = p.baseMin * 60;
+  if (resetView) { series.setData(timeframeData(p)); }
+  const t = now;
+  const mk = [], drawn = [];
+  for (const x of p.trades) {
+    if (x.entrySec > t) break; // sorted by entry: nothing later is visible yet
+    const closed = x.exitSec <= t, buy = x.direction === 'bullish';
+    mk.push({ time: snap(x.entrySec), position: buy ? 'belowBar' : 'aboveBar', shape: buy ? 'arrowUp' : 'arrowDown', color: colorOf(x.strategyId), text: shortName(x.strategyId) });
+    if (closed) mk.push({ time: snap(x.exitSec), position: buy ? 'aboveBar' : 'belowBar', shape: 'circle', color: x.rMultiple >= 0 ? '#2fd480' : '#ff5c5f', text: `${sgn(x.rMultiple, 1)}R` });
+    drawn.push({ entrySec: x.entrySec, exitSec: closed ? x.exitSec : null, entry: x.entryPrice, stop: x.stopPrice, target: x.targetPrice });
+  }
+  for (const m of userMarkers[p.id] || []) if (m.sec <= t) mk.push({ time: snap(m.sec), position: m.pos, shape: m.shape, color: m.color, text: m.text });
+  mk.sort((a, b) => a.time - b.time);
+  markersApi.setMarkers(mk);
+  const news = data && $('sim-news').checked ? data.news.filter((n) => n.sec <= t) : [];
+  overlay.set(drawn, news, tfLast ? tfLast.time : null);
+  renderLines(); renderPanel(); renderSignals(); renderNews(); renderTabs(); redrawSessions();
+  $('clock').innerHTML = `<strong>${nyText(t)}</strong> · M${master().baseMin} · bougie ${master().cur + 1}/${master().base.length}`;
+}
+
+function renderLines() {
+  for (const l of priceLines) series.removePriceLine(l);
+  priceLines = []; dragLines = [];
+  if (!acct || !act()) return;
+  const id = active;
+  const add = (price, color, title, dash = 0, info = null) => { if (price == null) return; const line = series.createPriceLine({ price, color, lineWidth: 1, lineStyle: dash, axisLabelVisible: true, title }); priceLines.push(line); if (info) dragLines.push({ ...info, price, line }); };
+  for (const p of acct.positions.filter((x) => x.symbol === id)) {
+    const who = p.tag ? shortName(p.tag) : '';
+    add(p.entry, '#ffffff', `#${p.id} ${p.side === 'buy' ? '▲' : '▼'} ${who}`); add(p.sl, '#ff5c5f', `SL #${p.id}`, 2, { id: p.id, kind: 'sl' }); add(p.tp, '#2fd480', `TP #${p.id}`, 2, { id: p.id, kind: 'tp' });
+  }
+  for (const o of acct.pending.filter((x) => x.symbol === id)) add(o.price, '#e8b339', `${o.type} #${o.id}`, 1, { id: o.id, kind: 'pending' });
+}
+function openPnl(p) { return B.positionPnl(acct, p, bidOf(P[p.symbol])); }
+function renderPanel() {
+  const has = !!acct && !!act() && act().cur >= 0;
+  const auto = cfg.mode === 'auto';
+  $('btn-buy').disabled = !has || auto; $('btn-sell').disabled = !has || auto;
+  if (!has) return;
+  const p = act();
+  const bids = bidsMap();
+  const fl = B.floatingPnlBids(acct, bids);
+  const eq = acct.balance + fl;
+  const total = eq - acct.startBalance;
+  $('a-bal').textContent = fmt(acct.balance);
+  $('a-eq').textContent = fmt(eq);
+  $('a-fl').innerHTML = `<span class="${fl >= 0 ? 'win' : 'loss'}">${sgn(fl)}</span>`;
+  $('a-px').textContent = `${px(bidOf(p))} / ${px(bidOf(p) + p.spread)}`;
+  $('acct-cur').textContent = '— en dollars';
+  const c = p.instrument.conversion;
+  $('conv-note').textContent = p.instrument.quote === 'USD' ? '' : c.status === 'ok' ? `${p.symbol} cote en ${p.instrument.quote} : P&L converti en dollars avec ${c.pair}, au cours de chaque bougie.` : `${p.symbol} cote en ${p.instrument.quote} et aucune paire de conversion n'est dans tes données : le P&L reste exprimé en ${p.instrument.quote} (compté comme des dollars).`;
+  if (document.activeElement !== $('o-spread')) $('o-spread').value = p.spread;
+  if (document.activeElement !== $('o-contract')) $('o-contract').value = p.contract;
+  const closed = acct.history.length;
+  $('kpis').innerHTML = `<div><small>Équité</small>${fmt(eq)}</div><div><small>P&amp;L total</small><span class="${total >= 0 ? 'win' : 'loss'}">${sgn(total)} (${sgn((total / acct.startBalance) * 100, 2)} %)</span></div><div><small>P&amp;L latent</small><span class="${fl >= 0 ? 'win' : 'loss'}">${sgn(fl)}</span></div><div><small>Positions ouvertes</small>${acct.positions.length}</div><div><small>Trades clôturés</small>${closed}</div>${auto ? `<div><small>Bot : pris / refusés</small>${autoState.taken.size - autoState.skipped.length} / ${autoState.skipped.length}</div>` : ''}`;
+  const rows = acct.positions.map((x) => {
+    const f = openPnl(x); const q = P[x.symbol];
+    return `<tr><td>${q ? label(q) : x.symbol}<br><span class="meta">#${x.id} ${x.side === 'buy' ? '▲' : '▼'}${x.tag ? ' ' + shortName(x.tag) : ''}</span></td><td>${fmt(x.units / (q?.contract || 1), 2)} lot</td><td>${px(x.entry)}</td><td>${x.sl != null ? px(x.sl) : '—'}</td><td>${x.tp != null ? px(x.tp) : '—'}</td><td class="${f >= 0 ? 'win' : 'loss'}">${sgn(f)}</td></tr>
+      <tr><td colspan="6"><button class="mini" onclick="closeOne(${x.id},1)">Fermer</button> <button class="mini" onclick="closeOne(${x.id},0.5)">50 %</button> <button class="mini" onclick="beOne(${x.id})">Break-even</button> <button class="mini" onclick="moveStop(${x.id})">Stop</button> <button class="mini" onclick="moveTarget(${x.id})">Objectif</button></td></tr>`;
+  }).join('');
+  const pend = acct.pending.map((o) => `<tr><td>${P[o.symbol] ? label(P[o.symbol]) : o.symbol}<br><span class="meta">#${o.id} ${o.side === 'buy' ? '▲' : '▼'} ${o.type}</span></td><td>${fmt(o.units / (P[o.symbol]?.contract || 1), 2)} lot</td><td>${px(o.price)}</td><td>${o.sl != null ? px(o.sl) : '—'}</td><td>${o.tp != null ? px(o.tp) : '—'}</td><td><button class="mini" onclick="cancelOne(${o.id})">Annuler</button></td></tr>`).join('');
+  $('pos-list').innerHTML = rows || pend ? `<table class="tbl"><thead><tr><th>Position</th><th>Taille</th><th>Entrée</th><th>Stop</th><th>Obj.</th><th>P&amp;L</th></tr></thead><tbody>${rows}${pend}</tbody></table>` : 'Aucune.';
+  const s = B.stats(acct);
+  $('res-summary').textContent = s.trades ? `— ${s.trades} trades, ${fmt(s.winRate * 100, 0)} % gagnants, ${sgn(s.netPnl)}${s.tradesWithR ? `, ${fmt(s.totalR, 1)}R` : ''}, drawdown ${fmt(s.maxDrawdown)}` : '';
+  const groups = new Map();
+  for (const h of acct.history) { const k = h.tag || 'manuel'; const g = groups.get(k) || { n: 0, w: 0, pnl: 0, r: 0, nr: 0 }; g.n++; if (h.pnl > 0) g.w++; g.pnl += h.pnl; if (h.r !== null) { g.r += h.r; g.nr++; } groups.set(k, g); }
+  $('strat-res').innerHTML = groups.size ? `<table class="tbl"><thead><tr><th>Qui</th><th>Trades</th><th>Gagnants</th><th>P&amp;L</th><th>R</th></tr></thead><tbody>${[...groups].map(([k, g]) => `<tr><td>${k === 'manuel' ? 'Moi (manuel)' : `<span class="chip" style="background:${colorOf(k)}">${shortName(k)}</span>`}</td><td>${g.n}</td><td>${g.w}</td><td class="${g.pnl >= 0 ? 'win' : 'loss'}">${sgn(g.pnl)}</td><td>${g.nr ? sgn(g.r, 1) : '—'}</td></tr>`).join('')}</tbody></table>` : '';
+  $('hist-list').innerHTML = acct.history.length ? `<table class="tbl"><thead><tr><th>#</th><th>Paire</th><th>Sens</th><th>Entrée</th><th>Sortie</th><th>P&amp;L</th><th>R</th><th>Cause</th></tr></thead><tbody>${[...acct.history].reverse().slice(0, 80).map((t) => `<tr><td>${t.id}</td><td>${P[t.symbol] ? label(P[t.symbol]) : t.symbol ?? ''}</td><td>${t.side === 'buy' ? '▲' : '▼'}</td><td>${px(t.entry)}</td><td>${px(t.exit)}</td><td class="${t.pnl >= 0 ? 'win' : 'loss'}">${sgn(t.pnl)}</td><td>${t.r === null ? '—' : fmt(t.r, 1)}</td><td>${t.reason}</td></tr>`).join('')}</tbody></table>` : 'Aucun trade fermé.';
+}
+function renderTabs() {
+  const bids = bidsMap();
+  $('pair-tabs').innerHTML = order.map((id) => {
+    const p = P[id];
+    const fl = acct ? acct.positions.filter((x) => x.symbol === id).reduce((s, x) => s + B.positionPnl(acct, x, bids[id]), 0) : 0;
+    const n = acct ? acct.positions.filter((x) => x.symbol === id).length : 0;
+    return `<button class="pairtab ${id === active ? 'active' : ''}" onclick="showPair('${id.replace(/'/g, '')}')">${label(p)}${id === order[0] ? ' ⏱' : ''}<small>${p.cur >= 0 ? px(bids[id]) : '—'}${n ? ` · <span class="${fl >= 0 ? 'win' : 'loss'}">${sgn(fl, 0)}</span>` : ''}</small></button>`;
+  }).join('');
+}
+window.showPair = (id) => { if (!P[id]) return; active = id; const p = P[id]; document.querySelectorAll('#tf-grp .tb').forEach((x) => { x.disabled = Number(x.dataset.tf) < p.baseMin * 60; x.classList.toggle('active', Number(x.dataset.tf) === Math.max(tfSec, p.baseMin * 60)); }); redraw({ resetView: true }); fitChart(); };
+function renderSignals() {
+  const p = act(); if (!p) return;
+  const t = now, auto = cfg.mode === 'auto';
+  const seen = p.trades.filter((x) => x.entrySec <= t);
+  const closed = seen.filter((x) => x.exitSec <= t);
+  const totalR = closed.reduce((s, x) => s + x.rMultiple, 0);
+  $('sig-summary').textContent = p.trades.length ? `— ${label(p)} : ${seen.length} apparus sur ${p.trades.length}${closed.length ? ` · résultat des ${closed.length} terminés (backtest) : ${sgn(totalR, 1)}R` : ''}` : `— aucun signal sur ${label(p)} dans la période${p.notApplicable.length ? ` (non applicable ici : ${p.notApplicable.map((id) => strategyLabels[id] || id).join(', ')})` : ''}`;
+  if (!seen.length) { $('sig-list').innerHTML = '<div class="meta">Aucun signal apparu pour le moment — avance dans le temps ou utilise « → signal ».</div>'; return; }
+  const skipped = new Map((autoState?.skipped || []).map((s) => [s.key, s.reason]));
+  const state = (x) => {
+    if (!auto) return x.exitSec > t ? `<button class="mini" onclick="takeSignal('${A.tradeKey(p.id, x)}')">Prendre</button>` : '';
+    const key = A.tradeKey(p.id, x);
+    if (x.entrySec < p.fromSec) return '<span class="meta">avant le départ</span>';
+    if (skipped.has(key)) return `<span class="meta" title="${skipped.get(key)}">refusé</span>`;
+    return autoState.taken.has(key) ? '<span class="win">pris par le bot</span>' : '<span class="meta">—</span>';
+  };
+  $('sig-list').innerHTML = `<table class="tbl"><thead><tr><th>Quand (NY)</th><th>Stratégie</th><th>Sens</th><th>Entrée</th><th>Stop</th><th>Obj.</th><th>Résultat (backtest)</th><th>${auto ? 'Bot' : ''}</th></tr></thead><tbody>${[...seen].reverse().map((x) => `<tr>
+    <td>${nyShort(x.entrySec)}</td><td><span class="chip" style="background:${colorOf(x.strategyId)}">${shortName(x.strategyId)}</span></td><td>${x.direction === 'bullish' ? '▲' : '▼'}</td><td>${px(x.entryPrice)}</td><td>${px(x.stopPrice)}</td><td>${x.targetPrice != null ? px(x.targetPrice) : '—'}</td>
+    <td>${x.exitSec <= t ? `<span class="${x.rMultiple >= 0 ? 'win' : 'loss'}">${sgn(x.rMultiple, 1)}R</span>` : '<span class="meta">en cours…</span>'}</td><td>${state(x)}</td></tr>`).join('')}</tbody></table>`;
+}
+function renderNews() {
+  if (!data) return;
+  const t = now;
+  if (!data.news.length) { $('news-list').innerHTML = data.newsCoverage ? `Aucune annonce dans cette période (les annonces connues couvrent ${new Date(data.newsCoverage.from).getUTCFullYear()}–${new Date(data.newsCoverage.to).getUTCFullYear()} seulement).` : '—'; return; }
+  const past = data.news.filter((n) => n.sec <= t).slice(-4), next = data.news.filter((n) => n.sec > t).slice(0, 3);
+  const row = (n, cls) => `<div class="${cls}">📰 <strong>${n.label}</strong> — ${n.name} · ${nyShort(n.sec)} NY</div>`;
+  $('news-list').innerHTML = (next.length ? '<div>À venir :</div>' + next.map((n) => row(n, 'win')).join('') : '') + (past.length ? '<div style="margin-top:6px;">Passées :</div>' + past.map((n) => row(n, '')).join('') : '');
+}
+
+// ---------------------------------------------------------------- controls
+function stopPlay() { playing = false; clearInterval(timer); $('btn-play').textContent = '▶ Lecture'; }
+window.togglePlay = () => {
+  if (!acct) return;
+  if (playing) return stopPlay();
+  playing = true; $('btn-play').textContent = '⏸ Pause';
+  timer = setInterval(() => {
+    const n = Math.max(1, Math.round((speed / 4) * (15 / master().baseMin)));
+    for (let i = 0; i < n; i++) if (!advanceOne()) { stopPlay(); log('Fin de la période chargée.', 'info'); break; }
+    redraw();
+  }, 250);
+};
+window.stepBars = (n) => { if (!acct) return; stopPlay(); for (let i = 0; i < n && advanceOne(); i++); redraw(); if (master().cur >= master().base.length - 1) log('Fin de la période chargée.', 'info'); };
+window.stepMinutes = (m) => window.stepBars(Math.max(1, Math.round(m / master().baseMin)));
+window.jumpNext = (kind) => {
+  if (!acct) return; stopPlay();
+  const all = kind === 'signal' ? order.flatMap((id) => P[id].trades.map((x) => x.entrySec)) : data.news.map((n) => n.sec);
+  const target = all.filter((s) => s > now).sort((a, b) => a - b)[0];
+  if (target === undefined) { log(kind === 'signal' ? 'Plus aucun signal dans la période chargée.' : 'Plus aucune annonce dans la période chargée.', 'info'); return; }
+  while (now < target && advanceOne());
+  redraw();
+};
+window.restart = () => { if (acct) rewindTo(startStep); };
+document.querySelector('.toolbar').addEventListener('click', (e) => { const b = e.target.closest('[data-back]'); if (!b || !acct) return; rewindTo(master().cur - Math.max(1, Math.round(Number(b.dataset.back) / master().baseMin))); });
+$('tf-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-tf]'); if (!b || b.disabled) return; tfSec = Number(b.dataset.tf); document.querySelectorAll('#tf-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); if (acct) { redraw({ resetView: true }); fitChart(); } });
+$('speed-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; speed = Number(b.dataset.speed); document.querySelectorAll('#speed-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); });
+
+// drag the stop / target / pending lines with the mouse
 const chartEl = $('chart');
 const yOf = (e) => e.clientY - chartEl.getBoundingClientRect().top;
 function hitLine(y) { let best = null, bd = 7; for (const d of dragLines) { const yy = series.priceToCoordinate(d.price); if (yy !== null && Math.abs(yy - y) < bd) { bd = Math.abs(yy - y); best = d; } } return best; }
-chartEl.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 || cur < 0) return;
-  const hit = hitLine(yOf(e)); if (!hit) return;
-  drag = hit; e.stopPropagation(); e.preventDefault();
-  chart.applyOptions({ handleScroll: false, handleScale: false });
-  chartEl.setPointerCapture?.(e.pointerId);
-}, true);
-chartEl.addEventListener('pointermove', (e) => {
-  if (drag) { const price = series.coordinateToPrice(yOf(e)); if (price !== null) drag.line.applyOptions({ price }); e.stopPropagation(); return; }
-  chartEl.style.cursor = hitLine(yOf(e)) ? 'ns-resize' : '';
-}, true);
-function endDrag(e) {
-  if (!drag) return;
-  const d = drag; drag = null;
-  chart.applyOptions({ handleScroll: true, handleScale: true });
+chartEl.addEventListener('pointerdown', (e) => { if (e.button !== 0 || !acct || cfg.mode === 'auto' && false) return; const hit = hitLine(yOf(e)); if (!hit) return; drag = hit; e.stopPropagation(); e.preventDefault(); chart.applyOptions({ handleScroll: false, handleScale: false }); chartEl.setPointerCapture?.(e.pointerId); }, true);
+chartEl.addEventListener('pointermove', (e) => { if (drag) { const price = series.coordinateToPrice(yOf(e)); if (price !== null) drag.line.applyOptions({ price }); e.stopPropagation(); return; } chartEl.style.cursor = hitLine(yOf(e)) ? 'ns-resize' : ''; }, true);
+chartEl.addEventListener('pointerup', (e) => {
+  if (!drag) return; e.stopPropagation();
+  const d = drag; drag = null; chart.applyOptions({ handleScroll: true, handleScale: true });
   const price = series.coordinateToPrice(yOf(e));
-  try {
-    if (price === null) throw new Error('Prix hors du graphique.');
-    const dec = decimalsFor(price);
-    const rounded = Number(price.toFixed(dec + 1));
-    if (d.kind === 'pending') B.movePending(acct, d.id, { price: rounded, bid: bid() });
-    else B.modifyPosition(acct, d.id, d.kind === 'sl' ? { sl: rounded } : { tp: rounded });
-    log(`${d.kind === 'sl' ? 'Stop' : d.kind === 'tp' ? 'Objectif' : 'Ordre'} #${d.id} déplacé à ${px(rounded)}`, 'info');
-    orderMsg('');
-  } catch (err) { orderMsg(err.message, true); }
-  redraw();
-}
-chartEl.addEventListener('pointerup', (e) => { if (drag) { e.stopPropagation(); endDrag(e); } }, true);
-chartEl.addEventListener('pointercancel', (e) => { if (drag) { drag = null; chart.applyOptions({ handleScroll: true, handleScale: true }); redraw(); } }, true);
+  if (price === null) { redraw(); return; }
+  const rounded = Number(price.toFixed(decimalsFor(price) + 1));
+  if (d.kind === 'pending') tryAction({ k: 'movePending', id: d.id, price: rounded });
+  else tryAction({ k: 'modify', id: d.id, patch: d.kind === 'sl' ? { sl: rounded } : { tp: rounded } });
+}, true);
+chartEl.addEventListener('pointercancel', () => { if (drag) { drag = null; chart.applyOptions({ handleScroll: true, handleScale: true }); redraw(); } }, true);
 
-// ---------- loading ----------
+// ---------------------------------------------------------------- loading
+function initSimulation() {
+  const m = master();
+  const balance = Number($('sim-balance').value) || 10000;
+  acct = B.createAccount({ balance });
+  for (const id of order) { acct.spreads[id] = P[id].spread; acct.rates[id] = 1; }
+  autoState = A.createAutoState();
+  actions = []; snaps = []; userMarkers = {};
+  cfg = cfgFromUi(); syncCfgUi();
+  const startIdx = Math.max(0, m.base.findIndex((b) => b.t >= startSec) - 1);
+  m.cur = startIdx; startStep = startIdx; now = m.base[startIdx].t;
+  for (const id of order.slice(1)) P[id].cur = curFromTime(P[id], now);
+  for (const id of order) acct.rates[id] = rateFor(P[id], now);
+  snapEvery = Math.max(32, Math.ceil(m.base.length / 400));
+  takeSnapshot();
+}
+window.resetAccount = () => { if (!acct) return; stopPlay(); initSimulation(); log('Simulation remise à zéro.', 'info'); redraw({ resetView: true }); fitChart(); };
+
+function requestBody(random) {
+  const from = $('sim-from').value, to = $('sim-to').value;
+  let days = 30;
+  if (from && to) days = Math.round((Date.parse(to) - Date.parse(from)) / 86400000);
+  else if (random && to && !from) days = 30;
+  if (!(days >= 1)) throw new Error('La date de fin doit être après la date de début.');
+  const ids = [...document.querySelectorAll('#sim-strats input:checked')].map((b) => b.value);
+  if ($('sim-botall').checked) ids.unshift('bot-all');
+  const extras = [...document.querySelectorAll('#sim-extras input:checked')].map((b) => b.value);
+  const body = { symbol: $('sim-symbol').value, extraSymbols: extras, days, strategyIds: ids, news: $('sim-news').checked, baseMinutes: Number($('sim-base').value) };
+  if (!random && from) body.from = from;
+  return body;
+}
+async function fetchReplay(body) {
+  const res = await fetch('/api/lab/replay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const d = await res.json();
+  if (!res.ok) throw new Error(d.error || `Erreur HTTP ${res.status}`);
+  return d;
+}
+window.loadReplay = async (random) => {
+  const btn = $('sim-load'); $('sim-msg').textContent = ''; stopPlay();
+  let body;
+  try { body = requestBody(random); } catch (e) { $('sim-msg').innerHTML = `<span class="loss">${e.message}</span>`; return; }
+  btn.disabled = true; btn.textContent = 'Chargement… (jusqu\'à ~2 min si tu affiches beaucoup de stratégies ou de paires)';
+  try {
+    const d = await fetchReplay(body);
+    data = d; data.days = body.days;
+    data.news = d.news.map((n) => ({ ...n, sec: Math.floor(n.time / 1000) }));
+    P = {}; order = [];
+    startSec = Math.floor(d.window.from / 1000);
+    const notes = [];
+    for (const pd of d.pairs) {
+      if (pd.error) { notes.push(`${pd.symbol} : ${pd.error}`); continue; }
+      P[pd.id] = initPair(pd, startSec); order.push(pd.id);
+    }
+    active = order[0];
+    $('sim-from').value = new Date(d.window.from).toISOString().slice(0, 10);
+    $('sim-to').value = new Date(d.window.to).toISOString().slice(0, 10);
+    initSimulation();
+    $('chart-empty').hidden = true;
+    const p = P[active];
+    tfSec = Math.max(tfSec, p.baseMin * 60);
+    document.querySelectorAll('#tf-grp .tb').forEach((x) => { x.disabled = Number(x.dataset.tf) < p.baseMin * 60; x.classList.toggle('active', Number(x.dataset.tf) === tfSec); });
+    redraw({ resetView: true }); fitChart();
+    const nTr = order.reduce((s, id) => s + P[id].trades.length, 0);
+    const na = order.flatMap((id) => P[id].notApplicable.map((x) => `${strategyLabels[x] || x} (${label(P[id])})`));
+    $('sim-msg').innerHTML = `Période chargée : ${nyText(startSec)} → ${nyText(Math.floor(d.window.to / 1000))} · ${order.length} paire(s), ${nTr} signal(aux) de stratégies, ${d.news.length} annonce(s). Le rejeu démarre à la date de début ; ce qui précède est du contexte.${na.length ? ` Non applicable (ignoré) : ${[...new Set(na)].join(', ')}.` : ''}${notes.length ? ` <span class="loss">${notes.join(' — ')}</span>` : ''}`;
+    $('chart-legend').innerHTML = [...new Set(order.flatMap((id) => P[id].trades.map((x) => x.strategyId)))].map((id) => `<span class="chip" style="background:${colorOf(id)}">${shortName(id)}</span>`).join('') + '↑↓ entrée · zone rouge = risque, zone verte = objectif · ● résultat une fois terminé';
+    fillAddPair();
+  } catch (err) { $('sim-msg').innerHTML = `<span class="loss">Erreur : ${err.message}</span>`; }
+  finally { btn.disabled = false; btn.textContent = 'Charger'; }
+};
+function fillAddPair() {
+  const custom = meta.customDatasets || [];
+  const opts = [...meta.symbols.map((s) => [s, s]), ...custom.map((d) => [d.id, `${d.name} — ${d.symbol}${d.m1 ? ' · M1' : ''}`])].filter(([id]) => !P[id]);
+  $('add-pair').innerHTML = `<option value="">Ajouter une paire au rejeu…</option>` + opts.map(([id, l]) => `<option value="${id}">${l}</option>`).join('');
+}
+window.addPair = async () => {
+  const id = $('add-pair').value; const msg = $('add-msg'); msg.textContent = '';
+  if (!acct) { msg.textContent = 'Charge une simulation d\'abord.'; return; }
+  if (!id) return;
+  if (order.length >= 4) { msg.textContent = '4 paires au plus.'; return; }
+  stopPlay();
+  msg.textContent = 'Chargement…';
+  try {
+    const custom = (meta.customDatasets || []).find((d) => d.id === id);
+    const baseMinutes = master().baseMin < 15 && custom && custom.m1 ? master().baseMin : 15;
+    const d = await fetchReplay({ symbol: id, fromMs: data.window.from, days: data.days, strategyIds: order.length ? currentStrategyIds() : [], news: false, baseMinutes });
+    const pd = d.pairs[0];
+    if (pd.error) throw new Error(pd.error);
+    const p = initPair(pd, now); // signals before this moment were never on the table for the bot
+    P[pd.id] = p; order.push(pd.id);
+    p.cur = curFromTime(p, now);
+    acct.spreads[p.id] = p.spread; acct.rates[p.id] = rateFor(p, now);
+    msg.textContent = `${label(p)} ajouté (${p.trades.length} signal(aux)).`;
+    fillAddPair(); redraw();
+  } catch (e) { msg.textContent = e.message; }
+};
+function currentStrategyIds() { const ids = [...document.querySelectorAll('#sim-strats input:checked')].map((b) => b.value); if ($('sim-botall').checked) ids.unshift('bot-all'); return ids; }
+
 async function loadMeta(prefer) {
   const res = await fetch('/api/lab/meta'); meta = await res.json();
   strategyLabels = Object.fromEntries(meta.strategies.map((s) => [s.id, s.label]));
@@ -631,50 +919,19 @@ async function loadMeta(prefer) {
   const all = [...meta.symbols, ...custom.map((d) => d.id)];
   $('sim-symbol').value = all.includes(keep) ? keep : (meta.symbols.includes('US100') ? 'US100' : meta.symbols[0]);
   if (!$('sim-strats').children.length) $('sim-strats').innerHTML = meta.strategies.map((s) => `<label><input type="checkbox" value="${s.id}" /> ${s.label}</label>`).join('');
+  $('sim-extras').innerHTML = [...meta.symbols.map((s) => [s, s]), ...custom.map((d) => [d.id, `${d.name} — ${d.symbol}`])].map(([id, l]) => `<label><input type="checkbox" value="${id}" /> ${l}</label>`).join('');
   const n = meta.replay.news;
   $('sim-news-cov').textContent = `(disponibles ${new Date(n.from).getUTCFullYear()}–${new Date(n.to).getUTCFullYear()} : ${n.count} annonces)`;
   updateBotWhich();
+  if (P && order.length) fillAddPair(); else $('add-pair').innerHTML = '<option value="">Charge une simulation d\'abord</option>';
 }
-function symbolOfSelection() { const v = $('sim-symbol').value; const c = (meta.customDatasets || []).find((d) => d.id === v); return c ? c.symbol : v; }
+const symbolOfSelection = () => { const v = $('sim-symbol').value; const c = (meta.customDatasets || []).find((d) => d.id === v); return c ? c.symbol : v; };
 function updateBotWhich() { const list = meta.replay.botMechanisms[symbolOfSelection()] || []; $('sim-bot-which').textContent = list.length ? `— sur ${symbolOfSelection()} : ${list.map((m) => m.label).join(', ')}` : `— le bot ne trade aucun de ses 8 mécanismes sur ${symbolOfSelection()}`; }
 $('sim-symbol').addEventListener('change', updateBotWhich);
-document.addEventListener('change', (e) => { if (e.target.closest('#sim-strats, #sim-botall')) countStrats(); });
-function countStrats() { const n = document.querySelectorAll('#sim-strats input:checked').length + ($('sim-botall').checked ? 1 : 0); $('sim-strat-count').textContent = `— ${$('sim-botall').checked ? 'les 8 du bot' : 'bot désactivé'}${n - ($('sim-botall').checked ? 1 : 0) ? ` + ${n - ($('sim-botall').checked ? 1 : 0)} du Labo` : ''}`; }
+function countStrats() { const extra = document.querySelectorAll('#sim-strats input:checked').length; $('sim-strat-count').textContent = `— ${$('sim-botall').checked ? 'les 8 du bot' : 'bot désactivé'}${extra ? ` + ${extra} du Labo` : ''}`; const ex = document.querySelectorAll('#sim-extras input:checked').length; $('sim-extra-count').textContent = ex ? `— ${ex} choisie(s)` : ''; }
+document.addEventListener('change', (e) => { if (e.target.closest('#sim-strats, #sim-botall, #sim-extras')) { if (e.target.closest('#sim-extras') && document.querySelectorAll('#sim-extras input:checked').length > 3) { e.target.checked = false; } countStrats(); } });
 
-window.loadReplay = async (random) => {
-  const btn = $('sim-load'); $('sim-msg').textContent = ''; stopPlay();
-  const ids = [...document.querySelectorAll('#sim-strats input:checked')].map((b) => b.value);
-  if ($('sim-botall').checked) ids.unshift('bot-all');
-  const body = { symbol: $('sim-symbol').value, days: Number($('sim-days').value) || 30, strategyIds: ids, news: $('sim-news').checked, baseMinutes: Number($('sim-base').value) };
-  if (!random && $('sim-from').value) body.from = $('sim-from').value;
-  btn.disabled = true; btn.textContent = 'Chargement… (jusqu\'à ~2 min si tu affiches beaucoup de stratégies)';
-  try {
-    const res = await fetch('/api/lab/replay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error || `Erreur HTTP ${res.status}`);
-    data = d;
-    baseMin = d.baseMinutes || 15;
-    base = d.candles.map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
-    if (tfSec < baseMin * 60) { tfSec = baseMin * 60; }
-    document.querySelectorAll('#tf-grp .tb').forEach((x) => { x.disabled = Number(x.dataset.tf) < baseMin * 60; x.classList.toggle('active', Number(x.dataset.tf) === tfSec); });
-    data.trades = d.trades.map((x) => ({ ...x, entrySec: Math.floor(x.entryTime / 1000), exitSec: Math.floor(x.exitTime / 1000) })).sort((a, b) => a.entrySec - b.entrySec);
-    data.news = d.news.map((n) => ({ ...n, sec: Math.floor(n.time / 1000) }));
-    const startSec = Math.floor(d.window.from / 1000);
-    cur = base.findIndex((b) => b.t >= startSec) - 1; if (cur < 0) cur = 0;
-    $('sim-from').value = new Date(d.window.from).toISOString().slice(0, 10);
-    $('o-spread').value = d.spread; userMarkers = []; newAccount();
-    $('chart-empty').hidden = true;
-    redraw({ resetView: true });
-    chart.timeScale().scrollToRealTime?.(); chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, tfDataLength() - 140), to: tfDataLength() + 8 });
-    const na = d.notApplicable.length ? ` Non applicable sur ${d.symbol} (ignoré) : ${d.notApplicable.map((id) => strategyLabels[id] || id).join(', ')}.` : '';
-    $('sim-msg').innerHTML = `Période chargée : ${nyText(Math.floor(d.window.from / 1000))} → ${nyText(Math.floor(d.window.to / 1000))} · ${d.trades.length} signal(aux) de stratégies, ${d.news.length} annonce(s). Le rejeu démarre à la date de départ ; les ${startSec ? Math.max(0, cur) : 0} bougies avant sont du contexte.${na}`;
-    $('chart-legend').innerHTML = [...new Set(data.trades.map((x) => x.strategyId))].map((id) => `<span class="chip" style="background:${colorOf(id)}">${shortName(id)}</span>`).join('') + (data.trades.length ? '↑↓ entrée · zone rouge = risque, zone verte = objectif · ● résultat une fois terminé' : '');
-  } catch (err) { $('sim-msg').innerHTML = `<span class="loss">Erreur : ${err.message}</span>`; }
-  finally { btn.disabled = false; btn.textContent = 'Charger'; }
-};
-function tfDataLength() { const set = new Set(); for (let i = 0; i <= cur; i++) set.add(snap(base[i].t)); return set.size; }
-
-// ---------- import ----------
+// ---------------------------------------------------------------- import
 const TOKEN_KEY = 'apexfvg_admin_token';
 try { $('imp-token').value = localStorage.getItem(TOKEN_KEY) || ''; } catch {}
 const impLog = (h) => { $('imp-log').insertAdjacentHTML('beforeend', `<div>${h}</div>`); return $('imp-log').lastElementChild; };
@@ -703,7 +960,7 @@ window.importFiles = async () => {
       if (!$('imp-keepm1').checked) q.set('keepM1', '0');
       const res = await fetch(`/api/lab/datasets/${encodeURIComponent(name)}/files?${q}`, { method: 'POST', headers: { 'x-admin-token': token, 'Content-Type': 'text/plain' }, body: await f.text() });
       let b = {}; try { b = await res.json(); } catch {}
-      if (!res.ok) { line.innerHTML = `<span class="loss">❌ ${f.name} : ${res.status === 403 ? 'token admin invalide' : res.status === 404 ? "import désactivé côté serveur (ADMIN_EXPORT_TOKEN absent)" : b.error || 'erreur ' + res.status}</span>`; break; }
+      if (!res.ok) { line.innerHTML = `<span class="loss">❌ ${f.name} : ${res.status === 403 ? 'token admin invalide' : res.status === 404 ? 'import désactivé côté serveur (ADMIN_EXPORT_TOKEN absent)' : b.error || 'erreur ' + res.status}</span>`; break; }
       ok++; line.innerHTML = `<span class="win">✅ ${f.name}</span> → « ${b.dataset.name} » : ${b.dataset.candles.toLocaleString('fr-FR')} bougies M15${b.dataset.m1 ? ` · M1 conservé (${b.dataset.m1.rows.toLocaleString('fr-FR')} minutes)` : ''}${b.dataset.m1Note ? `<div class="meta">${b.dataset.m1Note}</div>` : ''}`;
     }
   } catch (e) { impLog(`<span class="loss">Erreur réseau : ${e.message}</span>`); }
@@ -712,9 +969,10 @@ window.importFiles = async () => {
 };
 
 // read-only handle for automated browser tests (module scope is not global)
-window.__sim = { get acct() { return acct; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, price: (p) => series.priceToCoordinate(p), get cur() { return cur; }, get base() { return base; }, get baseMin() { return typeof baseMin === 'number' ? baseMin : 15; } };
+window.__sim = { get acct() { return acct; }, get P() { return P; }, get order() { return order; }, get now() { return now; }, get cfg() { return cfg; }, get actions() { return actions; }, get snaps() { return snaps; }, get auto() { return autoState; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, get master() { return master(); }, price: (x) => series.priceToCoordinate(x) };
 $('sim-from').value = '';
 countStrats();
+syncCfgUi();
 loadMeta().catch((e) => { $('sim-msg').innerHTML = `<span class="loss">Erreur de chargement : ${e.message}</span>`; });
 </script>
 </body>
