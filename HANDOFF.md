@@ -5959,3 +5959,32 @@ Jusqu'ici, le plafond de gain n'existait que dans les scripts de simulation auto
 **Ce qui reste** : la fermeture forcée à 16h NY n'est toujours PAS câblée dans `LiveStrategyEngine`/`AccountRuntime` (seulement modélisée dans les scripts de simulation) — prochaine étape logique si Esdras veut avancer vers un vrai compte HaitiForex.
 
 `npm test` : 948/948 (942 + 4 dans `guardrailEngine.test.js`, 2 dans `accountRegistry.test.js`). **Fichiers** : `scripts/runHaitiForexHistoricalChallengeSimulation.js` (nouveau), `src/engines/guardrailEngine.js`, `src/accountRegistry.js`, `test/guardrailEngine.test.js`, `test/accountRegistry.test.js`.
+
+## Support HTF (jour/semaine/mois) + confirmation par pattern de renversement — testé et rejeté — 2026-09-19 (suite, HaitiForex mis de côté)
+
+Esdras : "T'as entendu parler des daily supports, weekly and monthly support ? Ensuite confirme par une pattern de renversement genre doji, bullish engulfing etc ?" puis "Non, on drop HaitiForex. On teste cette idée sur notre infrastructure" (le combo FVG/Judas Swing/CBDR/Silver Bullet et son évaluation HaitiForex restent en l'état ci-dessus, mis en pause plutôt qu'abandonné).
+
+**Mise en garde donnée avant tout code** : la croyance retail "un niveau touché 3 fois est plus fort" n'a pas été retenue - chaque touche consomme une partie de la liquidité resting sur ce niveau, donc plus de tests plausiblement AFFAIBLIT un niveau plutôt que de le renforcer. Ce qui est une idée distincte et réellement testable : la CONFLUENCE entre plusieurs timeframes indépendants (jour/semaine/mois, qui reflètent un positionnement accumulé sur des échelles de temps différentes, pas juste le même niveau revu plusieurs fois) confirmée par un pattern de chandelier de renversement.
+
+**Nouveau mécanisme `src/backtest/htfSupportReversal.js`** (méthode fixée AVANT de voir un seul résultat, même discipline que `equalHighsLows.js`/`starPatterns.js`) :
+- Niveaux : plus haut/bas de la période COMPLÈTE précédente (jour/semaine/mois - mêmes définitions PDH/PDL/PWH/PWL que la page "Niveaux du jour" de `dailyLevels.js`, plus l'équivalent mensuel PMH/PML), calculés en continu (une valeur par bougie, sans lookahead - jamais la période en cours).
+- Confluence : un niveau n'est tradable QUE si au moins un AUTRE timeframe s'accorde dessus à 0.1% près (même tolérance déjà utilisée par `equalHighsLows.js` pour ses niveaux "égaux" - pas un nouveau chiffre inventé ici).
+- Confirmation : sur la bougie qui touche le niveau confluent, un doji (corps <= 10% du range - même seuil que la variante "Doji Star" de `starPatterns.js`) OU un engulfing haussier/baissier (définition manuel standard, ex. Bulkowski/Investopedia - pas ajustée sur les données du projet).
+- Entrée à l'ouverture de la bougie suivante, stop au-delà de l'extrême de la bougie (et de la précédente pour un engulfing), cible fixe 1:3, timeout 480 bougies M15 (mêmes conventions que partout ailleurs).
+- Enregistré dans `labRegistry.js` (`htf-support-reversal`) - disponible dans le Labo du dashboard, testable en Lego avec les autres filtres.
+
+**Résultat (`scripts/runHtfSupportReversalStrategyAnalysis.js`, écran TRAIN avant 2024-01-01 / vérification TEST 2024-2025, 12 instruments)** :
+
+| Symbole | Trades train | WR train | Espérance train (R) | Trades test | WR test | Espérance test (R) | Verdict |
+|---|---|---|---|---|---|---|---|
+| US100 | 747 | 30.1% | +0.06 | 169 | 27.2% | +0.03 | ✅ tient (marginal) |
+| US500/GER40/EURUSD/AUDUSD | — | — | — | — | — | — | ⚠️ affaibli (signe contradictoire train/test) |
+| XAUUSD/GBPUSD/USDJPY/USDCAD/UKX/AUX/NZDJPY | — | — | négative | — | — | — | ❌ ne tient pas |
+
+**Verdict : rejeté.** 1 seul instrument sur 12 "tient" (US100, marginal), 7 échouent nettement, 4 "affaiblis" avec des signes contradictoires train/test (probablement du bruit, pas un edge réel). Les win rates observés (24-33%) tournent tous autour du seuil de rentabilité pour un R:R 1:3 (25% de breakeven) - aucun edge statistiquement démontré, cohérent avec la littérature académique sur les patterns de chandeliers isolés (peu ou pas d'edge significatif après coûts, ex. Marshall/Young/Rose 2006). Confirme l'avertissement donné avant l'implémentation : la confluence multi-timeframe + confirmation candle, prise seule, ne bat pas le hasard sur ce projet.
+
+**Tests ajoutés** (`test/htfSupportReversal.test.js`, 16 tests) : helpers purs (`isDoji`/`isBullishEngulfing`/`isBearishEngulfing`), détection d'événements (confluence day/week/month + doji/engulfing sur support et résistance), le garde-fou de confluence lui-même (un niveau où UN SEUL timeframe est présent ne déclenche jamais, même avec un pattern parfait - vérifié en cassant volontairement la condition : le test dédié échoue, confirmant qu'il attrape vraiment la régression), et la résolution des trades (`runHtfSupportReversalBacktest` - entrée/stop/cible/timeout).
+
+`npm test` : 964/964 (948 + 16 nouveaux). **Fichiers** : `src/backtest/htfSupportReversal.js` (nouveau), `src/backtest/dailyLevels.js` (`weekKeyOf` exporté, `monthKeyOf` ajouté), `src/backtest/labRegistry.js`, `scripts/runHtfSupportReversalStrategyAnalysis.js` (nouveau), `test/htfSupportReversal.test.js` (nouveau).
+
+**Prochaine étape possible si Esdras veut creuser encore** : au lieu d'un mécanisme autonome, tester la confluence HTF comme FILTRE additionnel sur le combo FVG/Judas Swing/CBDR/Silver Bullet déjà validé (via le Lego du Labo) - est-ce que exiger "signal près d'un niveau HTF confluent" améliore ou dégrade ce combo précis, plutôt que de le remplacer.
