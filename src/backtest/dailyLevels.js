@@ -29,6 +29,8 @@ export const SESSION_WINDOWS = [
   { key: 'cbdr', label: 'CBDR', startHour: CBDR_WINDOW.startHour, endHour: CBDR_WINDOW.endHour },
   { key: 'asia', label: 'Range asiatique', startHour: ASIAN_KILLZONE_WINDOW.startHour, endHour: ASIAN_KILLZONE_WINDOW.endHour },
   { key: 'london', label: 'Killzone Londres', startHour: 2, endHour: 5 },
+  // The window the bot's session filter uses on US100 and XAUUSD (CONFIG.fvg.perSymbol[*].sessionWindow).
+  { key: 'nyam', label: 'Session New York AM (fenêtre du bot)', startHour: 8, endHour: 12 },
   { key: 'silver', label: 'Silver Bullet AM', startHour: 10, endHour: 11 },
 ];
 

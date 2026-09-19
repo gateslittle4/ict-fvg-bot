@@ -101,6 +101,13 @@
   .hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
   .gate { max-width: 420px; }
   [hidden] { display: none !important; }
+  /* 2026-09-19: six nav links (with "Niveaux") plus the theme button no longer fit a phone width -
+     scroll the nav instead of the whole page, same rule as index.html. */
+  @media (max-width: 640px) {
+    .topnav { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .topnav a { padding: 8px 10px; flex-shrink: 0; }
+    .theme-toggle-btn { flex-shrink: 0; }
+  }
 </style>
 </head>
 <body>

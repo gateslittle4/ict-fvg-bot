@@ -297,6 +297,13 @@
     color: var(--amber); font-size: 11.5px; line-height: 1.5;
   }
   .mismatch-alert strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 11.5px; }
+  /* 2026-09-19: six nav links (with "Niveaux") plus the theme button no longer fit a phone width -
+     scroll the nav instead of the whole page, same rule as index.html. */
+  @media (max-width: 640px) {
+    .topnav { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .topnav a { padding: 8px 10px; flex-shrink: 0; }
+    .theme-toggle-btn { flex-shrink: 0; }
+  }
 </style>
 </head>
 <body>

@@ -79,10 +79,17 @@
     padding: 10px 16px; border-bottom: 2px solid transparent;
   }
   .topnav a.active { color: var(--text); border-bottom-color: var(--blue); }
+  /* 2026-09-19: six nav links (with "Niveaux") plus the theme button no longer fit a phone width -
+     scroll the nav instead of the whole page, same rule as index.html. */
+  @media (max-width: 640px) {
+    .topnav { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .topnav a { padding: 8px 10px; flex-shrink: 0; }
+    .theme-toggle-btn { flex-shrink: 0; }
+  }
   .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; }
   .theme-toggle-btn:hover { border-color: var(--blue); }
   .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
-  .toolbar .group { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 3px; }
+  .toolbar .group { display: flex; flex-wrap: wrap; gap: 4px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 3px; }
   .toolbar button {
     background: transparent; color: var(--muted); border: none; border-radius: 6px;
     padding: 7px 13px; font-size: 13px; font-weight: 600; cursor: pointer; margin: 0;
@@ -104,7 +111,7 @@
   .chart-canvas-wrap { position: relative; flex: 1 1 480px; min-width: 0; }
   #chart { width: 100%; height: 460px; }
   .overlay-toggles {
-    flex: 0 0 152px;
+    flex: 0 0 188px;
     background: var(--panel-2);
     border: 1px solid var(--panel-border);
     border-radius: 8px;
@@ -116,6 +123,12 @@
   }
   .overlay-toggles-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 1px; }
   .overlay-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); cursor: pointer; user-select: none; }
+  .session-list { display: flex; flex-direction: column; gap: 7px; margin: -2px 0 0 4px; }
+  .session-row .overlay-toggle { font-size: 11.5px; }
+  .session-hours { display: flex; align-items: center; gap: 3px; margin: 3px 0 0 23px; font-size: 10.5px; color: var(--muted); }
+  .session-hours input { width: 46px; background: var(--bg); color: var(--text); border: 1px solid var(--panel-border); border-radius: 4px; padding: 2px 3px; font-size: 11px; }
+  .session-reset { background: none; border: 1px solid var(--panel-border); border-radius: 4px; color: var(--muted); font-size: 10.5px; padding: 3px 6px; cursor: pointer; }
+  .session-reset:hover { color: var(--text); border-color: var(--blue); }
   .overlay-toggle input { accent-color: var(--blue); width: 15px; height: 15px; cursor: pointer; margin: 0; flex-shrink: 0; }
   #chart-loading {
     position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -228,6 +241,10 @@
         <label class="overlay-toggle"><input type="checkbox" id="toggle-zones" checked /><span>Zones FVG</span></label>
         <label class="overlay-toggle"><input type="checkbox" id="toggle-signals" checked /><span>Signaux</span></label>
         <label class="overlay-toggle"><input type="checkbox" id="toggle-position-lines" checked /><span>Entrée / Stop / Cible</span></label>
+        <label class="overlay-toggle"><input type="checkbox" id="toggle-sessions" checked /><span>Sessions</span></label>
+        <div id="session-list" class="session-list"></div>
+        <div class="meta" id="session-note" style="font-size:10.5px;"></div>
+        <button type="button" class="session-reset" id="session-reset" title="Remettre toutes les sessions et leurs heures par défaut">Réinitialiser les sessions</button>
       </div>
     </div>
 
@@ -428,6 +445,188 @@ function snapToBar(timeMs, barTimesSec) {
   return best;
 }
 
+
+// --- Trading sessions (2026-09-19, Esdras: "je veux voir les sessions dans les
+// charts ... modifiable comme FVG, signaux") -----------------------------------
+// Vertical bands behind the candles for each session window (New York local
+// hours, DST-aware). The list of windows comes from /api/sessions - the same one
+// the Niveaux page uses - and each can be switched off or given other hours;
+// both choices are per-viewer conveniences kept in localStorage.
+const SESSION_RGB = { cbdr: '167,139,250', asia: '76,158,255', london: '47,212,128', nyam: '232,179,57', silver: '255,140,60' };
+let sessionDefs = [];
+let sessionsPrimitive = null;
+let sessionBands = [];
+
+function loadSessionState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('chartSessionState') || '{}');
+    return { master: raw.master !== false, enabled: raw.enabled || {}, hours: raw.hours || {} };
+  } catch {
+    return { master: true, enabled: {}, hours: {} };
+  }
+}
+let sessionState = loadSessionState();
+function saveSessionState() {
+  try { localStorage.setItem('chartSessionState', JSON.stringify(sessionState)); } catch { /* not remembered next time, still works now */ }
+}
+const sessionOn = (key) => sessionState.master && sessionState.enabled[key] !== false;
+const sessionHours = (def) => ({ ...def, ...(sessionState.hours[def.key] || {}) });
+
+const nyPartsFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+function nyParts(ms) {
+  const p = Object.fromEntries(nyPartsFormatter.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return { y: Number(p.year), m0: Number(p.month) - 1, d: Number(p.day), minutes: Number(p.hour) * 60 + Number(p.minute) };
+}
+// The UTC instant of "hourFloat o'clock in New York" on that NY calendar date (hour 24 = midnight ending the day).
+function nyLocalToUtcMs(y, m0, d, hourFloat) {
+  const minutes = Math.round(hourFloat * 60);
+  const guess = Date.UTC(y, m0, d) + minutes * 60000 + 5 * 3600000; // assume standard time, then correct for DST
+  const got = nyParts(guess);
+  const gotAbs = Date.UTC(got.y, got.m0, got.d) / 60000 + got.minutes;
+  const wantAbs = Date.UTC(y, m0, d) / 60000 + minutes;
+  return guess + (wantAbs - gotAbs) * 60000;
+}
+
+/** Bands (as first/last bar times, in chart seconds) for every enabled session over the loaded bars. */
+function computeSessionBands(barTimesSec) {
+  if (!barTimesSec.length || !sessionState.master) return [];
+  // A session narrower than one bar has no meaning on H4/D1 bars.
+  const barSec = barTimesSec.length > 1 ? barTimesSec[1] - barTimesSec[0] : 900;
+  if (barSec > 3600) return [];
+  const bands = [];
+  const first = nyParts(barTimesSec[0] * 1000);
+  const lastMs = barTimesSec[barTimesSec.length - 1] * 1000;
+  for (let dayMs = Date.UTC(first.y, first.m0, first.d); dayMs <= lastMs + 86400000; dayMs += 86400000) {
+    const day = new Date(dayMs);
+    for (const base of sessionDefs) {
+      if (!sessionOn(base.key)) continue;
+      const def = sessionHours(base);
+      const startMs = nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.startHour);
+      const endMs = nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.endHour);
+      // first bar at/after the start, last bar strictly before the end
+      let lo = 0, hi = barTimesSec.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (barTimesSec[mid] * 1000 >= startMs) hi = mid; else lo = mid + 1; }
+      const i0 = lo;
+      lo = 0; hi = barTimesSec.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (barTimesSec[mid] * 1000 >= endMs) hi = mid; else lo = mid + 1; }
+      const i1 = lo - 1;
+      if (i0 > i1 || i0 >= barTimesSec.length) continue; // no bar in that window (weekend, closed market)
+      bands.push({ key: def.key, label: def.label, startSec: barTimesSec[i0], endSec: barTimesSec[i1], bars: i1 - i0 });
+    }
+  }
+  return bands;
+}
+
+class SessionsPrimitive {
+  constructor() {
+    this._chart = null;
+    this._requestUpdate = null;
+    this._bands = [];
+    this._paneViews = [{ zOrder: () => 'bottom', renderer: () => ({ draw: (target) => this._draw(target) }) }];
+  }
+  attached({ chart, requestUpdate }) { this._chart = chart; this._requestUpdate = requestUpdate; }
+  detached() { this._chart = null; this._requestUpdate = null; }
+  updateAllViews() {}
+  paneViews() { return this._paneViews; }
+  setBands(bands) { this._bands = bands || []; this._requestUpdate?.(); }
+
+  _draw(target) {
+    if (!this._chart || this._bands.length === 0) return;
+    const timeScale = this._chart.timeScale();
+    target.useBitmapCoordinateSpace((scope) => {
+      const ctx = scope.context;
+      const h = scope.bitmapSize.height;
+      const w = scope.bitmapSize.width;
+      const hRatio = scope.horizontalPixelRatio;
+      ctx.font = `${Math.round(10 * hRatio)}px ui-monospace, Menlo, Consolas, monospace`;
+      ctx.textBaseline = 'top';
+      for (const b of this._bands) {
+        const xa = timeScale.timeToCoordinate(b.startSec);
+        const xb = timeScale.timeToCoordinate(b.endSec);
+        if (xa === null && xb === null) continue;
+        // half a bar of margin on each side, from the spacing between the band's own bars when it has several
+        const spacing = xa !== null && xb !== null && b.bars > 0 ? (xb - xa) / b.bars : 6;
+        const x1 = Math.max(0, ((xa ?? -1e6) - spacing / 2) * hRatio);
+        const x2 = Math.min(w, ((xb ?? 1e6) + spacing / 2) * hRatio);
+        if (x2 <= x1) continue;
+        const rgb = SESSION_RGB[b.key] || '150,150,150';
+        ctx.fillStyle = `rgba(${rgb},0.09)`;
+        ctx.fillRect(x1, 0, x2 - x1, h);
+        ctx.fillStyle = `rgba(${rgb},0.35)`;
+        ctx.fillRect(x1, 0, Math.max(1, hRatio), h); // left edge marks where the window opens
+        if (x2 - x1 > 60 * hRatio) {
+          ctx.fillStyle = `rgba(${rgb},0.95)`;
+          ctx.fillText(b.label, x1 + 4 * hRatio, 4 * hRatio, x2 - x1 - 8 * hRatio);
+        }
+      }
+    });
+  }
+}
+
+function updateSessionBands() {
+  if (!sessionsPrimitive) return;
+  const times = lastCandles.map((c) => Math.floor(c.time / 1000));
+  sessionBands = computeSessionBands(times);
+  sessionsPrimitive.setBands(sessionBands);
+  const note = document.getElementById('session-note');
+  if (note) note.textContent = sessionState.master && times.length > 1 && times[1] - times[0] > 3600 ? 'Sessions visibles en M15 et H1 seulement.' : '';
+}
+
+function renderSessionPanel() {
+  const el = document.getElementById('session-list');
+  if (!el) return;
+  el.innerHTML = sessionDefs.map((base) => {
+    const def = sessionHours(base);
+    const rgb = SESSION_RGB[base.key] || '150,150,150';
+    return `<div class="session-row" data-key="${base.key}">
+      <label class="overlay-toggle" title="${base.label}"><input type="checkbox" data-role="on" ${sessionState.enabled[base.key] !== false ? 'checked' : ''} /><span style="border-left:3px solid rgb(${rgb});padding-left:6px;">${base.label}</span></label>
+      <div class="session-hours"><input type="number" data-role="start" min="0" max="23.75" step="0.25" value="${def.startHour}" /> → <input type="number" data-role="end" min="0.25" max="24" step="0.25" value="${def.endHour}" /> h</div>
+    </div>`;
+  }).join('');
+}
+
+function wireSessionPanel() {
+  const master = document.getElementById('toggle-sessions');
+  master.checked = sessionState.master;
+  master.addEventListener('change', (e) => { sessionState.master = e.currentTarget.checked; saveSessionState(); updateSessionBands(); });
+  document.getElementById('session-list').addEventListener('change', (e) => {
+    const row = e.target.closest('.session-row');
+    if (!row) return;
+    const key = row.dataset.key;
+    const role = e.target.dataset.role;
+    if (role === 'on') sessionState.enabled[key] = e.target.checked;
+    if (role === 'start' || role === 'end') {
+      const start = Number(row.querySelector('[data-role=start]').value);
+      const end = Number(row.querySelector('[data-role=end]').value);
+      if (!(Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end <= 24 && end > start)) {
+        e.target.value = sessionHours(sessionDefs.find((d) => d.key === key))[role === 'start' ? 'startHour' : 'endHour'];
+        return; // an invalid window is ignored, the previous hours stay
+      }
+      sessionState.hours[key] = { startHour: start, endHour: end };
+    }
+    saveSessionState();
+    updateSessionBands();
+  });
+  document.getElementById('session-reset').addEventListener('click', () => {
+    sessionState = { master: true, enabled: {}, hours: {} };
+    saveSessionState();
+    document.getElementById('toggle-sessions').checked = true;
+    renderSessionPanel();
+    updateSessionBands();
+  });
+}
+
+async function loadSessionDefs() {
+  try {
+    const res = await fetch('/api/sessions');
+    sessionDefs = (await res.json()).sessions || [];
+  } catch {
+    sessionDefs = [];
+  }
+  renderSessionPanel();
+  updateSessionBands();
+}
+
 function buildChart() {
   const el = document.getElementById('chart');
   chart = LightweightCharts.createChart(el, {
@@ -478,6 +677,8 @@ function buildChart() {
     lastValueVisible: true,
   });
 
+  sessionsPrimitive = new SessionsPrimitive();
+  candleSeries.attachPrimitive(sessionsPrimitive); // drawn behind the candles
   zonesPrimitive = new FvgZonesPrimitive();
   candleSeries.attachPrimitive(zonesPrimitive);
   markersPlugin = LightweightCharts.createSeriesMarkers(candleSeries, []);
@@ -755,6 +956,7 @@ async function loadChart({ keepView = false } = {}) {
     setPositionLines(positionLinesVisible ? openPosition : null, decimals);
 
     renderOverlays(overlaysData, decimals);
+    updateSessionBands();
     refreshPendingChecklist(); // not awaited - its own try/catch, must never block or fail the chart itself
 
     const last = lastCandles[lastCandles.length - 1];
@@ -795,6 +997,8 @@ function wireGroup(groupId, dataKey, onPick) {
 }
 
 buildChart();
+wireSessionPanel();
+loadSessionDefs();
 document.getElementById('toggle-zones').checked = zonesVisible;
 document.getElementById('toggle-signals').checked = signalsVisible;
 document.getElementById('toggle-position-lines').checked = positionLinesVisible;

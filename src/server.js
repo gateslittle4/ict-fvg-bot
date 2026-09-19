@@ -95,6 +95,12 @@ function withRealTimeSignal(signal) {
   return { ...signal, validatedAt: toRealTime(signal.validatedAt) };
 }
 
+// The session windows the charts and the Niveaux page draw (New York local hours) -
+// one list, so a window can never differ between two pages.
+app.get('/api/sessions', (req, res) => {
+  res.json({ sessions: SESSION_WINDOWS });
+});
+
 // tradeStats.js is shared with the browser (the Labo slices trade lists itself) -
 // served explicitly rather than exposing all of src/.
 app.get('/shared/tradeStats.js', (req, res) => {
