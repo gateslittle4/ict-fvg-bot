@@ -28,7 +28,7 @@ let idleTimer = null;
 function loadCandles(csvPath) {
   const key = `${csvPath}:${fs.statSync(csvPath).mtimeMs}`;
   if (cache?.key === key) return cache.candles;
-  cache = null; // let the previous dataset go BEFORE parsing the next one - never two resident together
+  cache = null; // let the previous dataset go BEFORE parsing the next one - never two resident together (its per-dataset trade cache goes with it)
   const { candles } = loadCandlesFromCsv(csvPath);
   cache = { key, candles };
   return candles;
@@ -210,7 +210,9 @@ const handlers = {
         if (botMechanism(id)?.needsPartner && partnerCsvPath) partner = loadResampledFromCsv(partnerCsvPath, TIMEFRAME_MS.H1); // hourly only, streamed: two full M15 series do not fit in this thread
         all = runReplayStrategy(id, candles, symbol, partner);
         partner = null;
-        cache.trades.set(`${symbol}:${id}`, all);
+        // Kept for the next request only when small: 21 strategies x tens of thousands of trades each
+        // (RSI, MACD... on EURUSD) exceeded this thread's heap when everything was cached (measured 2026-09-19).
+        if (all === null || all.length <= 4000) cache.trades.set(`${symbol}:${id}`, all);
       }
       if (all === null) { notApplicable.push(id); continue; }
       for (const t of all) if (t.exitTime >= startTime && t.entryTime <= to) trades.push(t);

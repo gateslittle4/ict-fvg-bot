@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Apex FVG — Simulateur</title>
+<script src="/theme.js"></script>
+<script src="/chat-widget.js" defer></script>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#05070a" data-dark="#05070a" data-light="#f6f7f9" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Apex FVG" />
+<style>
+  /* 2026-09-18 - same "Apex FVG" terminal palette as every other page
+     (index.html's :root is the source of truth these all copy). */
+  :root {
+    --bg: #05070a;
+    --bg-inset: #0a0e13;
+    --panel: #0e141b;
+    --panel-border: #202b37;
+    --panel-border-strong: #2d3b49;
+    --text: #eaf0f6;
+    --muted: #8b98a5;
+    --faint: #5c6773;
+    --green: #2fd480;
+    --red: #ff5c5f;
+    --amber: #e8b339;
+    --blue: #4c9eff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --radius: 3px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f9; --bg-inset: #eef0f3; --panel: #ffffff; --panel-border: #dde1e6; --panel-border-strong: #c7cdd4;
+      --text: #101418; --muted: #5b6470; --faint: #8b95a1; --green: #1a9d5c; --red: #d93c3f; --amber: #b3790f;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f7f9; --bg-inset: #eef0f3; --panel: #ffffff; --panel-border: #dde1e6; --panel-border-strong: #c7cdd4;
+    --text: #101418; --muted: #5b6470; --faint: #8b95a1; --green: #1a9d5c; --red: #d93c3f; --amber: #b3790f;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); margin: 0; padding: 16px; max-width: 1000px; }
+  body { margin-left: auto; margin-right: auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+  .topnav { display: flex; align-items: center; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--panel-border); overflow-x: auto; }
+  .topnav a { color: var(--muted); text-decoration: none; font-size: 11.5px; font-weight: 600; padding: 8px 14px; border-bottom: 2px solid transparent; letter-spacing: 0.4px; font-family: var(--mono); text-transform: uppercase; flex-shrink: 0; }
+  .topnav a:hover { color: var(--text); }
+  .topnav a.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .theme-toggle-btn { margin-left: auto; background: none; border: 1px solid var(--panel-border); border-radius: var(--radius); color: var(--text); font-size: 13px; line-height: 1; padding: 4px 8px; cursor: pointer; flex-shrink: 0; }
+  .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; overflow-x: auto; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; }
+  .meta { color: var(--muted); font-size: 11.5px; }
+  .err { color: var(--red); font-size: 12px; }
+  body { max-width: none; }
+  .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+  .form-field { display: flex; flex-direction: column; gap: 4px; min-width: 180px; flex: 1 1 180px; }
+  .form-field label { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; font-family: var(--mono); }
+  select, button, input { font-family: var(--mono); font-size: 12.5px; }
+  select, input[type="text"], input[type="date"], input[type="password"], input[type="file"], input[type="number"] { background: var(--bg-inset); color: var(--text); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 6px 8px; width: 100%; }
+  .layout { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  @media (min-width: 1150px) { .layout { grid-template-columns: minmax(0, 1fr) 340px; } }
+  #chart { width: 100%; height: 480px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+  .toolbar .grp { display: flex; gap: 2px; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 2px; }
+  .card { min-width: 0; }
+  .layout > div { min-width: 0; }
+  .tb { background: none; border: none; color: var(--muted); padding: 5px 9px; cursor: pointer; border-radius: 2px; }
+  .tb:hover { color: var(--text); } .tb.active { background: var(--blue); color: #05070a; font-weight: 700; }
+  .clock { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: auto; }
+  .clock strong { color: var(--text); }
+  .ord-side { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+  .buy, .sell { border: none; border-radius: var(--radius); padding: 10px; font-weight: 700; cursor: pointer; color: #05070a; }
+  .buy { background: var(--green); } .sell { background: var(--red); }
+  .buy:disabled, .sell:disabled { opacity: .4; cursor: not-allowed; }
+  .fld { display: flex; flex-direction: column; gap: 3px; margin-bottom: 7px; }
+  .fld label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .3px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .acct { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--panel-border); border: 1px solid var(--panel-border); margin-bottom: 8px; }
+  .acct div { background: var(--bg-inset); padding: 6px 8px; font-family: var(--mono); font-size: 12px; }
+  .acct small { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 11.5px; font-family: var(--mono); }
+  .tbl th { text-align: left; color: var(--muted); font-size: 9px; text-transform: uppercase; padding: 4px 5px; border-bottom: 1px solid var(--panel-border-strong); }
+  .tbl td { padding: 4px 5px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
+  .mini { background: none; border: 1px solid var(--panel-border-strong); color: var(--text); border-radius: 2px; padding: 2px 6px; cursor: pointer; font-size: 10.5px; }
+  .strat-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 3px 10px; max-height: 190px; overflow: auto; margin: 6px 0; }
+  .strat-list label { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  .log { max-height: 150px; overflow: auto; font-size: 11.5px; font-family: var(--mono); }
+  .log div { padding: 2px 0; border-bottom: 1px solid var(--panel-border); }
+  .chip { display: inline-block; padding: 0 5px; border-radius: 2px; font-size: 9.5px; font-weight: 700; color: #05070a; margin-right: 5px; }
+  .btn-ghost { background: none; border: 1px solid var(--panel-border-strong); color: var(--text); border-radius: var(--radius); padding: 5px 10px; cursor: pointer; }
+  .run-btn { background: var(--blue); color: #05070a; border: none; border-radius: var(--radius); padding: 8px 14px; font-weight: 700; cursor: pointer; }
+  .run-btn:disabled { opacity: .5; cursor: wait; }
+  .hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 0 0 8px; }
+  .win { color: var(--green); } .loss { color: var(--red); }
+  #chart-wrap { position: relative; }
+  #chart-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 20px; pointer-events: none; }
+</style>
+</head>
+<body>
+  <nav class="topnav">
+    <a href="/">Dashboard</a>
+    <a href="/chart.html">Graphique</a>
+    <a href="/niveaux.html">Niveaux</a>
+    <a href="/journal.html">Journal</a>
+    <a href="/accounts.html">Comptes</a>
+    <a href="/lab.html">Labo</a>
+    <a href="/salle.html">Salle</a>
+    <a href="/simulateur.html" class="active">Simulateur</a>
+    <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
+  </nav>
+  <h1>Simulateur de marché</h1>
+  <div class="subtitle">Rejoue n'importe quelle période de tes données bougie par bougie, avec les stratégies du bot (ou n'importe laquelle du Labo) dessinées sur le graphique — leurs entrées, stops et objectifs apparaissent quand ils apparaîtraient en vrai, le résultat seulement quand le trade se termine. Tu peux aussi trader toi-même avec un vrai panneau d'ordres, et les annonces (news) sont marquées sur le graphique.</div>
+
+  <div class="card">
+    <div class="form-row">
+      <div class="form-field"><label for="sim-symbol">Paire</label><select id="sim-symbol"></select></div>
+      <div class="form-field"><label for="sim-from">Date de départ</label><input type="date" id="sim-from" /></div>
+      <div class="form-field"><label for="sim-days">Durée (jours)</label><input type="number" id="sim-days" value="30" min="1" max="120" /></div>
+      <div class="form-field" style="flex:0 0 auto;min-width:0;display:flex;gap:6px;">
+        <button type="button" class="run-btn" id="sim-load" onclick="loadReplay(false)">Charger</button>
+        <button type="button" class="btn-ghost" onclick="loadReplay(true)" title="Choisit une période au hasard dans tes données">🎲 Au hasard</button>
+      </div>
+    </div>
+    <details>
+      <summary style="cursor:pointer;font-size:13px;"><strong>Stratégies affichées</strong> <span class="meta" id="sim-strat-count"></span></summary>
+      <p class="hint">« Les 8 du bot » = les mécanismes que le bot trade réellement sur cette paire, avec ses réglages (objectif, sens autorisé). Tu peux en plus cocher n'importe quelle stratégie du Labo (réglages par défaut). Les stratégies qui n'existent pas sur cette paire sont signalées, jamais inventées.</p>
+      <label class="check" style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:4px;"><input type="checkbox" id="sim-botall" checked /> <strong>Les 8 stratégies du bot</strong> <span class="meta" id="sim-bot-which"></span></label>
+      <div class="strat-list" id="sim-strats"></div>
+      <label class="check" style="display:flex;gap:8px;align-items:center;font-size:12.5px;"><input type="checkbox" id="sim-news" checked /> Afficher les annonces (news) sur le graphique <span class="meta" id="sim-news-cov"></span></label>
+    </details>
+    <div class="meta" id="sim-msg" style="margin-top:6px;"></div>
+  </div>
+
+  <details class="card" id="imp-card">
+    <summary><strong>Importer de nouvelles paires</strong> <span class="meta">— plusieurs années en M1, une paire à la fois</span></summary>
+    <p class="hint">Même import que dans le Labo : un fichier par année (HistData ASCII M1 ou CSV avec en-tête), fusionnés en une série M15. La paire importée apparaît ensuite dans la liste des paires ci-dessus. Stockage temporaire (effacé à chaque redéploiement). Il faut le token admin.</p>
+    <div class="form-row">
+      <div class="form-field"><label for="imp-token">Token admin</label><input type="password" id="imp-token" autocomplete="off" /></div>
+      <div class="form-field"><label for="imp-pair">Paire</label><input type="text" id="imp-pair" placeholder="ex. EURGBP" autocomplete="off" /></div>
+      <div class="form-field"><label for="imp-spread">Spread (unités de prix)</label><input type="text" id="imp-spread" inputmode="decimal" placeholder="ex. 0.00012" autocomplete="off" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label for="imp-name">Nom du jeu</label><input type="text" id="imp-name" placeholder="par défaut : la paire" autocomplete="off" /></div>
+      <div class="form-field"><label for="imp-tz">Fuseau des fichiers</label><select id="imp-tz"><option value="est">EST fixe (HistData)</option><option value="utc">UTC réel (courtier)</option></select></div>
+      <div class="form-field"><label for="imp-files">Fichiers</label><input type="file" id="imp-files" multiple accept=".csv,.txt" /></div>
+    </div>
+    <button type="button" class="run-btn" id="imp-btn" onclick="importFiles()">Importer</button>
+    <div id="imp-log" class="log" style="margin-top:8px;max-height:none;"></div>
+  </details>
+
+  <div class="layout">
+    <div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="grp" id="tf-grp">
+            <button class="tb active" data-tf="900">M15</button><button class="tb" data-tf="3600">H1</button><button class="tb" data-tf="14400">H4</button><button class="tb" data-tf="86400">D1</button>
+          </div>
+          <div class="grp">
+            <button class="tb" id="btn-play" onclick="togglePlay()" title="Lecture / pause">▶ Lecture</button>
+            <button class="tb" onclick="stepBars(1)" title="Une bougie M15">+1 bougie</button>
+            <button class="tb" onclick="stepBars(4)">+1 h</button>
+            <button class="tb" onclick="stepBars(16)">+4 h</button>
+            <button class="tb" onclick="stepBars(96)">+1 jour</button>
+          </div>
+          <div class="grp">
+            <button class="tb" onclick="jumpNext('signal')" title="Avance jusqu'au prochain signal d'une stratégie affichée">→ signal</button>
+            <button class="tb" onclick="jumpNext('news')" title="Avance jusqu'à la prochaine annonce">→ news</button>
+          </div>
+          <div class="grp" id="speed-grp">
+            <button class="tb" data-speed="2">×1</button><button class="tb active" data-speed="6">×3</button><button class="tb" data-speed="20">×10</button><button class="tb" data-speed="60">×30</button>
+          </div>
+          <div class="clock" id="clock">—</div>
+        </div>
+        <div id="chart-wrap"><div id="chart"></div><div id="chart-empty">Choisis une paire et une date, puis « Charger ».</div></div>
+        <div class="meta" id="chart-legend" style="margin-top:6px;"></div>
+      </div>
+      <div class="card"><h2>Signaux des stratégies <span class="meta" id="sig-summary"></span></h2><div id="sig-list" style="max-height:260px;overflow:auto;"></div></div>
+      <div class="card"><h2>Annonces (news)</h2><div id="news-list" class="meta">—</div></div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Ton compte simulé</h2>
+        <div class="acct">
+          <div><small>Solde</small><span id="a-bal">—</span></div><div><small>Équité</small><span id="a-eq">—</span></div>
+          <div><small>P&amp;L flottant</small><span id="a-fl">—</span></div><div><small>Prix (bid / ask)</small><span id="a-px">—</span></div>
+        </div>
+        <div class="row2">
+          <div class="fld"><label for="o-balance">Solde de départ</label><input type="number" id="o-balance" value="10000" min="100" step="100" /></div>
+          <div class="fld"><label for="o-spread">Spread (unités de prix)</label><input type="number" id="o-spread" step="any" /></div>
+        </div>
+        <button class="btn-ghost" style="width:100%;margin-bottom:8px;" onclick="resetAccount()">Remettre le compte à zéro</button>
+        <div class="fld"><label for="o-type">Type d'ordre</label><select id="o-type"><option value="market">Au marché</option><option value="limit">Limite</option><option value="stop">Stop</option></select></div>
+        <div class="fld" id="o-price-wrap" hidden><label for="o-price">Prix de l'ordre</label><input type="number" id="o-price" step="any" /></div>
+        <div class="row2">
+          <div class="fld"><label for="o-sl">Stop (distance en points)</label><input type="number" id="o-sl" step="any" min="0" /></div>
+          <div class="fld"><label for="o-tp">Objectif (distance)</label><input type="number" id="o-tp" step="any" min="0" /></div>
+        </div>
+        <div class="row2">
+          <div class="fld"><label for="o-rr">…ou objectif en R:R</label><input type="number" id="o-rr" step="any" min="0" placeholder="ex. 3" /></div>
+          <div class="fld"><label for="o-trail">Stop suiveur (distance)</label><input type="number" id="o-trail" step="any" min="0" /></div>
+        </div>
+        <div class="row2">
+          <div class="fld"><label for="o-mode">Taille</label><select id="o-mode"><option value="risk">Risque en % du solde</option><option value="units">Unités</option></select></div>
+          <div class="fld"><label for="o-size" id="o-size-l">Risque (%)</label><input type="number" id="o-size" value="1" step="any" min="0" /></div>
+        </div>
+        <div class="ord-side"><button class="buy" id="btn-buy" onclick="order('buy')" disabled>ACHETER</button><button class="sell" id="btn-sell" onclick="order('sell')" disabled>VENDRE</button></div>
+        <div class="meta" id="o-msg"></div>
+        <button class="btn-ghost" style="width:100%;margin-top:6px;" onclick="closeEverything()">Tout fermer</button>
+      </div>
+      <div class="card"><h2>Positions et ordres</h2><div id="pos-list" class="meta">Aucune.</div></div>
+      <div class="card"><h2>Résultats <span class="meta" id="res-summary"></span></h2><div id="hist-list" style="max-height:220px;overflow:auto;" class="meta">—</div></div>
+      <div class="card"><h2>Journal</h2><div id="log" class="log"></div></div>
+    </div>
+  </div>
+  <p class="hint">Limites à connaître : le rejeu avance par bougies M15 (pas tick par tick) — un stop et un objectif touchés dans la même bougie donnent le stop, comme dans tous les backtests du projet ; le P&amp;L est en points de prix × unités, dans la devise de cotation, sans conversion (exact pour les indices, approché pour les paires forex) ; les annonces ne sont disponibles que pour 2024-2025.</p>
+
+<script src="/vendor/lightweight-charts/lightweight-charts.standalone.production.js"></script>
+<script type="module">
+import * as B from '/shared/replayBroker.js';
+const LW = window.LightweightCharts;
+const $ = (id) => document.getElementById(id);
+const fmt = (n, d = 2) => (n === null || n === undefined || Number.isNaN(n) ? '—' : Number(n).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }));
+const decimalsFor = (p) => (Math.abs(p) >= 1000 ? 1 : Math.abs(p) >= 100 ? 2 : Math.abs(p) >= 10 ? 3 : 5);
+const px = (n) => fmt(n, decimalsFor(n));
+const nyText = (sec) => new Date(sec * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' NY';
+
+let meta = null;
+let data = null;          // the last /api/lab/replay response
+let base = [];            // [{t, o, h, l, c}] real-time seconds
+let cur = -1;             // index of the last revealed base bar
+let tfSec = 900;
+let acct = null;
+let tfLast = null;
+let playing = false, timer = null, speed = 6;
+let strategyLabels = {};
+let lines = [];           // price lines of the user's positions
+let userMarkers = [];
+let revealedExits = new Set();
+
+// ---------- chart ----------
+const chart = LW.createChart($('chart'), {
+  layout: { background: { color: '#0e141b' }, textColor: '#8b98a5', attributionLogo: false },
+  grid: { vertLines: { color: '#1c2530' }, horzLines: { color: '#1c2530' } },
+  rightPriceScale: { borderColor: '#202b37', autoScale: true },
+  timeScale: { borderColor: '#202b37', timeVisible: true, secondsVisible: false, rightOffset: 8 },
+  crosshair: { mode: 0 },
+  localization: { locale: 'fr-FR', timeFormatter: (ts) => new Date(ts * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' NY' },
+  autoSize: true,
+});
+const series = chart.addSeries(LW.CandlestickSeries, { upColor: '#2fd480', downColor: '#ff5c5f', borderUpColor: '#2fd480', borderDownColor: '#ff5c5f', wickUpColor: '#2fd480', wickDownColor: '#ff5c5f', priceLineVisible: true, lastValueVisible: true });
+const markers = LW.createSeriesMarkers(series, []);
+const snap = (sec) => Math.floor(sec / tfSec) * tfSec;
+
+class OverlayPrimitive {
+  constructor() { this.trades = []; this.news = []; this.chart = null; this.series = null; this.req = null; this.lastBar = null;
+    this.pv = [{ zOrder: () => 'bottom', renderer: () => ({ draw: (t) => this.draw(t) }) }]; }
+  attached({ chart: c, series: s, requestUpdate }) { this.chart = c; this.series = s; this.req = requestUpdate; }
+  detached() { this.chart = null; this.series = null; }
+  updateAllViews() {} paneViews() { return this.pv; }
+  set(trades, news, lastBar) { this.trades = trades; this.news = news; this.lastBar = lastBar; this.req?.(); }
+  draw(target) {
+    if (!this.chart || !this.series) return;
+    const ts = this.chart.timeScale();
+    target.useBitmapCoordinateSpace((scope) => {
+      const ctx = scope.context, hr = scope.horizontalPixelRatio, vr = scope.verticalPixelRatio, W = scope.bitmapSize.width, H = scope.bitmapSize.height;
+      const lastX = this.lastBar != null ? ts.timeToCoordinate(this.lastBar) : null;
+      for (const t of this.trades) {
+        const x1 = ts.timeToCoordinate(snap(t.entrySec));
+        const x2 = t.exitSec != null ? ts.timeToCoordinate(snap(t.exitSec)) : lastX;
+        const yE = this.series.priceToCoordinate(t.entry), yS = this.series.priceToCoordinate(t.stop);
+        const yT = t.target != null ? this.series.priceToCoordinate(t.target) : null;
+        if (yE === null || yS === null) continue;
+        const left = Math.max(0, (x1 ?? 0) * hr), right = Math.min(W, (x2 ?? lastX ?? W / hr) * hr);
+        if (right <= left) continue;
+        ctx.fillStyle = 'rgba(255,92,95,0.16)'; ctx.fillRect(left, Math.min(yE, yS) * vr, right - left, Math.abs(yS - yE) * vr);
+        if (yT !== null) { ctx.fillStyle = 'rgba(47,212,128,0.16)'; ctx.fillRect(left, Math.min(yE, yT) * vr, right - left, Math.abs(yT - yE) * vr); }
+        ctx.strokeStyle = 'rgba(200,210,220,0.55)'; ctx.setLineDash([4 * hr, 3 * hr]); ctx.lineWidth = hr;
+        ctx.beginPath(); ctx.moveTo(left, yE * vr); ctx.lineTo(right, yE * vr); ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.font = `${Math.round(10 * hr)}px ui-monospace, Menlo, Consolas, monospace`;
+      for (const n of this.news) {
+        const x = ts.timeToCoordinate(snap(n.sec));
+        if (x === null) continue;
+        ctx.strokeStyle = 'rgba(232,179,57,0.55)'; ctx.setLineDash([2 * hr, 3 * hr]); ctx.lineWidth = hr;
+        ctx.beginPath(); ctx.moveTo(x * hr, 0); ctx.lineTo(x * hr, H); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#e8b339'; ctx.fillText('📰 ' + n.label, x * hr + 3 * hr, 12 * vr);
+      }
+    });
+  }
+}
+const overlay = new OverlayPrimitive();
+series.attachPrimitive(overlay);
+
+// ---------- data ----------
+const shortName = (id) => (strategyLabels[id] || id).split(' (')[0].slice(0, 14);
+const COLORS = ['#4c9eff', '#a78bfa', '#2fd480', '#e8b339', '#ff8c3c', '#ff5c5f', '#22d3ee', '#f472b6', '#84cc16', '#fb923c', '#38bdf8', '#c084fc'];
+const colorOf = (() => { const m = new Map(); return (id) => { if (!m.has(id)) m.set(id, COLORS[m.size % COLORS.length]); return m.get(id); }; })();
+
+function timeframeData() {
+  const out = []; let last = null;
+  for (let i = 0; i <= cur; i++) {
+    const b = base[i]; const key = snap(b.t);
+    if (last && last.time === key) { last.high = Math.max(last.high, b.h); last.low = Math.min(last.low, b.l); last.close = b.c; }
+    else { last = { time: key, open: b.o, high: b.h, low: b.l, close: b.c }; out.push(last); }
+  }
+  tfLast = last;
+  return out;
+}
+function pushBar(i) {
+  const b = base[i]; const key = snap(b.t);
+  if (tfLast && tfLast.time === key) { tfLast.high = Math.max(tfLast.high, b.h); tfLast.low = Math.min(tfLast.low, b.l); tfLast.close = b.c; }
+  else tfLast = { time: key, open: b.o, high: b.h, low: b.l, close: b.c };
+  series.update({ ...tfLast });
+}
+const nowSec = () => (cur >= 0 ? base[cur].t : 0);
+const bid = () => base[cur].c;
+
+function visibleTrades() {
+  if (!data) return [];
+  const t = nowSec();
+  return data.trades.filter((x) => x.entrySec <= t);
+}
+function redraw({ resetView = false } = {}) {
+  if (cur < 0) return;
+  if (resetView) { series.setData(timeframeData()); }
+  const t = nowSec();
+  const mk = [];
+  const drawn = [];
+  for (const x of visibleTrades()) {
+    const closed = x.exitSec <= t;
+    const dirBuy = x.direction === 'bullish';
+    mk.push({ time: snap(x.entrySec), position: dirBuy ? 'belowBar' : 'aboveBar', shape: dirBuy ? 'arrowUp' : 'arrowDown', color: colorOf(x.strategyId), text: shortName(x.strategyId) });
+    if (closed) mk.push({ time: snap(x.exitSec), position: dirBuy ? 'aboveBar' : 'belowBar', shape: 'circle', color: x.rMultiple >= 0 ? '#2fd480' : '#ff5c5f', text: `${x.rMultiple >= 0 ? '+' : ''}${fmt(x.rMultiple, 1)}R` });
+    drawn.push({ entrySec: x.entrySec, exitSec: closed ? x.exitSec : null, entry: x.entryPrice, stop: x.stopPrice, target: x.targetPrice });
+  }
+  for (const m of userMarkers) if (m.sec <= t) mk.push({ time: snap(m.sec), position: m.pos, shape: m.shape, color: m.color, text: m.text });
+  mk.sort((a, b) => a.time - b.time);
+  markers.setMarkers(mk);
+  const news = data && $('sim-news').checked ? data.news.filter((n) => n.sec <= t) : [];
+  overlay.set(drawn, news, tfLast ? tfLast.time : null);
+  renderLines(); renderPanel(); renderSignals(); renderNews();
+  $('clock').innerHTML = `<strong>${nyText(t)}</strong> · bougie ${cur + 1}/${base.length}`;
+}
+
+// ---------- replay control ----------
+function advanceOne() {
+  if (cur >= base.length - 1) return false;
+  cur++;
+  const b = base[cur];
+  const events = B.onCandle(acct, { time: b.t, open: b.o, high: b.h, low: b.l, close: b.c });
+  pushBar(cur);
+  for (const e of events) handleEvent(e, b);
+  return true;
+}
+function handleEvent(e, b) {
+  if (e.type === 'filled') { log(`Ordre exécuté à ${px(e.price)} (#${e.id})`, 'info'); userMarkers.push({ sec: b.t, pos: e.side === 'buy' ? 'belowBar' : 'aboveBar', shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' }); }
+  if (e.type === 'closed') { log(`#${e.id} fermé (${e.reason}) à ${px(e.price)} : ${e.pnl >= 0 ? '+' : ''}${fmt(e.pnl)}`, e.pnl >= 0 ? 'win' : 'loss'); userMarkers.push({ sec: b.t, pos: 'aboveBar', shape: 'circle', color: e.pnl >= 0 ? '#2fd480' : '#ff5c5f', text: `Toi ${e.pnl >= 0 ? '+' : ''}${fmt(e.pnl, 0)}` }); }
+}
+window.stepBars = (n) => { stopPlay(); for (let i = 0; i < n && advanceOne(); i++); redraw(); if (cur >= base.length - 1) endNotice(); };
+function endNotice() { if (cur >= base.length - 1) log('Fin de la période chargée.', 'info'); }
+function stopPlay() { playing = false; clearInterval(timer); $('btn-play').textContent = '▶ Lecture'; }
+window.togglePlay = () => {
+  if (cur < 0) return;
+  if (playing) return stopPlay();
+  playing = true; $('btn-play').textContent = '⏸ Pause';
+  timer = setInterval(() => {
+    const n = Math.max(1, Math.round(speed / 4));
+    for (let i = 0; i < n; i++) if (!advanceOne()) { stopPlay(); endNotice(); break; }
+    redraw();
+  }, 250);
+};
+window.jumpNext = (kind) => {
+  if (cur < 0) return; stopPlay();
+  const target = kind === 'signal' ? data.trades.map((x) => x.entrySec).filter((s) => s > nowSec()).sort((a, b) => a - b)[0] : data.news.map((n) => n.sec).filter((s) => s > nowSec()).sort((a, b) => a - b)[0];
+  if (target === undefined) { log(kind === 'signal' ? 'Plus aucun signal dans la période chargée.' : 'Plus aucune annonce dans la période chargée.', 'info'); return; }
+  while (cur < base.length - 1 && base[cur].t < target) advanceOne();
+  redraw();
+};
+$('tf-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-tf]'); if (!b) return; tfSec = Number(b.dataset.tf); document.querySelectorAll('#tf-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); redraw({ resetView: true }); });
+$('speed-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; speed = Number(b.dataset.speed); document.querySelectorAll('#speed-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); });
+
+// ---------- account / orders ----------
+function newAccount() { acct = B.createAccount({ balance: Number($('o-balance').value) || 10000, spread: Number($('o-spread').value) || 0 }); userMarkers = []; }
+window.resetAccount = () => { newAccount(); log('Compte remis à zéro.', 'info'); redraw(); };
+$('o-type').addEventListener('change', () => { $('o-price-wrap').hidden = $('o-type').value === 'market'; });
+$('o-mode').addEventListener('change', () => { $('o-size-l').textContent = $('o-mode').value === 'risk' ? 'Risque (%)' : 'Unités'; $('o-size').value = $('o-mode').value === 'risk' ? 1 : 1; });
+function orderMsg(t, bad) { $('o-msg').innerHTML = t ? `<span class="${bad ? 'loss' : 'win'}">${t}</span>` : ''; }
+function place(side, { slDist, tpDist, rr, trail, mode, size, type, price }) {
+  const spread = acct.spread;
+  const marketNow = side === 'buy' ? bid() + spread : bid();
+  const entry = type === 'market' ? marketNow : price;
+  const sl = slDist > 0 ? (side === 'buy' ? entry - slDist : entry + slDist) : null;
+  let tpD = tpDist > 0 ? tpDist : (rr > 0 && slDist > 0 ? rr * slDist : 0);
+  const tp = tpD > 0 ? (side === 'buy' ? entry + tpD : entry - tpD) : null;
+  let units;
+  if (mode === 'risk') {
+    if (!(slDist > 0)) throw new Error('Pour dimensionner au risque, indique la distance du stop.');
+    units = B.sizeFromRisk({ balance: acct.balance, riskPct: size, entry, stop: sl });
+  } else units = size;
+  const common = { side, units, sl, tp, trail: trail > 0 ? trail : null };
+  if (type === 'market') return B.placeMarket(acct, { ...common, bid: bid(), time: nowSec() });
+  return B.placePending(acct, { ...common, type, price, bid: bid() });
+}
+function readOrder() {
+  const v = (id) => Number($(id).value);
+  return { slDist: v('o-sl') || 0, tpDist: v('o-tp') || 0, rr: v('o-rr') || 0, trail: v('o-trail') || 0, mode: $('o-mode').value, size: v('o-size'), type: $('o-type').value, price: v('o-price') };
+}
+window.order = (side) => {
+  try {
+    const o = place(side, readOrder());
+    const isPos = acct.positions.includes(o);
+    log(isPos ? `${side === 'buy' ? 'Achat' : 'Vente'} #${o.id} à ${px(o.entry)} (${fmt(o.units, 2)} u.)` : `Ordre ${o.type} #${o.id} posé à ${px(o.price)}`, 'info');
+    if (isPos) userMarkers.push({ sec: nowSec(), pos: side === 'buy' ? 'belowBar' : 'aboveBar', shape: side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' });
+    orderMsg('');
+  } catch (err) { orderMsg(err.message, true); }
+  redraw();
+};
+window.takeSignal = (i) => {
+  const x = data.trades[i];
+  if (!x) return;
+  try {
+    const side = x.direction === 'bullish' ? 'buy' : 'sell';
+    const slDist = Math.abs(x.entryPrice - x.stopPrice);
+    const tpDist = x.targetPrice != null ? Math.abs(x.targetPrice - x.entryPrice) : 0;
+    const o = place(side, { slDist, tpDist, rr: 0, trail: 0, mode: $('o-mode').value, size: Number($('o-size').value), type: 'market', price: 0 });
+    log(`Signal ${shortName(x.strategyId)} pris : #${o.id} à ${px(o.entry)}`, 'info');
+    userMarkers.push({ sec: nowSec(), pos: side === 'buy' ? 'belowBar' : 'aboveBar', shape: side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' });
+    orderMsg('');
+  } catch (err) { orderMsg(err.message, true); }
+  redraw();
+};
+window.closeOne = (id, frac) => { try { B.closePosition(acct, id, { bid: bid(), time: nowSec(), fraction: frac }); log(`#${id} ${frac < 1 ? 'partiellement ' : ''}fermé à la main`, 'info'); userMarkers.push({ sec: nowSec(), pos: 'aboveBar', shape: 'circle', color: '#ffffff', text: 'Toi' }); } catch (e) { orderMsg(e.message, true); } redraw(); };
+window.beOne = (id) => { B.breakEven(acct, id); log(`#${id} : stop remis au point d'entrée`, 'info'); redraw(); };
+window.cancelOne = (id) => { B.cancelPending(acct, id); redraw(); };
+window.moveStop = (id) => { const pos = acct.positions.find((p) => p.id === id); const v = prompt('Nouveau stop (prix) :', pos.sl ?? ''); if (v === null) return; try { B.modifyPosition(acct, id, { sl: v === '' ? null : Number(v) }); } catch (e) { orderMsg(e.message, true); } redraw(); };
+window.moveTarget = (id) => { const pos = acct.positions.find((p) => p.id === id); const v = prompt('Nouvel objectif (prix) :', pos.tp ?? ''); if (v === null) return; try { B.modifyPosition(acct, id, { tp: v === '' ? null : Number(v) }); } catch (e) { orderMsg(e.message, true); } redraw(); };
+window.closeEverything = () => { if (cur < 0) return; B.closeAll(acct, { bid: bid(), time: nowSec() }); log('Tout fermé.', 'info'); redraw(); };
+
+function renderLines() {
+  for (const l of lines) series.removePriceLine(l);
+  lines = [];
+  if (!acct) return;
+  const add = (price, color, title, dash = 0) => { if (price != null) lines.push(series.createPriceLine({ price, color, lineWidth: 1, lineStyle: dash, axisLabelVisible: true, title })); };
+  for (const p of acct.positions) { add(p.entry, '#ffffff', `#${p.id} ${p.side === 'buy' ? '▲' : '▼'}`); add(p.sl, '#ff5c5f', `SL #${p.id}`, 2); add(p.tp, '#2fd480', `TP #${p.id}`, 2); }
+  for (const o of acct.pending) add(o.price, '#e8b339', `${o.type} #${o.id}`, 1);
+}
+function renderPanel() {
+  const has = cur >= 0 && acct;
+  $('btn-buy').disabled = !has; $('btn-sell').disabled = !has;
+  if (!has) return;
+  const fl = B.floatingPnl(acct, bid());
+  $('a-bal').textContent = fmt(acct.balance);
+  $('a-eq').textContent = fmt(acct.balance + fl);
+  $('a-fl').innerHTML = `<span class="${fl >= 0 ? 'win' : 'loss'}">${fl >= 0 ? '+' : ''}${fmt(fl)}</span>`;
+  $('a-px').textContent = `${px(bid())} / ${px(bid() + acct.spread)}`;
+  const rows = acct.positions.map((p) => {
+    const f = (p.side === 'buy' ? bid() - p.entry : p.entry - (bid() + acct.spread)) * p.units;
+    return `<tr><td>#${p.id} ${p.side === 'buy' ? '▲' : '▼'}</td><td>${fmt(p.units, 2)}</td><td>${px(p.entry)}</td><td>${p.sl != null ? px(p.sl) : '—'}</td><td>${p.tp != null ? px(p.tp) : '—'}</td><td class="${f >= 0 ? 'win' : 'loss'}">${f >= 0 ? '+' : ''}${fmt(f)}</td></tr>
+      <tr><td colspan="6"><button class="mini" onclick="closeOne(${p.id},1)">Fermer</button> <button class="mini" onclick="closeOne(${p.id},0.5)">50 %</button> <button class="mini" onclick="beOne(${p.id})">Break-even</button> <button class="mini" onclick="moveStop(${p.id})">Stop</button> <button class="mini" onclick="moveTarget(${p.id})">Objectif</button></td></tr>`;
+  }).join('');
+  const pend = acct.pending.map((o) => `<tr><td>#${o.id} ${o.side === 'buy' ? '▲' : '▼'} ${o.type}</td><td>${fmt(o.units, 2)}</td><td>${px(o.price)}</td><td>${o.sl != null ? px(o.sl) : '—'}</td><td>${o.tp != null ? px(o.tp) : '—'}</td><td><button class="mini" onclick="cancelOne(${o.id})">Annuler</button></td></tr>`).join('');
+  $('pos-list').innerHTML = rows || pend ? `<table class="tbl"><thead><tr><th>Position</th><th>Taille</th><th>Entrée</th><th>Stop</th><th>Obj.</th><th>P&amp;L</th></tr></thead><tbody>${rows}${pend}</tbody></table>` : 'Aucune.';
+  const s = B.stats(acct);
+  $('res-summary').textContent = s.trades ? `— ${s.trades} trades, ${fmt(s.winRate * 100, 0)} % gagnants, ${s.netPnl >= 0 ? '+' : ''}${fmt(s.netPnl)}${s.tradesWithR ? `, ${fmt(s.totalR, 1)}R` : ''}, drawdown ${fmt(s.maxDrawdown)}` : '';
+  $('hist-list').innerHTML = acct.history.length ? `<table class="tbl"><thead><tr><th>#</th><th>Sens</th><th>Entrée</th><th>Sortie</th><th>P&amp;L</th><th>R</th><th>Cause</th></tr></thead><tbody>${[...acct.history].reverse().map((t) => `<tr><td>${t.id}</td><td>${t.side === 'buy' ? '▲' : '▼'}</td><td>${px(t.entry)}</td><td>${px(t.exit)}</td><td class="${t.pnl >= 0 ? 'win' : 'loss'}">${t.pnl >= 0 ? '+' : ''}${fmt(t.pnl)}</td><td>${t.r === null ? '—' : fmt(t.r, 1)}</td><td>${t.reason}</td></tr>`).join('')}</tbody></table>` : 'Aucun trade fermé.';
+}
+function renderSignals() {
+  if (!data) return;
+  const t = nowSec();
+  const seen = data.trades.map((x, i) => ({ x, i })).filter(({ x }) => x.entrySec <= t);
+  const closed = seen.filter(({ x }) => x.exitSec <= t);
+  const totalR = closed.reduce((s, { x }) => s + x.rMultiple, 0);
+  $('sig-summary').textContent = data.trades.length ? `— ${seen.length} apparus sur ${data.trades.length}${closed.length ? ` · résultat des ${closed.length} terminés : ${totalR >= 0 ? '+' : ''}${fmt(totalR, 1)}R` : ''}` : '— aucun signal dans la période';
+  if (!seen.length) { $('sig-list').innerHTML = '<div class="meta">Aucun signal apparu pour le moment — avance dans le temps ou utilise « → signal ».</div>'; return; }
+  $('sig-list').innerHTML = `<table class="tbl"><thead><tr><th>Quand (NY)</th><th>Stratégie</th><th>Sens</th><th>Entrée</th><th>Stop</th><th>Obj.</th><th>Résultat</th><th></th></tr></thead><tbody>${[...seen].reverse().map(({ x, i }) => `<tr>
+    <td>${new Date(x.entrySec * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+    <td><span class="chip" style="background:${colorOf(x.strategyId)}">${shortName(x.strategyId)}</span></td><td>${x.direction === 'bullish' ? '▲' : '▼'}</td><td>${px(x.entryPrice)}</td><td>${px(x.stopPrice)}</td><td>${x.targetPrice != null ? px(x.targetPrice) : '—'}</td>
+    <td>${x.exitSec <= t ? `<span class="${x.rMultiple >= 0 ? 'win' : 'loss'}">${x.rMultiple >= 0 ? '+' : ''}${fmt(x.rMultiple, 1)}R</span>` : '<span class="meta">en cours…</span>'}</td>
+    <td>${x.exitSec > t ? `<button class="mini" onclick="takeSignal(${i})">Prendre</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
+}
+function renderNews() {
+  if (!data) return;
+  const t = nowSec();
+  if (!data.news.length) { $('news-list').innerHTML = data.newsCoverage ? `Aucune annonce dans cette période (les annonces connues couvrent ${new Date(data.newsCoverage.from).getUTCFullYear()}–${new Date(data.newsCoverage.to).getUTCFullYear()} seulement).` : '—'; return; }
+  const past = data.news.filter((n) => n.sec <= t).slice(-4);
+  const next = data.news.filter((n) => n.sec > t).slice(0, 3);
+  const row = (n, cls) => `<div class="${cls}">📰 <strong>${n.label}</strong> — ${n.name} · ${new Date(n.sec * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} NY</div>`;
+  $('news-list').innerHTML = (next.length ? '<div>À venir :</div>' + next.map((n) => row(n, 'win')).join('') : '') + (past.length ? '<div style="margin-top:6px;">Passées :</div>' + past.map((n) => row(n, '')).join('') : '');
+}
+function log(text, cls = '') { const el = $('log'); el.insertAdjacentHTML('afterbegin', `<div class="${cls}">${cur >= 0 ? new Date(nowSec() * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' · ' : ''}${text}</div>`); while (el.children.length > 80) el.lastChild.remove(); }
+
+// ---------- loading ----------
+async function loadMeta(prefer) {
+  const res = await fetch('/api/lab/meta'); meta = await res.json();
+  strategyLabels = Object.fromEntries(meta.strategies.map((s) => [s.id, s.label]));
+  for (const list of Object.values(meta.replay.botMechanisms)) for (const m of list) strategyLabels[m.id] = m.label;
+  const custom = meta.customDatasets || [];
+  const keep = prefer || $('sim-symbol').value;
+  $('sim-symbol').innerHTML = `<optgroup label="Données du projet">${meta.symbols.map((s) => `<option value="${s}">${s}</option>`).join('')}</optgroup>` + (custom.length ? `<optgroup label="Mes données importées">${custom.map((d) => `<option value="${d.id}">${d.name} — ${d.symbol} (${new Date(d.from).getUTCFullYear()}–${new Date(d.to).getUTCFullYear()})</option>`).join('')}</optgroup>` : '');
+  const all = [...meta.symbols, ...custom.map((d) => d.id)];
+  $('sim-symbol').value = all.includes(keep) ? keep : (meta.symbols.includes('US100') ? 'US100' : meta.symbols[0]);
+  if (!$('sim-strats').children.length) $('sim-strats').innerHTML = meta.strategies.map((s) => `<label><input type="checkbox" value="${s.id}" /> ${s.label}</label>`).join('');
+  const n = meta.replay.news;
+  $('sim-news-cov').textContent = `(disponibles ${new Date(n.from).getUTCFullYear()}–${new Date(n.to).getUTCFullYear()} : ${n.count} annonces)`;
+  updateBotWhich();
+}
+function symbolOfSelection() { const v = $('sim-symbol').value; const c = (meta.customDatasets || []).find((d) => d.id === v); return c ? c.symbol : v; }
+function updateBotWhich() { const list = meta.replay.botMechanisms[symbolOfSelection()] || []; $('sim-bot-which').textContent = list.length ? `— sur ${symbolOfSelection()} : ${list.map((m) => m.label).join(', ')}` : `— le bot ne trade aucun de ses 8 mécanismes sur ${symbolOfSelection()}`; }
+$('sim-symbol').addEventListener('change', updateBotWhich);
+document.addEventListener('change', (e) => { if (e.target.closest('#sim-strats, #sim-botall')) countStrats(); });
+function countStrats() { const n = document.querySelectorAll('#sim-strats input:checked').length + ($('sim-botall').checked ? 1 : 0); $('sim-strat-count').textContent = `— ${$('sim-botall').checked ? 'les 8 du bot' : 'bot désactivé'}${n - ($('sim-botall').checked ? 1 : 0) ? ` + ${n - ($('sim-botall').checked ? 1 : 0)} du Labo` : ''}`; }
+
+window.loadReplay = async (random) => {
+  const btn = $('sim-load'); $('sim-msg').textContent = ''; stopPlay();
+  const ids = [...document.querySelectorAll('#sim-strats input:checked')].map((b) => b.value);
+  if ($('sim-botall').checked) ids.unshift('bot-all');
+  const body = { symbol: $('sim-symbol').value, days: Number($('sim-days').value) || 30, strategyIds: ids, news: $('sim-news').checked };
+  if (!random && $('sim-from').value) body.from = $('sim-from').value;
+  btn.disabled = true; btn.textContent = 'Chargement… (jusqu\'à ~2 min si tu affiches beaucoup de stratégies)';
+  try {
+    const res = await fetch('/api/lab/replay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || `Erreur HTTP ${res.status}`);
+    data = d;
+    base = d.candles.map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
+    data.trades = d.trades.map((x) => ({ ...x, entrySec: Math.floor(x.entryTime / 1000), exitSec: Math.floor(x.exitTime / 1000) })).sort((a, b) => a.entrySec - b.entrySec);
+    data.news = d.news.map((n) => ({ ...n, sec: Math.floor(n.time / 1000) }));
+    const startSec = Math.floor(d.window.from / 1000);
+    cur = base.findIndex((b) => b.t >= startSec) - 1; if (cur < 0) cur = 0;
+    $('sim-from').value = new Date(d.window.from).toISOString().slice(0, 10);
+    $('o-spread').value = d.spread; userMarkers = []; newAccount();
+    $('chart-empty').hidden = true;
+    redraw({ resetView: true });
+    chart.timeScale().scrollToRealTime?.(); chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, tfDataLength() - 140), to: tfDataLength() + 8 });
+    const na = d.notApplicable.length ? ` Non applicable sur ${d.symbol} (ignoré) : ${d.notApplicable.map((id) => strategyLabels[id] || id).join(', ')}.` : '';
+    $('sim-msg').innerHTML = `Période chargée : ${nyText(Math.floor(d.window.from / 1000))} → ${nyText(Math.floor(d.window.to / 1000))} · ${d.trades.length} signal(aux) de stratégies, ${d.news.length} annonce(s). Le rejeu démarre à la date de départ ; les ${startSec ? Math.max(0, cur) : 0} bougies avant sont du contexte.${na}`;
+    $('chart-legend').innerHTML = [...new Set(data.trades.map((x) => x.strategyId))].map((id) => `<span class="chip" style="background:${colorOf(id)}">${shortName(id)}</span>`).join('') + (data.trades.length ? '↑↓ entrée · zone rouge = risque, zone verte = objectif · ● résultat une fois terminé' : '');
+  } catch (err) { $('sim-msg').innerHTML = `<span class="loss">Erreur : ${err.message}</span>`; }
+  finally { btn.disabled = false; btn.textContent = 'Charger'; }
+};
+function tfDataLength() { const set = new Set(); for (let i = 0; i <= cur; i++) set.add(snap(base[i].t)); return set.size; }
+
+// ---------- import ----------
+const TOKEN_KEY = 'apexfvg_admin_token';
+try { $('imp-token').value = localStorage.getItem(TOKEN_KEY) || ''; } catch {}
+const impLog = (h) => { $('imp-log').insertAdjacentHTML('beforeend', `<div>${h}</div>`); return $('imp-log').lastElementChild; };
+window.importFiles = async () => {
+  $('imp-log').innerHTML = '';
+  const token = $('imp-token').value.trim();
+  const pair = $('imp-pair').value.trim().toUpperCase();
+  const name = $('imp-name').value.trim() || pair;
+  const spread = $('imp-spread').value.trim().replace(',', '.');
+  const files = [...$('imp-files').files].sort((a, b) => a.name.localeCompare(b.name));
+  const known = meta && meta.knownSpreads ? meta.knownSpreads[pair] : undefined;
+  const maxMb = (meta && meta.uploadLimits && meta.uploadLimits.maxFileMb) || 40;
+  if (!token) return void impLog('<span class="loss">Token admin requis.</span>');
+  if (!pair) return void impLog('<span class="loss">Indique la paire.</span>');
+  if (spread === '' && known === undefined) return void impLog('<span class="loss">Spread obligatoire pour une paire que le projet ne connaît pas (sinon les coûts seraient nuls).</span>');
+  if (!files.length) return void impLog('<span class="loss">Choisis au moins un fichier.</span>');
+  const big = files.find((f) => f.size > maxMb * 1048576);
+  if (big) return void impLog(`<span class="loss">${big.name} fait plus de ${maxMb} Mo — découpe-le (un fichier par année).</span>`);
+  try { localStorage.setItem(TOKEN_KEY, token); } catch {}
+  $('imp-btn').disabled = true; let ok = 0;
+  try {
+    for (const f of files) {
+      const line = impLog(`⏳ ${f.name} (${(f.size / 1048576).toFixed(1)} Mo)…`);
+      const q = new URLSearchParams({ symbol: pair, tz: $('imp-tz').value, filename: f.name });
+      if (spread !== '') q.set('spread', spread);
+      const res = await fetch(`/api/lab/datasets/${encodeURIComponent(name)}/files?${q}`, { method: 'POST', headers: { 'x-admin-token': token, 'Content-Type': 'text/plain' }, body: await f.text() });
+      let b = {}; try { b = await res.json(); } catch {}
+      if (!res.ok) { line.innerHTML = `<span class="loss">❌ ${f.name} : ${res.status === 403 ? 'token admin invalide' : res.status === 404 ? "import désactivé côté serveur (ADMIN_EXPORT_TOKEN absent)" : b.error || 'erreur ' + res.status}</span>`; break; }
+      ok++; line.innerHTML = `<span class="win">✅ ${f.name}</span> → « ${b.dataset.name} » : ${b.dataset.candles.toLocaleString('fr-FR')} bougies M15`;
+    }
+  } catch (e) { impLog(`<span class="loss">Erreur réseau : ${e.message}</span>`); }
+  $('imp-btn').disabled = false;
+  if (ok) { await loadMeta(`custom:${name}`); impLog(`Jeu « ${name} » sélectionné dans la liste des paires — clique « Charger ».`); }
+};
+
+$('sim-from').value = '';
+countStrats();
+loadMeta().catch((e) => { $('sim-msg').innerHTML = `<span class="loss">Erreur de chargement : ${e.message}</span>`; });
+</script>
+</body>
+</html>
