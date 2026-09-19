@@ -5925,3 +5925,37 @@ Esdras : retrouve la session HaitiForex (précédente entrée ci-dessus, faite s
 `npm test` : 942/942 (941 + 1 nouveau). **Fichiers** : `src/propFirms/haitiforex.js` (nouveau), `src/propFirms/index.js`, `test/propFirms.test.js`.
 
 **Reste de la liste "pas encore fait"** (voir l'entrée précédente pour le détail complet) : câblage réel du plafond de gain quotidien et de la fermeture forcée dans `GuardrailEngine`/`LiveStrategyEngine`, vérification directe avec HaitiForex sur le mécanisme exact du plafond, et les signaux d'alerte de légitimité toujours à vérifier par Esdras avant tout paiement réel.
+
+## HaitiForex : simulation multi-années (correction d'un résultat trop optimiste) + câblage réel du plafond de gain — 2026-09-19 (suite)
+
+Esdras : "c'est le plus petit challenge qu'on pourrait prendre. Avant tout, teste le combo actuel sur plusieurs années pour voir les chances statistiques d'arriver à 10% dans un mois", puis câbler le plafond de gain dans `GuardrailEngine`.
+
+### Simulation historique (205 fenêtres au lieu de 8) — la conclusion précédente était trop optimiste
+
+**Nouveau script `scripts/runHaitiForexHistoricalChallengeSimulation.js`** : réutilise EXACTEMENT la même méthode en 2 phases que `runHaitiForexChallengeSimulation.js` (mêmes règles HaitiForex, mêmes 4 mécanismes compatibles FVG/Judas Swing/CBDR/Silver Bullet, même clôture forcée 15h55 NY), mais rejoue sur les CSV historiques complets (`data/backtest-input/`, jusqu'à ~15 ans pour US100/GER40/XAUUSD) au lieu des 7 mois de données réelles — **205 fenêtres indépendantes de 30 jours** au lieu de 8. Les CSV historiques sont déjà dans la convention "heure moteur" du projet (contrairement à l'export réel en UTC véritable), donc aucune conversion de fuseau horaire nécessaire ici, contrairement à l'autre script.
+
+**Résultat, sensibilité au risque/trade** :
+
+| Risque/trade | Cible +10% atteinte | Compte annulé (-5%) | Ni l'un ni l'autre |
+|---|---|---|---|
+| 0.25% | 3.4% (7/205) | 2.0% (4/205) | 94.6% |
+| 0.3% | 7.8% (16/205) | 3.4% (7/205) | 88.8% |
+| **0.5% (défaut du projet)** | **23.9% (49/205)** | **16.6% (34/205)** | 59.5% |
+| 0.75% | 34.1% (70/205) | 31.2% (64/205) | 34.6% |
+| 1.0% | 40.0% (82/205) | 42.9% (88/205) | 17.1% |
+
+**Correction importante par rapport à la conclusion du 7-mois** : ce dernier disait "0.75%/trade est le point optimal, double le taux de réussite sans jamais toucher le plancher de -5%" — un résultat porté par seulement 8 fenêtres qui n'ont, par chance, jamais enchaîné une mauvaise série. Sur 205 fenêtres, le bust est réel et croît quasiment au même rythme que la réussite à mesure que le risque augmente (à 1.0%, le bust dépasse même la réussite). **0.5% reste le meilleur ratio réussite/bust trouvé** (~1.44 réussite pour 1 bust), pas 0.75% (~1.09 pour 1). Aucune limite de perte quotidienne chez HaitiForex (confirmé) explique en partie ce risque : rien ne freine une mauvaise séquence à l'intérieur d'une même journée avant que le plancher statique de -5% ne soit atteint.
+
+**Conclusion honnête à donner à Esdras avant toute décision** : ce n'est pas un "petit challenge sans risque" comme le test à 7 mois le suggérait — c'est un vrai pari où échouer signifie perdre le prix du ticket (2 500 gourdes) à peu près aussi souvent que réussir, au risque par défaut du projet. La décision de tenter ce challenge reste la sienne, avec ce chiffre en main plutôt que le "zéro bust" trop optimiste d'avant.
+
+### Câblage réel du plafond de gain quotidien dans `GuardrailEngine`
+
+Jusqu'ici, le plafond de gain n'existait que dans les scripts de simulation autonomes (`Phase 2`, vétant un trade une fois le plafond atteint) — jamais dans le vrai moteur. **Corrigé** : nouveau paramètre optionnel `dailyGainCapUsd` (défaut `null` = désactivé, comportement de tout appelant existant inchangé) dans `GuardrailEngine` — une fois le gain RÉALISÉ BRUT du jour (les pertes du jour ne rachètent PAS de marge, lecture conservative déjà utilisée par les scripts de simulation) atteint ce montant, tous les nouveaux signaux sont bloqués (`daily_gain_cap_reached`) jusqu'au lendemain (même reset quotidien que `dailyLossLimitPct`). Nouveaux champs exposés dans `getStatus()` : `dailyGainUsd`, `dailyGainCapUsd`, `dailyGainCapReached` — remontent automatiquement dans `/api/status` (qui expose déjà l'objet complet de `getStatus()`, aucun changement de `server.js` nécessaire).
+
+`accountRegistry.js`'s `buildEffectiveConfig()` transmet maintenant `program.dailyGainCapUsd` (un champ de PROGRAMME, pas par phase, contrairement à `targetPct`/`maxDrawdownPct` — chaque firme cataloguée n'a qu'un seul plafond pour tout le programme) — `null` pour toutes les autres firmes (aucun changement de comportement pour elles).
+
+**Preuve que chaque nouveau test attrape vraiment une régression** (même discipline que tout le reste de cette session) : cassé puis restauré individuellement — la condition de blocage dans `GuardrailEngine` (`if (false && dailyGainCapReached)`) et le transfert dans `accountRegistry.js` (`dailyGainCapUsd: null` au lieu de `program.dailyGainCapUsd ?? null`) — chaque fois les tests correspondants échouent puis repassent au vert après restauration, diff vérifié identique à l'original.
+
+**Ce qui reste** : la fermeture forcée à 16h NY n'est toujours PAS câblée dans `LiveStrategyEngine`/`AccountRuntime` (seulement modélisée dans les scripts de simulation) — prochaine étape logique si Esdras veut avancer vers un vrai compte HaitiForex.
+
+`npm test` : 948/948 (942 + 4 dans `guardrailEngine.test.js`, 2 dans `accountRegistry.test.js`). **Fichiers** : `scripts/runHaitiForexHistoricalChallengeSimulation.js` (nouveau), `src/engines/guardrailEngine.js`, `src/accountRegistry.js`, `test/guardrailEngine.test.js`, `test/accountRegistry.test.js`.

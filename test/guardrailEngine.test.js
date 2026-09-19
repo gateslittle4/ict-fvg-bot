@@ -152,6 +152,55 @@ test('blocks once daily loss limit % is reached', () => {
   assert.ok(status.blockReasons.includes('daily_loss_limit_reached'));
 });
 
+// Daily gain cap (2026-09-19, HaitiForex - see src/propFirms/haitiforex.js).
+
+test('daily gain cap is off by default - a huge winning day never blocks trading', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10, cooldownMinutesAfterLoss: 0 });
+  g.setBalance(100000, DAY1);
+  g.recordTrade({ pnl: 50000, time: DAY1, balanceAfter: 150000 });
+  const status = g.getStatus(DAY1 + 1000);
+  assert.equal(status.blocked, false);
+  assert.equal(status.dailyGainCapUsd, null);
+});
+
+test('blocks once the daily gain cap is reached, and reports the reason', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10, cooldownMinutesAfterLoss: 0, dailyGainCapUsd: 2200 });
+  g.setBalance(100000, DAY1);
+  g.recordTrade({ pnl: 1500, time: DAY1, balanceAfter: 101500 });
+  let status = g.getStatus(DAY1 + 1000);
+  assert.equal(status.blocked, false);
+  assert.equal(status.dailyGainUsd, 1500);
+
+  g.recordTrade({ pnl: 800, time: DAY1 + 2000, balanceAfter: 102300 }); // total 2300 >= 2200
+  status = g.getStatus(DAY1 + 3000);
+  assert.equal(status.blocked, true);
+  assert.ok(status.blockReasons.includes('daily_gain_cap_reached'));
+  assert.equal(status.dailyGainUsd, 2300);
+  assert.equal(status.dailyGainCapReached, true);
+});
+
+test('daily gain cap counts GROSS realized gain only - a same-day loss does not buy back cap room', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10, cooldownMinutesAfterLoss: 0, dailyGainCapUsd: 2200 });
+  g.setBalance(100000, DAY1);
+  g.recordTrade({ pnl: 2500, time: DAY1, balanceAfter: 102500 }); // cap reached
+  g.recordTrade({ pnl: -1000, time: DAY1 + 1000, balanceAfter: 101500 }); // a same-day loss
+  const status = g.getStatus(DAY1 + 2000);
+  assert.equal(status.dailyGainUsd, 2500); // NOT reduced by the loss
+  assert.ok(status.blockReasons.includes('daily_gain_cap_reached'));
+});
+
+test('daily gain cap resets at day rollover, same as the daily loss limit', () => {
+  const g = new GuardrailEngine({ maxTradesPerDay: 10, cooldownMinutesAfterLoss: 0, dailyGainCapUsd: 2200 });
+  g.setBalance(100000, DAY1);
+  g.recordTrade({ pnl: 3000, time: DAY1, balanceAfter: 103000 });
+  assert.ok(g.getStatus(DAY1 + 1000).blockReasons.includes('daily_gain_cap_reached'));
+
+  const nextDay = DAY1 + 24 * 3600 * 1000;
+  const status = g.getStatus(nextDay);
+  assert.equal(status.dailyGainUsd, 0);
+  assert.equal(status.dailyGainCapReached, false);
+});
+
 test('resets trade count, cooldown and daily pnl on a new trading day', () => {
   const g = new GuardrailEngine({ maxTradesPerDay: 1, cooldownMinutesAfterLoss: 30 });
   g.setBalance(10000, DAY1);
