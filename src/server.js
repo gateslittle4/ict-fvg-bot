@@ -300,6 +300,12 @@ function listLabSymbols() {
 function labCsvPath(symbol) {
   return path.join(LAB_DATA_DIR, `${symbol}.csv`);
 }
+// The REAL broker candles exported from production (2026-02-13 -> 2026-09-16, committed): the Simulateur's
+// "7 derniers mois" - the only months the backtests never saw. Ids look like "real:US100".
+const REAL_DATA_DIR = path.join(__dirname, '..', 'data', 'real-data-2026-02-to-09');
+function listRealSymbols() {
+  try { return fs.readdirSync(REAL_DATA_DIR).filter((n) => n.endsWith('.csv')).map((n) => n.replace(/\.csv$/, '')).sort(); } catch { return []; }
+}
 
 // Every computation below runs in a worker THREAD (labClient.js/labWorker.js),
 // never in this process's event loop: it shares a process with the live
@@ -352,6 +358,11 @@ function resolveLabDataset(id) {
     if (!meta || !fs.existsSync(labDatasetCsv(LAB_UPLOAD_DIR, name))) return null;
     return { key: id, csvPath: labDatasetCsv(LAB_UPLOAD_DIR, name), symbol: meta.symbol, spread: meta.spread, cutoff: meta.trainCutoff, meta };
   }
+  if (id.startsWith('real:')) {
+    const sym = id.slice(5);
+    if (!listRealSymbols().includes(sym)) return null;
+    return { key: id, csvPath: path.join(REAL_DATA_DIR, `${sym}.csv`), symbol: sym, spread: null, cutoff: null, meta: null };
+  }
   if (!listLabSymbols().includes(id)) return null;
   return { key: id, csvPath: labCsvPath(id), symbol: id, spread: null, cutoff: null, meta: null };
 }
@@ -368,6 +379,7 @@ app.get('/api/lab/meta', (req, res) => {
     res.json({
       strategies: listLabStrategies(),
       symbols: listLabSymbols(),
+      realSymbols: listRealSymbols(),
       customDatasets: listDatasets(LAB_UPLOAD_DIR).map((m) => ({ id: `custom:${m.name}`, ...m })),
       knownSpreads: DEFAULT_SPREADS,
       replay: {
@@ -527,18 +539,19 @@ app.post('/api/lab/lego', async (req, res) => {
 
 // "Simulateur": replay a window of the market bar by bar, with the strategies' trades to draw and the
 // red-news events (see replaySignals.js / newsCalendar.js). Several pairs share ONE window.
-// body: { symbol, extraSymbols?: string[] (max 3), from?: 'YYYY-MM-DD' (random when absent) | fromMs?: real UTC ms
-//         (exact window, used to add a pair to a replay already running), days?: 1..120, baseMinutes?: 1|5|15,
+// body: { symbol, extraSymbols?: string[] (max 5), from?: 'YYYY-MM-DD' (random when absent) | fromMs?: real UTC ms
+//         (exact window, used to add a pair to a replay already running), days?: 1..240, baseMinutes?: 1|5|15,
 //         strategyIds?: string[] ('bot-all' = the bot's mechanisms on each pair), news?: boolean }
 // Real time = engine time + 5 h, applied here so the page can hand it straight to the chart.
 const REPLAY_WARMUP_BARS = 400;
-const REPLAY_MAX_PAIRS = 4;
+const REAL_WARMUP_BARS = 96; // the real broker export is short (~7 months): a day of chart context is enough, the strategies run on the whole file anyway
+const REPLAY_MAX_PAIRS = 6;
 app.post('/api/lab/replay', async (req, res) => {
   try {
     const body = req.body || {};
     const OFFSET = FIXED_EST_TO_UTC_OFFSET_MS;
     const days = Math.round(Number(body.days ?? 30));
-    if (!Number.isFinite(days) || days < 1 || days > 120) throw new ImportError('Durée de rejeu invalide (1 à 120 jours).');
+    if (!Number.isFinite(days) || days < 1 || days > 240) throw new ImportError('Durée de rejeu invalide (1 à 240 jours).');
     let fromEngine = null;
     if (body.fromMs !== undefined) {
       fromEngine = Number(body.fromMs) - OFFSET;
@@ -563,7 +576,7 @@ app.post('/api/lab/replay', async (req, res) => {
       const ids = [...new Set(wanted.flatMap((id) => (id === 'bot-all' ? botMechanismsForSymbol(ds.symbol).map((m) => m.id) : [id])))];
       let base = baseMinutes, m1 = null;
       if (base < 15) {
-        const cap = base === 1 ? 30 : 120;
+        const cap = base === 1 ? 30 : 120; // M15 goes up to 240 days (7 months)
         if (!ds.meta?.m1 || days > cap) {
           if (strict) {
             if (!ds.meta?.m1) throw new ImportError(`Ce jeu n'a pas de M1 conservé${ds.meta?.m1Note ? ` (${ds.meta.m1Note})` : ' : seuls les jeux importés en M1 (avec « garder le M1 » coché) se rejouent en M1 ou M5'}.`);
@@ -572,12 +585,15 @@ app.post('/api/lab/replay', async (req, res) => {
           base = 15; // an extra pair without M1 stays at M15 next to a finer main pair
         } else m1 = { file: m1PathFor(LAB_UPLOAD_DIR, ds.meta.name), scale: ds.meta.m1.scale };
       }
+      const real = symbolId.startsWith('real:');
+      const avail = real ? listRealSymbols() : available;
+      const csvOf = (sym) => (real ? path.join(REAL_DATA_DIR, `${sym}.csv`) : labCsvPath(sym));
       const partner = pair.includes(ds.symbol) ? pair.find((x) => x !== ds.symbol) : null;
-      const partnerCsvPath = partner && available.includes(partner) ? labCsvPath(partner) : null;
+      const partnerCsvPath = partner && avail.includes(partner) ? csvOf(partner) : null;
       const spec = instrumentSpec(ds.symbol);
-      const plan = conversionPlan(spec.quote, available);
-      const conversion = plan.status === 'ok' ? { status: 'ok', combine: plan.combine, legs: plan.legs.map((l) => ({ mode: l.mode, csvPath: labCsvPath(l.symbol) })) } : null;
-      const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine: fromEng, days, warmupBars: REPLAY_WARMUP_BARS, baseMinutes: base, m1, conversion });
+      const plan = conversionPlan(spec.quote, avail);
+      const conversion = plan.status === 'ok' ? { status: 'ok', combine: plan.combine, legs: plan.legs.map((l) => ({ mode: l.mode, csvPath: csvOf(l.symbol) })) } : null;
+      const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine: fromEng, days, warmupBars: real ? REAL_WARMUP_BARS : REPLAY_WARMUP_BARS, baseMinutes: base, m1, conversion });
       return {
         out,
         pair: {

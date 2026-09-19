@@ -201,9 +201,11 @@ export function recordEquity(acc, bids, time) {
  * Feeds one price candle (the simulation's base timeframe) through the account: pending orders
  * first, then stops/targets/trailing of the positions that were already open.
  * @param {{time:number, open:number, high:number, low:number, close:number}} c
+ * @param {{onlyIds?: Set<number>}} [opts] onlyIds: judge just these positions (no order fills, no equity point) - used for a
+ *   position opened AT this candle's open price, whose own candle can already hit its stop.
  * @returns {Array<{type:'filled'|'closed', id:number, ...}>}
  */
-export function onCandle(acc, c, symbol) {
+export function onCandle(acc, c, symbol, { onlyIds = null } = {}) {
   const events = [];
   const multi = symbol !== undefined; // a pair was named: only ITS positions/orders see this candle
   const sym = multi ? symbol : null;
@@ -213,6 +215,7 @@ export function onCandle(acc, c, symbol) {
   // 1) pending orders (positions they open are only checked from the next candle)
   const fresh = new Set();
   for (const o of [...acc.pending].filter(mine)) {
+    if (onlyIds) break; // re-judging positions on the candle they were opened on: no order fills
     let fill = null;
     if (isBuy(o.side)) {
       const askLow = c.low + s, askHigh = c.high + s, askOpen = c.open + s;
@@ -231,7 +234,7 @@ export function onCandle(acc, c, symbol) {
 
   // 2) stops, targets, trailing on positions opened on an EARLIER candle
   for (const pos of [...acc.positions].filter(mine)) {
-    if (fresh.has(pos.id)) continue;
+    if (fresh.has(pos.id) || (onlyIds && !onlyIds.has(pos.id))) continue;
     const buy = isBuy(pos.side);
     // the stop is judged against the SL that stood at the START of the candle
     const hitSl = pos.sl != null && (buy ? c.low <= pos.sl : c.high + s >= pos.sl);
@@ -253,7 +256,7 @@ export function onCandle(acc, c, symbol) {
     }
   }
 
-  if (!multi) acc.equityCurve.push({ time: c.time, equity: equity(acc, c.close), balance: acc.balance });
+  if (!multi && !onlyIds) acc.equityCurve.push({ time: c.time, equity: equity(acc, c.close), balance: acc.balance });
   return events;
 }
 

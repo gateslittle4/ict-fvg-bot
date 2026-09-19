@@ -6178,3 +6178,13 @@ Demande d'Esdras : rejouer les combos « seuls » (le bot prend les trades tout 
 - **Dates/solde** : date de début, date de fin (durée 1–120 j), solde de départ ; zoom ＋/－/⌖ ; stop = pause.
 - **Piège vécu** : ne jamais rediriger `cat … > public/simulateur.html` dans une chaîne dont une entrée peut échouer : la redirection tronque le fichier avant l'échec.
 - **Pas encore fait** : import CSV de calendrier de news + extension 2019–2023 (seulement avec des dates officielles sourcées), stockage durable (nécessite l'accord d'Esdras pour une table Supabase ou un disque payant).
+
+## 2026-09-19 (suite 3) — Simulateur : « Tout le bot en une option », 7 derniers mois réels, courbe du solde en direct
+
+Demande d'Esdras : une seule option qui charge toutes les paires que le bot trade + ses 8 mécanismes, jouée en « bot seul », avec l'évolution du solde en direct, sur les 7 derniers mois.
+
+- **Case « 🤖 Tout le bot »** : prend automatiquement les paires ayant au moins un mécanisme (US100, US500, GER40, XAUUSD, EURUSD), charge chaque paire par une requête séparée (chacune a sa limite de temps côté serveur), force le mode bot seul. Jusqu'à 6 paires (`REPLAY_MAX_PAIRS`).
+- **« 7 derniers mois RÉELS »** : jeux `real:<PAIRE>` = `data/real-data-2026-02-to-09/*.csv` (vraies bougies du broker, jamais vues par les backtests ; les timestamps sont traités comme le temps moteur, comme dans les scripts du projet). Fenêtre = 200 jours finissant le 16/09/2026 (EURUSD ne commence que le 24/02). Le partenaire de la divergence et les paires de conversion viennent aussi de ce dossier. L'option « 7 derniers mois de l'historique » (fin 2025) et 3 mois / 1 mois existent aussi ; durée max 240 j en M15.
+- **Courbe d'équité en direct** (petit graphique dans le panneau compte), vitesses ×100 et ×300.
+- **Résultats du simulateur ≠ R du backtest, et c'est voulu** (mesuré sur les 7 mois réels : R brut du backtest fvg +34, silver +88, breaker +11 ; simulateur -60, -30, -26). Trois causes : (1) le backtest est *brut* du spread (la convention du projet retire `spread/distance du stop` ensuite ; beaucoup de stops sont plus petits que le spread, ex. Silver US100 stop 0,47 pt pour 0,6 de spread) - la table des signaux montre donc « brut → net » ; (2) une entrée à l'ouverture d'une bougie peut toucher son stop dans cette même bougie, que le backtest ignore ; le simulateur la juge (option « comme le backtest » pour l'ignorer) ; (3) un gap au travers du stop est rempli à l'ouverture, pas au prix du stop. `onCandle(acc, c, symbol, {onlyIds})` sert au point 2.
+- **Non couvert** : les annonces (news) n'existent que pour 2024-2025 → aucune sur les mois réels de 2026.

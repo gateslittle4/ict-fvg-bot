@@ -290,3 +290,18 @@ test('a pending order keeps its pair: it only fills on that pair\'s candles', ()
   assert.equal(acc.pending.length, 0);
   assert.equal(acc.positions[0].symbol, 'BBB');
 });
+
+test('onlyIds judges just those positions on the candle they were opened on (no fills, no equity point)', () => {
+  const acc = twoPairs();
+  const a = placeAtPrice(acc, { side: 'sell', price: 100, time: 0, units: 1, sl: 101, tp: 90, symbol: 'AAA', tag: 't' });
+  const other = placeAtPrice(acc, { side: 'sell', price: 100, time: 0, units: 1, sl: 101, tp: 90, symbol: 'AAA', tag: 'u' });
+  placePending(acc, { side: 'buy', type: 'limit', price: 95, bid: 100, units: 1, symbol: 'AAA' });
+  const curve = acc.equityCurve.length;
+  const ev = onCandle(acc, { time: 1, open: 100, high: 105, low: 99, close: 104 }, 'AAA', { onlyIds: new Set([a.id]) });
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].id, a.id);
+  assert.equal(ev[0].reason, 'stop');
+  assert.equal(acc.positions.some((p) => p.id === other.id), true); // untouched
+  assert.equal(acc.pending.length, 1); // no order filled
+  assert.equal(acc.equityCurve.length, curve);
+});
