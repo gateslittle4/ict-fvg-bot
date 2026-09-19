@@ -1017,6 +1017,47 @@ function createAccountRouter(getStore) {
     }
   });
 
+  // Probability of finishing THIS challenge from where the account stands right now
+  // (roadmap n° 1): the prop-firm Monte Carlo started from the real balance and trailing
+  // peak, fed with the live FVG strategy's history on each symbol it runs on, filtered
+  // through the account's own guardrails. Runs in the Labo's worker thread. Three
+  // scenarios: as things stand, after a -1R day, after a +1R day.
+  router.get('/challenge-outlook', async (req, res) => {
+    const store = getStore(req);
+    const g = store.guardrail;
+    const st = g.getStatus();
+    const unavailable = (reason) => res.json({ available: false, reason });
+    if (st.targetPct == null || st.maxDrawdownPct == null) return unavailable('Ce compte n\'a pas de challenge à finir (objectif ou drawdown non configurés).');
+    if (g.initialBalance == null || st.currentBalance == null) return unavailable('Solde du compte pas encore connu (en attente du courtier).');
+    try {
+      const initial = g.initialBalance;
+      const balance = (st.currentBalance / initial) * 100;
+      const peakEod = ((g.peakEodBalance ?? initial) / initial) * 100;
+      const riskPct = store.strategyEngine.riskPctPerTrade;
+      const symbols = liveFvgSymbols().filter((s) => CONFIG.symbols.includes(s) && listLabSymbols().includes(s));
+      const tradesBySymbol = {};
+      for (const symbol of symbols) {
+        tradesBySymbol[symbol] = (await liveHistoryFor(symbol)).map((t) => ({ entryTime: t.entryTime, exitTime: t.exitTime, rMultiple: t.r }));
+      }
+      const params = normalizeChallengeParams({
+        targetPct: st.targetPct, dailyLossLimitPct: st.dailyLossLimitPct, maxDrawdownPct: st.maxDrawdownPct,
+        maxDrawdownType: st.maxDrawdownType === 'static' ? 'static' : 'trailing-eod', riskPct, runs: 3000, maxDays: 250,
+      });
+      const guardrails = { maxTradesPerDay: st.maxTradesPerDay, cooldownMinutesAfterLoss: st.cooldownMinutesAfterLoss, dailyLossLimitPct: st.dailyLossLimitPct, oneOpenPerSymbol: true };
+      const states = [{ balance, peakEod }, { balance: balance - riskPct, peakEod }, { balance: balance + riskPct, peakEod: Math.max(peakEod, balance + riskPct) }];
+      const [base, ifLoss, ifWin] = await runLabJob('outlook', { tradesBySymbol, params, guardrails, states, cone: 90 });
+      res.json({
+        available: true, symbols, riskPct, initialBalance: initial, balancePct: balance,
+        targetPct: st.targetPct, maxDrawdownPct: st.maxDrawdownPct, maxDrawdownType: st.maxDrawdownType, dailyLossLimitPct: st.dailyLossLimitPct,
+        floorPct: st.overallDrawdownFloor != null ? (st.overallDrawdownFloor / initial) * 100 : null,
+        approximate: st.maxDrawdownType === 'trailing-locks-at-start-balance',
+        base, ifLoss, ifWin,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Automatic debrief of one closed trade (roadmap: auto-annotated journal / mentor).
   // body: { symbol, direction, source?, entryTime, exitTime (real UTC ms), entryPrice, exitPrice?, rMultiple?, pnl? }
   // Facts only (tradeDebrief.js); the optional AI comment is a separate call (/trade-mentor).
