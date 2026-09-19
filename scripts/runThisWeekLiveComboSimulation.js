@@ -161,6 +161,43 @@ function main() {
     console.log(`${wins} gagnants / ${weekTrades.length - wins} perdants (WR ${((100 * wins) / weekTrades.length).toFixed(1)}%)`);
     console.log(`PnL semaine : ${fmtMoney(totalPnl)} (${fmtPct((100 * totalPnl) / STARTING_BALANCE)} du solde de départ) -> solde final $${(STARTING_BALANCE + totalPnl).toFixed(2)}\n`);
 
+    // Daily breakdown (Esdras: "donne-le moi pour chaque jour, avec le %
+    // ou l'argent gagné par jour, le nombre de trades aussi, avec tous les
+    // garde-fous actuels"). Day key = real UTC calendar date, matching
+    // GuardrailEngine's own dayBoundaryHourUTC=0 (midnight UTC) - the same
+    // boundary the real guardrails actually use to reset
+    // tradesToday/dailyLossPct. % is additive (day PnL / STARTING_BALANCE),
+    // not compounded day-over-day - see the comment on weekTrades' sort
+    // above: trade PnL amounts already reflect this engine's
+    // symbol-sequential (not true-wall-clock) processing order, so a
+    // compounded running balance would imply more precision than the
+    // underlying numbers actually have. Each day's own $ total is accurate
+    // regardless (a plain sum of that day's real trade PnLs).
+    const nyDayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
+    const byDay = new Map();
+    for (const t of weekTrades) {
+      const realUtc = t.entryTime + FIXED_EST_TO_UTC_OFFSET_MS;
+      const dayKey = nyDayFormatter.format(new Date(realUtc));
+      if (!byDay.has(dayKey)) byDay.set(dayKey, []);
+      byDay.get(dayKey).push(t);
+    }
+    // Every weekday shown even with zero trades - a quiet day is real
+    // information (which garde-fou or which lack of signal caused it, see
+    // the blocked-signals table further below), not something to omit.
+    const allWeekdays = [];
+    for (let d = WEEK_START_UTC; d < WEEK_END_UTC; d += 24 * 60 * 60 * 1000) allWeekdays.push(nyDayFormatter.format(new Date(d)));
+
+    console.log('Performance journalière :');
+    console.log('| Jour | Trades | Gagnants | PnL du jour | % du solde de départ |');
+    console.log('|---|---|---|---|---|');
+    for (const dayKey of allWeekdays) {
+      const list = byDay.get(dayKey) || [];
+      const w = list.filter((t) => t.pnl > 0).length;
+      const pnl = list.reduce((s, t) => s + t.pnl, 0);
+      console.log(`| ${dayKey} | ${list.length} | ${w} | ${fmtMoney(pnl)} | ${fmtPct((100 * pnl) / STARTING_BALANCE)} |`);
+    }
+    console.log();
+
     const bySource = new Map();
     for (const t of weekTrades) {
       if (!bySource.has(t.source)) bySource.set(t.source, []);
