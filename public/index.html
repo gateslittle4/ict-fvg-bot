@@ -449,6 +449,18 @@
   .equity-chart .curve-negative { fill: rgba(255,92,95,0.10); }
   .equity-chart .curve-grid { stroke: var(--panel-border); stroke-width: 1; stroke-dasharray: 3,4; }
   .equity-chart .curve-label { fill: var(--muted); font: 10px var(--mono); }
+  /* ---------- Probabilité de finir le challenge (fan chart) ---------- */
+  .fan-chart { width: 100%; height: 200px; display: block; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); margin-bottom: 12px; }
+  .fan-chart .fan-band-outer { fill: rgba(76,158,255,0.10); }
+  .fan-chart .fan-band-inner { fill: rgba(76,158,255,0.22); }
+  .fan-chart .fan-median { stroke: var(--blue); stroke-width: 1.6; fill: none; }
+  .fan-chart .fan-target { stroke: var(--green); stroke-width: 1; stroke-dasharray: 3,3; }
+  .fan-chart .fan-floor { stroke: var(--red); stroke-width: 1; stroke-dasharray: 3,3; }
+  .fan-chart .fan-label { fill: var(--muted); font: 10px var(--mono); }
+  .outlook-scenarios { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
+  .outlook-scenario { background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 8px 10px; }
+  .outlook-scenario .label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; font-family: var(--mono); margin-bottom: 4px; }
+  .outlook-scenario .value { font-family: var(--mono); font-size: 17px; font-weight: 700; }
   .strategy-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
   .strategy-table th { text-align: left; color: var(--muted); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--panel-border-strong); }
   .strategy-table td { padding: 6px 8px; border-bottom: 1px solid var(--panel-border); font-variant-numeric: tabular-nums; }
@@ -623,6 +635,12 @@
     <h2>Historique des alertes (push)</h2>
     <div class="meta" style="margin-bottom:8px;">Ce que ce processus a poussé (ou aurait poussé) depuis son dernier démarrage — en mémoire seulement, remis à zéro à chaque redémarrage/déploiement.</div>
     <div id="alert-history-body">Chargement…</div>
+  </div>
+
+  <div class="card" id="outlook-card" hidden>
+    <h2>Probabilité de finir le challenge</h2>
+    <div class="meta" id="outlook-symbols" style="margin-bottom:8px;"></div>
+    <div id="outlook-body">Calcul en cours (jusqu'à ~1 min sur le serveur)…</div>
   </div>
 
   <div class="card" id="risk-command-card">
@@ -1793,6 +1811,80 @@ function renderEquityCurve(equityCurve) {
     </svg>
   `;
 }
+
+// 2026-09 (roadmap n°1, "cône de challenge en direct"): the same fan-chart shape
+// GET /api/accounts/:id/challenge-outlook returns (percentile bands per day) - a
+// Monte Carlo replay of the live strategy's own trades, started from the account's
+// REAL balance and trailing peak (see labAnalytics.js/simulateMultiChallenge). This
+// is a probability picture, not a promise - the card says so.
+function renderFanChart(cone, { floorPct, targetPct } = {}) {
+  if (!cone || cone.length < 2) return '<div class="meta">Pas assez de jours pour tracer un cône.</div>';
+  const W = 900, H = 200, PAD_L = 48, PAD_R = 18, PAD_T = 16, PAD_B = 22;
+  const allValues = cone.flatMap((c) => [c.p5, c.p95]).concat(floorPct != null ? [floorPct] : []).concat(targetPct != null ? [targetPct] : []);
+  const minV = Math.min(...allValues), maxV = Math.max(...allValues);
+  const range = (maxV - minV) || 1;
+  const y = (v) => PAD_T + (1 - (v - minV) / range) * (H - PAD_T - PAD_B);
+  const plotW = W - PAD_L - PAD_R;
+  const x = (i) => PAD_L + (i / (cone.length - 1)) * plotW;
+  const path = (key) => cone.map((c, i) => `${x(i)},${y(c[key])}`).join(' ');
+  const bandOuter = `${path('p5')} ${[...cone].reverse().map((c, i) => `${x(cone.length - 1 - i)},${y(c.p95)}`).join(' ')}`;
+  const bandInner = `${path('p25')} ${[...cone].reverse().map((c, i) => `${x(cone.length - 1 - i)},${y(c.p75)}`).join(' ')}`;
+  const lastX = x(cone.length - 1);
+  return `
+    <svg class="fan-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Cône des trajectoires probables du solde">
+      <polygon class="fan-band-outer" points="${bandOuter}" />
+      <polygon class="fan-band-inner" points="${bandInner}" />
+      ${targetPct != null && targetPct >= minV && targetPct <= maxV ? `<line class="fan-target" x1="${PAD_L}" y1="${y(targetPct)}" x2="${W - PAD_R}" y2="${y(targetPct)}" /><text class="fan-label" text-anchor="end" x="${W - PAD_R - 4}" y="${Math.max(PAD_T + 9, y(targetPct) - 4)}">objectif ${fmt(targetPct, 1)}%</text>` : ''}
+      ${floorPct != null && floorPct >= minV && floorPct <= maxV ? `<line class="fan-floor" x1="${PAD_L}" y1="${y(floorPct)}" x2="${W - PAD_R}" y2="${y(floorPct)}" /><text class="fan-label" text-anchor="end" x="${W - PAD_R - 4}" y="${Math.min(H - PAD_B - 6, y(floorPct) + 12)}">plancher ${fmt(floorPct, 1)}%</text>` : ''}
+      <polyline class="fan-median" points="${path('p50')}" vector-effect="non-scaling-stroke" />
+      <text class="fan-label" x="4" y="${y(maxV) + 4}">${fmt(maxV, 1)}%</text>
+      <text class="fan-label" x="4" y="${y(minV) + 4}">${fmt(minV, 1)}%</text>
+      <text class="fan-label" x="${PAD_L}" y="${H - 6}">jour 0</text>
+      <text class="fan-label" text-anchor="end" x="${W - PAD_R - 4}" y="${H - 6}">jour ${cone[cone.length - 1].day}</text>
+    </svg>
+  `;
+}
+
+function outlookScenarioTile(label, r, base) {
+  if (!r || r.insufficient) return `<div class="outlook-scenario"><div class="label">${label}</div><div class="value meta">Pas assez de trades historiques pour ce scénario.</div></div>`;
+  const delta = base && !base.insufficient ? (r.passRate - base.passRate) * 100 : null;
+  const deltaText = delta === null || Math.abs(delta) < 0.05 ? '' : ` <span class="${delta >= 0 ? 'win' : 'loss'}" style="font-size:11px;">(${delta >= 0 ? '+' : ''}${fmt(delta, 1)} pts)</span>`;
+  return `<div class="outlook-scenario"><div class="label">${label}</div><div class="value ${r.passRate >= 0.5 ? 'win' : 'loss'}">${fmt(r.passRate * 100, 1)} %${deltaText}</div><div class="meta" style="margin-top:2px;">échoue ${fmt(r.failRate * 100, 1)} % · médiane ${r.daysToPass.median ?? '—'} j</div></div>`;
+}
+
+async function refreshOutlook() {
+  const card = document.getElementById('outlook-card');
+  const body = document.getElementById('outlook-body');
+  try {
+    // no-store: sw.js already passes every fetch straight to the network unmodified, so this is
+    // belt-and-braces, not a fix for an observed bug - but this call is meant to reflect the
+    // account's balance right now (it changes after every trade), so it should never be answered
+    // from any cache this page doesn't fully control.
+    const res = await fetch(acctUrl('/challenge-outlook'), { cache: 'no-store' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    if (!data.available) { card.hidden = true; return; }
+    card.hidden = false;
+    document.getElementById('outlook-symbols').textContent = `${data.symbols.join(', ')} · risque ${fmt(data.riskPct, 2)} % par trade`;
+    const approxNote = data.approximate ? ' Plancher de drawdown approché par un suiveur de fin de journée (le type exact de ce programme n\'est pas modélisé) — à prendre comme un ordre de grandeur.' : '';
+    body.innerHTML = `
+      <div class="meta" style="margin-bottom:8px;">Simulation (Monte Carlo, ${fmt(data.base.runs ?? 0, 0)} tirages) sur l'historique de la stratégie live, filtrée par tes propres garde-fous, lancée depuis ton solde réel actuel (${fmt(data.balancePct, 1)} % du solde de départ). Ce n'est pas une prévision : c'est « si le futur ressemble au passé, avec un ordre différent ».${approxNote}</div>
+      ${renderFanChart(data.base.cone, { floorPct: data.floorPct, targetPct: 100 + data.targetPct })}
+      <div class="outlook-scenarios">
+        ${outlookScenarioTile('Tel quel', data.base, data.base)}
+        ${outlookScenarioTile('Après un jour à −1R', data.ifLoss, data.base)}
+        ${outlookScenarioTile('Après un jour à +1R', data.ifWin, data.base)}
+      </div>
+    `;
+  } catch (err) {
+    // "Not applicable to this account" (no challenge configured, balance not known yet) is by far
+    // the most common reason this fails, and happens on every account that doesn't use this
+    // feature - so a first failure stays silent (card stays in its default hidden state), matching
+    // "available: false". Once the card has actually been shown for this account, a later failure
+    // is a real problem and gets the same visible ".err" treatment every other card on this page uses.
+    if (!card.hidden) body.innerHTML = `<div class="err">Erreur de chargement: ${err.message}</div>`;
+  }
+}
 async function refreshTradeLog() {
   const equityCurveEl = document.getElementById('equity-curve-body');
   try {
@@ -2018,6 +2110,7 @@ function startDashboardForAccount(accountId) {
   refreshAccount();
   refreshOrderLog();
   refreshAlertHistory();
+  refreshOutlook();
   liveStreamHandle = startLiveStream();
   dashboardPollIntervals = [
     setInterval(refreshHealth, 30000), // process health and API latency are cheap, but do not need a faster cadence
@@ -2026,6 +2119,7 @@ function startDashboardForAccount(accountId) {
     setInterval(refreshAccount, 30000), // ProtoOAReconcileReq is lightweight, but still a live broker round-trip - no need for the 3s cadence of /api/status
     setInterval(refreshOrderLog, 30000), // in-memory log, grows only on a real order outcome - no need for a faster cadence than the account card next to it
     setInterval(refreshAlertHistory, 30000), // in-memory, same cadence as the order log it sits next to
+    setInterval(refreshOutlook, 900000), // a real Monte Carlo in the Labo's worker thread (up to ~1 min in prod) - only worth re-running every 15 min, not on a fast poll
   ];
 }
 

@@ -88,7 +88,16 @@ export function startMockDataSource(account = getDefaultAccount(), { candleInter
   account.mode = 'demo';
 
   const sims = new Map(symbols.map((s) => [s, new SymbolSimulator(s)]));
-  account.strategyEngine.setBalance(account.balance);
+  // BUG FOUND 2026-09-19 (while wiring the live challenge-outlook feature): this used to call
+  // account.strategyEngine.setBalance() directly, bypassing AccountRuntime.setBalance() - which
+  // ALSO feeds account.guardrail.setBalance(). Every real data source (cTraderDataSource.js,
+  // matchTraderDataSource.js) goes through the account-level setBalance(), so a demo account was
+  // the only one whose guardrail never learned its initial balance: overall-drawdown/target
+  // tracking (GuardrailEngine._overallDrawdownFloor/_targetBalance) silently never worked for any
+  // demo account configured with a prop-firm program - and neither could this feature's Monte
+  // Carlo, which reads guardrail.initialBalance/peakEodBalance. Harmless fix: demo mode now
+  // reaches the exact same balance-setting path a live connection does.
+  account.setBalance(account.balance);
 
   // Warm up with some history immediately so the dashboard isn't empty on first load.
   // Not enough candles here to ever pass the HTF-EMA/structure/session/sweep filters for
