@@ -195,6 +195,67 @@
     <div id="imp-list"></div>
   </details>
 
+  <details class="card" id="live-card">
+    <summary><strong>Ma stratégie live — analyse complète</strong> <span class="meta">— cliquer pour ouvrir</span></summary>
+    <p class="hint">
+      La stratégie que le bot trade vraiment (le FVG filtré : biais de la timeframe supérieure, structure, session, balayage de liquidité, zones multi-contact),
+      rejouée sur tout l'historique avec les mêmes coûts et la même coupure entraînement/test que le reste du Labo. Choisis une ou plusieurs
+      <strong>combinaisons</strong> (la config live avec un filtre en moins, un autre objectif, une autre fenêtre…) ou construis la tienne, puis découpe les
+      résultats comme tu veux : par année, mois, jour, heure, sens, taille du stop, trade précédent… et croise deux critères entre eux.
+    </p>
+    <div class="form-row">
+      <div class="form-field">
+        <label for="live-symbol">Symbole</label>
+        <select id="live-symbol"></select>
+      </div>
+      <div class="form-field" style="flex:0 0 auto;min-width:0;">
+        <button type="button" class="run-btn" id="live-run-btn" onclick="runLiveStrategy()">Analyser</button>
+      </div>
+    </div>
+    <div class="meta" id="live-config-line" style="margin-bottom:8px;"></div>
+    <div class="strat-checks" id="live-variants"></div>
+    <details class="card" style="margin:8px 0;">
+      <summary><strong>Construire ma propre combinaison</strong> <span class="meta">— optionnel, s'ajoute aux cases cochées</span></summary>
+      <div class="form-row">
+        <div class="form-field"><label for="lc-bias">Biais de la timeframe supérieure</label>
+          <select id="lc-bias"><option value="">Comme le live</option><option value="baseline">Aucun</option><option value="H4_EMA200">H4 · EMA 200</option><option value="H4_EMA50">H4 · EMA 50</option><option value="H4_EMA20">H4 · EMA 20</option><option value="H1_EMA200">H1 · EMA 200</option><option value="H1_EMA50">H1 · EMA 50</option><option value="H1_EMA20">H1 · EMA 20</option></select></div>
+        <div class="form-field"><label for="lc-structure">Structure (BOS)</label>
+          <select id="lc-structure"><option value="">Comme le live</option><option value="true">Activée</option><option value="false">Désactivée</option></select></div>
+        <div class="form-field"><label for="lc-sweep">Balayage de liquidité</label>
+          <select id="lc-sweep"><option value="">Comme le live</option><option value="true">Activé</option><option value="false">Désactivé</option></select></div>
+        <div class="form-field"><label for="lc-touch">Zones</label>
+          <select id="lc-touch"><option value="">Comme le live</option><option value="true">Multi-contact</option><option value="false">Contact unique</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label for="lc-session">Session</label>
+          <select id="lc-session"><option value="">Comme le live</option><option value="off">Toute la journée</option><option value="custom">Fenêtre ci-contre</option></select></div>
+        <div class="form-field"><label for="lc-start">Fenêtre : début (h New York)</label><input type="text" id="lc-start" inputmode="decimal" value="8" /></div>
+        <div class="form-field"><label for="lc-end">Fenêtre : fin (h New York)</label><input type="text" id="lc-end" inputmode="decimal" value="12" /></div>
+        <div class="form-field"><label for="lc-rr">Objectif (R:R)</label><input type="text" id="lc-rr" inputmode="decimal" placeholder="comme le live" /></div>
+        <div class="form-field"><label for="lc-stop">Stop</label>
+          <select id="lc-stop"><option value="">Comme le live</option><option value="fvg-edge">Bord de la zone FVG</option><option value="swing">Dernier swing</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="lc-use" /> Ajouter cette combinaison à l'analyse</label>
+    </details>
+
+    <div id="live-out" hidden>
+      <div class="form-row">
+        <div class="form-field" style="flex:2 1 300px;"><label for="live-shown">Combinaison affichée</label><select id="live-shown" onchange="renderLive()"></select></div>
+        <div class="form-field" style="flex:0 0 auto;min-width:0;"><button type="button" class="btn-ghost" onclick="downloadLiveTrades()">Télécharger les trades (CSV)</button></div>
+      </div>
+      <div class="tabbar" id="live-tabs">
+        <button type="button" class="active" data-lt="summary" onclick="showLiveTab('summary')">Résumé</button>
+        <button type="button" data-lt="periods" onclick="showLiveTab('periods')">Découper</button>
+        <button type="button" data-lt="cross" onclick="showLiveTab('cross')">Croiser</button>
+        <button type="button" data-lt="risk" onclick="showLiveTab('risk')">Risque et séries</button>
+        <button type="button" data-lt="compare" onclick="showLiveTab('compare')">Comparer les combinaisons</button>
+        <button type="button" data-lt="trades" onclick="showLiveTab('trades')">Trades</button>
+      </div>
+      <div id="live-panel"></div>
+    </div>
+    <div id="live-msg" class="meta"></div>
+  </details>
+
   <div class="card" id="adv-card">
     <h2>Analyses avancées <span class="meta">— sur la stratégie et le symbole choisis ci-dessus</span></h2>
     <div class="tabbar" role="tablist">
@@ -397,6 +458,7 @@ async function loadMeta(preferId) {
     renderImportForm(data);
     renderDatasetList(custom);
     renderAdvancedForm(data);
+    renderLiveForm(data);
   } catch (err) {
     msgEl.innerHTML = `<span class="err">Erreur de chargement: ${err.message}</span>`;
   }
@@ -903,6 +965,323 @@ async function runPortfolio() {
   } catch (err) {
     out.innerHTML = `<div class="err">Erreur: ${err.message}</div>`;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Ma stratégie live — analyse complète
+// The server only runs the strategy and returns compact trade lists; every
+// statistic and every slicing below is computed here by /shared/tradeStats.js
+// (the same module the unit tests cover).
+// ---------------------------------------------------------------------------
+let TS = null;
+let liveData = null;
+let liveTab = 'summary';
+let liveCross = { row: 'weekday', col: 'hour', metric: 'expectancy' };
+let livePeriodDim = 'year';
+
+async function ensureTradeStats() {
+  if (!TS) TS = await import('/shared/tradeStats.js');
+  return TS;
+}
+
+function liveDatasetChoices(data) {
+  const live = (data.liveStrategy && data.liveStrategy.symbols) || [];
+  const builtin = data.symbols.filter((s) => live.includes(s)).map((s) => ({ id: s, label: s }));
+  const custom = (data.customDatasets || []).filter((d) => live.includes(d.symbol)).map((d) => ({ id: d.id, label: customLabel(d) }));
+  return { builtin, custom };
+}
+
+function describeLiveConfig(c) {
+  if (!c) return '';
+  const session = c.session ? `session ${c.session.startHour}h–${c.session.endHour}h` : 'toute la journée';
+  return `${c.bias === 'baseline' ? 'sans biais HTF' : 'biais ' + c.bias.replace('_EMA', ' · EMA ')} · ${c.structure ? 'structure' : 'sans structure'} · ${session} · ${c.sweep ? 'balayage de liquidité' : 'sans balayage'} · ${c.multiTouch ? 'multi-contact' : 'contact unique'} · objectif 1:${c.rr} · stop ${c.stopMode === 'swing' ? 'au swing' : 'au bord de la zone'}`;
+}
+
+function renderLiveForm(data) {
+  const symEl = document.getElementById('live-symbol');
+  const { builtin, custom } = liveDatasetChoices(data);
+  const keep = symEl.value;
+  symEl.innerHTML =
+    `<optgroup label="Données du projet">${builtin.map((s) => `<option value="${s.id}">${s.label}</option>`).join('')}</optgroup>` +
+    (custom.length ? `<optgroup label="Mes données importées">${custom.map((s) => `<option value="${s.id}">${s.label}</option>`).join('')}</optgroup>` : '');
+  if ([...symEl.options].some((o) => o.value === keep)) symEl.value = keep;
+  symEl.onchange = updateLiveConfigLine;
+  const variantsEl = document.getElementById('live-variants');
+  if (!variantsEl.children.length) {
+    const groups = {};
+    for (const v of data.liveStrategy.variants) if (v.id !== 'live') (groups[v.group] ||= []).push(v);
+    variantsEl.innerHTML = Object.entries(groups).map(([g, list]) =>
+      list.map((v) => `<label title="${g}"><input type="checkbox" value="${v.id}" /> <span class="meta">${g} :</span> ${v.label}</label>`).join('')).join('');
+  }
+  updateLiveConfigLine();
+}
+
+function updateLiveConfigLine() {
+  const el = document.getElementById('live-config-line');
+  if (!labMeta || !labMeta.liveStrategy) return;
+  const sel = document.getElementById('live-symbol').value;
+  const custom = (labMeta.customDatasets || []).find((d) => d.id === sel);
+  const symbol = custom ? custom.symbol : sel;
+  el.textContent = labMeta.liveStrategy.configs[symbol] ? `Configuration live sur ${symbol} : ${describeLiveConfig(labMeta.liveStrategy.configs[symbol])}.` : '';
+}
+
+function customLiveOverrides() {
+  if (!document.getElementById('lc-use').checked) return null;
+  const o = {};
+  const v = (id) => document.getElementById(id).value.trim().replace(',', '.');
+  if (v('lc-bias')) o.variant = v('lc-bias');
+  if (v('lc-structure')) o.structureEnabled = v('lc-structure') === 'true';
+  if (v('lc-sweep')) o.liquiditySweepEnabled = v('lc-sweep') === 'true';
+  if (v('lc-touch')) o.multiTouch = v('lc-touch') === 'true';
+  if (v('lc-session') === 'off') o.sessionEnabled = false;
+  if (v('lc-session') === 'custom') { o.sessionEnabled = true; o.sessionWindow = { startHour: v('lc-start'), endHour: v('lc-end') }; }
+  if (v('lc-rr')) o.rrMultiple = v('lc-rr');
+  if (v('lc-stop')) o.stopMode = v('lc-stop');
+  return o;
+}
+
+async function runLiveStrategy() {
+  const btn = document.getElementById('live-run-btn');
+  const msg = document.getElementById('live-msg');
+  const variantIds = [...document.querySelectorAll('#live-variants input:checked')].map((b) => b.value);
+  const custom = customLiveOverrides();
+  msg.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Calcul en cours… (jusqu\'à ~1 min sur le serveur)';
+  try {
+    await ensureTradeStats();
+    const res = await fetch('/api/lab/live-strategy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: document.getElementById('live-symbol').value, variantIds, ...(custom ? { custom } : {}) }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    liveData = data;
+    const shown = document.getElementById('live-shown');
+    shown.innerHTML = data.variants.map((v) => `<option value="${v.id}">${v.label} — ${v.trades.length} trades</option>`).join('');
+    document.getElementById('live-out').hidden = false;
+    renderLive();
+  } catch (err) {
+    msg.innerHTML = `<span class="err">Erreur: ${err.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Analyser';
+  }
+}
+
+function liveVariant() {
+  const id = document.getElementById('live-shown').value;
+  return liveData.variants.find((v) => v.id === id) || liveData.variants[0];
+}
+
+function showLiveTab(name) {
+  liveTab = name;
+  document.querySelectorAll('#live-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.lt === name));
+  renderLive();
+}
+
+const cellColor = (v, scale = 1) => (v === null || v === undefined ? 'transparent' : v >= 0 ? `rgba(47,212,128,${Math.min(0.85, (Math.abs(v) / scale) * 0.85)})` : `rgba(255,92,95,${Math.min(0.85, (Math.abs(v) / scale) * 0.85)})`);
+const sgnR = (v) => (v === null || v === undefined ? '—' : `${v >= 0 ? '+' : ''}${fmt(v)}R`);
+const tile = (label, value, cls = '', sub = '') => `<div class="metric-tile"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${value}</div>${sub ? `<div class="meta">${sub}</div>` : ''}</div>`;
+
+function lineChartSvg(points, { color = 'var(--blue)', zero = true, label = '' } = {}) {
+  if (points.length < 2) return '<div class="meta">Pas assez de points.</div>';
+  const W = 900, H = 160, L = 46, R = 12, T = 10, B = 20;
+  const vals = points.map((p) => p.v);
+  const lo = Math.min(zero ? 0 : Infinity, ...vals), hi = Math.max(zero ? 0 : -Infinity, ...vals);
+  const range = (hi - lo) || 1;
+  const x = (i) => L + (i / (points.length - 1)) * (W - L - R);
+  const y = (v) => T + (1 - (v - lo) / range) * (H - T - B);
+  const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
+  const t0 = new Date(points[0].time).getUTCFullYear(), t1 = new Date(points[points.length - 1].time).getUTCFullYear();
+  return `<svg class="equity-chart" viewBox="0 0 ${W} ${H}" style="height:${H}px" preserveAspectRatio="none">
+    <line class="curve-grid" x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" />
+    <text class="curve-label" x="4" y="${T + 8}">${fmt(hi)}</text><text class="curve-label" x="4" y="${H - B}">${fmt(lo)}</text>
+    <text class="curve-label" x="${L}" y="${H - 4}">${t0}</text><text class="curve-label" x="${W - R - 26}" y="${H - 4}">${t1}</text>
+    ${label ? `<text class="curve-label" x="${W / 2 - 60}" y="${T + 8}">${label}</text>` : ''}
+    <path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" />
+  </svg>`;
+}
+
+function summaryTable(rows) {
+  return `<table class="strategy-table"><thead><tr><th></th><th>Trades</th><th>Réussite</th><th>Espérance</th><th>Marge d'erreur 95 %</th><th>Profit factor</th><th>Total R</th><th>Drawdown max</th></tr></thead><tbody>${rows.map(([name, s]) => s ? `<tr><td>${name}</td><td>${s.n}</td><td>${fmt(s.winRate * 100, 0)} %</td><td class="${s.expectancy.mean >= 0 ? 'win' : 'loss'}">${sgnR(s.expectancy.mean)}</td><td>${ciBadge(s.expectancy)}</td><td>${fmt(s.profitFactor)}</td><td class="${s.totalR >= 0 ? 'win' : 'loss'}">${sgnR(s.totalR)}</td><td class="loss">-${fmt(s.maxDrawdownR)}R</td></tr>` : `<tr><td>${name}</td><td colspan="7" class="meta">Aucun trade</td></tr>`).join('')}</tbody></table>`;
+}
+
+function renderLiveSummary(v) {
+  const all = v.trades;
+  const s = TS.summarize(all);
+  if (!s) return '<div class="err">Aucun trade pour cette combinaison.</div>';
+  const { train, test } = TS.splitAt(all, liveData.trainCutoff);
+  const cut = fmtTime(liveData.trainCutoff);
+  const e = s.expectancy;
+  const curve = TS.equityCurve(all);
+  const hist = TS.histogram(all, 0.5);
+  const maxBin = Math.max(...hist.map((h) => h.count));
+  return `
+    <div class="meta" style="margin-bottom:8px;">${describeLiveConfig(v.config)}. ${v.rawCount} signaux, dont ${v.droppedAsNonViable} écartés car leur stop est trop proche du spread. Du ${fmtTime(s.firstTime)} au ${fmtTime(s.lastTime)}.</div>
+    <div class="meta" style="margin-bottom:8px;">${confidenceLine(e)}</div>
+    <div class="metric-tiles">
+      ${tile('Trades', s.n)}
+      ${tile('Taux de réussite', fmt(s.winRate * 100, 1) + ' %')}
+      ${tile('Espérance', sgnR(e.mean), e.mean >= 0 ? 'win' : 'loss')}
+      ${tile('Profit factor', fmt(s.profitFactor))}
+      ${tile('Total', sgnR(s.totalR), s.totalR >= 0 ? 'win' : 'loss')}
+      ${tile('Drawdown max', '-' + fmt(s.maxDrawdownR) + 'R', 'loss')}
+      ${tile('Gain moyen', sgnR(s.avgWinR), 'win')}
+      ${tile('Perte moyenne', sgnR(s.avgLossR), 'loss')}
+      ${tile('Ratio gain/perte', fmt(s.payoff))}
+      ${tile('Médiane', sgnR(s.medianR))}
+      ${tile('Meilleur trade', sgnR(s.bestR), 'win')}
+      ${tile('Pire trade', sgnR(s.worstR), 'loss')}
+      ${tile('Série gagnante max', s.longestWinStreak)}
+      ${tile('Série perdante max', s.longestLossStreak, 'loss')}
+      ${tile('Sharpe par trade', fmt(s.sharpePerTrade))}
+      ${tile('Sortino par trade', fmt(s.sortinoPerTrade))}
+      ${tile('Kelly', s.kelly === null ? '—' : fmt(s.kelly * 100, 1) + ' %', '', 'indicatif, pas un conseil de taille')}
+      ${tile('Durée moyenne', fmt(s.avgHoldHours, 1) + ' h')}
+      ${tile('Trades par mois', fmt(s.tradesPerMonth, 1))}
+      ${tile('Drawdown actuel', '-' + fmt(s.currentDrawdownR) + 'R', s.currentDrawdownR > 0 ? 'loss' : 'win')}
+      ${tile('Plus longue période sous l\'eau', s.longestUnderwaterTrades + ' trades')}
+      ${tile('3 pertes de suite', fmt(s.probLossStreak[3] * 100, 1) + ' %', '', 'probabilité à chaque série')}
+      ${tile('5 pertes de suite', fmt(s.probLossStreak[5] * 100, 1) + ' %')}
+      ${tile('8 pertes de suite', fmt(s.probLossStreak[8] * 100, 2) + ' %')}
+    </div>
+    <h2 style="margin-top:14px;">Entraînement contre test <span class="meta">(coupure : ${cut})</span></h2>
+    ${summaryTable([['Entraînement', TS.summarize(train)], ['Test (hors échantillon)', TS.summarize(test)], ['Tout', s]])}
+    <h2 style="margin-top:14px;">Courbe d'equity</h2>
+    ${renderEquityCurve(curve)}
+    <h2>Sous l'eau <span class="meta">(distance sous le dernier sommet, en R)</span></h2>
+    ${lineChartSvg(curve.map((p) => ({ time: p.time, v: -p.drawdownR })), { color: 'var(--red)' })}
+    <h2 style="margin-top:14px;">Répartition des résultats <span class="meta">(un trade = une barre de 0,5R)</span></h2>
+    ${hist.map((h) => `<div style="display:flex;align-items:center;gap:8px;font:11px var(--mono);"><span style="width:82px;text-align:right;color:var(--muted)">${sgn(h.from)} à ${sgn(h.to)}</span><div style="height:12px;width:${(h.count / maxBin) * 70}%;background:${h.from >= 0 ? 'var(--green)' : 'var(--red)'};opacity:.8;"></div><span>${h.count}</span></div>`).join('')}`;
+}
+
+function barCell(value, scale) {
+  const w = Math.min(100, (Math.abs(value) / scale) * 100);
+  return `<div style="display:flex;align-items:center;gap:6px;"><div style="height:10px;width:${w}px;max-width:120px;background:${value >= 0 ? 'var(--green)' : 'var(--red)'};opacity:.85;"></div></div>`;
+}
+
+function renderLivePeriods(v) {
+  const dims = TS.buildDimensions(v.trades);
+  const options = Object.entries(dims).map(([k, d]) => `<option value="${k}" ${k === livePeriodDim ? 'selected' : ''}>${d.label}</option>`).join('');
+  const rows = TS.groupStats(v.trades, dims[livePeriodDim]);
+  const scale = Math.max(0.2, ...rows.map((r) => Math.abs(r.expectancy ?? 0)));
+  const monthly = TS.monthlyTable(v.trades);
+  const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+  const maxAbs = Math.max(1, ...monthly.years.flatMap((y) => y.months.map((m) => Math.abs(m ?? 0))));
+  return `
+    <div class="form-row"><div class="form-field"><label for="lp-dim">Découper par</label><select id="lp-dim" onchange="livePeriodDim=this.value;renderLive()">${options}</select></div></div>
+    <table class="strategy-table"><thead><tr><th>${dims[livePeriodDim].label}</th><th>Trades</th><th>Réussite</th><th>Espérance</th><th></th><th>Marge d'erreur 95 %</th><th>Total R</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td>${r.key}</td><td>${r.n}</td><td>${fmt(r.winRate * 100, 0)} %</td><td class="${r.expectancy >= 0 ? 'win' : 'loss'}">${sgnR(r.expectancy)}</td><td>${barCell(r.expectancy, scale)}</td><td>${ciBadge({ ci95: r.ci95, significant: r.significant })}</td><td class="${r.totalR >= 0 ? 'win' : 'loss'}">${sgnR(r.totalR)}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="meta" style="margin:6px 0 14px;">Une ligne avec peu de trades ou une marge d'erreur qui contient zéro n'apprend presque rien : le hasard suffit à l'expliquer.</div>
+    <h2>R par mois <span class="meta">(mois de sortie du trade)</span></h2>
+    <table class="heat"><tr><th></th>${monthNames.map((m) => `<th>${m}</th>`).join('')}<th>Année</th></tr>
+      ${monthly.years.map((y) => `<tr><th>${y.year}</th>${y.months.map((m) => `<td style="background:${cellColor(m, maxAbs)}">${m === null ? '' : (m >= 0 ? '+' : '') + fmt(m, 1)}</td>`).join('')}<td style="font-weight:700">${(y.total >= 0 ? '+' : '') + fmt(y.total, 1)}</td></tr>`).join('')}
+    </table>`;
+}
+
+const CROSS_PRESETS = [['weekday', 'hour', 'Jour × Heure'], ['year', 'direction', 'Année × Sens'], ['month', 'year', 'Mois × Année'], ['weekday', 'direction', 'Jour × Sens'], ['hour', 'direction', 'Heure × Sens'], ['stop', 'hour', 'Stop × Heure'], ['previous', 'direction', 'Trade précédent × Sens'], ['rank', 'weekday', 'Rang du jour × Jour']];
+const CROSS_METRICS = { expectancy: 'Espérance (R moyen)', winRate: 'Taux de réussite', totalR: 'Total R', n: 'Nombre de trades' };
+
+function renderLiveCross(v) {
+  const dims = TS.buildDimensions(v.trades);
+  const opts = (sel) => Object.entries(dims).map(([k, d]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${d.label}</option>`).join('');
+  const x = TS.crossTab(v.trades, dims[liveCross.row], dims[liveCross.col]);
+  const metric = liveCross.metric;
+  const baseWinRate = TS.summarize(v.trades).winRate;
+  const cells = Object.values(x.cells).flatMap((r) => Object.values(r));
+  const scale = metric === 'expectancy' ? 1 : metric === 'totalR' ? Math.max(1, ...cells.map((c) => Math.abs(c.totalR))) : metric === 'winRate' ? 0.5 : 1;
+  const text = (c) => (metric === 'expectancy' ? sgn(c.expectancy) : metric === 'winRate' ? fmt(c.winRate * 100, 0) + '%' : metric === 'totalR' ? sgn(c.totalR) : String(c.n));
+  const bg = (c) => (metric === 'expectancy' ? cellColor(c.expectancy, scale) : metric === 'totalR' ? cellColor(c.totalR, scale) : metric === 'winRate' ? cellColor(c.winRate - baseWinRate, scale) : 'var(--bg-inset)');
+  const body = x.rows.map((r) => `<tr><th style="text-align:left;">${r}</th>${x.cols.map((c) => {
+    const cell = (x.cells[r] || {})[c];
+    if (!cell) return '<td></td>';
+    const thin = cell.n < 10;
+    return `<td class="${thin ? 'thin' : cell.significant ? 'holds' : ''}" style="background:${bg(cell)}" title="${r} · ${c} — ${cell.n} trades, réussite ${fmt(cell.winRate * 100, 0)} %, ${sgnR(cell.expectancy)} en moyenne, total ${sgnR(cell.totalR)}${cell.ci95 ? `, marge d'erreur ${ciText({ ci95: cell.ci95 })}` : ''}">${text(cell)}<small>${metric === 'n' ? '' : cell.n}</small></td>`;
+  }).join('')}</tr>`).join('');
+  return `
+    <div class="form-row">
+      <div class="form-field"><label for="lx-row">Lignes</label><select id="lx-row" onchange="liveCross.row=this.value;renderLive()">${opts(liveCross.row)}</select></div>
+      <div class="form-field"><label for="lx-col">Colonnes</label><select id="lx-col" onchange="liveCross.col=this.value;renderLive()">${opts(liveCross.col)}</select></div>
+      <div class="form-field"><label for="lx-metric">Mesure</label><select id="lx-metric" onchange="liveCross.metric=this.value;renderLive()">${Object.entries(CROSS_METRICS).map(([k, l]) => `<option value="${k}" ${k === metric ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    </div>
+    <div class="legend">${CROSS_PRESETS.map(([r, c, l]) => `<button type="button" class="btn-ghost" onclick="liveCross.row='${r}';liveCross.col='${c}';renderLive()">${l}</button>`).join(' ')}</div>
+    <div style="overflow-x:auto;"><table class="heat">${`<tr><th></th>${x.cols.map((c) => `<th>${c}</th>`).join('')}</tr>`}${body}</table></div>
+    <div class="legend" style="margin-top:8px;"><span>Grand chiffre = ${CROSS_METRICS[metric].toLowerCase()}, petit chiffre = nombre de trades</span><span>Cadre bleu = marge d'erreur 95 % au-dessus de zéro</span><span>Case pâle en pointillés = moins de 10 trades</span></div>
+    <div class="meta">Plus on croise de critères, plus les cases sont petites et plus il y en a : une case flatteuse sur 10 trades ne prouve rien. Un critère qui aide vraiment reste bon dans plusieurs cases voisines et sur les deux moitiés de l'historique (voir « Découper » par année).</div>`;
+}
+
+function renderLiveRisk(v) {
+  const s = TS.summarize(v.trades);
+  if (!s) return '<div class="err">Aucun trade.</div>';
+  const st = TS.streaks(v.trades);
+  const roll = TS.rolling(v.trades, 50);
+  const worst = [...v.trades].sort((a, b) => a.r - b.r).slice(0, 8);
+  const best = [...v.trades].sort((a, b) => b.r - a.r).slice(0, 8);
+  const runTable = (runs, title) => `<div style="flex:1 1 240px;"><h2>${title}</h2><table class="strategy-table" style="min-width:0"><thead><tr><th>Longueur</th><th>Fois</th></tr></thead><tbody>${runs.map((r) => `<tr><td>${r.length}</td><td>${r.count}</td></tr>`).join('')}</tbody></table></div>`;
+  const tradeRow = (t) => `<tr><td>${new Date(t.entryTime).toLocaleDateString('fr-FR')}</td><td>${t.direction === 'bullish' ? 'Achat' : 'Vente'}</td><td class="${t.r >= 0 ? 'win' : 'loss'}">${sgnR(t.r)}</td><td>${t.outcome === 'win' ? 'Objectif' : t.outcome === 'loss' ? 'Stop' : 'Délai'}</td></tr>`;
+  return `
+    <div class="metric-tiles">
+      ${tile('Drawdown max', '-' + fmt(s.maxDrawdownR) + 'R', 'loss')}
+      ${tile('Drawdown actuel', '-' + fmt(s.currentDrawdownR) + 'R', s.currentDrawdownR > 0 ? 'loss' : 'win')}
+      ${tile('Période sous l\'eau la plus longue', s.longestUnderwaterTrades + ' trades')}
+      ${tile('Série perdante la plus longue', st.longestLoss, 'loss')}
+      ${tile('Série gagnante la plus longue', st.longestWin, 'win')}
+    </div>
+    <div class="meta" style="margin-bottom:10px;">Avec ${fmt(s.winRate * 100, 0)} % de réussite, enchaîner 5 pertes arrive environ ${fmt(s.probLossStreak[5] * 100, 1)} % du temps à chaque série, et 8 pertes ${fmt(s.probLossStreak[8] * 100, 2)} %. Sur ${s.n} trades, la plus longue série perdante observée est de ${st.longestLoss} : c'est le genre de séquence à avoir décidé de traverser avant qu'elle arrive, pas pendant.</div>
+    <h2>Espérance glissante <span class="meta">(moyenne des 50 derniers trades — une stratégie qui s'use se voit ici)</span></h2>
+    ${lineChartSvg(roll.map((p) => ({ time: p.time, v: p.expectancy })), { color: 'var(--blue)' })}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">${runTable(st.lossRuns, 'Séries perdantes')}${runTable(st.winRuns, 'Séries gagnantes')}
+      <div style="flex:1 1 240px;"><h2>Pires trades</h2><table class="strategy-table" style="min-width:0"><tbody>${worst.map(tradeRow).join('')}</tbody></table></div>
+      <div style="flex:1 1 240px;"><h2>Meilleurs trades</h2><table class="strategy-table" style="min-width:0"><tbody>${best.map(tradeRow).join('')}</tbody></table></div>
+    </div>`;
+}
+
+function renderLiveCompare() {
+  const rows = liveData.variants.map((v) => {
+    const { train, test } = TS.splitAt(v.trades, liveData.trainCutoff);
+    const s = TS.summarize(v.trades), st = TS.summarize(train), se = TS.summarize(test);
+    const verdict = se && st ? (st.n < 10 || se.n < 10 ? 'not-enough-trades' : se.expectancy.mean <= 0 ? 'fails' : st.expectancy.mean > 0 && se.expectancy.mean >= 0.3 * st.expectancy.mean ? 'holds' : 'weakened') : 'not-enough-trades';
+    return `<tr style="cursor:pointer" onclick="document.getElementById('live-shown').value='${v.id}';showLiveTab('summary')" title="Afficher cette combinaison">
+      <td>${v.label}</td><td>${s ? s.n : 0}</td><td>${s ? fmt(s.winRate * 100, 0) + ' %' : '—'}</td>
+      <td class="${s && s.expectancy.mean >= 0 ? 'win' : 'loss'}">${s ? sgnR(s.expectancy.mean) : '—'}</td><td>${s ? ciBadge(s.expectancy) : '—'}</td><td>${s ? fmt(s.profitFactor) : '—'}</td>
+      <td>${s ? sgnR(s.totalR) : '—'}</td><td class="loss">${s ? '-' + fmt(s.maxDrawdownR) + 'R' : '—'}</td>
+      <td>${st ? sgnR(st.expectancy.mean) : '—'}</td><td>${se ? sgnR(se.expectancy.mean) : '—'}</td><td>${verdictCell(verdict, se ? se.expectancy : null)}</td></tr>`;
+  }).join('');
+  return `<div class="meta" style="margin-bottom:8px;">Toutes les combinaisons lancées, jugées de la même façon. Clique une ligne pour l'afficher en détail. Plus tu compares de combinaisons, plus il devient probable que l'une d'elles paraisse meilleure par pur hasard : ici ${liveData.variants.length} combinaisons ont été essayées, à garder en tête avant de croire la « gagnante ».</div>
+    <table class="strategy-table" style="min-width:860px"><thead><tr><th>Combinaison</th><th>Trades</th><th>Réussite</th><th>Espérance</th><th>Marge d'erreur 95 %</th><th>Profit factor</th><th>Total R</th><th>Drawdown max</th><th>Espérance entraînement</th><th>Espérance test</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderLiveTrades(v) {
+  const last = [...v.trades].sort((a, b) => b.entryTime - a.entryTime).slice(0, 300);
+  return `<div class="meta" style="margin-bottom:8px;">Les 300 derniers trades sur ${v.trades.length} (heures en New York). Le fichier CSV contient tous les trades.</div>
+    <table class="strategy-table"><thead><tr><th>Entrée</th><th>Sens</th><th>Résultat</th><th>Issue</th><th>Durée</th><th>Stop</th></tr></thead><tbody>
+    ${last.map((t) => `<tr><td>${new Date(t.entryTime + 5 * 3600000).toLocaleString('fr-FR', { timeZone: 'America/New_York' })}</td><td>${t.direction === 'bullish' ? 'Achat' : 'Vente'}</td><td class="${t.r >= 0 ? 'win' : 'loss'}">${sgnR(t.r)}</td><td>${t.outcome === 'win' ? 'Objectif' : t.outcome === 'loss' ? 'Stop' : 'Délai'}</td><td>${fmt(t.holdCandles * 0.25, 1)} h</td><td>${fmt(t.distance, 2)}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function renderLive() {
+  if (!liveData || !TS) return;
+  const v = liveVariant();
+  const panel = document.getElementById('live-panel');
+  const render = { summary: renderLiveSummary, periods: renderLivePeriods, cross: renderLiveCross, risk: renderLiveRisk, compare: renderLiveCompare, trades: renderLiveTrades }[liveTab];
+  panel.innerHTML = render(v);
+}
+
+function downloadLiveTrades() {
+  if (!liveData) return;
+  const v = liveVariant();
+  const lines = ['entree_ny,sortie_ny,sens,resultat_R,issue,duree_h,stop'];
+  const ny = (ms) => new Date(ms + 5 * 3600000).toLocaleString('sv-SE', { timeZone: 'America/New_York' });
+  for (const t of [...v.trades].sort((a, b) => a.entryTime - b.entryTime)) {
+    lines.push([ny(t.entryTime), ny(t.exitTime), t.direction === 'bullish' ? 'achat' : 'vente', t.r, t.outcome, t.holdCandles * 0.25, t.distance].join(','));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `strategie-live-${document.getElementById('live-symbol').value.replace(':', '-')}-${v.id}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 loadMeta();

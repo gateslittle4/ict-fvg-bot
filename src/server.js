@@ -32,6 +32,8 @@ import { readDatasetMeta, listDatasets, deleteDataset, csvPathFor as labDatasetC
 import { isValidDatasetName, ImportError } from './backtest/m1Import.js';
 import { normalizeChallengeParams, normalizeGuardrails } from './backtest/labAnalytics.js';
 import { computeDailyLevels, rebaseLevels, SESSION_WINDOWS } from './backtest/dailyLevels.js';
+import { LIVE_VARIANTS, MAX_VARIANTS_PER_RUN, liveFvgSymbols, liveFvgConfig, describeConfig, normalizeCustomOverrides } from './backtest/liveFvgRunner.js';
+import { TRAIN_TEST_CUTOFF } from './backtest/labRunner.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -92,6 +94,12 @@ function withRealTimePosition(symbol, position, orderOutcomeLog) {
 function withRealTimeSignal(signal) {
   return { ...signal, validatedAt: toRealTime(signal.validatedAt) };
 }
+
+// tradeStats.js is shared with the browser (the Labo slices trade lists itself) -
+// served explicitly rather than exposing all of src/.
+app.get('/shared/tradeStats.js', (req, res) => {
+  res.type('application/javascript').sendFile(path.join(__dirname, 'shared', 'tradeStats.js'));
+});
 
 // Deliberately the cheapest possible endpoint: no broker round-trip, no
 // engine work, no allocation of anything meaningful. It exists so the
@@ -303,6 +311,12 @@ app.get('/api/lab/meta', (req, res) => {
       symbols: listLabSymbols(),
       customDatasets: listDatasets(LAB_UPLOAD_DIR).map((m) => ({ id: `custom:${m.name}`, ...m })),
       knownSpreads: DEFAULT_SPREADS,
+      liveStrategy: {
+        symbols: liveFvgSymbols(),
+        variants: LIVE_VARIANTS.map(({ id, label, group }) => ({ id, label, group })),
+        configs: Object.fromEntries(liveFvgSymbols().map((s) => [s, describeConfig(liveFvgConfig(s))])),
+        maxVariants: MAX_VARIANTS_PER_RUN,
+      },
       propPrograms: listPropFirmPrograms().map((p) => ({ id: p.id, label: p.label, firm: p.firm, timeLimitDays: p.timeLimitDays ?? null, phases: p.phases })),
       uploadLimits: { maxFileMb: LAB_MAX_UPLOAD_MB, maxDatasets: MAX_CUSTOM_DATASETS },
     });
@@ -402,6 +416,29 @@ app.post('/api/lab/analyze/challenge', async (req, res) => {
     }
     const out = await runLabJob('analyzeChallenge', { ...run, ...extra, params, sample });
     res.json({ symbol: req.body.symbol, dataset: datasetInfo(ds), ...extra, ...out });
+  } catch (err) {
+    sendAnalysisError(res, err);
+  }
+});
+
+// "Ma stratégie live": the bot's own FVG strategy and combinations of it (see
+// liveFvgRunner.js). body: { symbol, variantIds?: string[], custom?: overrides }.
+// The live configuration is always run first as the reference.
+app.post('/api/lab/live-strategy', async (req, res) => {
+  try {
+    const ds = resolveLabDataset(req.body?.symbol);
+    if (!ds) throw new ImportError(`Symbole inconnu ou sans données: "${req.body?.symbol}"`);
+    if (!liveFvgConfig(ds.symbol)) throw new ImportError(`${ds.symbol} n'a pas de stratégie FVG live (seulement ${liveFvgSymbols().join(', ')}).`);
+    const ids = [...new Set(['live', ...(Array.isArray(req.body.variantIds) ? req.body.variantIds : [])])];
+    const variants = ids.map((id) => {
+      const v = LIVE_VARIANTS.find((x) => x.id === id);
+      if (!v) throw new ImportError(`Variante inconnue: "${id}"`);
+      return { id: v.id, label: v.label, overrides: v.overrides };
+    });
+    if (req.body.custom) variants.push({ id: 'custom', label: 'Ma combinaison', overrides: normalizeCustomOverrides(req.body.custom) });
+    if (variants.length > MAX_VARIANTS_PER_RUN) throw new ImportError(`Au plus ${MAX_VARIANTS_PER_RUN} combinaisons à la fois.`);
+    const out = await runLabJob('runLiveFvg', { csvPath: ds.csvPath, symbol: ds.symbol, spread: ds.spread, cutoff: ds.cutoff, variants });
+    res.json({ symbol: req.body.symbol, dataset: datasetInfo(ds), ...out, trainCutoff: ds.cutoff ?? TRAIN_TEST_CUTOFF });
   } catch (err) {
     sendAnalysisError(res, err);
   }

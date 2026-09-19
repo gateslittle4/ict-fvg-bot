@@ -12,6 +12,7 @@
 // timestamp reads the engine-time wall clock, exactly like every strategy does.
 
 import { ImportError } from './m1Import.js';
+import { expectancyStats } from '../shared/tradeStats.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_TRADES = 20;
@@ -30,32 +31,8 @@ export function mulberry32(seed) {
   };
 }
 
-/**
- * How much a set of trade results (in R) can be trusted: the average with its
- * 95 % confidence interval, and how many trades it would take to know the average
- * is really above zero. Normal approximation on the mean (fine from ~30 trades;
- * below 10 no interval is given) - and trades are treated as independent, which
- * overlapping trades are not quite, so read the interval as slightly optimistic.
- * @param {Array<number|{rMultiple:number}>} results
- * @returns {{n:number, mean:number|null, sd:number|null, ci95:[number,number]|null, significant:boolean, tradesToConfirm:number|null, moreTradesNeeded:number|null}}
- */
-export function expectancyStats(results) {
-  const xs = results.map((t) => (typeof t === 'number' ? t : t?.rMultiple)).filter((x) => Number.isFinite(x));
-  const n = xs.length;
-  if (n === 0) return { n: 0, mean: null, sd: null, ci95: null, significant: false, tradesToConfirm: null, moreTradesNeeded: null };
-  const mean = xs.reduce((a, b) => a + b, 0) / n;
-  if (n < 10) return { n, mean, sd: null, ci95: null, significant: false, tradesToConfirm: null, moreTradesNeeded: null };
-  const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / (n - 1));
-  const half = 1.96 * (sd / Math.sqrt(n));
-  const ci95 = [mean - half, mean + half];
-  const tradesToConfirm = mean > 0 && sd > 0 ? Math.ceil((1.96 * sd / mean) ** 2) : null;
-  return {
-    n, mean, sd, ci95,
-    significant: ci95[0] > 0,
-    tradesToConfirm,
-    moreTradesNeeded: tradesToConfirm === null ? null : Math.max(0, tradesToConfirm - n),
-  };
-}
+// expectancyStats lives in src/shared/tradeStats.js (also served to the browser) - one implementation for both.
+export { expectancyStats };
 
 function percentile(sorted, p) {
   if (sorted.length === 0) return null;

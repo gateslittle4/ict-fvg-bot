@@ -14,6 +14,7 @@ import { loadCandlesFromCsv } from './csvLoader.js';
 import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF } from './labRunner.js';
 import { listLabStrategies } from './labRegistry.js';
 import { importIntoDataset } from './labDatasets.js';
+import { runLiveFvg, resolveVariantConfig, describeConfig } from './liveFvgRunner.js';
 import { simulateChallenge, simulateMultiChallenge, buildHeatmap, analyzePortfolio, expectancyStats } from './labAnalytics.js';
 import { ImportError } from './m1Import.js';
 
@@ -137,6 +138,20 @@ const handlers = {
       byStrategy[strategyId] = { label: labels[strategyId] ?? strategyId, train: t.train, test: t.test };
     }
     return { candleCount, ...analyzePortfolio(byStrategy) };
+  },
+
+  // The bot's own FVG strategy (and combinations of it) on one dataset. Returns
+  // the compact trade lists; every statistic and slicing is done by the page.
+  runLiveFvg({ csvPath, symbol, spread = null, cutoff = null, variants }) {
+    const candles = loadCandles(csvPath);
+    return {
+      candleCount: candles.length,
+      trainCutoff: cutoff ?? TRAIN_TEST_CUTOFF,
+      variants: variants.map(({ id, label, overrides }) => {
+        const cfg = resolveVariantConfig(symbol, overrides);
+        return { id, label, config: describeConfig(cfg), ...runLiveFvg(candles, symbol, cfg, spread) };
+      }),
+    };
   },
 
   // Parses one uploaded file into a dataset (CPU-heavy, hence here and not in
