@@ -6022,3 +6022,45 @@ Esdras, après la première version (confluence jour+semaine+mois exigée simult
 `npm test` : 964/964 (même compte qu'avant - les 16 tests remplacent 1 pour 1 ceux de l'ancienne lecture). **Fichiers** : `src/backtest/htfSupportReversal.js` (réécrit), `scripts/runHtfSupportReversalStrategyAnalysis.js` (réécrit, teste H1 et H4), `test/htfSupportReversal.test.js` (réécrit).
 
 **Conclusion à donner à Esdras** : même la version correcte de l'idée (3 touches sur une seule timeframe, entrée sur H1/H4) ne montre aucun edge démontrable sur les données de ce projet - ce n'est pas une question de mauvaise implémentation de la première tentative, l'idée elle-même ne bat pas le hasard ici, dans ses deux lectures.
+
+## Simulation de cycles FTMO 1-Step réels — 2025 complet, post-mortem du bust, récurrence saisonnière, comptes multiples, 7 mois réels de 2026 — 2026-09-19 (suite directe, même session que la recherche HaitiForex)
+
+Fil de questions d'Esdras, toutes traitées avec la même discipline « code réel, pas de réimplémentation » déjà établie pour HaitiForex : `LiveStrategyEngine` construit depuis `CONFIG` (les 8 mécanismes live, CBDR inclus — absent de **tous** les anciens scripts de cycle FTMO de ce projet), `GuardrailEngine` réel, `accountRegistry.buildEffectiveConfig({propFirmProgramId: 'ftmo-1step'})` pour les vraies règles FTMO (`src/propFirms/ftmo.js` : cible +10%, perte quotidienne 3%, drawdown 10% trailing-EOD) — jamais de valeurs recopiées à la main.
+
+### 1. Cycle complet sur 2025 (`scripts/runFtmo1Step2025FullComboCycle.js`)
+
+Esdras : "comment le système aurait performé pour l'année 2025 avec un compte 10k ftmo... avec le cycle 10% pour voir combien de fois j'aurais passé le challenge". Méthode en 2 phases (réutilisée pour toutes les analyses suivantes de cette section) :
+- **Phase 1** : un seul `warmUp()` sur les CSV historiques complets 2010-2025 (`data/backtest-input/`, déjà dans la convention "engine time" — pas de conversion UTC nécessaire, contrairement aux exports broker réels), garde-fou permissif pendant le warm-up pour ne pas fausser la génération de signaux. Produit la liste canonique de trades (R-multiple net, indépendant du solde).
+- **Phase 2** : rejoue cette liste dans des cycles FTMO réels — un `GuardrailEngine` frais à chaque cycle, `canTakeNewTrade()` (la vraie méthode de gate, pas une réimplémentation) vérifiée avant chaque trade, le cycle se termine dès que `getStatus()` rapporte `targetReached` ou `overallDrawdownBreached`, nouveau cycle immédiatement après.
+
+**Résultat, filtré aux entrées 2025 (921 trades)** : **13 challenges réussis, 1 raté, 1 en cours en fin d'année**. 223 signaux bloqués par un garde-fou (jamais ouverts, comme en réel).
+
+### 2. Post-mortem du bust (cycle 4, 2025-03-06 → 2025-05-09, 121 trades)
+
+Esdras : "regarde pourquoi on a bust en mars à mai". Ajout d'une section post-mortem par cycle raté dans le même script : répartition par mécanisme, plancher trailing-EOD réel (90% du PLUS HAUT solde de fin de journée atteint DANS ce cycle, pas 90% du solde de départ), plus longue série de pertes consécutives.
+
+**Trouvé** : NWOG (0/14 gagnants, -$735) et Weekly Sweep (0/11, -$564) complètement à plat sur mars-mai, Breaker Block/Silver Bullet/FVG aussi négatifs (5 mécanismes sur 8 en même temps) — seuls CBDR (+$430), Judas Swing (+$330) et Divergence (+$201) sont restés positifs. Le pic du cycle était à $10 462.74 le 7 avril → plancher trailing réel = $9 416.46 (pas $9 000). Une série de 19 pertes consécutives (-$1 011) du 24 avril au 9 mai a fait passer le solde sous ce plancher, alors qu'il restait AU-DESSUS du plancher statique $9 000 à la fin ($9 342.22) — c'est le mécanisme trailing de FTMO qui a rendu la chute fatale, pas la perte en valeur absolue : avoir bien performé début avril a RENDU le plancher plus haut, donc plus facile à casser ensuite.
+
+### 3. Récurrence saisonnière (`scripts/runSeasonalMechanismPerformanceAnalysis.js`)
+
+Esdras : "est-ce que c'est quelque chose de récurrent ? ... on pourrait réduire la fréquence de ces stratégies pendant cette période". Réplique complète 2010-2025 (un seul `warmUp()`, sans filtre d'année cette fois), deux questions distinctes : (1) moyenne mars-mai toutes années confondues par mécanisme, (2) mars-mai année par année par mécanisme (un vrai motif saisonnier se répète la plupart des années ; un accident ponctuel non).
+
+**Résultat, NWOG et Weekly Sweep (les 2 coupables du bust) : PAS récurrent.** Mars-mai est positif **11 années sur 15** pour chacun des deux — mai est même l'un des meilleurs mois historiques de NWOG (+0.43R en moyenne). 2025 est leur pire année (ou quasi) sur 15 ans, pas la répétition d'un motif connu. **Divergence** montre un vrai (léger) creux récurrent (10/15 années négatives) mais était positif en 2025 (+0.33R) et n'a presque pas contribué au bust — sans rapport avec ce qui s'est passé. **Conclusion donnée à Esdras : ne PAS réduire la fréquence de NWOG/Weekly Sweep en mars-mai** — ça sacrifierait du vrai edge dans 11 années sur 15 pour se protéger contre ce qui ressemble à de la variance normale d'une mauvaise année, pas un motif calendaire.
+
+### 4. Comptes multiples : simultanés vs réserve (`scripts/runFtmoMultiAccountCorrelationAnalysis.js`)
+
+Esdras : "statistiquement je dois acheter 2 comptes au moins pour avoir plus de chance de passer un challenge ?" — le calcul naïf (1-(1-0.929)² = 99.5%) suppose des tirages indépendants, ce que 2 comptes tournant EN MÊME TEMPS sur le même combo ne sont PAS (mêmes signaux, mêmes instants). Testé directement : un seul vrai essai (pas de reset-and-retry) démarrant à 27 dates différentes réparties sur 2025 (toutes les 2 semaines).
+
+**Scénario simultané (infirmé)** : les 4 bustes trouvés se regroupent TOUS dans la même fenêtre de 6 semaines (12 mars → 23 avril 2025) — 2 comptes achetés en même temps dans cette fenêtre auraient busté ENSEMBLE, pas l'un ou l'autre. Taux de base plus robuste (n'importe quelle date de départ, pas juste les points de reset du cycle) : 20/27 (74.1%), ou 20/24 (83.3%) en excluant les 3 essais trop récents pour conclure.
+
+**Précision d'Esdras — scénario réserve** : PAS 2 comptes simultanés, un seul trade, le second est activé UNIQUEMENT au moment où le premier buste (séquentiel, pas parallèle). Testé en chaînant un 2e essai réel démarrant exactement à l'instant du bust du 1er, pour chacun des 4 bustes trouvés : **4/4 fois la réserve aurait réussi**. Combiné : 24/27 dates de départ (88.9%) finissent par réussir avec au moins un des deux comptes, et **24/24 (100%) une fois les 3 essais encore inconclusifs exclus**. La réserve fonctionne parce qu'une mauvaise fenêtre est un régime de marché temporaire et corrélé qui finit par passer — le compte de réserve démarre après coup, dans des conditions différentes. **Confirmé à Esdras : sa stratégie de compte de réserve (pas 2 comptes en parallèle) est empiriquement bien fondée.**
+
+### 5. Même cycle sur les 7 mois réels de 2026 (`scripts/runFtmo1Step2026Real7MonthsCycle.js`)
+
+Esdras : "fais le test alors pour les 7 derniers mois de 2026 avec les mêmes cycles, même paramètre". Même méthode 2 phases, mais sur les vraies données broker (`data/real-data-2026-02-to-09/` fusionné avec `data/real-data-2026-09-17/`, dédupliqué par timestamp, 2026-02-13 → 2026-09-17) au lieu des CSV historiques — conversion UTC réelle appliquée (`FIXED_EST_TO_UTC_OFFSET_MS`), contrairement au script 2025. Mise en garde honnête assumée (même limitation que l'ancien `runFtmo1StepFullComboReal7MonthsCycle.js`) : le warm-up ne porte que sur ces 7 mois eux-mêmes, pas de contexte pluriannuel prépendu — les tout premiers trades (mi-février) sont un peu moins fiables.
+
+**Résultat : 7 cycles complets, 7 réussis, 0 raté**, 1 cycle en cours en fin de fenêtre (+2.23%). Point notable : le cycle 3 (23 mars → 15 avril 2026) couvre exactement la même fenêtre calendaire qui avait busté en 2025 — et passe proprement ici (+10% en 23 jours), confirmation directe de la conclusion de la section 3 (pas un motif saisonnier réel).
+
+**Ce qui reste ouvert pour la prochaine session** : aucun changement de code live découlant de cette section — recherche/simulation uniquement, comme HaitiForex plus haut. Si Esdras veut vraiment un "compte de réserve", ça reste une décision opérationnelle (quand acheter le 2e compte) plutôt que quelque chose à coder dans ce projet.
+
+**Fichiers** : `scripts/runFtmo1Step2025FullComboCycle.js`, `scripts/runSeasonalMechanismPerformanceAnalysis.js`, `scripts/runFtmoMultiAccountCorrelationAnalysis.js`, `scripts/runFtmo1Step2026Real7MonthsCycle.js` (tous nouveaux, recherche/simulation uniquement, aucun changement de comportement live). `npm test` : 964/964 après chaque ajout (aucun changement de code de production, seulement des scripts d'analyse).
