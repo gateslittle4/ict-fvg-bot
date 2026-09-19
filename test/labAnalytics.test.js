@@ -260,3 +260,44 @@ test('simulateChallenge and portfolio results carry the interval too', () => {
   assert.equal(p.strategies[0].expectancy.n, 40);
   assert.equal(p.combined.expectancy.n, 40);
 });
+
+// --- an account already under way: starting state, fan chart, per-symbol netting -----------------
+
+const winsPerDay = (n = 40) => dailyTrades(Array(n).fill(1));
+
+test('simulateChallenge with a state: starts from the account\'s balance, not from 100', () => {
+  const started = simulateMultiChallenge({ a: { trades: winsPerDay() } }, RULES, { state: { balance: 108 } });
+  assert.equal(started.daysToPass.median, 2); // +1 %/day, only 2 points left to the +10 % target
+  const nearFloor = simulateMultiChallenge({ a: { trades: dailyTrades(Array(40).fill(-1)) } }, RULES, { state: { balance: 90.5 } });
+  assert.equal(nearFloor.counts.failDrawdown, nearFloor.runs); // the very first -1 % loss crosses the 90 floor
+});
+
+test('trailing drawdown floor is multiplicative, like GuardrailEngine (peak x (1 - dd %)), not a fixed number of points', () => {
+  // Highest end-of-day balance 120, 10 % trailing -> floor 108 (a 10-point rule would say 110).
+  const losing = dailyTrades(Array(40).fill(-1));
+  const r = simulateMultiChallenge({ a: { trades: losing } }, { ...RULES, maxDrawdownType: 'trailing-eod', maxDays: 5, dailyLossLimitPct: 50 }, { state: { balance: 110.5, peakEod: 120 } });
+  // 110.5 -> 109.5 -> 108.5 : still above 108 after 2 days (5 is the minimum allowed maxDays, day 3 breaches)
+  const two = simulateMultiChallenge({ a: { trades: losing } }, { ...RULES, maxDrawdownType: 'trailing-eod', maxDays: 5, dailyLossLimitPct: 50 }, { state: { balance: 110.5, peakEod: 120 }, cone: 5 });
+  assert.equal(two.cone[2].p50, 108.5); // survived two days
+  assert.equal(two.cone[3].p50, 107.5); // the third breaches 108
+  assert.equal(r.counts.failDrawdown, r.runs);
+});
+
+test('cone: day 0 is the starting balance, the percentiles are ordered, and a finished run keeps its final balance', () => {
+  const r = simulateMultiChallenge({ a: { trades: winsPerDay() } }, RULES, { cone: 15 });
+  assert.equal(r.cone.length, 16);
+  assert.equal(r.cone[0].p5, 100);
+  assert.equal(r.cone[0].p95, 100);
+  for (const c of r.cone) assert.ok(c.p5 <= c.p25 && c.p25 <= c.p50 && c.p50 <= c.p75 && c.p75 <= c.p95);
+  assert.equal(r.cone[5].p50, 105);
+  assert.equal(r.cone[15].p5, 110); // the target was reached at day 10 and the run stopped there
+  assert.equal(r.cone[15].p95, 110);
+});
+
+test('perSymbol: two symbols may hold a position at once, two positions on the SAME symbol may not', () => {
+  const sym = (id) => ({ trades: [...Array(30).keys()].map((d) => ({ entryTime: MON + d * DAY + 9 * HOUR, exitTime: MON + d * DAY + 15 * HOUR, rMultiple: 0.5 })), label: id });
+  const both = simulateMultiChallenge({ US100: sym('US100'), US500: sym('US500') }, RULES, { guardrails: { maxTradesPerDay: 10 }, perSymbol: true });
+  assert.equal(both.acceptedTrades, 60); // overlapping but on different symbols
+  const same = simulateMultiChallenge({ a: sym('a'), b: sym('b') }, RULES, { guardrails: { maxTradesPerDay: 10 } });
+  assert.equal(same.acceptedTrades, 30); // one dataset, one symbol: the second overlapping trade is refused
+});

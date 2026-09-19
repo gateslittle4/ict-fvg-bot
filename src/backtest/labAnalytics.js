@@ -100,7 +100,7 @@ export function simulateChallenge(trades, rawParams) {
 }
 
 /** The Monte Carlo itself, on days already grouped as arrays of R. Shared by the single- and multi-strategy entry points. */
-function runChallengeSimulation(days, p) {
+function runChallengeSimulation(days, p, { state = null, cone = 0 } = {}) {
   const tradeCount = days.reduce((n, d) => n + d.length, 0);
   if (tradeCount < MIN_TRADES) {
     return { insufficient: true, tradeCount, minTrades: MIN_TRADES, params: p };
@@ -110,14 +110,19 @@ function runChallengeSimulation(days, p) {
   const passDays = [];
   const worstDrawdowns = [];
   const endBalances = [];
+  // `state` = an account already under way (balance and trailing peak in % of the starting
+  // balance); `cone` = how many days of equity path to keep, for the fan chart.
+  const startBalance = state?.balance ?? 100;
+  const paths = cone > 0 ? Array.from({ length: cone + 1 }, () => new Float64Array(p.runs)) : null;
 
   for (let run = 0; run < p.runs; run++) {
-    let balance = 100;
-    let peakEod = 100;
-    let peakBalance = 100;
+    let balance = startBalance;
+    let peakEod = Math.max(state?.peakEod ?? startBalance, startBalance);
+    let peakBalance = peakEod;
     let worstDd = 0;
     let outcome = null;
     let day = 0;
+    if (paths) paths[0][run] = balance;
     while (outcome === null && day < p.maxDays) {
       day++;
       const dayStart = balance;
@@ -126,18 +131,22 @@ function runChallengeSimulation(days, p) {
         balance += r * p.riskPct;
         if (balance > peakBalance) peakBalance = balance;
         worstDd = Math.max(worstDd, peakBalance - balance);
-        const floor = p.maxDrawdownType === 'static' ? 100 - p.maxDrawdownPct : peakEod - p.maxDrawdownPct;
+        // Same formulas as GuardrailEngine._overallDrawdownFloor(): static off the starting balance,
+        // trailing-eod off the highest END-OF-DAY balance (multiplicative, not a fixed number of points).
+        const floor = p.maxDrawdownType === 'static' ? 100 * (1 - p.maxDrawdownPct / 100) : peakEod * (1 - p.maxDrawdownPct / 100);
         if (dayStart - balance >= p.dailyLossLimitPct) { outcome = 'failDaily'; break; }
         if (balance <= floor) { outcome = 'failDrawdown'; break; }
         if (balance >= 100 + p.targetPct && day >= p.minTradingDays) { outcome = 'pass'; break; }
       }
       if (outcome === null && balance > peakEod) peakEod = balance;
+      if (paths && day <= cone) paths[day][run] = balance;
     }
+    if (paths) for (let d = day + 1; d <= cone; d++) paths[d][run] = balance; // a finished run keeps its final balance
     if (outcome === null) outcome = 'timeout';
     counts[outcome]++;
     if (outcome === 'pass') passDays.push(day);
     worstDrawdowns.push(worstDd);
-    endBalances.push(balance - 100);
+    endBalances.push(balance - startBalance);
   }
 
   passDays.sort((a, b) => a - b);
@@ -158,6 +167,12 @@ function runChallengeSimulation(days, p) {
     daysToPass: { median: percentile(passDays, 50), p90: percentile(passDays, 90) },
     drawdownPct: { p50: percentile(worstDrawdowns, 50), p95: percentile(worstDrawdowns, 95), p99: percentile(worstDrawdowns, 99) },
     endBalancePct: { p5: percentile(endBalances, 5), p50: percentile(endBalances, 50), p95: percentile(endBalances, 95) },
+    ...(paths ? {
+      cone: paths.map((values, day) => {
+        const sorted = Array.from(values).sort((a, b) => a - b);
+        return { day, p5: percentile(sorted, 5), p25: percentile(sorted, 25), p50: percentile(sorted, 50), p75: percentile(sorted, 75), p95: percentile(sorted, 95) };
+      }),
+    } : {}),
   };
 }
 
@@ -196,7 +211,7 @@ export function applyGuardrailsToDay(dayTrades, g, riskPct) {
   for (const t of byEntry) {
     const closed = kept.filter((k) => k.exitTime <= t.entryTime);
     if (closed.length >= g.maxTradesPerDay) continue;
-    if (g.oneOpenPerSymbol && kept.some((k) => k.exitTime > t.entryTime)) continue;
+    if (g.oneOpenPerSymbol && kept.some((k) => k.exitTime > t.entryTime && (k.symbol === undefined || k.symbol === t.symbol))) continue;
     const lastClosed = closed.reduce((best, k) => (!best || k.exitTime > best.exitTime ? k : best), null);
     if (lastClosed && lastClosed.r < 0 && t.entryTime < lastClosed.exitTime + cooldownMs) continue;
     const dayPnlPct = closed.reduce((sum, k) => sum + k.r * riskPct, 0);
@@ -215,7 +230,7 @@ export function applyGuardrailsToDay(dayTrades, g, riskPct) {
  * @param {{guardrails?: object|null, weights?: Record<string, number>}} [opts]
  *   guardrails null/undefined = no filtering; weights = risk multiplier per strategy id (default 1)
  */
-export function simulateMultiChallenge(byStrategy, rawParams, { guardrails = null, weights = {} } = {}) {
+export function simulateMultiChallenge(byStrategy, rawParams, { guardrails = null, weights = {}, state = null, cone = 0, perSymbol = false } = {}) {
   const p = normalizeChallengeParams(rawParams);
   const g = guardrails ? normalizeGuardrails(guardrails) : null;
   const perDay = new Map();
@@ -228,7 +243,7 @@ export function simulateMultiChallenge(byStrategy, rawParams, { guardrails = nul
       const exitTime = t.exitTime ?? t.entryTime;
       const d = Math.floor(exitTime / DAY_MS);
       if (!perDay.has(d)) perDay.set(d, []);
-      perDay.get(d).push({ id, entryTime: t.entryTime, exitTime, r: t.rMultiple * w });
+      perDay.get(d).push({ id, ...(perSymbol ? { symbol: id } : {}), entryTime: t.entryTime, exitTime, r: t.rMultiple * w });
       offered[id]++;
     }
   }
@@ -244,7 +259,7 @@ export function simulateMultiChallenge(byStrategy, rawParams, { guardrails = nul
   }
   const totalAccepted = Object.values(acceptedById).reduce((a, b) => a + b, 0);
   return {
-    ...runChallengeSimulation(days, p),
+    ...runChallengeSimulation(days, p, { state, cone }),
     guardrails: g,
     offeredTrades: totalOffered,
     acceptedTrades: totalAccepted,

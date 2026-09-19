@@ -165,6 +165,17 @@ const handlers = {
     };
   },
 
+  // Live challenge outlook: the same Monte Carlo, started from the account's REAL state.
+  // The trades come from the main thread's per-symbol cache (small: a few thousand slim
+  // trades), so nothing is re-read from disk here.
+  outlook({ tradesBySymbol, params, guardrails, states, cone }) {
+    const byStrategy = Object.fromEntries(Object.entries(tradesBySymbol).map(([symbol, trades]) => [symbol, { label: symbol, trades }]));
+    return states.map((state, i) => {
+      const r = simulateMultiChallenge(byStrategy, params, { guardrails, state, perSymbol: true, cone: i === 0 ? cone : 0 });
+      return r.insufficient ? r : { ...r, perStrategy: undefined };
+    });
+  },
+
   // Parses one uploaded file into a dataset (CPU-heavy, hence here and not in
   // the main thread). The dataset file changes, so the single-slot cache above
   // invalidates itself through its mtime key.
