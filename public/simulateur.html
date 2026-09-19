@@ -125,6 +125,7 @@
       <div class="form-field"><label for="sim-symbol">Paire</label><select id="sim-symbol"></select></div>
       <div class="form-field"><label for="sim-from">Date de départ</label><input type="date" id="sim-from" /></div>
       <div class="form-field"><label for="sim-days">Durée (jours)</label><input type="number" id="sim-days" value="30" min="1" max="120" /></div>
+      <div class="form-field"><label for="sim-base">Précision du rejeu</label><select id="sim-base"><option value="15">M15 (toutes les paires)</option><option value="5">M5 (jeux importés en M1)</option><option value="1">M1 (jeux importés en M1, 30 j max)</option></select></div>
       <div class="form-field" style="flex:0 0 auto;min-width:0;display:flex;gap:6px;">
         <button type="button" class="run-btn" id="sim-load" onclick="loadReplay(false)">Charger</button>
         <button type="button" class="btn-ghost" onclick="loadReplay(true)" title="Choisit une période au hasard dans tes données">🎲 Au hasard</button>
@@ -153,6 +154,7 @@
       <div class="form-field"><label for="imp-tz">Fuseau des fichiers</label><select id="imp-tz"><option value="est">EST fixe (HistData)</option><option value="utc">UTC réel (courtier)</option></select></div>
       <div class="form-field"><label for="imp-files">Fichiers</label><input type="file" id="imp-files" multiple accept=".csv,.txt" /></div>
     </div>
+    <label class="check" style="display:flex;gap:8px;align-items:center;font-size:12px;margin:0 0 8px;"><input type="checkbox" id="imp-keepm1" checked /> Garder le M1 pour rejouer en M1 / M5 (≈ 7 Mo par an et par paire sur le disque du serveur)</label>
     <button type="button" class="run-btn" id="imp-btn" onclick="importFiles()">Importer</button>
     <div id="imp-log" class="log" style="margin-top:8px;max-height:none;"></div>
   </details>
@@ -161,15 +163,15 @@
     <div>
       <div class="card">
         <div class="toolbar">
-          <div class="grp" id="tf-grp" title="Plus petit que M15 impossible : les données sont en M15">
-            <button class="tb active" data-tf="900">M15</button><button class="tb" data-tf="1800">M30</button><button class="tb" data-tf="3600">H1</button><button class="tb" data-tf="7200">H2</button><button class="tb" data-tf="14400">H4</button><button class="tb" data-tf="21600">H6</button><button class="tb" data-tf="43200">H12</button><button class="tb" data-tf="86400">D1</button><button class="tb" data-tf="604800">W1</button>
+          <div class="grp" id="tf-grp" title="M1 et M5 : seulement pour les jeux importés avec le M1 conservé">
+            <button class="tb" data-tf="60">M1</button><button class="tb" data-tf="300">M5</button><button class="tb active" data-tf="900">M15</button><button class="tb" data-tf="1800">M30</button><button class="tb" data-tf="3600">H1</button><button class="tb" data-tf="7200">H2</button><button class="tb" data-tf="14400">H4</button><button class="tb" data-tf="21600">H6</button><button class="tb" data-tf="43200">H12</button><button class="tb" data-tf="86400">D1</button><button class="tb" data-tf="604800">W1</button>
           </div>
           <div class="grp">
             <button class="tb" id="btn-play" onclick="togglePlay()" title="Lecture / pause">▶ Lecture</button>
             <button class="tb" onclick="stepBars(1)" title="Une bougie M15">+1 bougie</button>
-            <button class="tb" onclick="stepBars(4)">+1 h</button>
-            <button class="tb" onclick="stepBars(16)">+4 h</button>
-            <button class="tb" onclick="stepBars(96)">+1 jour</button>
+            <button class="tb" onclick="stepMinutes(60)">+1 h</button>
+            <button class="tb" onclick="stepMinutes(240)">+4 h</button>
+            <button class="tb" onclick="stepMinutes(1440)">+1 jour</button>
           </div>
           <div class="grp">
             <button class="tb" onclick="jumpNext('signal')" title="Avance jusqu'au prochain signal d'une stratégie affichée">→ signal</button>
@@ -247,6 +249,7 @@ let cur = -1;             // index of the last revealed base bar
 let tfSec = 900;
 let acct = null;
 let tfLast = null;
+let baseMin = 15;         // minutes per base bar of the loaded replay (15, 5 or 1)
 let playing = false, timer = null, speed = 6;
 let strategyLabels = {};
 let lines = [];           // price lines of the user's positions
@@ -357,7 +360,7 @@ function redraw({ resetView = false } = {}) {
   const news = data && $('sim-news').checked ? data.news.filter((n) => n.sec <= t) : [];
   overlay.set(drawn, news, tfLast ? tfLast.time : null);
   renderLines(); renderPanel(); renderSignals(); renderNews(); redrawSessions();
-  $('clock').innerHTML = `<strong>${nyText(t)}</strong> · bougie ${cur + 1}/${base.length}`;
+  $('clock').innerHTML = `<strong>${nyText(t)}</strong> · M${baseMin} · bougie ${cur + 1}/${base.length}`;
 }
 
 // ---------- replay control ----------
@@ -374,6 +377,7 @@ function handleEvent(e, b) {
   if (e.type === 'filled') { log(`Ordre exécuté à ${px(e.price)} (#${e.id})`, 'info'); userMarkers.push({ sec: b.t, pos: e.side === 'buy' ? 'belowBar' : 'aboveBar', shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' }); }
   if (e.type === 'closed') { log(`#${e.id} fermé (${e.reason}) à ${px(e.price)} : ${e.pnl >= 0 ? '+' : ''}${fmt(e.pnl)}`, e.pnl >= 0 ? 'win' : 'loss'); userMarkers.push({ sec: b.t, pos: 'aboveBar', shape: 'circle', color: e.pnl >= 0 ? '#2fd480' : '#ff5c5f', text: `Toi ${e.pnl >= 0 ? '+' : ''}${fmt(e.pnl, 0)}` }); }
 }
+window.stepMinutes = (m) => window.stepBars(Math.max(1, Math.round(m / baseMin)));
 window.stepBars = (n) => { stopPlay(); for (let i = 0; i < n && advanceOne(); i++); redraw(); if (cur >= base.length - 1) endNotice(); };
 function endNotice() { if (cur >= base.length - 1) log('Fin de la période chargée.', 'info'); }
 function stopPlay() { playing = false; clearInterval(timer); $('btn-play').textContent = '▶ Lecture'; }
@@ -382,7 +386,7 @@ window.togglePlay = () => {
   if (playing) return stopPlay();
   playing = true; $('btn-play').textContent = '⏸ Pause';
   timer = setInterval(() => {
-    const n = Math.max(1, Math.round(speed / 4));
+    const n = Math.max(1, Math.round((speed / 4) * (15 / baseMin)));
     for (let i = 0; i < n; i++) if (!advanceOne()) { stopPlay(); endNotice(); break; }
     redraw();
   }, 250);
@@ -623,7 +627,7 @@ async function loadMeta(prefer) {
   for (const list of Object.values(meta.replay.botMechanisms)) for (const m of list) strategyLabels[m.id] = m.label;
   const custom = meta.customDatasets || [];
   const keep = prefer || $('sim-symbol').value;
-  $('sim-symbol').innerHTML = `<optgroup label="Données du projet">${meta.symbols.map((s) => `<option value="${s}">${s}</option>`).join('')}</optgroup>` + (custom.length ? `<optgroup label="Mes données importées">${custom.map((d) => `<option value="${d.id}">${d.name} — ${d.symbol} (${new Date(d.from).getUTCFullYear()}–${new Date(d.to).getUTCFullYear()})</option>`).join('')}</optgroup>` : '');
+  $('sim-symbol').innerHTML = `<optgroup label="Données du projet">${meta.symbols.map((s) => `<option value="${s}">${s}</option>`).join('')}</optgroup>` + (custom.length ? `<optgroup label="Mes données importées">${custom.map((d) => `<option value="${d.id}">${d.name} — ${d.symbol} (${new Date(d.from).getUTCFullYear()}–${new Date(d.to).getUTCFullYear()})${d.m1 ? ' · M1 ✓' : ''}</option>`).join('')}</optgroup>` : '');
   const all = [...meta.symbols, ...custom.map((d) => d.id)];
   $('sim-symbol').value = all.includes(keep) ? keep : (meta.symbols.includes('US100') ? 'US100' : meta.symbols[0]);
   if (!$('sim-strats').children.length) $('sim-strats').innerHTML = meta.strategies.map((s) => `<label><input type="checkbox" value="${s.id}" /> ${s.label}</label>`).join('');
@@ -641,7 +645,7 @@ window.loadReplay = async (random) => {
   const btn = $('sim-load'); $('sim-msg').textContent = ''; stopPlay();
   const ids = [...document.querySelectorAll('#sim-strats input:checked')].map((b) => b.value);
   if ($('sim-botall').checked) ids.unshift('bot-all');
-  const body = { symbol: $('sim-symbol').value, days: Number($('sim-days').value) || 30, strategyIds: ids, news: $('sim-news').checked };
+  const body = { symbol: $('sim-symbol').value, days: Number($('sim-days').value) || 30, strategyIds: ids, news: $('sim-news').checked, baseMinutes: Number($('sim-base').value) };
   if (!random && $('sim-from').value) body.from = $('sim-from').value;
   btn.disabled = true; btn.textContent = 'Chargement… (jusqu\'à ~2 min si tu affiches beaucoup de stratégies)';
   try {
@@ -649,7 +653,10 @@ window.loadReplay = async (random) => {
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || `Erreur HTTP ${res.status}`);
     data = d;
+    baseMin = d.baseMinutes || 15;
     base = d.candles.map(([t, o, h, l, c]) => ({ t, o, h, l, c }));
+    if (tfSec < baseMin * 60) { tfSec = baseMin * 60; }
+    document.querySelectorAll('#tf-grp .tb').forEach((x) => { x.disabled = Number(x.dataset.tf) < baseMin * 60; x.classList.toggle('active', Number(x.dataset.tf) === tfSec); });
     data.trades = d.trades.map((x) => ({ ...x, entrySec: Math.floor(x.entryTime / 1000), exitSec: Math.floor(x.exitTime / 1000) })).sort((a, b) => a.entrySec - b.entrySec);
     data.news = d.news.map((n) => ({ ...n, sec: Math.floor(n.time / 1000) }));
     const startSec = Math.floor(d.window.from / 1000);
@@ -693,10 +700,11 @@ window.importFiles = async () => {
       const line = impLog(`⏳ ${f.name} (${(f.size / 1048576).toFixed(1)} Mo)…`);
       const q = new URLSearchParams({ symbol: pair, tz: $('imp-tz').value, filename: f.name });
       if (spread !== '') q.set('spread', spread);
+      if (!$('imp-keepm1').checked) q.set('keepM1', '0');
       const res = await fetch(`/api/lab/datasets/${encodeURIComponent(name)}/files?${q}`, { method: 'POST', headers: { 'x-admin-token': token, 'Content-Type': 'text/plain' }, body: await f.text() });
       let b = {}; try { b = await res.json(); } catch {}
       if (!res.ok) { line.innerHTML = `<span class="loss">❌ ${f.name} : ${res.status === 403 ? 'token admin invalide' : res.status === 404 ? "import désactivé côté serveur (ADMIN_EXPORT_TOKEN absent)" : b.error || 'erreur ' + res.status}</span>`; break; }
-      ok++; line.innerHTML = `<span class="win">✅ ${f.name}</span> → « ${b.dataset.name} » : ${b.dataset.candles.toLocaleString('fr-FR')} bougies M15`;
+      ok++; line.innerHTML = `<span class="win">✅ ${f.name}</span> → « ${b.dataset.name} » : ${b.dataset.candles.toLocaleString('fr-FR')} bougies M15${b.dataset.m1 ? ` · M1 conservé (${b.dataset.m1.rows.toLocaleString('fr-FR')} minutes)` : ''}${b.dataset.m1Note ? `<div class="meta">${b.dataset.m1Note}</div>` : ''}`;
     }
   } catch (e) { impLog(`<span class="loss">Erreur réseau : ${e.message}</span>`); }
   $('imp-btn').disabled = false;

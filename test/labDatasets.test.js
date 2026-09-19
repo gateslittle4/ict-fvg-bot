@@ -150,3 +150,73 @@ test('listDatasets / deleteDataset / cap: names stay safe, deletion removes both
   assert.throws(() => importIntoDataset({ dir, name: 'ONETOOMANY', symbol: 'EURUSD', text }), /Trop de jeux de données/);
   importIntoDataset({ dir, name: 'D0', symbol: 'EURUSD', text }); // extending an existing one is still fine at the cap
 });
+
+// --- the M1 store kept alongside the M15 aggregate ------------------------------------------------
+import { readWindow, storeInfo, m1PathFor } from '../src/backtest/m1Store.js';
+
+const T0 = Date.UTC(2022, 2, 7, 9, 0); // a Monday, 15-min aligned
+const m1Text = (fromMin, count) => Array.from({ length: count }, (_, i) => {
+  const t = T0 + (fromMin + i) * MIN;
+  const p = 1.1 + (fromMin + i) * 1e-5;
+  return hd(t, p.toFixed(5), (p + 2e-5).toFixed(5), (p - 2e-5).toFixed(5), (p + 1e-5).toFixed(5));
+}).join('\n');
+
+test('importing M1 keeps the minute candles too, and a window of them reads back exactly', () => {
+  const dir = tmp();
+  const r = importIntoDataset({ dir, name: 'eg', symbol: 'EURGBP', spread: 0.0001, text: m1Text(0, 300), filename: 'a.txt' });
+  assert.ok(r.dataset.m1, 'an M1 store was created');
+  assert.equal(r.dataset.m1.rows, 300);
+  assert.equal(r.dataset.m1.lossless, true);
+  const back = readWindow(m1PathFor(dir, 'eg'), r.dataset.m1.scale, T0 + 10 * MIN, T0 + 12 * MIN);
+  assert.equal(back.length, 3);
+  assert.equal(back[0][1], 1.1 + 10 * 1e-5 < 0 ? 0 : Number((1.1 + 10 * 1e-5).toFixed(5)));
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('extending merges the new minutes into the same store (any file order); replace starts it over; delete removes it', () => {
+  const dir = tmp();
+  importIntoDataset({ dir, name: 'eg', symbol: 'EURGBP', spread: 0.0001, text: m1Text(300, 200), filename: 'later.txt' });
+  const r = importIntoDataset({ dir, name: 'eg', symbol: 'EURGBP', text: m1Text(0, 300), filename: 'earlier.txt' });
+  assert.equal(r.dataset.m1.rows, 500);
+  assert.equal(storeInfo(m1PathFor(dir, 'eg')).rows, 500);
+  const again = importIntoDataset({ dir, name: 'eg', symbol: 'EURGBP', spread: 0.0001, replace: true, text: m1Text(0, 100), filename: 'fresh.txt' });
+  assert.equal(again.dataset.m1.rows, 100);
+  assert.equal(deleteDataset(dir, 'eg'), true);
+  assert.equal(fs.existsSync(m1PathFor(dir, 'eg')), false);
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('keepM1=false, or a file that is not 1-minute data, keeps no M1 store and says why', () => {
+  const dir = tmp();
+  const off = importIntoDataset({ dir, name: 'a', symbol: 'EURGBP', spread: 0.0001, keepM1: false, text: m1Text(0, 100), filename: 'x.txt' });
+  assert.equal(off.dataset.m1, null);
+  assert.match(off.dataset.m1Note, /décochée/);
+  assert.equal(fs.existsSync(m1PathFor(dir, 'a')), false);
+  // 15-minute rows in a header CSV
+  const m15 = 'time,open,high,low,close\n' + Array.from({ length: 80 }, (_, i) => `${new Date(T0 + i * 15 * MIN).toISOString()},1.1,1.2,1.0,1.1`).join('\n');
+  const coarse = importIntoDataset({ dir, name: 'b', symbol: 'EURGBP', spread: 0.0001, tz: 'utc', text: m15, filename: 'm15.csv' });
+  assert.equal(coarse.dataset.m1, null);
+  assert.match(coarse.dataset.m1Note, /15 min/);
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('extending a dataset that was imported before the M1 store existed does not build a store with a hole in it', () => {
+  const dir = tmp();
+  importIntoDataset({ dir, name: 'old', symbol: 'EURGBP', spread: 0.0001, keepM1: false, text: m1Text(0, 100), filename: 'old.txt' });
+  const r = importIntoDataset({ dir, name: 'old', symbol: 'EURGBP', text: m1Text(100, 100), filename: 'new.txt' });
+  assert.equal(r.dataset.m1, null);
+  assert.match(r.dataset.m1Note, /repartir de zéro/);
+  assert.equal(fs.existsSync(m1PathFor(dir, 'old')), false);
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('a later non-M1 file drops the store rather than leaving it incomplete', () => {
+  const dir = tmp();
+  importIntoDataset({ dir, name: 'mix', symbol: 'EURGBP', spread: 0.0001, text: m1Text(0, 100), filename: 'm1.txt' });
+  assert.equal(fs.existsSync(m1PathFor(dir, 'mix')), true);
+  const m15 = 'time,open,high,low,close\n' + Array.from({ length: 60 }, (_, i) => `${new Date(T0 + (500 + i * 15) * MIN).toISOString()},1.1,1.2,1.0,1.1`).join('\n');
+  const r = importIntoDataset({ dir, name: 'mix', symbol: 'EURGBP', text: m15, filename: 'm15.csv' });
+  assert.equal(r.dataset.m1, null);
+  assert.equal(fs.existsSync(m1PathFor(dir, 'mix')), false);
+  fs.rmSync(dir, { recursive: true });
+});

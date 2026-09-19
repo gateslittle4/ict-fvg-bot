@@ -30,6 +30,7 @@ import { buildTradeDebrief } from './backtest/tradeDebrief.js';
 import { LAB_STRATEGIES, listLabStrategies } from './backtest/labRegistry.js';
 import { runLabJob } from './backtest/labClient.js';
 import { readDatasetMeta, listDatasets, deleteDataset, csvPathFor as labDatasetCsv, MAX_CUSTOM_DATASETS } from './backtest/labDatasets.js';
+import { m1PathFor } from './backtest/m1Store.js';
 import { isValidDatasetName, ImportError } from './backtest/m1Import.js';
 import { normalizeChallengeParams, normalizeGuardrails } from './backtest/labAnalytics.js';
 import { computeDailyLevels, rebaseLevels, SESSION_WINDOWS } from './backtest/dailyLevels.js';
@@ -543,7 +544,15 @@ app.post('/api/lab/replay', async (req, res) => {
     const pair = CONFIG.divergence.pair;
     const partner = pair.includes(ds.symbol) ? pair.find((x) => x !== ds.symbol) : null;
     const partnerCsvPath = partner && listLabSymbols().includes(partner) ? labCsvPath(partner) : null;
-    const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine, days, warmupBars: REPLAY_WARMUP_BARS });
+    const baseMinutes = Number(req.body?.baseMinutes ?? 15);
+    if (![1, 5, 15].includes(baseMinutes)) throw new ImportError('Granularité de rejeu inconnue (1, 5 ou 15 minutes).');
+    let m1 = null;
+    if (baseMinutes < 15) {
+      if (!ds.meta?.m1) throw new ImportError(`Ce jeu n'a pas de M1 conservé${ds.meta?.m1Note ? ` (${ds.meta.m1Note})` : ' : seuls les jeux importés en M1 (avec « garder le M1 » coché) se rejouent en M1 ou M5'}.`);
+      if (days > (baseMinutes === 1 ? 30 : 120)) throw new ImportError(`En M${baseMinutes}, la durée est limitée à ${baseMinutes === 1 ? 30 : 120} jours.`);
+      m1 = { file: m1PathFor(LAB_UPLOAD_DIR, ds.meta.name), scale: ds.meta.m1.scale };
+    }
+    const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine, days, warmupBars: REPLAY_WARMUP_BARS, baseMinutes, m1 });
     const OFFSET = FIXED_EST_TO_UTC_OFFSET_MS;
     const real = (t) => (t == null ? null : t + OFFSET);
     res.json({
@@ -552,6 +561,7 @@ app.post('/api/lab/replay', async (req, res) => {
       spread: ds.spread ?? DEFAULT_SPREADS[ds.symbol] ?? 0,
       range: { first: real(out.range.first), last: real(out.range.last) },
       window: { from: real(out.window.from), to: real(out.window.to), startTime: real(out.window.startTime) },
+      baseMinutes,
       candles: out.candles.map(([t, o, h, l, c]) => [Math.floor((t + OFFSET) / 1000), o, h, l, c]),
       trades: out.trades.map((t) => ({ ...t, entryTime: real(t.entryTime), exitTime: real(t.exitTime) })),
       notApplicable: out.notApplicable,
@@ -643,6 +653,7 @@ app.post(
         spread: q.spread === undefined || q.spread === '' ? null : Number(q.spread),
         tz: q.tz || 'est',
         replace: q.replace === '1',
+        keepM1: q.keepM1 !== '0',
         filename: typeof q.filename === 'string' ? q.filename.slice(0, 120) : 'fichier',
       });
       res.json(out);

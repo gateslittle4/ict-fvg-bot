@@ -12,6 +12,7 @@ import { parentPort } from 'node:worker_threads';
 import fs from 'node:fs';
 import { loadCandlesFromCsv, loadResampledFromCsv } from './csvLoader.js';
 import { TIMEFRAME_MS } from './htfBias.js';
+import { readWindow, aggregateRows } from './m1Store.js';
 import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF } from './labRunner.js';
 import { listLabStrategies } from './labRegistry.js';
 import { importIntoDataset } from './labDatasets.js';
@@ -182,7 +183,7 @@ const handlers = {
   // strategies are run on the WHOLE history (their signals need the warm-up before the window) and
   // cached per dataset; only the trades overlapping the window are sent back. Times stay in engine
   // time here - the route converts them for the browser.
-  replayWindow({ csvPath, symbol, partnerCsvPath = null, strategyIds = [], fromEngine = null, days, warmupBars }) {
+  replayWindow({ csvPath, symbol, partnerCsvPath = null, strategyIds = [], fromEngine = null, days, warmupBars, baseMinutes = 15, m1 = null }) {
     const candles = loadCandles(csvPath);
     const first = candles[0].time;
     const last = candles[candles.length - 1].time;
@@ -198,7 +199,10 @@ const handlers = {
     let a = 0, b = candles.length;
     { let l = 0, h = candles.length; while (l < h) { const m = (l + h) >> 1; if (candles[m].time >= startTime) h = m; else l = m + 1; } a = l; }
     { let l = 0, h = candles.length; while (l < h) { const m = (l + h) >> 1; if (candles[m].time > to) h = m; else l = m + 1; } b = l; }
-    const slice = candles.slice(a, b).map((c) => [c.time, c.open, c.high, c.low, c.close]);
+    // Finer replay (M1/M5) reads the minute store for the same window; the strategies below still run on M15.
+    const slice = baseMinutes < 15 && m1
+      ? aggregateRows(readWindow(m1.file, m1.scale, startTime, to), baseMinutes)
+      : candles.slice(a, b).map((c) => [c.time, c.open, c.high, c.low, c.close]);
 
     if (!cache.trades) cache.trades = new Map();
     const trades = [];

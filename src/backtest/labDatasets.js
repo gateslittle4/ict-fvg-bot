@@ -14,6 +14,7 @@ import path from 'node:path';
 import { createAggregator, parseM1Text, readDatasetCsvInto, isValidDatasetName, ImportError } from './m1Import.js';
 import { chooseTrainTestCutoff } from './labRunner.js';
 import { DEFAULT_SPREADS } from './transactionCosts.js';
+import { createRowCollector, chooseScale, mergeIntoStore, m1PathFor } from './m1Store.js';
 
 export const MAX_CUSTOM_DATASETS = 12;
 const MAX_FILE_HISTORY = 100;
@@ -76,7 +77,7 @@ function writeAtomic(file, content) {
  * @param {string} p.text - the file's content
  * @param {string} [p.filename]
  */
-export function importIntoDataset({ dir, name, symbol, spread = null, tz = 'est', replace = false, text, filename = 'fichier', now = Date.now() }) {
+export function importIntoDataset({ dir, name, symbol, spread = null, tz = 'est', replace = false, keepM1 = true, text, filename = 'fichier', now = Date.now() }) {
   if (!isValidDatasetName(name)) throw new ImportError('Nom de jeu de données invalide (lettres, chiffres, _ et - seulement, 24 caractères max).');
   const pair = String(symbol || '').toUpperCase();
   if (!isValidDatasetName(pair)) throw new ImportError('Paire invalide (lettres et chiffres, ex. EURGBP).');
@@ -107,7 +108,8 @@ export function importIntoDataset({ dir, name, symbol, spread = null, tz = 'est'
 
   const aggregator = createAggregator();
   if (extending) readDatasetCsvInto(existingCsv, aggregator);
-  const parsed = parseM1Text(text, aggregator, { tz });
+  const collector = keepM1 ? createRowCollector() : null;
+  const parsed = parseM1Text(text, aggregator, { tz, onRow: collector ? (t, o, h, l, c) => collector.add(t, o, h, l, c) : null });
 
   const { from, to } = aggregator.range();
   const { cutoff, kind } = chooseTrainTestCutoff([{ time: from }, { time: to }]);
@@ -132,6 +134,28 @@ export function importIntoDataset({ dir, name, symbol, spread = null, tz = 'est'
     updatedAt: now,
   };
 
+  // ---- the M1 store: only kept when it can be COMPLETE (every file of the dataset was ~1-minute data) ----
+  const m1File = m1PathFor(dir, name);
+  const isM1 = parsed.stepMinutes === null || parsed.stepMinutes <= 1.5;
+  const previousM1 = extending ? existing.m1 ?? null : null;
+  let m1 = null;
+  let m1Note = null;
+  if (!keepM1) m1Note = 'M1 non conservé (option décochée) : le rejeu se fera en M15.';
+  else if (!isM1) m1Note = `Ce fichier est en bougies de ${parsed.stepMinutes} min : pas de M1 à conserver (le rejeu restera en M15).`;
+  else if (extending && !previousM1) m1Note = 'Ce jeu avait été importé avant le stockage M1 : réimporte-le avec « repartir de zéro » pour activer le rejeu en M1.';
+  else {
+    const chosen = previousM1 ? { scale: previousM1.scale, lossless: previousM1.lossless } : chooseScale(collector);
+    const others = listDatasets(dir).filter((m) => m.name !== name).reduce((n, m) => n + (m.m1?.bytes ?? 0), 0);
+    if (replace && fs.existsSync(m1File)) fs.rmSync(m1File, { force: true });
+    const merged = mergeIntoStore(m1File, collector, { scale: chosen.scale, otherStoresBytes: others });
+    m1 = { scale: chosen.scale, lossless: previousM1 ? previousM1.lossless && chosen.lossless : chosen.lossless, rows: merged.rows, bytes: merged.bytes, from: merged.from, to: merged.to };
+    if (!m1.lossless) m1Note = `Prix arrondis à ${chosen.scale} décimales dans le stockage M1 (le jeu en contient plus).`;
+  }
+  if (!m1 && !previousM1) fs.rmSync(m1File, { force: true });
+  if (!m1 && previousM1) fs.rmSync(m1File, { force: true }); // an incomplete M1 store would silently replay the wrong history
+  meta.m1 = m1;
+  meta.m1Note = m1Note;
+
   writeAtomic(csvPathFor(dir, name), aggregator.csvChunks());
   writeAtomic(metaPathFor(dir, name), JSON.stringify(meta));
   return { file: files[files.length - 1], dataset: meta };
@@ -140,6 +164,6 @@ export function importIntoDataset({ dir, name, symbol, spread = null, tz = 'est'
 export function deleteDataset(dir, name) {
   if (!isValidDatasetName(name)) throw new ImportError('Nom de jeu de données invalide.');
   if (!readDatasetMeta(dir, name)) return false;
-  for (const f of [csvPathFor(dir, name), metaPathFor(dir, name)]) fs.rmSync(f, { force: true });
+  for (const f of [csvPathFor(dir, name), metaPathFor(dir, name), m1PathFor(dir, name)]) fs.rmSync(f, { force: true });
   return true;
 }
