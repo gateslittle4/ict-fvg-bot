@@ -42,7 +42,8 @@ import { CONFIG } from '../src/config.js';
 const DIR_A = 'data/real-data-2026-02-to-09';
 const DIR_B = 'data/real-data-2026-09-17';
 const STARTING_BALANCE = 10000;
-const RISK_PCT_PER_TRADE = CONFIG.risk.riskPctPerTrade; // 0.5% - 'challenge' mode default
+// 0.5% - 'challenge' mode default - argv override for sensitivity testing.
+const RISK_PCT_PER_TRADE = process.argv[2] ? Number(process.argv[2]) : CONFIG.risk.riskPctPerTrade;
 
 function toEngineTime(candles) {
   return candles.map((c) => ({ ...c, time: c.time - FIXED_EST_TO_UTC_OFFSET_MS }));

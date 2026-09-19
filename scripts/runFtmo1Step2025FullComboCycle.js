@@ -62,7 +62,10 @@ import { CONFIG } from '../src/config.js';
 
 const DATA_DIR = 'data/backtest-input';
 const STARTING_BALANCE = 10000;
-const RISK_PCT_PER_TRADE = CONFIG.risk.riskPctPerTrade; // 0.5% - 'challenge' mode default, the validated real-attempt value
+// 0.5% - 'challenge' mode default, the validated real-attempt value - argv
+// override for sensitivity testing (e.g. `node ... 0.75`), same pattern as
+// runHaitiForexChallengeSimulation.js.
+const RISK_PCT_PER_TRADE = process.argv[2] ? Number(process.argv[2]) : CONFIG.risk.riskPctPerTrade;
 const YEAR_START = Date.parse('2025-01-01T00:00:00Z');
 const YEAR_END = Date.parse('2026-01-01T00:00:00Z');
 
