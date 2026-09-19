@@ -98,6 +98,9 @@
   .run-btn:disabled { opacity: .5; cursor: wait; }
   .hint { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 0 0 8px; }
   .win { color: var(--green); } .loss { color: var(--red); }
+  .session-row { display: flex; flex-direction: column; gap: 3px; }
+  .session-hours { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+  .session-hours input { width: 64px; padding: 2px 4px; }
   #chart-wrap { position: relative; }
   #chart-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; text-align: center; padding: 20px; pointer-events: none; }
 </style>
@@ -179,6 +182,12 @@
         </div>
         <div id="chart-wrap"><div id="chart"></div><div id="chart-empty">Choisis une paire et une date, puis « Charger ».</div></div>
         <div class="meta" id="chart-legend" style="margin-top:6px;"></div>
+        <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;"><strong>Sessions sur le graphique</strong> <span class="meta" id="session-note"></span></summary>
+          <label class="check" style="display:flex;gap:8px;align-items:center;font-size:12px;margin:6px 0;"><input type="checkbox" id="toggle-sessions" checked /> Afficher les sessions (M15 à H1)</label>
+          <div id="session-list" class="strat-list"></div>
+          <button type="button" class="btn-ghost" id="session-reset" style="margin-top:4px;">Réinitialiser les sessions</button>
+        </details>
+        <div class="meta" style="margin-top:6px;">Astuce : glisse les lignes de stop (rouge), d'objectif (verte) ou d'ordre en attente directement sur le graphique.</div>
       </div>
       <div class="card"><h2>Signaux des stratégies <span class="meta" id="sig-summary"></span></h2><div id="sig-list" style="max-height:260px;overflow:auto;"></div></div>
       <div class="card"><h2>Annonces (news)</h2><div id="news-list" class="meta">—</div></div>
@@ -347,7 +356,7 @@ function redraw({ resetView = false } = {}) {
   markers.setMarkers(mk);
   const news = data && $('sim-news').checked ? data.news.filter((n) => n.sec <= t) : [];
   overlay.set(drawn, news, tfLast ? tfLast.time : null);
-  renderLines(); renderPanel(); renderSignals(); renderNews();
+  renderLines(); renderPanel(); renderSignals(); renderNews(); redrawSessions();
   $('clock').innerHTML = `<strong>${nyText(t)}</strong> · bougie ${cur + 1}/${base.length}`;
 }
 
@@ -447,11 +456,11 @@ window.closeEverything = () => { if (cur < 0) return; B.closeAll(acct, { bid: bi
 
 function renderLines() {
   for (const l of lines) series.removePriceLine(l);
-  lines = [];
+  lines = []; dragLines = [];
   if (!acct) return;
-  const add = (price, color, title, dash = 0) => { if (price != null) lines.push(series.createPriceLine({ price, color, lineWidth: 1, lineStyle: dash, axisLabelVisible: true, title })); };
-  for (const p of acct.positions) { add(p.entry, '#ffffff', `#${p.id} ${p.side === 'buy' ? '▲' : '▼'}`); add(p.sl, '#ff5c5f', `SL #${p.id}`, 2); add(p.tp, '#2fd480', `TP #${p.id}`, 2); }
-  for (const o of acct.pending) add(o.price, '#e8b339', `${o.type} #${o.id}`, 1);
+  const add = (price, color, title, dash = 0, dragInfo = null) => { if (price == null) return; const line = series.createPriceLine({ price, color, lineWidth: 1, lineStyle: dash, axisLabelVisible: true, title }); lines.push(line); if (dragInfo) dragLines.push({ ...dragInfo, price, line }); };
+  for (const p of acct.positions) { add(p.entry, '#ffffff', `#${p.id} ${p.side === 'buy' ? '▲' : '▼'}`); add(p.sl, '#ff5c5f', `SL #${p.id}`, 2, { id: p.id, kind: 'sl' }); add(p.tp, '#2fd480', `TP #${p.id}`, 2, { id: p.id, kind: 'tp' }); }
+  for (const o of acct.pending) add(o.price, '#e8b339', `${o.type} #${o.id}`, 1, { id: o.id, kind: 'pending' });
 }
 function renderPanel() {
   const has = cur >= 0 && acct;
@@ -497,6 +506,115 @@ function renderNews() {
   $('news-list').innerHTML = (next.length ? '<div>À venir :</div>' + next.map((n) => row(n, 'win')).join('') : '') + (past.length ? '<div style="margin-top:6px;">Passées :</div>' + past.map((n) => row(n, '')).join('') : '');
 }
 function log(text, cls = '') { const el = $('log'); el.insertAdjacentHTML('afterbegin', `<div class="${cls}">${cur >= 0 ? new Date(nowSec() * 1000).toLocaleString('fr-FR', { timeZone: 'America/New_York', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' · ' : ''}${text}</div>`); while (el.children.length > 80) el.lastChild.remove(); }
+
+
+// ---------- sessions layer (same windows and per-viewer settings as chart.html) ----------
+const SESSION_RGB = { cbdr: '167,139,250', asia: '76,158,255', london: '47,212,128', nyam: '232,179,57', silver: '255,140,60' };
+let sessionDefs = [];
+function loadSessionState() { try { const r = JSON.parse(localStorage.getItem('chartSessionState') || '{}'); return { master: r.master !== false, enabled: r.enabled || {}, hours: r.hours || {} }; } catch { return { master: true, enabled: {}, hours: {} }; } }
+let sessionState = loadSessionState();
+const saveSessionState = () => { try { localStorage.setItem('chartSessionState', JSON.stringify(sessionState)); } catch {} };
+const sessionOn = (k) => sessionState.master && sessionState.enabled[k] !== false;
+const sessionHours = (d) => ({ ...d, ...(sessionState.hours[d.key] || {}) });
+const nyParts = (() => { const f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); return (ms) => { const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return { y: +p.year, m0: +p.month - 1, d: +p.day, minutes: +p.hour * 60 + +p.minute }; }; })();
+function nyLocalToUtcMs(y, m0, d, hourFloat) { const minutes = Math.round(hourFloat * 60); const guess = Date.UTC(y, m0, d) + minutes * 60000 + 5 * 3600000; const g = nyParts(guess); return guess + ((Date.UTC(y, m0, d) / 60000 + minutes) - (Date.UTC(g.y, g.m0, g.d) / 60000 + g.minutes)) * 60000; }
+function computeSessionBands() {
+  if (cur < 0 || !sessionState.master || tfSec > 3600) return [];
+  const first = nyParts(base[0].t * 1000), lastMs = base[cur].t * 1000, bands = [];
+  const idx = (ms) => { let lo = 0, hi = cur + 1; while (lo < hi) { const m = (lo + hi) >> 1; if (base[m].t * 1000 >= ms) hi = m; else lo = m + 1; } return lo; };
+  for (let dayMs = Date.UTC(first.y, first.m0, first.d); dayMs <= lastMs + 86400000; dayMs += 86400000) {
+    const day = new Date(dayMs);
+    for (const b of sessionDefs) {
+      if (!sessionOn(b.key)) continue;
+      const def = sessionHours(b);
+      const i0 = idx(nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.startHour));
+      const i1 = idx(nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.endHour)) - 1;
+      if (i0 > i1 || i0 > cur) continue;
+      bands.push({ key: def.key, label: def.label, startSec: snap(base[i0].t), endSec: snap(base[Math.min(i1, cur)].t) });
+    }
+  }
+  return bands;
+}
+class SessionsPrimitive {
+  constructor() { this.bands = []; this.chart = null; this.req = null; this.pv = [{ zOrder: () => 'bottom', renderer: () => ({ draw: (t) => this.draw(t) }) }]; }
+  attached({ chart: c, requestUpdate }) { this.chart = c; this.req = requestUpdate; } detached() { this.chart = null; }
+  updateAllViews() {} paneViews() { return this.pv; }
+  setBands(b) { this.bands = b; this.req?.(); }
+  draw(target) {
+    if (!this.chart || !this.bands.length) return;
+    const ts = this.chart.timeScale();
+    target.useBitmapCoordinateSpace((scope) => {
+      const ctx = scope.context, h = scope.bitmapSize.height, w = scope.bitmapSize.width, hr = scope.horizontalPixelRatio;
+      ctx.font = `${Math.round(10 * hr)}px ui-monospace, Menlo, Consolas, monospace`; ctx.textBaseline = 'top';
+      for (const b of this.bands) {
+        const xa = ts.timeToCoordinate(b.startSec), xb = ts.timeToCoordinate(b.endSec);
+        if (xa === null && xb === null) continue;
+        const x1 = Math.max(0, ((xa ?? -1e6) - 3) * hr), x2 = Math.min(w, ((xb ?? 1e6) + 3) * hr);
+        if (x2 <= x1) continue;
+        const rgb = SESSION_RGB[b.key] || '150,150,150';
+        ctx.fillStyle = `rgba(${rgb},0.09)`; ctx.fillRect(x1, 0, x2 - x1, h);
+        ctx.fillStyle = `rgba(${rgb},0.35)`; ctx.fillRect(x1, 0, Math.max(1, hr), h);
+        if (x2 - x1 > 60 * hr) { ctx.fillStyle = `rgba(${rgb},0.95)`; ctx.fillText(b.label, x1 + 4 * hr, 16 * hr, x2 - x1 - 8 * hr); }
+      }
+    });
+  }
+}
+const sessionsPrim = new SessionsPrimitive();
+series.attachPrimitive(sessionsPrim);
+function renderSessionPanel() {
+  $('session-list').innerHTML = sessionDefs.map((b) => { const d = sessionHours(b); return `<div class="session-row" data-key="${b.key}"><label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" data-role="on" ${sessionState.enabled[b.key] !== false ? 'checked' : ''} /><span style="border-left:3px solid rgb(${SESSION_RGB[b.key] || '150,150,150'});padding-left:6px;">${b.label}</span></label><div class="session-hours"><input type="number" data-role="start" min="0" max="23.75" step="0.25" value="${d.startHour}" /> → <input type="number" data-role="end" min="0.25" max="24" step="0.25" value="${d.endHour}" /> h NY</div></div>`; }).join('');
+}
+$('toggle-sessions').addEventListener('change', (e) => { sessionState.master = e.currentTarget.checked; saveSessionState(); redrawSessions(); });
+$('session-list').addEventListener('change', (e) => {
+  const row = e.target.closest('.session-row'); if (!row) return;
+  const key = row.dataset.key, role = e.target.dataset.role;
+  if (role === 'on') sessionState.enabled[key] = e.target.checked;
+  if (role === 'start' || role === 'end') {
+    const st = Number(row.querySelector('[data-role=start]').value), en = Number(row.querySelector('[data-role=end]').value);
+    if (!(Number.isFinite(st) && Number.isFinite(en) && st >= 0 && en <= 24 && en > st)) { e.target.value = sessionHours(sessionDefs.find((d) => d.key === key))[role === 'start' ? 'startHour' : 'endHour']; return; }
+    sessionState.hours[key] = { startHour: st, endHour: en };
+  }
+  saveSessionState(); redrawSessions();
+});
+$('session-reset').addEventListener('click', () => { sessionState = { master: true, enabled: {}, hours: {} }; saveSessionState(); $('toggle-sessions').checked = true; renderSessionPanel(); redrawSessions(); });
+function redrawSessions() { sessionsPrim.setBands(computeSessionBands()); $('session-note').textContent = tfSec > 3600 ? '— visibles de M1 à H1 seulement' : ''; }
+fetch('/api/sessions').then((r) => r.json()).then((d) => { sessionDefs = d.sessions || []; renderSessionPanel(); redrawSessions(); }).catch(() => {});
+
+// ---------- drag the stop / target / pending-order lines with the mouse ----------
+let dragLines = []; // {id, kind:'sl'|'tp'|'pending', price, line}
+let drag = null;
+const chartEl = $('chart');
+const yOf = (e) => e.clientY - chartEl.getBoundingClientRect().top;
+function hitLine(y) { let best = null, bd = 7; for (const d of dragLines) { const yy = series.priceToCoordinate(d.price); if (yy !== null && Math.abs(yy - y) < bd) { bd = Math.abs(yy - y); best = d; } } return best; }
+chartEl.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || cur < 0) return;
+  const hit = hitLine(yOf(e)); if (!hit) return;
+  drag = hit; e.stopPropagation(); e.preventDefault();
+  chart.applyOptions({ handleScroll: false, handleScale: false });
+  chartEl.setPointerCapture?.(e.pointerId);
+}, true);
+chartEl.addEventListener('pointermove', (e) => {
+  if (drag) { const price = series.coordinateToPrice(yOf(e)); if (price !== null) drag.line.applyOptions({ price }); e.stopPropagation(); return; }
+  chartEl.style.cursor = hitLine(yOf(e)) ? 'ns-resize' : '';
+}, true);
+function endDrag(e) {
+  if (!drag) return;
+  const d = drag; drag = null;
+  chart.applyOptions({ handleScroll: true, handleScale: true });
+  const price = series.coordinateToPrice(yOf(e));
+  try {
+    if (price === null) throw new Error('Prix hors du graphique.');
+    const dec = decimalsFor(price);
+    const rounded = Number(price.toFixed(dec + 1));
+    if (d.kind === 'pending') B.movePending(acct, d.id, { price: rounded, bid: bid() });
+    else B.modifyPosition(acct, d.id, d.kind === 'sl' ? { sl: rounded } : { tp: rounded });
+    log(`${d.kind === 'sl' ? 'Stop' : d.kind === 'tp' ? 'Objectif' : 'Ordre'} #${d.id} déplacé à ${px(rounded)}`, 'info');
+    orderMsg('');
+  } catch (err) { orderMsg(err.message, true); }
+  redraw();
+}
+chartEl.addEventListener('pointerup', (e) => { if (drag) { e.stopPropagation(); endDrag(e); } }, true);
+chartEl.addEventListener('pointercancel', (e) => { if (drag) { drag = null; chart.applyOptions({ handleScroll: true, handleScale: true }); redraw(); } }, true);
 
 // ---------- loading ----------
 async function loadMeta(prefer) {
@@ -585,6 +703,8 @@ window.importFiles = async () => {
   if (ok) { await loadMeta(`custom:${name}`); impLog(`Jeu « ${name} » sélectionné dans la liste des paires — clique « Charger ».`); }
 };
 
+// read-only handle for automated browser tests (module scope is not global)
+window.__sim = { get acct() { return acct; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, price: (p) => series.priceToCoordinate(p), get cur() { return cur; }, get base() { return base; }, get baseMin() { return typeof baseMin === 'number' ? baseMin : 15; } };
 $('sim-from').value = '';
 countStrats();
 loadMeta().catch((e) => { $('sim-msg').innerHTML = `<span class="loss">Erreur de chargement : ${e.message}</span>`; });

@@ -169,3 +169,26 @@ test('stats: win rate, net P&L, total R on trades that had a stop, and the deepe
   assert.equal(s.tradesWithR, 2);
   assert.ok(s.maxDrawdown >= 10);
 });
+
+import { movePending } from '../src/shared/replayBroker.js';
+
+test('modifyPosition: refuses a nonsense price, accepts null to remove a level, and allows a stop past the entry once in profit', () => {
+  const acc = createAccount({ balance: 1000 });
+  const p = placeMarket(acc, { side: 'buy', bid: 100, time: 0, units: 1, sl: 99, tp: 105 });
+  assert.throws(() => modifyPosition(acc, p.id, { sl: -1 }), /Stop invalide/);
+  modifyPosition(acc, p.id, { sl: 101 }); // locking profit above the entry
+  assert.equal(p.sl, 101);
+  modifyPosition(acc, p.id, { tp: null });
+  assert.equal(p.tp, null);
+  assert.throws(() => modifyPosition(acc, 999, { sl: 1 }), /introuvable/);
+});
+
+test('movePending: the order stays on its side of the market and its stop/target stay coherent', () => {
+  const acc = createAccount({ balance: 1000 });
+  const o = placePending(acc, { side: 'buy', type: 'limit', price: 95, bid: 100, units: 1, sl: 90 });
+  movePending(acc, o.id, { price: 97, bid: 100 });
+  assert.equal(o.price, 97);
+  assert.throws(() => movePending(acc, o.id, { price: 101, bid: 100 }), /Prix invalide/);
+  assert.throws(() => movePending(acc, o.id, { sl: 98 }), /Stop invalide/); // stop above a buy limit's entry
+  assert.throws(() => movePending(acc, 999, { price: 1, bid: 100 }), /introuvable/);
+});

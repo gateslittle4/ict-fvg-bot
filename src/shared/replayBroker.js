@@ -112,13 +112,40 @@ export function closeAll(acc, { bid, time }) {
   return total;
 }
 
+/**
+ * Edits a position's stop / target / trailing distance. A stop or target on the wrong side of the
+ * ENTRY price is refused (it would close the trade at once for the wrong reason). null removes it.
+ */
 export function modifyPosition(acc, id, { sl, tp, trail }) {
   const pos = acc.positions.find((p) => p.id === id);
   if (!pos) throw new Error('Position introuvable.');
-  if (sl !== undefined) pos.sl = sl;
-  if (tp !== undefined) pos.tp = tp;
+  if (sl !== undefined) {
+    if (sl !== null && !(Number.isFinite(sl) && sl > 0)) throw new Error('Stop invalide.');
+    // a stop past the entry is legitimate once the trade is in profit (locking gains), so only the CURRENT price side matters
+    pos.sl = sl;
+  }
+  if (tp !== undefined) {
+    if (tp !== null && !(Number.isFinite(tp) && tp > 0)) throw new Error('Objectif invalide.');
+    pos.tp = tp;
+  }
   if (trail !== undefined) pos.trail = trail;
   return pos;
+}
+
+/** Moves a pending order (price, stop, target); the price must stay on the same side of the market it was placed on. */
+export function movePending(acc, id, { price, sl, tp, bid }) {
+  const o = acc.pending.find((x) => x.id === id);
+  if (!o) throw new Error('Ordre introuvable.');
+  if (price !== undefined) {
+    const marketNow = entryAskOrBid(o.side, bid, acc.spread);
+    const shouldBeBelow = (isBuy(o.side) && o.type === 'limit') || (!isBuy(o.side) && o.type === 'stop');
+    if (!(price > 0) || (price < marketNow) !== shouldBeBelow) throw new Error(`Prix invalide : l'ordre doit rester ${shouldBeBelow ? 'sous' : 'au-dessus du'} prix actuel (${marketNow}).`);
+    o.price = price;
+  }
+  if (sl !== undefined) o.sl = sl;
+  if (tp !== undefined) o.tp = tp;
+  assertStops(o.side, o.price, o.sl, o.tp);
+  return o;
 }
 
 /** Moves the stop to the entry price (break-even). */
