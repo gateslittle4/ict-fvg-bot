@@ -84,8 +84,9 @@ export function loadCandlesFromCsv(filePath) {
  * their bucket. Exists for callers that only need a coarser view of a SECOND dataset (the Simulateur's
  * Divergence partner) inside a memory-capped worker where two full M15 series do not fit together.
  * Order-independent within a bucket (open = earliest row, close = latest), like m1Import's aggregator.
+ * `from`/`to` (same unit as the CSV's times, ms) keep only that window; a window with no row at all returns [] instead of throwing.
  */
-export function loadResampledFromCsv(filePath, bucketMs) {
+export function loadResampledFromCsv(filePath, bucketMs, { from = -Infinity, to = Infinity } = {}) {
   const fd = fs.openSync(filePath, 'r');
   const buf = Buffer.allocUnsafe(1 << 20);
   const buckets = new Map(); // key -> {time, open, high, low, close, first, last}
@@ -106,6 +107,7 @@ export function loadResampledFromCsv(filePath, bucketMs) {
     try { time = parseTime(f[cols.t]); } catch { return; }
     const open = Number(f[cols.o]), high = Number(f[cols.h]), low = Number(f[cols.l]), close = Number(f[cols.c]);
     if ([open, high, low, close].some((v) => Number.isNaN(v))) return;
+    if (time < from || time > to) return; // only a window of a long history is wanted: never build buckets for the rest
     const key = Math.floor(time / bucketMs);
     const b = buckets.get(key);
     if (!b) { buckets.set(key, { time: key * bucketMs, open, high, low, close, first: time, last: time }); return; }
@@ -124,6 +126,6 @@ export function loadResampledFromCsv(filePath, bucketMs) {
   } finally {
     fs.closeSync(fd);
   }
-  if (buckets.size === 0) throw new Error(`${filePath}: no data rows found`);
+  if (buckets.size === 0 && from === -Infinity && to === Infinity) throw new Error(`${filePath}: no data rows found`);
   return [...buckets.values()].sort((a, b) => a.time - b.time).map(({ time, open, high, low, close }) => ({ time, open, high, low, close }));
 }

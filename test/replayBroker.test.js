@@ -192,3 +192,101 @@ test('movePending: the order stays on its side of the market and its stop/target
   assert.throws(() => movePending(acc, o.id, { sl: 98 }), /Stop invalide/); // stop above a buy limit's entry
   assert.throws(() => movePending(acc, 999, { price: 1, bid: 100 }), /introuvable/);
 });
+
+// --- currency conversion (P&L in the account currency) --------------------------------------------
+test('conversion rate scales realised P&L, floating P&L and the balance', () => {
+  const acc = createAccount({ balance: 1000, rate: 2 }); // 1 quote unit = 2 account units
+  const p = placeMarket(acc, { side: 'buy', bid: 100, time: 0, units: 10 });
+  assert.equal(floatingPnl(acc, 101), 20); // (101-100) x 10 x 2
+  closePosition(acc, p.id, { bid: 101, time: 1 });
+  assert.equal(acc.balance, 1020);
+});
+
+test('a moving rate converts at the rate of the day the trade closes', () => {
+  const acc = createAccount({ balance: 1000, rate: 1 });
+  const p = placeMarket(acc, { side: 'buy', bid: 100, time: 0, units: 10 });
+  acc.rate = 0.5; // the account currency strengthened before the close
+  closePosition(acc, p.id, { bid: 102, time: 1 });
+  assert.equal(acc.balance, 1000 + 2 * 10 * 0.5);
+});
+
+test('risk sizing accounts for the rate: the same 1 % risk buys fewer units when each quote unit is worth more', () => {
+  const at = (rate) => sizeFromRisk({ balance: 10000, riskPct: 1, entry: 100, stop: 99, rate });
+  assert.equal(at(1), 100);
+  assert.equal(at(2), 50);
+  assert.equal(at(0.01), 10000); // e.g. a JPY-quoted pair: 1 JPY is worth ~0.0067 USD
+  assert.equal(sizeFromRisk({ balance: 10000, riskPct: 1, entry: 100, stop: 99, rate: 0 }), 0);
+});
+
+test('the R multiple does not depend on the rate (a stop hit is -1R in any currency)', () => {
+  const acc = createAccount({ balance: 10000, rate: 0.0067 });
+  const units = sizeFromRisk({ balance: 10000, riskPct: 1, entry: 150, stop: 149, rate: 0.0067 });
+  placeMarket(acc, { side: 'buy', bid: 150, time: 0, units, sl: 149 });
+  onCandle(acc, { time: 1, open: 150, high: 150.1, low: 148.5, close: 148.6 });
+  assert.equal(acc.history[0].r, -1);
+  assert.ok(Math.abs(acc.history[0].pnl + 100) < 1e-6); // exactly the 1 % risked, in account currency
+});
+
+// --- several pairs on one account -----------------------------------------------------------------
+import { placeAtPrice, positionPnl, floatingPnlBids, recordEquity } from '../src/shared/replayBroker.js';
+
+function twoPairs() {
+  const acc = createAccount({ balance: 10000 });
+  acc.spreads = { AAA: 0.5, BBB: 0 };
+  acc.rates = { AAA: 1, BBB: 2 };
+  return acc;
+}
+
+test('a candle of one pair only moves the positions and orders of THAT pair', () => {
+  const acc = twoPairs();
+  placeMarket(acc, { side: 'buy', bid: 100, time: 0, units: 1, sl: 99, symbol: 'AAA' });
+  placeMarket(acc, { side: 'buy', bid: 50, time: 0, units: 1, sl: 49, symbol: 'BBB' });
+  onCandle(acc, { time: 1, open: 100, high: 100.5, low: 90, close: 91 }, 'AAA'); // AAA crashes
+  assert.equal(acc.positions.length, 1);
+  assert.equal(acc.positions[0].symbol, 'BBB'); // BBB untouched
+  assert.equal(acc.history[0].symbol, 'AAA');
+  assert.equal(acc.equityCurve.length, 0); // multi-pair mode: the page records equity once per clock step
+});
+
+test('each pair pays its own spread and converts at its own rate', () => {
+  const acc = twoPairs();
+  const a = placeMarket(acc, { side: 'buy', bid: 100, time: 0, units: 10, symbol: 'AAA' });
+  const b = placeMarket(acc, { side: 'buy', bid: 50, time: 0, units: 10, symbol: 'BBB' });
+  assert.equal(a.entry, 100.5); // AAA spread 0.5
+  assert.equal(b.entry, 50); // BBB no spread
+  assert.equal(positionPnl(acc, b, 51), 10 * 1 * 2); // rate 2
+  assert.equal(floatingPnlBids(acc, { AAA: 101, BBB: 51 }), 5 + 20);
+  closePosition(acc, b.id, { bid: 51, time: 1 });
+  assert.equal(acc.balance, 10020);
+  recordEquity(acc, { AAA: 101 }, 1);
+  assert.equal(acc.equityCurve[0].equity, 10020 + 5);
+});
+
+test('closeAll closes each position at the bid of its own pair', () => {
+  const acc = twoPairs();
+  placeMarket(acc, { side: 'sell', bid: 100, time: 0, units: 1, symbol: 'AAA' });
+  placeMarket(acc, { side: 'buy', bid: 50, time: 0, units: 1, symbol: 'BBB' });
+  closeAll(acc, { bids: { AAA: 99, BBB: 52 }, time: 1 });
+  const byId = Object.fromEntries(acc.history.map((h) => [h.symbol, h]));
+  assert.equal(byId.AAA.exit, 99.5); // a sell exits at the ask: 99 + 0.5
+  assert.equal(byId.BBB.exit, 52);
+});
+
+test('placeAtPrice enters at the given price (a buy still pays the spread), and keeps the tag on the history', () => {
+  const acc = twoPairs();
+  const p = placeAtPrice(acc, { side: 'buy', price: 100, time: 0, units: 1, sl: 99, tp: 103, symbol: 'AAA', tag: 'bot-fvg' });
+  assert.equal(p.entry, 100.5);
+  onCandle(acc, { time: 1, open: 100, high: 104, low: 100, close: 103 }, 'AAA');
+  assert.equal(acc.history[0].tag, 'bot-fvg');
+  assert.equal(acc.history[0].reason, 'objectif');
+});
+
+test('a pending order keeps its pair: it only fills on that pair\'s candles', () => {
+  const acc = twoPairs();
+  placePending(acc, { side: 'buy', type: 'limit', price: 95, bid: 100, units: 1, symbol: 'BBB' });
+  onCandle(acc, { time: 1, open: 100, high: 100, low: 90, close: 91 }, 'AAA');
+  assert.equal(acc.pending.length, 1);
+  onCandle(acc, { time: 1, open: 100, high: 100, low: 90, close: 91 }, 'BBB');
+  assert.equal(acc.pending.length, 0);
+  assert.equal(acc.positions[0].symbol, 'BBB');
+});

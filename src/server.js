@@ -40,6 +40,7 @@ import { signalContext } from './shared/tradeStats.js';
 import { normalizeRecipe, describeRecipe } from './backtest/legoStrategy.js';
 import { BOT_MECHANISMS, BOT_IDS, botMechanismsForSymbol } from './backtest/replaySignals.js';
 import { newsBetween, newsCoverage } from './backtest/newsCalendar.js';
+import { instrumentSpec, conversionPlan } from './backtest/instrumentSpecs.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -522,50 +523,86 @@ app.post('/api/lab/lego', async (req, res) => {
 });
 
 // "Simulateur": replay a window of the market bar by bar, with the strategies' trades to draw and the
-// red-news events (see replaySignals.js / newsCalendar.js). body: { symbol, from?: 'YYYY-MM-DD' (random
-// when absent), days?: 1..120, strategyIds?: string[] ('bot-all' = the bot's mechanisms on this symbol) }.
+// red-news events (see replaySignals.js / newsCalendar.js). Several pairs share ONE window.
+// body: { symbol, extraSymbols?: string[] (max 3), from?: 'YYYY-MM-DD' (random when absent) | fromMs?: real UTC ms
+//         (exact window, used to add a pair to a replay already running), days?: 1..120, baseMinutes?: 1|5|15,
+//         strategyIds?: string[] ('bot-all' = the bot's mechanisms on each pair), news?: boolean }
 // Real time = engine time + 5 h, applied here so the page can hand it straight to the chart.
 const REPLAY_WARMUP_BARS = 400;
+const REPLAY_MAX_PAIRS = 4;
 app.post('/api/lab/replay', async (req, res) => {
   try {
-    const ds = resolveLabDataset(req.body?.symbol);
-    if (!ds) throw new ImportError(`Symbole inconnu ou sans données: "${req.body?.symbol}"`);
-    const days = Math.round(Number(req.body?.days ?? 30));
+    const body = req.body || {};
+    const OFFSET = FIXED_EST_TO_UTC_OFFSET_MS;
+    const days = Math.round(Number(body.days ?? 30));
     if (!Number.isFinite(days) || days < 1 || days > 120) throw new ImportError('Durée de rejeu invalide (1 à 120 jours).');
     let fromEngine = null;
-    if (req.body?.from) {
-      fromEngine = Date.parse(`${String(req.body.from).slice(0, 10)}T00:00:00Z`);
+    if (body.fromMs !== undefined) {
+      fromEngine = Number(body.fromMs) - OFFSET;
+      if (!Number.isFinite(fromEngine)) throw new ImportError('Date de départ invalide.');
+    } else if (body.from) {
+      fromEngine = Date.parse(`${String(body.from).slice(0, 10)}T00:00:00Z`);
       if (!Number.isFinite(fromEngine)) throw new ImportError('Date de départ invalide (AAAA-MM-JJ).');
     }
-    const wanted = Array.isArray(req.body?.strategyIds) ? req.body.strategyIds : [];
-    const ids = [...new Set(wanted.flatMap((id) => (id === 'bot-all' ? botMechanismsForSymbol(ds.symbol).map((m) => m.id) : [id])))];
-    if (ids.length > 30) throw new ImportError('Trop de stratégies à la fois (30 max).');
-    for (const id of ids) if (!BOT_IDS.includes(id) && !LAB_STRATEGIES[id]) throw new ImportError(`Stratégie inconnue: "${id}"`);
-    const pair = CONFIG.divergence.pair;
-    const partner = pair.includes(ds.symbol) ? pair.find((x) => x !== ds.symbol) : null;
-    const partnerCsvPath = partner && listLabSymbols().includes(partner) ? labCsvPath(partner) : null;
-    const baseMinutes = Number(req.body?.baseMinutes ?? 15);
+    const baseMinutes = Number(body.baseMinutes ?? 15);
     if (![1, 5, 15].includes(baseMinutes)) throw new ImportError('Granularité de rejeu inconnue (1, 5 ou 15 minutes).');
-    let m1 = null;
-    if (baseMinutes < 15) {
-      if (!ds.meta?.m1) throw new ImportError(`Ce jeu n'a pas de M1 conservé${ds.meta?.m1Note ? ` (${ds.meta.m1Note})` : ' : seuls les jeux importés en M1 (avec « garder le M1 » coché) se rejouent en M1 ou M5'}.`);
-      if (days > (baseMinutes === 1 ? 30 : 120)) throw new ImportError(`En M${baseMinutes}, la durée est limitée à ${baseMinutes === 1 ? 30 : 120} jours.`);
-      m1 = { file: m1PathFor(LAB_UPLOAD_DIR, ds.meta.name), scale: ds.meta.m1.scale };
+    const wanted = Array.isArray(body.strategyIds) ? body.strategyIds : [];
+    const extra = [...new Set(Array.isArray(body.extraSymbols) ? body.extraSymbols : [])].filter((x) => x !== body.symbol);
+    if (extra.length > REPLAY_MAX_PAIRS - 1) throw new ImportError(`Au plus ${REPLAY_MAX_PAIRS} paires à la fois.`);
+    if (wanted.length > 30) throw new ImportError('Trop de stratégies à la fois (30 max).');
+    for (const id of wanted) if (id !== 'bot-all' && !BOT_IDS.includes(id) && !LAB_STRATEGIES[id]) throw new ImportError(`Stratégie inconnue: "${id}"`);
+    const available = listLabSymbols();
+    const pair = CONFIG.divergence.pair;
+
+    async function loadPair(symbolId, { fromEng, strict }) {
+      const ds = resolveLabDataset(symbolId);
+      if (!ds) throw new ImportError(`Symbole inconnu ou sans données: "${symbolId}"`);
+      const ids = [...new Set(wanted.flatMap((id) => (id === 'bot-all' ? botMechanismsForSymbol(ds.symbol).map((m) => m.id) : [id])))];
+      let base = baseMinutes, m1 = null;
+      if (base < 15) {
+        const cap = base === 1 ? 30 : 120;
+        if (!ds.meta?.m1 || days > cap) {
+          if (strict) {
+            if (!ds.meta?.m1) throw new ImportError(`Ce jeu n'a pas de M1 conservé${ds.meta?.m1Note ? ` (${ds.meta.m1Note})` : ' : seuls les jeux importés en M1 (avec « garder le M1 » coché) se rejouent en M1 ou M5'}.`);
+            throw new ImportError(`En M${base}, la durée est limitée à ${cap} jours.`);
+          }
+          base = 15; // an extra pair without M1 stays at M15 next to a finer main pair
+        } else m1 = { file: m1PathFor(LAB_UPLOAD_DIR, ds.meta.name), scale: ds.meta.m1.scale };
+      }
+      const partner = pair.includes(ds.symbol) ? pair.find((x) => x !== ds.symbol) : null;
+      const partnerCsvPath = partner && available.includes(partner) ? labCsvPath(partner) : null;
+      const spec = instrumentSpec(ds.symbol);
+      const plan = conversionPlan(spec.quote, available);
+      const conversion = plan.status === 'ok' ? { status: 'ok', combine: plan.combine, legs: plan.legs.map((l) => ({ mode: l.mode, csvPath: labCsvPath(l.symbol) })) } : null;
+      const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine: fromEng, days, warmupBars: REPLAY_WARMUP_BARS, baseMinutes: base, m1, conversion });
+      return {
+        out,
+        pair: {
+          id: symbolId, symbol: ds.symbol, dataset: datasetInfo(ds),
+          spread: ds.spread ?? DEFAULT_SPREADS[ds.symbol] ?? 0,
+          baseMinutes: base,
+          instrument: { ...spec, accountCurrency: 'USD', conversion: { status: plan.status, pair: plan.status === 'ok' ? plan.legs.map((l) => l.symbol).join(' / ') : null, rates: out.rates ? out.rates.map(([t, r]) => [Math.floor((t + OFFSET) / 1000), r]) : null } },
+          candles: out.candles.map(([t, o, h, l, c]) => [Math.floor((t + OFFSET) / 1000), o, h, l, c]),
+          trades: out.trades.map((t) => ({ ...t, entryTime: t.entryTime + OFFSET, exitTime: t.exitTime + OFFSET })),
+          notApplicable: out.notApplicable,
+        },
+      };
     }
-    const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine, days, warmupBars: REPLAY_WARMUP_BARS, baseMinutes, m1 });
-    const OFFSET = FIXED_EST_TO_UTC_OFFSET_MS;
-    const real = (t) => (t == null ? null : t + OFFSET);
+
+    const first = await loadPair(body.symbol, { fromEng: fromEngine, strict: true });
+    const windowEng = first.out.window; // the exact window every other pair must share
+    const pairs = [first.pair];
+    for (const sym of extra) {
+      try {
+        pairs.push((await loadPair(sym, { fromEng: windowEng.from, strict: false })).pair);
+      } catch (err) {
+        pairs.push({ id: sym, symbol: sym, error: err.message });
+      }
+    }
     res.json({
-      symbol: req.body.symbol,
-      dataset: datasetInfo(ds),
-      spread: ds.spread ?? DEFAULT_SPREADS[ds.symbol] ?? 0,
-      range: { first: real(out.range.first), last: real(out.range.last) },
-      window: { from: real(out.window.from), to: real(out.window.to), startTime: real(out.window.startTime) },
-      baseMinutes,
-      candles: out.candles.map(([t, o, h, l, c]) => [Math.floor((t + OFFSET) / 1000), o, h, l, c]),
-      trades: out.trades.map((t) => ({ ...t, entryTime: real(t.entryTime), exitTime: real(t.exitTime) })),
-      notApplicable: out.notApplicable,
-      news: req.body?.news === false ? [] : newsBetween(out.window.startTime + OFFSET, out.window.to + OFFSET),
+      pairs,
+      window: { from: windowEng.from + OFFSET, to: windowEng.to + OFFSET, startTime: windowEng.startTime + OFFSET },
+      news: body.news === false ? [] : newsBetween(windowEng.startTime + OFFSET, windowEng.to + OFFSET),
       newsCoverage: newsCoverage(),
     });
   } catch (err) {

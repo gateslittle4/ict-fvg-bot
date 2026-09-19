@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import { loadCandlesFromCsv, loadResampledFromCsv } from './csvLoader.js';
 import { TIMEFRAME_MS } from './htfBias.js';
 import { readWindow, aggregateRows } from './m1Store.js';
+import { buildRateSeries } from './instrumentSpecs.js';
 import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF } from './labRunner.js';
 import { listLabStrategies } from './labRegistry.js';
 import { importIntoDataset } from './labDatasets.js';
@@ -183,7 +184,7 @@ const handlers = {
   // strategies are run on the WHOLE history (their signals need the warm-up before the window) and
   // cached per dataset; only the trades overlapping the window are sent back. Times stay in engine
   // time here - the route converts them for the browser.
-  replayWindow({ csvPath, symbol, partnerCsvPath = null, strategyIds = [], fromEngine = null, days, warmupBars, baseMinutes = 15, m1 = null }) {
+  replayWindow({ csvPath, symbol, partnerCsvPath = null, strategyIds = [], fromEngine = null, days, warmupBars, baseMinutes = 15, m1 = null, conversion = null }) {
     const candles = loadCandles(csvPath);
     const first = candles[0].time;
     const last = candles[candles.length - 1].time;
@@ -221,7 +222,14 @@ const handlers = {
       if (all === null) { notApplicable.push(id); continue; }
       for (const t of all) if (t.exitTime >= startTime && t.entryTime <= to) trades.push(t);
     }
-    return { range: { first, last }, window: { from, to, startTime }, candles: slice, trades, notApplicable };
+    // Conversion of quote-currency P&L into USD: the conversion pair(s) at M15, streamed and windowed, never resident.
+    let rates = null;
+    if (conversion && conversion.status === 'ok') {
+      const legs = conversion.legs.map((leg) => ({ mode: leg.mode, bars: loadResampledFromCsv(leg.csvPath, TIMEFRAME_MS.H1 / 4, { from: startTime - DAY, to }) }));
+      rates = buildRateSeries(conversion.combine, legs);
+      if (!rates.length) rates = null; // the conversion pair has no data over this window
+    }
+    return { range: { first, last }, window: { from, to, startTime }, candles: slice, trades, notApplicable, rates };
   },
 
   // Parses one uploaded file into a dataset (CPU-heavy, hence here and not in

@@ -133,3 +133,16 @@ test('loadResampledFromCsv gives exactly resampleCandles(loadCandlesFromCsv(...)
   assert.throws(() => { fs.writeFileSync(file, 'a,b\n1,2\n'); loadResampledFromCsv(file, 3600000); }, /required columns/);
   fs.rmSync(dir, { recursive: true });
 });
+
+test('loadResampledFromCsv with a window keeps only that window (and does not throw when it is empty)', () => {
+  const { a } = pair(900);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rs2-'));
+  const file = path.join(dir, 'w.csv');
+  fs.writeFileSync(file, `time,open,high,low,close\n${a.map((c) => `${c.time},${c.open},${c.high},${c.low},${c.close}`).join('\n')}\n`);
+  const from = a[200].time, to = a[399].time;
+  const win = loadResampledFromCsv(file, TIMEFRAME_MS.H1, { from, to });
+  const expected = resampleCandles(loadCandlesFromCsv(file).candles.filter((c) => c.time >= from && c.time <= to), TIMEFRAME_MS.H1);
+  assert.deepEqual(win, expected);
+  assert.deepEqual(loadResampledFromCsv(file, TIMEFRAME_MS.H1, { from: 1, to: 2 }), []);
+  fs.rmSync(dir, { recursive: true });
+});
