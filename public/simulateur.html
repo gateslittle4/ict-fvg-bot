@@ -158,8 +158,8 @@
     <div>
       <div class="card">
         <div class="toolbar">
-          <div class="grp" id="tf-grp">
-            <button class="tb active" data-tf="900">M15</button><button class="tb" data-tf="3600">H1</button><button class="tb" data-tf="14400">H4</button><button class="tb" data-tf="86400">D1</button>
+          <div class="grp" id="tf-grp" title="Plus petit que M15 impossible : les données sont en M15">
+            <button class="tb active" data-tf="900">M15</button><button class="tb" data-tf="1800">M30</button><button class="tb" data-tf="3600">H1</button><button class="tb" data-tf="7200">H2</button><button class="tb" data-tf="14400">H4</button><button class="tb" data-tf="21600">H6</button><button class="tb" data-tf="43200">H12</button><button class="tb" data-tf="86400">D1</button><button class="tb" data-tf="604800">W1</button>
           </div>
           <div class="grp">
             <button class="tb" id="btn-play" onclick="togglePlay()" title="Lecture / pause">▶ Lecture</button>
@@ -256,7 +256,9 @@ const chart = LW.createChart($('chart'), {
 });
 const series = chart.addSeries(LW.CandlestickSeries, { upColor: '#2fd480', downColor: '#ff5c5f', borderUpColor: '#2fd480', borderDownColor: '#ff5c5f', wickUpColor: '#2fd480', wickDownColor: '#ff5c5f', priceLineVisible: true, lastValueVisible: true });
 const markers = LW.createSeriesMarkers(series, []);
-const snap = (sec) => Math.floor(sec / tfSec) * tfSec;
+// Weekly bars start on Monday 00:00 UTC (the epoch is a Thursday, so weeks are offset by 4 days); every other frame is aligned on UTC.
+const WEEK = 604800, MONDAY_OFFSET = 4 * 86400;
+const snap = (sec) => (tfSec === WEEK ? Math.floor((sec - MONDAY_OFFSET) / WEEK) * WEEK + MONDAY_OFFSET : Math.floor(sec / tfSec) * tfSec);
 
 class OverlayPrimitive {
   constructor() { this.trades = []; this.news = []; this.chart = null; this.series = null; this.req = null; this.lastBar = null;
@@ -383,7 +385,7 @@ window.jumpNext = (kind) => {
   while (cur < base.length - 1 && base[cur].t < target) advanceOne();
   redraw();
 };
-$('tf-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-tf]'); if (!b) return; tfSec = Number(b.dataset.tf); document.querySelectorAll('#tf-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); redraw({ resetView: true }); });
+$('tf-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-tf]'); if (!b) return; tfSec = Number(b.dataset.tf); document.querySelectorAll('#tf-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); redraw({ resetView: true }); const n = tfDataLength(); if (n < 140) chart.timeScale().fitContent(); else chart.timeScale().setVisibleLogicalRange({ from: n - 140, to: n + 8 }); });
 $('speed-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; speed = Number(b.dataset.speed); document.querySelectorAll('#speed-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); });
 
 // ---------- account / orders ----------
