@@ -79,7 +79,12 @@ const DAILY_GAIN_CAP_USD = 2200; // MAXIMUM GAIN PAR JOUR $2200
 const MIN_TRADING_DAYS = 5;
 const MAX_WINDOW_DAYS = 30;
 const FORCED_CLOSE_NY_HOUR = 15 + 55 / 60; // 15:55 - 5min safety margin before their 16:00 cutoff
-const RISK_PCT_PER_TRADE = 0.5; // this project's own default - NOT a HaitiForex rule
+// this project's own default (0.5) - NOT a HaitiForex rule. Overridable via
+// argv for sensitivity testing (e.g. `node ... 0.25`) - see HANDOFF.md
+// 2026-09-19 for why a SMALLER risk-per-trade was tested here: the daily
+// $2,200 cap throws away entire trades once hit, so fewer $ per trade
+// should let more trades fit under the same daily ceiling.
+const RISK_PCT_PER_TRADE = process.argv[2] ? Number(process.argv[2]) : 0.5;
 
 function toEngineTime(candles) {
   return candles.map((c) => ({ ...c, time: c.time - FIXED_EST_TO_UTC_OFFSET_MS }));
@@ -179,7 +184,8 @@ function runPhase1() {
     const exitHour = nyDecimalHour(t.exitTime);
     const compliant = entryDate === exitDate && exitHour <= FORCED_CLOSE_NY_HOUR;
     if (compliant) {
-      trades.push({ symbol: t.symbol, source: t.source, entryTime: t.entryTime, exitTime: t.exitTime, netRMultiple: netRMultipleOf(t.direction, t.entryPrice, t.distance, t.exitPrice, t.symbol), forced: false });
+      const r = netRMultipleOf(t.direction, t.entryPrice, t.distance, t.exitPrice, t.symbol);
+      trades.push({ symbol: t.symbol, source: t.source, entryTime: t.entryTime, exitTime: t.exitTime, netRMultiple: r, naturalNetRMultiple: r, forced: false });
       continue;
     }
     // Find the last candle for this symbol, on the entry's own NY date, at/before the cutoff.
@@ -193,7 +199,12 @@ function runPhase1() {
     }
     if (!forcedCandle) { vetoedLateEntry++; continue; } // defensive - shouldn't happen given the entryHour guard above
     forcedCount++;
-    trades.push({ symbol: t.symbol, source: t.source, entryTime: t.entryTime, exitTime: forcedCandle.time, netRMultiple: netRMultipleOf(t.direction, t.entryPrice, t.distance, forcedCandle.close, t.symbol), forced: true });
+    const naturalR = netRMultipleOf(t.direction, t.entryPrice, t.distance, t.exitPrice, t.symbol); // what the engine's own stop/target/timeout would have realized - for reporting only, never used for P&L
+    trades.push({
+      symbol: t.symbol, source: t.source, entryTime: t.entryTime, exitTime: forcedCandle.time,
+      netRMultiple: netRMultipleOf(t.direction, t.entryPrice, t.distance, forcedCandle.close, t.symbol),
+      naturalNetRMultiple: naturalR, forced: true,
+    });
   }
 
   trades.sort((a, b) => a.exitTime - b.exitTime);
@@ -221,6 +232,8 @@ function runPhase2(trades) {
     let tradesTaken = 0;
     let tradesVetoed = 0;
     let calendarDaysElapsed = 0;
+    let missedUsdFromCap = 0; // what vetoed trades WOULD have earned, at that day's balance - diagnostic only
+    let lostUsdFromForcedClose = 0; // (natural R - forced R) * riskAmount, summed - diagnostic only
 
     for (const t of trades) {
       if (t.entryTime < w.start || t.entryTime >= w.end) continue;
@@ -229,12 +242,15 @@ function runPhase2(trades) {
 
       const dateKey = toRealNyDateKey(t.exitTime);
       const soFarToday = dailyGain.get(dateKey) || 0;
+      const riskAmount = balance * (RISK_PCT_PER_TRADE / 100);
       if (soFarToday >= DAILY_GAIN_CAP_USD) {
         tradesVetoed++;
+        missedUsdFromCap += Math.max(0, riskAmount * t.netRMultiple);
         continue;
       }
 
-      const riskAmount = balance * (RISK_PCT_PER_TRADE / 100);
+      if (t.forced) lostUsdFromForcedClose += riskAmount * (t.naturalNetRMultiple - t.netRMultiple);
+
       const pnl = riskAmount * t.netRMultiple;
       balance += pnl;
       tradesTaken++;
@@ -255,6 +271,8 @@ function runPhase2(trades) {
       tradesVetoed,
       tradingDaysCount: tradingDays.size,
       metMinTradingDays: tradingDays.size >= MIN_TRADING_DAYS,
+      missedUsdFromCap,
+      lostUsdFromForcedClose,
     });
   }
   return results;
@@ -268,8 +286,8 @@ function main() {
   console.log(`Phase 2: replaying into independent ${MAX_WINDOW_DAYS}-day HaitiForex $100k challenge windows...\n`);
   const windows = runPhase2(trades);
 
-  console.log('| Fenêtre (début) | Résultat | Jour (sur 30) | Trades pris | Vétés (plafond) | Jours de trading | Solde final |');
-  console.log('|---|---|---|---|---|---|---|');
+  console.log('| Fenêtre (début) | Résultat | Jour (sur 30) | Trades pris | Vétés (plafond) | $ manqué (plafond) | $ perdu (clôture forcée) | Solde final |');
+  console.log('|---|---|---|---|---|---|---|---|');
   let passed = 0;
   for (const r of windows) {
     let outcome;
@@ -286,7 +304,7 @@ function main() {
       day = '—';
     }
     console.log(
-      `| ${r.windowStart} | ${outcome} | ${day} | ${r.tradesTaken} | ${r.tradesVetoed} | ${r.tradingDaysCount} | $${r.finalBalance.toFixed(2)} (${r.finalPct >= 0 ? '+' : ''}${r.finalPct.toFixed(2)}%) |`
+      `| ${r.windowStart} | ${outcome} | ${day} | ${r.tradesTaken} | ${r.tradesVetoed} | $${r.missedUsdFromCap.toFixed(0)} | $${r.lostUsdFromForcedClose.toFixed(0)} | $${r.finalBalance.toFixed(2)} (${r.finalPct >= 0 ? '+' : ''}${r.finalPct.toFixed(2)}%) |`
     );
   }
   console.log(`\nRésultat global : ${passed}/${windows.length} fenêtres de 30 jours auraient atteint +10%.`);
