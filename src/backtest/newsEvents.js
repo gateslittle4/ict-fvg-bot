@@ -91,7 +91,7 @@ export const ECB_CET_EVENTS = [
  * the instant by treating the wall-clock digits as UTC, then correct by
  * the offset that guess actually formats to in the target zone.
  */
-function zonedTimeToUtc(y, m, d, hh, mm, timeZone) {
+export function zonedTimeToUtc(y, m, d, hh, mm, timeZone) {
   const guessUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
   const fmt = new Intl.DateTimeFormat('en-US', { timeZone, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const parts = fmt.formatToParts(new Date(guessUtc));

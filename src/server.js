@@ -37,6 +37,8 @@ import { LIVE_VARIANTS, MAX_VARIANTS_PER_RUN, liveFvgSymbols, liveFvgConfig, des
 import { TRAIN_TEST_CUTOFF } from './backtest/labRunner.js';
 import { signalContext } from './shared/tradeStats.js';
 import { normalizeRecipe, describeRecipe } from './backtest/legoStrategy.js';
+import { BOT_MECHANISMS, BOT_IDS, botMechanismsForSymbol } from './backtest/replaySignals.js';
+import { newsBetween, newsCoverage } from './backtest/newsCalendar.js';
 import { getRecentAlerts } from './alertHistory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -148,6 +150,9 @@ app.get('/api/sessions', (req, res) => {
 // served explicitly rather than exposing all of src/.
 app.get('/shared/tradeStats.js', (req, res) => {
   res.type('application/javascript').sendFile(path.join(__dirname, 'shared', 'tradeStats.js'));
+});
+app.get('/shared/replayBroker.js', (req, res) => {
+  res.type('application/javascript').sendFile(path.join(__dirname, 'shared', 'replayBroker.js'));
 });
 
 // Deliberately the cheapest possible endpoint: no broker round-trip, no
@@ -360,6 +365,11 @@ app.get('/api/lab/meta', (req, res) => {
       symbols: listLabSymbols(),
       customDatasets: listDatasets(LAB_UPLOAD_DIR).map((m) => ({ id: `custom:${m.name}`, ...m })),
       knownSpreads: DEFAULT_SPREADS,
+      replay: {
+        botMechanisms: Object.fromEntries([...new Set([...listLabSymbols(), ...listDatasets(LAB_UPLOAD_DIR).map((m) => m.symbol)])].map((sym) => [sym, botMechanismsForSymbol(sym)])),
+        botAll: BOT_IDS,
+        news: newsCoverage(),
+      },
       liveStrategy: {
         symbols: liveFvgSymbols(),
         variants: LIVE_VARIANTS.map(({ id, label, group }) => ({ id, label, group })),
@@ -505,6 +515,49 @@ app.post('/api/lab/lego', async (req, res) => {
     if (JSON.stringify(recipe) !== JSON.stringify(bare)) variants.push({ id: 'recipe', label: 'Ma recette', recipe });
     const out = await runLabJob('runLego', { csvPath: ds.csvPath, symbol: ds.symbol, spread: ds.spread, cutoff: ds.cutoff, variants });
     res.json({ symbol: req.body.symbol, dataset: datasetInfo(ds), ...out, trainCutoff: ds.cutoff ?? TRAIN_TEST_CUTOFF });
+  } catch (err) {
+    sendAnalysisError(res, err);
+  }
+});
+
+// "Simulateur": replay a window of the market bar by bar, with the strategies' trades to draw and the
+// red-news events (see replaySignals.js / newsCalendar.js). body: { symbol, from?: 'YYYY-MM-DD' (random
+// when absent), days?: 1..120, strategyIds?: string[] ('bot-all' = the bot's mechanisms on this symbol) }.
+// Real time = engine time + 5 h, applied here so the page can hand it straight to the chart.
+const REPLAY_WARMUP_BARS = 400;
+app.post('/api/lab/replay', async (req, res) => {
+  try {
+    const ds = resolveLabDataset(req.body?.symbol);
+    if (!ds) throw new ImportError(`Symbole inconnu ou sans données: "${req.body?.symbol}"`);
+    const days = Math.round(Number(req.body?.days ?? 30));
+    if (!Number.isFinite(days) || days < 1 || days > 120) throw new ImportError('Durée de rejeu invalide (1 à 120 jours).');
+    let fromEngine = null;
+    if (req.body?.from) {
+      fromEngine = Date.parse(`${String(req.body.from).slice(0, 10)}T00:00:00Z`);
+      if (!Number.isFinite(fromEngine)) throw new ImportError('Date de départ invalide (AAAA-MM-JJ).');
+    }
+    const wanted = Array.isArray(req.body?.strategyIds) ? req.body.strategyIds : [];
+    const ids = [...new Set(wanted.flatMap((id) => (id === 'bot-all' ? botMechanismsForSymbol(ds.symbol).map((m) => m.id) : [id])))];
+    if (ids.length > 30) throw new ImportError('Trop de stratégies à la fois (30 max).');
+    for (const id of ids) if (!BOT_IDS.includes(id) && !LAB_STRATEGIES[id]) throw new ImportError(`Stratégie inconnue: "${id}"`);
+    const pair = CONFIG.divergence.pair;
+    const partner = pair.includes(ds.symbol) ? pair.find((x) => x !== ds.symbol) : null;
+    const partnerCsvPath = partner && listLabSymbols().includes(partner) ? labCsvPath(partner) : null;
+    const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine, days, warmupBars: REPLAY_WARMUP_BARS });
+    const OFFSET = FIXED_EST_TO_UTC_OFFSET_MS;
+    const real = (t) => (t == null ? null : t + OFFSET);
+    res.json({
+      symbol: req.body.symbol,
+      dataset: datasetInfo(ds),
+      spread: ds.spread ?? DEFAULT_SPREADS[ds.symbol] ?? 0,
+      range: { first: real(out.range.first), last: real(out.range.last) },
+      window: { from: real(out.window.from), to: real(out.window.to), startTime: real(out.window.startTime) },
+      candles: out.candles.map(([t, o, h, l, c]) => [Math.floor((t + OFFSET) / 1000), o, h, l, c]),
+      trades: out.trades.map((t) => ({ ...t, entryTime: real(t.entryTime), exitTime: real(t.exitTime) })),
+      notApplicable: out.notApplicable,
+      news: req.body?.news === false ? [] : newsBetween(out.window.startTime + OFFSET, out.window.to + OFFSET),
+      newsCoverage: newsCoverage(),
+    });
   } catch (err) {
     sendAnalysisError(res, err);
   }

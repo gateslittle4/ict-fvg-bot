@@ -10,12 +10,14 @@
 
 import { parentPort } from 'node:worker_threads';
 import fs from 'node:fs';
-import { loadCandlesFromCsv } from './csvLoader.js';
+import { loadCandlesFromCsv, loadResampledFromCsv } from './csvLoader.js';
+import { TIMEFRAME_MS } from './htfBias.js';
 import { runLabBacktestTrainTest, flattenTrainTestForScreen, TRAIN_TEST_CUTOFF } from './labRunner.js';
 import { listLabStrategies } from './labRegistry.js';
 import { importIntoDataset } from './labDatasets.js';
 import { runLiveFvg, resolveVariantConfig, describeConfig } from './liveFvgRunner.js';
 import { runRecipe, describeRecipe } from './legoStrategy.js';
+import { runReplayStrategy, botMechanism } from './replaySignals.js';
 import { simulateChallenge, simulateMultiChallenge, buildHeatmap, analyzePortfolio, expectancyStats } from './labAnalytics.js';
 import { ImportError } from './m1Import.js';
 
@@ -174,6 +176,46 @@ const handlers = {
       const r = simulateMultiChallenge(byStrategy, params, { guardrails, state, perSymbol: true, cone: i === 0 ? cone : 0 });
       return r.insufficient ? r : { ...r, perStrategy: undefined };
     });
+  },
+
+  // "Simulateur": a window of candles to replay plus the strategy trades that fall in it. The
+  // strategies are run on the WHOLE history (their signals need the warm-up before the window) and
+  // cached per dataset; only the trades overlapping the window are sent back. Times stay in engine
+  // time here - the route converts them for the browser.
+  replayWindow({ csvPath, symbol, partnerCsvPath = null, strategyIds = [], fromEngine = null, days, warmupBars }) {
+    const candles = loadCandles(csvPath);
+    const first = candles[0].time;
+    const last = candles[candles.length - 1].time;
+    const DAY = 86400000;
+    // random start when none is given: leave room for the warm-up before and the horizon after
+    const lo = first + warmupBars * 900000;
+    const hi = last - days * DAY;
+    if (hi <= lo) throw new Error('Ce jeu de données est trop court pour cette durée de rejeu.');
+    let from = fromEngine ?? lo + Math.floor(Math.random() * (hi - lo));
+    from = Math.min(Math.max(from, lo), hi);
+    const to = from + days * DAY;
+    const startTime = from - warmupBars * 900000;
+    let a = 0, b = candles.length;
+    { let l = 0, h = candles.length; while (l < h) { const m = (l + h) >> 1; if (candles[m].time >= startTime) h = m; else l = m + 1; } a = l; }
+    { let l = 0, h = candles.length; while (l < h) { const m = (l + h) >> 1; if (candles[m].time > to) h = m; else l = m + 1; } b = l; }
+    const slice = candles.slice(a, b).map((c) => [c.time, c.open, c.high, c.low, c.close]);
+
+    if (!cache.trades) cache.trades = new Map();
+    const trades = [];
+    const notApplicable = [];
+    for (const id of strategyIds) {
+      let all = cache.trades.get(`${symbol}:${id}`);
+      if (all === undefined) {
+        let partner = null;
+        if (botMechanism(id)?.needsPartner && partnerCsvPath) partner = loadResampledFromCsv(partnerCsvPath, TIMEFRAME_MS.H1); // hourly only, streamed: two full M15 series do not fit in this thread
+        all = runReplayStrategy(id, candles, symbol, partner);
+        partner = null;
+        cache.trades.set(`${symbol}:${id}`, all);
+      }
+      if (all === null) { notApplicable.push(id); continue; }
+      for (const t of all) if (t.exitTime >= startTime && t.entryTime <= to) trades.push(t);
+    }
+    return { range: { first, last }, window: { from, to, startTime }, candles: slice, trades, notApplicable };
   },
 
   // Parses one uploaded file into a dataset (CPU-heavy, hence here and not in
