@@ -1576,9 +1576,15 @@ function createAccountRouter(getStore) {
     if (!store.liveDataSource.symbolIdByName?.get(symbol)) {
       return res.status(400).json({ error: `Unknown symbol "${symbol}" for this broker - see .../admin/list-symbols` });
     }
-    const days = Math.min(Number(req.query.days) || 245, 245); // cTrader's own single-request cap for the M15 bucket (~35 weeks)
+    // ?timeframe=M1|M5|M15 (default: the account's own timeframe). M1 and M5 are fetched in several windows and merged
+    // (2026-09-20): capped at 120 / 245 days here; how far back the broker actually keeps M1 is reported in the headers.
+    const timeframe = ['M1', 'M5', 'M15'].includes(req.query.timeframe) ? req.query.timeframe : null;
+    const dayCap = timeframe === 'M1' ? 120 : 245; // 245 = cTrader's own single-request cap for the M15 bucket (~35 weeks)
+    const days = Math.min(Number(req.query.days) || dayCap, dayCap);
     try {
-      const candles = await store.liveDataSource.getHistoricalCandles({ symbol, days });
+      const candles = await store.liveDataSource.getHistoricalCandles({ symbol, days, timeframe });
+      res.set('X-Candle-Count', String(candles.length));
+      if (candles.length) { res.set('X-First-Candle', new Date(candles[0].time).toISOString()); res.set('X-Last-Candle', new Date(candles[candles.length - 1].time).toISOString()); }
       res.set('Content-Type', 'text/csv');
       res.set('Content-Disposition', `attachment; filename="${symbol}.csv"`);
       const lines = ['time,open,high,low,close'];

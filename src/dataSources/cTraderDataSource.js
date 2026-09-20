@@ -63,6 +63,18 @@ const store = getDefaultAccount();
 
 // cTrader trendbar period enum name for our configured timeframe.
 const PERIOD_BY_TIMEFRAME = { M1: 'M1', M5: 'M5', M15: 'M15', M30: 'M30', H1: 'H1' };
+const MAX_TRENDBARS_PER_REQUEST = 24000; // >= the 23 520 bars (245 days of M15) the broker is known to return in one call, so the M15 export stays a single request
+
+/** Splits a look-back of `days` into windows of at most maxBars bars each: [{fromDaysAgo, toDaysAgo, spanDays}], newest first. */
+export function planHistoryWindows(days, barsPerDay, maxBars) {
+  const spanMax = Math.max(1, Math.floor(maxBars / barsPerDay));
+  const out = [];
+  for (let to = 0; to < days; to += spanMax) {
+    const from = Math.min(days, to + spanMax);
+    out.push({ fromDaysAgo: from, toDaysAgo: to, spanDays: from - to });
+  }
+  return out;
+}
 const TIMEFRAME_DURATION_MS = { M1: 60000, M5: 300000, M15: 900000, M30: 1800000, H1: 3600000 };
 
 // 2026-09-13 (Esdras: "on fait le changement pour m1 pour btc seulement,
@@ -1424,23 +1436,28 @@ export class CTraderDataSource {
    * exists purely to export raw candles for offline research with the SAME
    * backtestEngine.js used for the 2019-2025 CSVs, not to feed anything live.
    */
-  async getHistoricalCandles({ symbol, days }) {
+  async getHistoricalCandles({ symbol, days, timeframe = null }) {
     const symbolId = this.symbolIdByName.get(symbol);
     if (!symbolId) throw new Error(`Unknown symbol "${symbol}" on this cTrader account`);
-    const period = PERIOD_BY_TIMEFRAME[CONFIG.timeframe] || 'M15';
-    const toTimestamp = Date.now();
-    const fromTimestamp = toTimestamp - days * 24 * 60 * 60 * 1000;
-    const count = days * 24 * 4; // M15 candles/day cap, same convention as the warm-up request below
-
-    const history = await sendCommandWithTimeout(
-      this.connection,
-      'ProtoOAGetTrendbarsReq',
-      { ctidTraderAccountId: Number(this.accountId), fromTimestamp, toTimestamp, symbolId, period, count },
-      60000 // can be tens of thousands of bars for an 8-month window - same generous timeout as the warm-up request
-    );
-    return (history.trendbar || [])
-      .map((bar) => this._trendbarToCandle(bar))
-      .sort((a, b) => a.time - b.time);
+    const tf = timeframe || CONFIG.timeframe;
+    const period = PERIOD_BY_TIMEFRAME[tf] || 'M15';
+    const barsPerDay = { M1: 1440, M5: 288, M15: 96, M30: 48, H1: 24 }[period] || 96;
+    // One request per window of at most MAX_TRENDBARS_PER_REQUEST bars (M15 for ~245 days fits in one window, as it
+    // always did; M1/M5 are paged backwards and merged - 2026-09-20, finer candles to settle which of a stop and a
+    // target came first inside a 15-minute bar).
+    const windows = planHistoryWindows(days, barsPerDay, MAX_TRENDBARS_PER_REQUEST);
+    const byTime = new Map();
+    const now = Date.now();
+    for (const w of windows) {
+      const history = await sendCommandWithTimeout(
+        this.connection,
+        'ProtoOAGetTrendbarsReq',
+        { ctidTraderAccountId: Number(this.accountId), fromTimestamp: now - w.fromDaysAgo * 86400000, toTimestamp: now - w.toDaysAgo * 86400000, symbolId, period, count: Math.ceil(w.spanDays * barsPerDay) + 10 },
+        60000
+      );
+      for (const bar of history.trendbar || []) { const c = this._trendbarToCandle(bar); byTime.set(c.time, c); }
+    }
+    return [...byTime.values()].sort((a, b) => a.time - b.time);
   }
 
   async _subscribeLiveCandles(accountId) {
