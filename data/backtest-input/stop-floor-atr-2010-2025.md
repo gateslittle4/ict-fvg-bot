@@ -1,5 +1,7 @@
 > ⚠️ **INVALIDÉ en partie (2026-09-20)** : ce rapport règle en faveur du stop un stop et un objectif touchés dans la même bougie M15. Avec les vraies bougies d'une minute (`data/real-m1/m1-truth-report.md`), cette règle pénalise à tort les stops serrés d'origine : la conclusion « un plancher de stop en ATR améliore » ne tient PAS en M1 exact (2026 : stop d'origine +53 %, 1× ATR +51 %, 2× ATR +15 %, 3× ATR +20 %). Ne pas s'en servir pour changer le bot.
 
+# Plancher de stop en ATR — 2010-2025, 8 mécanismes du bot
+
 Chaque trade est re-résolu avec la même règle pour toutes les variantes (voir l'en-tête de `scripts/runStopFloorLongHistory.js`) : entrée jugée dès sa bougie, stop = max(stop de structure, k × ATR14 M15), même R:R, filtre « stop ≥ 3× le spread », garde-fous simplifiés identiques (1 position par paire, 3 trades/jour, pause 30 min après une perte, stop du jour à −4R). **k = 0 = le stop d'aujourd'hui.**
 
 | Plancher | Trades | Gagnants | R net total | Entraînement ≤ 2023 (R) | Test 2024+ (R) | Pire baisse (R) | Compte 10 000 $ à 0,5 % | Pire baisse du compte | Défis FTMO 1-Step (réussis / échoués) |
