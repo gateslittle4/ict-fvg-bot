@@ -8,35 +8,37 @@ Question d'Esdras : "tous les strategy combiné, le cycle de 10% de FTMO avec to
 
 ## Résultat sur les 7 mois complets (passage "réel", cible FTMO active)
 
-- **71 trades** au total (20 gagnants, 51 perdants, WR 28.2%)
-- Solde final : $11166.51 (+11.67%)
-- **✅ Cible +10% atteinte** le 2026-07-06T09:15:00.000Z (solde $11166.51 >= cible $11000.00) — le challenge aurait passé à ce moment. La règle "profit_target_reached" bloque alors toute nouvelle ouverture (comportement réel du bot depuis le 2026-09, voir HANDOFF.md), d'où le peu de trades après cette date dans ce passage.
+- **156 trades** au total (40 gagnants, 116 perdants, WR 25.6%)
+- Solde final : $11134.76 (+11.35%)
+- **✅ Cible +10% atteinte** le 2026-04-17T09:30:00.000Z (solde $11134.76 >= cible $11000.00) — le challenge aurait passé à ce moment. La règle "profit_target_reached" bloque alors toute nouvelle ouverture (comportement réel du bot depuis le 2026-09, voir HANDOFF.md), d'où le peu de trades après cette date dans ce passage.
 - ✅ Drawdown max de 10% jamais franchi sur cette fenêtre.
 - ✅ Perte quotidienne max de 3% jamais atteinte.
 
 | Mécanisme | Trades | Gagnants | R net moyen | PnL total |
 |---|---|---|---|---|
-| silverbullet | 36 | 11 | 0.18R | $311.77 |
-| weeklysweep | 18 | 3 | -0.03R | $-34.15 |
-| fvg | 17 | 6 | 1.00R | $888.89 |
+| silverbullet | 69 | 19 | 0.06R | $215.81 |
+| fvg | 38 | 7 | 0.00R | $-19.39 |
+| weeklysweep | 24 | 6 | 0.46R | $541.34 |
+| cbdr | 15 | 6 | 0.53R | $413.85 |
+| nwog | 7 | 1 | -0.16R | $-69.43 |
+| divergence | 3 | 1 | 0.33R | $52.57 |
 
 ## Cette semaine (2026-09-10 → 2026-09-17, passage "activité continue")
 
-- **12 trade(s)** (6 gagnant(s)) — PnL $1008.84 (+10.09% du solde de départ de ce passage)
+- **11 trade(s)** (4 gagnant(s)) — PnL $409.16 (+4.09% du solde de départ de ce passage)
 
 | Date entrée | Symbole | Mécanisme | Direction | Issue | R net | PnL |
 |---|---|---|---|---|---|---|
-| 2026-09-11 00:15 | US500 | weeklysweep | bullish | win | 4.96R | $281.52 |
-| 2026-09-11 09:00 | US500 | fvg | bullish | loss | -1.02R | $-59.51 |
-| 2026-09-15 03:15 | US500 | weeklysweep | bullish | win | 4.97R | $287.77 |
-| 2026-09-10 23:00 | US100 | divergence | bullish | win | 3.00R | $241.18 |
-| 2026-09-11 08:00 | US100 | cbdr | bearish | win | 2.90R | $236.67 |
-| 2026-09-11 08:15 | US100 | fvg | bullish | loss | -1.01R | $-83.89 |
-| 2026-09-13 17:15 | US100 | nwog | bullish | loss | -1.01R | $-83.71 |
-| 2026-09-14 09:30 | US100 | silverbullet | bullish | win | 2.99R | $245.41 |
-| 2026-09-16 09:00 | US100 | cbdr | bearish | win | 2.70R | $224.92 |
-| 2026-09-11 07:30 | XAUUSD | fvg | bearish | loss | -1.02R | $-95.30 |
-| 2026-09-11 08:15 | XAUUSD | fvg | bullish | loss | -1.00R | $-92.84 |
-| 2026-09-16 10:15 | XAUUSD | fvg | bullish | loss | -1.01R | $-93.39 |
+| 2026-09-11 00:15 | US500 | weeklysweep | bullish | win | 4.96R | $248.76 |
+| 2026-09-11 09:00 | US500 | fvg | bullish | loss | -1.02R | $-52.59 |
+| 2026-09-15 03:15 | US500 | weeklysweep | bullish | win | 4.97R | $254.28 |
+| 2026-09-10 23:00 | US100 | divergence | bullish | win | 3.00R | $161.40 |
+| 2026-09-11 08:00 | US100 | cbdr | bearish | loss | -1.10R | $-60.40 |
+| 2026-09-13 17:15 | US100 | nwog | bullish | loss | -1.01R | $-55.19 |
+| 2026-09-14 09:30 | US100 | silverbullet | bullish | win | 2.99R | $161.81 |
+| 2026-09-16 09:00 | US100 | cbdr | bearish | loss | -1.30R | $-71.40 |
+| 2026-09-11 07:30 | XAUUSD | fvg | bearish | loss | -1.02R | $-60.08 |
+| 2026-09-11 08:15 | XAUUSD | fvg | bullish | loss | -1.00R | $-58.53 |
+| 2026-09-16 10:15 | XAUUSD | fvg | bullish | loss | -1.01R | $-58.88 |
 
 Statut garde-fous à la fin de cette semaine (passage "réel") : 🔴 bloqué (profit_target_reached).
