@@ -37,8 +37,13 @@ function resolveM1(t, d) {
   const stop = t.entry - t.dir * d, tp = t.entry + t.dir * d * t.rr;
   const start = lower(S.t, S.n, real.cache[t.symbol][t.i0].time);
   const end = Math.min(S.n, lower(S.t, S.n, real.cache[t.symbol][t.i0].time + 15 * 60000));
+  // A one-minute bar only exists when the broker saw a tick: quiet minutes (GER40, EURUSD, US500 mostly) have NO bar, and the
+  // price then simply stayed where it was. So an entry AT the candle's open (most mechanisms) fills at the candle's first
+  // available minute even when the very first minute has no bar; a limit entry inside the candle needs a minute that touches it.
+  const candle = real.cache[t.symbol][t.i0];
   let fill = -1;
-  for (let i = start; i < end; i++) if (S.l[i] <= t.entry && t.entry <= S.h[i]) { fill = i; break; }
+  if (Math.abs(t.entry - candle.open) <= 1e-9 * Math.max(1, Math.abs(candle.open))) fill = start < S.n ? start : -1;
+  else for (let i = start; i < end; i++) if (S.l[i] <= t.entry && t.entry <= S.h[i]) { fill = i; break; }
   if (fill < 0) { unfilled++; return null; }
   const maxI = Math.min(S.n, fill + 480 * 15);
   for (let i = fill; i < maxI; i++) {
@@ -82,14 +87,20 @@ for (const [name, kOf, inc] of [['Aujourd\'hui (15 mécanismes, stops d\'origine
     let bal = 10000, peak = 10000, dd = 0; for (const t of s) { bal *= 1 + 0.005 * t.net; peak = Math.max(peak, bal); dd = Math.max(dd, (peak - bal) / peak * 100); }
     const f = ftmoAttempts(list);
     rows.push({ name, rule, list });
-    md.push(`| ${name} | ${rule}${resolver && unfilled ? ` (${unfilled} entrées jamais remplies, écartées)` : ''} | ${list.length} | ${(list.filter((t) => t.net > 0).length / list.length * 100).toFixed(0)} % | ${fmt(list.reduce((a, t) => a + t.net, 0))} | **${money(bal)}** (${fmt((bal - 10000) / 100)} %) | ${dd.toFixed(0)} % | ${f.pass} / ${f.fail} / ${f.attempts.filter((a) => a.result === 'EN COURS').length} |`);
+    md.push(`| ${name} | ${rule}${resolver && unfilled ? ` (${unfilled} entrées limite jamais touchées, écartées)` : ''} | ${list.length} | ${(list.filter((t) => t.net > 0).length / list.length * 100).toFixed(0)} % | ${fmt(list.reduce((a, t) => a + t.net, 0))} | **${money(bal)}** (${fmt((bal - 10000) / 100)} %) | ${dd.toFixed(0)} % | ${f.pass} / ${f.fail} / ${f.attempts.filter((a) => a.result === 'EN COURS').length} |`);
   }
 }
-// where the two rules disagree, on the recommended config's trades
-const a = new Map(rows[2].list.map((t) => [`${t.symbol}|${t.id}|${t.time}`, t])), b = new Map(rows[3].list.map((t) => [`${t.symbol}|${t.id}|${t.time}`, t]));
-let both = 0, sameSign = 0, m15LossM1Win = 0, m15WinM1Loss = 0;
-for (const [k, t] of a) { const u = b.get(k); if (!u) continue; both++; if ((t.net > 0) === (u.net > 0)) sameSign++; else if (t.net <= 0 && u.net > 0) m15LossM1Win++; else m15WinM1Loss++; }
-md.push('', `Sur les ${both} trades pris par les deux règlements (configuration recommandée) : même issue (gain/perte) pour ${sameSign} (${(sameSign / both * 100).toFixed(0)} %) ; **perte en M15 mais gain en M1 : ${m15LossM1Win}** ; gain en M15 mais perte en M1 : ${m15WinM1Loss}.`, '');
+// same-trade comparison for each configuration (the totals above also differ because dropping a few unfilled limit entries
+// frees the slot for other trades - a cascade of the guardrails)
+const key = (t) => `${t.symbol}|${t.id}|${t.time}`;
+md.push('', '### Mêmes trades, deux règlements', '', '| Configuration | Trades communs | Même issue | R net (M15 prudent) | R net (M1 exact) |', '|---|---|---|---|---|');
+for (const [name, iA, iB] of [['Aujourd\'hui', 0, 1], ['Recommandé', 2, 3]]) {
+  const A = new Map(rows[iA].list.map((t) => [key(t), t])), B = new Map(rows[iB].list.map((t) => [key(t), t]));
+  let n = 0, same = 0, ra = 0, rb = 0;
+  for (const [k, t] of A) { const u = B.get(k); if (!u) continue; n++; if ((t.net > 0) === (u.net > 0)) same++; ra += t.net; rb += u.net; }
+  md.push(`| ${name} | ${n} | ${same} (${(same / n * 100).toFixed(0)} %) | ${fmt(ra)} | ${fmt(rb)} |`);
+}
+md.push('');
 md.push('## Limites', '', '- Les entrées viennent des modules de backtest (bougies M15) ; un ordre limite est supposé rempli au premier minute de sa bougie M15 qui touche son prix.', '- Bid uniquement (le spread est ajouté comme coût fixe) ; pas de glissement, pas d\'élargissement du spread au rollover.', '- Environ 4 mois : un échantillon, pas une preuve.');
 const out = path.join('data', 'real-m1', 'm1-truth-report.md');
 fs.writeFileSync(out, md.join('\n'));
