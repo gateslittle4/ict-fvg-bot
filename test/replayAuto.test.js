@@ -52,7 +52,7 @@ test('a trade with no target (or unresolved by the broker) is closed at the stra
 test('with a spread, a sell is still closed exactly at the strategy exit price', () => {
   const acc = acct(); acc.spreads.AAA = 0.4;
   const st = createAutoState();
-  const t = trade({ direction: 'bearish', entryPrice: 100, stopPrice: 101, targetPrice: null, exitPrice: 98.5 });
+  const t = trade({ direction: 'bearish', entryPrice: 100, stopPrice: 102, targetPrice: null, exitPrice: 98.5 });
   stepAuto(acc, st, 'AAA', [t], T0 + 900, opts());
   stepAuto(acc, st, 'AAA', [t], T0 + 900 * 5, opts());
   assert.equal(acc.history[0].exit, 98.5);
@@ -98,4 +98,15 @@ test('a stop too close to size (or a broken order) is reported as skipped instea
 
 test('tradeKey is stable per pair, strategy and entry time', () => {
   assert.equal(tradeKey('AAA', trade()), `AAA|bot-fvg|${T0 + 900}`);
+});
+
+test('the bot\'s viability filter: a stop tighter than 3x the spread is never traded', () => {
+  const acc = acct(); acc.spreads = { AAA: 0.4 }; const st = createAutoState();
+  const ev = stepAuto(acc, st, 'AAA', [trade({ stopPrice: 99.5 })], T0 + 900, opts()); // stop 0.5 < 3 x 0.4
+  assert.equal(ev[0].type, 'skipped');
+  assert.equal(acc.positions.length, 0);
+  const ok = stepAuto(acct(), createAutoState(), 'AAA', [trade({ stopPrice: 98 })], T0 + 900, opts()); // no spread on this account: viable
+  assert.equal(ok[0].type, 'opened');
+  const acc2 = acct(); acc2.spreads = { AAA: 0.4 };
+  assert.equal(stepAuto(acc2, createAutoState(), 'AAA', [trade({ stopPrice: 98 })], T0 + 900, opts())[0].type, 'opened'); // stop 2 >= 1.2
 });

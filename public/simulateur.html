@@ -239,6 +239,7 @@
             <div class="fld"><label for="auto-risk">Risque par trade (% du solde)</label><input type="number" id="auto-risk" value="1" step="0.05" min="0.05" max="10" /></div>
           </div>
           <label id="auto-bt-wrap" class="check" style="display:none;gap:6px;align-items:center;font-size:11.5px;"><input type="checkbox" id="auto-bt" /> Comme le backtest : ignorer la bougie d'entrée (sinon, réaliste : un stop touché dans la bougie d'entrée est pris)</label>
+          <div class="fld" id="auto-flat-wrap" style="display:none;"><label for="auto-flat">Fermer les positions du bot avant…</label><select id="auto-flat"><option value="off">Jamais (elles restent ouvertes)</option><option value="weekend">Le week-end seulement (vendredi 16 h 45 NY)</option><option value="rollover">Le rollover seulement (lun.–jeu. 16 h 45 NY, pas le week-end)</option><option value="both">Rollover et week-end (tous les jours 16 h 45 NY)</option></select></div>
           <label id="auto-guard-wrap" class="check" style="display:none;gap:6px;align-items:center;font-size:11.5px;"><input type="checkbox" id="auto-guard" /> Appliquer les garde-fous du bot (3 trades/j, pause après une perte, 2 % de perte/j, 1 position par paire)</label>
           <div class="meta" id="mode-note" style="margin-top:6px;"></div>
         </div>
@@ -303,7 +304,7 @@ let now = 0;                  // simulated time, seconds (real UTC)
 let startSec = 0, startStep = 0;
 let acct = null, autoState = null;
 let actions = [], snaps = [], userMarkers = {};
-let cfg = { mode: 'manual', risk: 1, guard: false, bt: false };
+let cfg = { mode: 'manual', risk: 1, guard: false, bt: false, flat: 'off' };
 let tfSec = 900;
 let tfLast = null;
 let playing = false, timer = null, speed = 6;
@@ -493,6 +494,24 @@ function onBrokerEvent(e, p, b) {
   if (e.type === 'filled') { log(`${label(p)} : ordre exécuté à ${px(e.price)} (#${e.id})`, 'info'); marker(p, { sec: b.t, pos: e.side === 'buy' ? 'belowBar' : 'aboveBar', shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown', color: '#ffffff', text: 'Toi' }); }
   if (e.type === 'closed') { const who = e.tag ? shortName(e.tag) : 'Toi'; log(`${label(p)} : #${e.id} ${who} fermé (${e.reason}) à ${px(e.price)} : ${sgn(e.pnl)}`, e.pnl >= 0 ? 'win' : 'loss'); marker(p, { sec: b.t, pos: 'aboveBar', shape: 'circle', color: e.pnl >= 0 ? '#2fd480' : '#ff5c5f', text: `${who} ${sgn(e.pnl, 0)}` }); }
 }
+// The last candle before the daily rollover (17:00 NY): close the bot's positions of this pair at its close, unless the
+// position was only just opened on it. 'weekend' = Friday only, 'rollover' = Monday to Thursday, 'both' = every weekday.
+const nyDow = new Intl.DateTimeFormat('en-US', { ...nyOpts, weekday: 'short' });
+function flattenIfDue(p, t) {
+  if (!cfg.flat || cfg.flat === 'off') return;
+  if (nyParts(t * 1000).minutes !== 16 * 60 + 45) return;
+  const dow = nyDow.format(new Date(t * 1000));
+  if (dow === 'Sat' || dow === 'Sun') return;
+  if (cfg.flat === 'weekend' && dow !== 'Fri') return;
+  if (cfg.flat === 'rollover' && dow === 'Fri') return;
+  const bid = p.base[p.cur].c;
+  for (const pos of [...acct.positions]) {
+    if (pos.symbol !== p.id || pos.openTime === t) continue;
+    const pnl = B.closePosition(acct, pos.id, { bid, time: t, reason: 'fermeture avant rollover' });
+    log(`${label(p)} : ${shortName(pos.tag || '')} fermé avant le ${dow === 'Fri' ? 'week-end' : 'rollover'} : ${sgn(pnl)}`, pnl >= 0 ? 'win' : 'loss');
+    marker(p, { sec: t, pos: 'aboveBar', shape: 'square', color: '#e8b339', text: `Rollover ${sgn(pnl, 0)}` });
+  }
+}
 function autoStep(p, t) {
   const events = A.stepAuto(acct, autoState, p.id, p.trades, t, { fromSec: p.fromSec, riskPct: cfg.risk, guard: cfg.guard ? A.DEFAULT_GUARD : null });
   for (const e of events) {
@@ -500,11 +519,14 @@ function autoStep(p, t) {
     if (e.type === 'closed') { log(`${label(p)} : ${shortName(e.trade.strategyId)} clôturé par la stratégie : ${sgn(e.pnl)}`, e.pnl >= 0 ? 'win' : 'loss'); marker(p, { sec: t, pos: 'aboveBar', shape: 'circle', color: e.pnl >= 0 ? '#2fd480' : '#ff5c5f', text: `Bot ${sgn(e.pnl, 0)}` }); }
     if (e.type === 'skipped') log(`${label(p)} : ${shortName(e.trade.strategyId)} non pris — ${e.reason}`, 'info');
   }
-  // A trade entered AT the candle's open price lives through that same candle: judge it on it (the backtests skip
-  // it, which turns a spike through the stop into a gap fill at the NEXT open - far worse than the real stop).
+  flattenIfDue(p, t);
+  // The backtests stamp a trade with the candle AFTER its fill and judge it from that candle on, at the stop price. The
+  // entry price is often not even inside that candle (the fill happened in the previous one), so opening it and waiting
+  // for the next candle turns a plain stop-out into a huge fake gap fill (measured: -48R on one US100 trade). Judge the
+  // trade on its own candle instead, filling a stop at the stop price. Gaps AFTER that stay real.
   const cur = P[p.id].base[P[p.id].cur];
-  const sameCandle = cfg.bt ? new Set() : new Set(events.filter((e) => e.type === 'opened' && Math.abs(e.trade.entryPrice - cur.o) < 1e-9 * Math.max(1, Math.abs(cur.o))).map((e) => e.pos.id));
-  if (sameCandle.size) for (const e of B.onCandle(acct, { time: cur.t, open: cur.o, high: cur.h, low: cur.l, close: cur.c }, p.id, { onlyIds: sameCandle })) onBrokerEvent(e, p, cur);
+  const sameCandle = cfg.bt ? new Set() : new Set(events.filter((e) => e.type === 'opened').map((e) => e.pos.id));
+  if (sameCandle.size) for (const e of B.onCandle(acct, { time: cur.t, open: cur.o, high: cur.h, low: cur.l, close: cur.c }, p.id, { onlyIds: sameCandle, noGap: true })) onBrokerEvent(e, p, cur);
 }
 /** Moves the clock one master bar forward; the other pairs follow to the same instant. */
 function advanceOne() {
@@ -634,16 +656,16 @@ window.closeEverything = () => { if (!acct) return; tryAction({ k: 'closeAll' })
 
 // ---------------------------------------------------------------- mode
 function syncCfgUi() {
-  $('mode').value = cfg.mode; $('auto-risk').value = cfg.risk; $('auto-guard').checked = cfg.guard; $('auto-bt').checked = !!cfg.bt;
+  $('mode').value = cfg.mode; $('auto-risk').value = cfg.risk; $('auto-guard').checked = cfg.guard; $('auto-bt').checked = !!cfg.bt; $('auto-flat').value = cfg.flat || 'off';
   const auto = cfg.mode === 'auto';
-  $('auto-opts').hidden = !auto; $('auto-guard-wrap').style.display = auto ? 'flex' : 'none'; $('auto-bt-wrap').style.display = auto ? 'flex' : 'none';
+  $('auto-opts').hidden = !auto; $('auto-guard-wrap').style.display = auto ? 'flex' : 'none'; $('auto-bt-wrap').style.display = auto ? 'flex' : 'none'; $('auto-flat-wrap').style.display = auto ? 'flex' : 'none';
   $('manual-box').classList.toggle('locked', auto);
   $('mode-note').textContent = auto
     ? 'Le bot rejoue seul les stratégies cochées : chaque signal est pris quand l\'horloge l\'atteint, le P&L bouge en direct. Les ordres manuels et le bouton « Prendre » sont désactivés.'
     : 'Tu passes les ordres toi-même. Passe en « bot seul » pour le voir rejouer tout seul les stratégies cochées, avec le P&L en direct.';
 }
-function cfgFromUi() { return { mode: $('mode').value, risk: Math.min(10, Math.max(0.05, Number($('auto-risk').value) || 1)), guard: $('auto-guard').checked, bt: $('auto-bt').checked }; }
-for (const id of ['mode', 'auto-risk', 'auto-guard', 'auto-bt']) $(id).addEventListener('change', () => { if (!acct) { cfg = cfgFromUi(); syncCfgUi(); return; } doAction({ k: 'cfg', cfg: cfgFromUi() }); redraw(); });
+function cfgFromUi() { return { mode: $('mode').value, risk: Math.min(10, Math.max(0.05, Number($('auto-risk').value) || 1)), guard: $('auto-guard').checked, bt: $('auto-bt').checked, flat: $('auto-flat').value }; }
+for (const id of ['mode', 'auto-risk', 'auto-guard', 'auto-bt', 'auto-flat']) $(id).addEventListener('change', () => { if (!acct) { cfg = cfgFromUi(); syncCfgUi(); return; } doAction({ k: 'cfg', cfg: cfgFromUi() }); redraw(); });
 $('o-type').addEventListener('change', () => { $('o-price-wrap').hidden = $('o-type').value === 'market'; });
 $('o-mode').addEventListener('change', () => { const m = $('o-mode').value; $('o-size-l').textContent = m === 'risk' ? 'Risque (%)' : m === 'lots' ? 'Lots' : 'Unités'; $('o-size').value = m === 'risk' ? 1 : m === 'lots' ? 0.1 : 1; });
 $('o-contract').addEventListener('change', () => { const p = act(); if (p) p.contract = Number($('o-contract').value) || p.instrument.contractSize; });

@@ -12,6 +12,7 @@
 
 import { placeAtPrice, closePosition, sizeFromRisk } from './replayBroker.js';
 
+export const MIN_STOP_SPREAD_MULTIPLE = 3;
 export const DEFAULT_GUARD = { maxTradesPerDay: 3, cooldownMinutes: 30, dailyLossPct: 2, oneOpenPerSymbol: true };
 
 export const tradeKey = (symbol, t) => `${symbol}|${t.strategyId}|${t.entrySec}`;
@@ -64,6 +65,11 @@ export function stepAuto(acc, state, symbol, trades, nowSec, { fromSec, riskPct,
     }
     const side = t.direction === 'bullish' ? 'buy' : 'sell';
     const spread = acc.spreads?.[symbol] ?? acc.spread;
+    // The live bot's own viability rule (liveStrategyEngine, MIN_DISTANCE_SPREAD_MULTIPLE): a stop tighter than 3x the spread is never traded
+    if (spread > 0 && Math.abs(t.entryPrice - t.stopPrice) < MIN_STOP_SPREAD_MULTIPLE * spread) {
+      const reason = `stop plus serré que ${MIN_STOP_SPREAD_MULTIPLE}× le spread (filtre du bot)`;
+      state.skipped.push({ key, reason }); events.push({ type: 'skipped', trade: t, reason }); continue;
+    }
     const rate = acc.rates?.[symbol] ?? acc.rate;
     const entry = side === 'buy' ? t.entryPrice + spread : t.entryPrice;
     const units = sizeFromRisk({ balance: acc.balance, riskPct, entry, stop: t.stopPrice, rate });

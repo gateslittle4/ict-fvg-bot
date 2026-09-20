@@ -202,10 +202,12 @@ export function recordEquity(acc, bids, time) {
  * first, then stops/targets/trailing of the positions that were already open.
  * @param {{time:number, open:number, high:number, low:number, close:number}} c
  * @param {{onlyIds?: Set<number>}} [opts] onlyIds: judge just these positions (no order fills, no equity point) - used for a
- *   position opened AT this candle's open price, whose own candle can already hit its stop.
+ *   position opened AT this candle's open price, whose own candle can already hit its stop. noGap: fill a stop AT the stop
+ *   price even when the candle opens beyond it (a position that was really opened before this candle went through the
+ *   move continuously - the gap fill would be an artifact of when the trade got its timestamp).
  * @returns {Array<{type:'filled'|'closed', id:number, ...}>}
  */
-export function onCandle(acc, c, symbol, { onlyIds = null } = {}) {
+export function onCandle(acc, c, symbol, { onlyIds = null, noGap = false } = {}) {
   const events = [];
   const multi = symbol !== undefined; // a pair was named: only ITS positions/orders see this candle
   const sym = multi ? symbol : null;
@@ -242,7 +244,7 @@ export function onCandle(acc, c, symbol, { onlyIds = null } = {}) {
     if (hitSl || hitTp) {
       let px;
       let reason;
-      if (hitSl) { px = buy ? Math.min(pos.sl, c.open) : Math.max(pos.sl, c.open + s); reason = 'stop'; }
+      if (hitSl) { px = noGap ? pos.sl : (buy ? Math.min(pos.sl, c.open) : Math.max(pos.sl, c.open + s)); reason = 'stop'; }
       else { px = pos.tp; reason = 'objectif'; }
       const pnl = record(acc, pos, pos.units, px, c.time, reason);
       acc.positions.splice(acc.positions.indexOf(pos), 1);

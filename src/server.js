@@ -303,6 +303,23 @@ function labCsvPath(symbol) {
 // The REAL broker candles exported from production (2026-02-13 -> 2026-09-16, committed): the Simulateur's
 // "7 derniers mois" - the only months the backtests never saw. Ids look like "real:US100".
 const REAL_DATA_DIR = path.join(__dirname, '..', 'data', 'real-data-2026-02-to-09');
+// The export is REAL UTC (the daily reopen gap sits at 22:00 UTC); every strategy and the Simulateur's clock work in
+// ENGINE time (real UTC - 5 h, like the live bot's _toEngineCandle). So the strategies see shifted copies, written once.
+const REAL_ENGINE_DIR = path.join(os.tmpdir(), 'real-engine');
+function realEngineCsv(sym) {
+  const src = path.join(REAL_DATA_DIR, `${sym}.csv`);
+  const dst = path.join(REAL_ENGINE_DIR, `${sym}.csv`);
+  const stale = !fs.existsSync(dst) || fs.statSync(dst).mtimeMs < fs.statSync(src).mtimeMs;
+  if (stale) {
+    fs.mkdirSync(REAL_ENGINE_DIR, { recursive: true });
+    const lines = fs.readFileSync(src, 'utf8').trim().split('\n');
+    const out = [lines[0]];
+    for (let i = 1; i < lines.length; i++) { const k = lines[i].indexOf(','); out.push(`${Number(lines[i].slice(0, k)) - FIXED_EST_TO_UTC_OFFSET_MS}${lines[i].slice(k)}`); }
+    fs.writeFileSync(`${dst}.tmp`, out.join('\n'));
+    fs.renameSync(`${dst}.tmp`, dst);
+  }
+  return dst;
+}
 function listRealSymbols() {
   try { return fs.readdirSync(REAL_DATA_DIR).filter((n) => n.endsWith('.csv')).map((n) => n.replace(/\.csv$/, '')).sort(); } catch { return []; }
 }
@@ -361,7 +378,7 @@ function resolveLabDataset(id) {
   if (id.startsWith('real:')) {
     const sym = id.slice(5);
     if (!listRealSymbols().includes(sym)) return null;
-    return { key: id, csvPath: path.join(REAL_DATA_DIR, `${sym}.csv`), symbol: sym, spread: null, cutoff: null, meta: null };
+    return { key: id, csvPath: realEngineCsv(sym), symbol: sym, spread: null, cutoff: null, meta: null };
   }
   if (!listLabSymbols().includes(id)) return null;
   return { key: id, csvPath: labCsvPath(id), symbol: id, spread: null, cutoff: null, meta: null };
@@ -587,7 +604,7 @@ app.post('/api/lab/replay', async (req, res) => {
       }
       const real = symbolId.startsWith('real:');
       const avail = real ? listRealSymbols() : available;
-      const csvOf = (sym) => (real ? path.join(REAL_DATA_DIR, `${sym}.csv`) : labCsvPath(sym));
+      const csvOf = (sym) => (real ? realEngineCsv(sym) : labCsvPath(sym));
       const partner = pair.includes(ds.symbol) ? pair.find((x) => x !== ds.symbol) : null;
       const partnerCsvPath = partner && avail.includes(partner) ? csvOf(partner) : null;
       const spec = instrumentSpec(ds.symbol);

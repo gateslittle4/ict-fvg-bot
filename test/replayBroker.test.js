@@ -305,3 +305,11 @@ test('onlyIds judges just those positions on the candle they were opened on (no 
   assert.equal(acc.pending.length, 1); // no order filled
   assert.equal(acc.equityCurve.length, curve);
 });
+
+test('noGap fills a stop at the stop price even when the candle opens beyond it', () => {
+  const mk = () => { const a = twoPairs(); placeAtPrice(a, { side: 'buy', price: 100, time: 0, units: 1, sl: 99, tp: 110, symbol: 'AAA' }); return a; };
+  const gap = mk(); onCandle(gap, { time: 1, open: 90, high: 91, low: 89, close: 90 }, 'AAA');
+  assert.equal(gap.history[0].exit, 90); // a real gap fills at the open
+  const flat = mk(); onCandle(flat, { time: 1, open: 90, high: 91, low: 89, close: 90 }, 'AAA', { onlyIds: new Set([flat.positions[0].id]), noGap: true });
+  assert.equal(flat.history[0].exit, 99);
+});
