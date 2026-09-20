@@ -6257,7 +6257,7 @@ Lecture : le stop d'origine n'a AUCUN avantage mesurable sur 16 ans (+0,008 R/tr
 
 ## 2026-09-20 (suite 4) — Export admin des bougies M1 / M5 du broker
 
-`GET /api/accounts/:id/admin/export-candles?symbol=US100&timeframe=M1&days=60&token=...` (même jeton `ADMIN_EXPORT_TOKEN`) : `timeframe` = M1 | M5 | M15 (défaut : timeframe du compte) ; M1 plafonné à 120 j, M5/M15 à 245 j ; M1/M5 sont récupérés par fenêtres de <= 24 000 barres (`planHistoryWindows`, testé) puis fusionnés et dédupliqués. Les en-têtes `X-Candle-Count`, `X-First-Candle`, `X-Last-Candle` disent jusqu'où le broker a réellement fourni (la profondeur M1 de cTrader n'est pas connue à l'avance). Temps réel UTC (comme l'export M15 ; les scripts décalent de -5 h). Motif : trancher, dans une bougie M15, si le stop ou l'objectif a été touché en premier (incertitude principale des tests du 2026-09-19/20).
+`GET /api/accounts/:id/admin/export-candles?symbol=US100&timeframe=M1&days=60&token=...` (même jeton `ADMIN_EXPORT_TOKEN`) : `timeframe` = M1 | M5 | M15 (défaut : timeframe du compte) ; plafonné à 245 j (M1 comme M5 et M15 ; l’ancien plafond M1 était 120 j) ; M1/M5 sont récupérés par fenêtres de <= 24 000 barres (`planHistoryWindows`, testé) puis fusionnés et dédupliqués. Les en-têtes `X-Candle-Count`, `X-First-Candle`, `X-Last-Candle` disent jusqu'où le broker a réellement fourni (la profondeur M1 de cTrader n'est pas connue à l'avance). Temps réel UTC (comme l'export M15 ; les scripts décalent de -5 h). Motif : trancher, dans une bougie M15, si le stop ou l'objectif a été touché en premier (incertitude principale des tests du 2026-09-19/20).
 
 ## 2026-09-20 (suite 5) — Vraies bougies M1 du broker (2026-05-19 → 09-18) et « vérité à la minute »
 

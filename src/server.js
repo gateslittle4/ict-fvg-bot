@@ -1577,9 +1577,9 @@ function createAccountRouter(getStore) {
       return res.status(400).json({ error: `Unknown symbol "${symbol}" for this broker - see .../admin/list-symbols` });
     }
     // ?timeframe=M1|M5|M15 (default: the account's own timeframe). M1 and M5 are fetched in several windows and merged
-    // (2026-09-20): capped at 120 / 245 days here; how far back the broker actually keeps M1 is reported in the headers.
+    // (2026-09-20): capped at 245 days here; how far back the broker actually keeps M1 is reported in the headers.
     const timeframe = ['M1', 'M5', 'M15'].includes(req.query.timeframe) ? req.query.timeframe : null;
-    const dayCap = timeframe === 'M1' ? 120 : 245; // 245 = cTrader's own single-request cap for the M15 bucket (~35 weeks)
+    const dayCap = 245; // 245 = cTrader's own single-request cap for the M15 bucket (~35 weeks)
     const days = Math.min(Number(req.query.days) || dayCap, dayCap);
     try {
       const candles = await store.liveDataSource.getHistoricalCandles({ symbol, days, timeframe });
