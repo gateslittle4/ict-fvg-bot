@@ -6352,3 +6352,9 @@ Contexte : Esdras a fait relire un brainstorm d'un ami (plateforme de recherche 
 4. Un script CLI de consultation rapide (`scripts/queryResearchMemory.js` ou similaire) n'a pas été créé.
 
 `npm test` au moment de cette pause : 1043/1043 (le nouveau module n'a pas encore de test, donc ce compte n'a pas bougé). Rien de cassé, mais la fonctionnalité n'est fonctionnellement utile à personne tant que 1-3 ci-dessus ne sont pas faits.
+
+## 2026-09-20 (suite 8) — Test de régime de marché (idée retenue du brainstorm de l'ami) : AUCUNE dépendance détectable
+
+`scripts/runRegimeStudy.js` -> `data/backtest-input/regime-study-2010-2025.md`. 14 224 signaux indépendants (8 mécanismes du bot, 2010-2025, stops d'origine), 3 dimensions définies AVANT de regarder (volatilité ATR14 / TR long terme, force de tendance sur 5 jours, alignement avec cette tendance) = 8 seaux, seuils calés sur <= 2023 ; chaque trade réglé avec les DEUX règles d'égalité (stop d'abord / objectif d'abord) ; « trouvaille » = |t| >= 2,6 à l'entraînement + même signe en 2024+ + même signe sous les deux règles.
+- **Résultat : aucune trouvaille.** Meilleur indice : volatilité haute (t 2,3 à l'entraînement, mais le test 2024+ donne l'inverse : volatilité basse meilleure). Aucun régime de tendance/alignement significatif. Donc **pas de base pour un filtre de régime**.
+- **Point plus important** : l'incertitude « stop ou objectif d'abord dans une bougie M15 » est BEAUCOUP plus grande que tout effet de régime : R moyen tous trades +0,013 (stop d'abord) contre +0,191 (objectif d'abord) sur l'entraînement, +0,064 contre +0,440 sur 2024+. Sans données M1, les niveaux absolus 2010-2025 ne sont pas fiables ; seules les comparaisons internes le sont un peu.
