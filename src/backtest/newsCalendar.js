@@ -1,11 +1,15 @@
 // newsCalendar.js
-// The project's real, sourced high-impact ("red") news events (newsEvents.js, 2024-2025 only),
+// The project's real, sourced high-impact ("red") news events (newsEvents.js 2024-2025, plus the official-source
+// 2019-2023 list of newsEventsHistorical.js: CPI, NFP, FOMC, GDP advance, PCE),
 // given NAMES so a chart can label them. newsEvents.js stores US releases as one flat list
 // grouped by comments (CPI, NFP, FOMC, GDP, PCE, retail sales); the group sizes below mirror that
 // list and are PINNED by a test (total and boundary dates) so an edit to the source cannot
-// silently shift every label. Nothing here is guessed: outside 2024-2025 there is simply no event.
+// silently shift every label. Nothing here is guessed: outside the covered years (2019-2025, ECB and retail sales only from 2024) there is simply no event.
 
 import { US_ET_EVENTS, ECB_CET_EVENTS, zonedTimeToUtc } from './newsEvents.js';
+import { historicalNewsEvents } from './newsEventsHistorical.js';
+
+const HISTORICAL_LABELS = { CPI: ['CPI', 'Inflation US (CPI)'], NFP: ['NFP', 'Emplois US (NFP)'], FOMC: ['FOMC', 'Décision de la Fed (FOMC)'], GDP: ['PIB', 'PIB US (estimation avancée)'], PCE: ['PCE', 'Inflation PCE US'] };
 
 // [label, full name, how many consecutive entries of US_ET_EVENTS], in the order of the source list.
 const US_GROUPS = [
@@ -27,6 +31,10 @@ export function newsCalendar() {
   if (cache) return cache;
   const out = [];
   let i = 0;
+  for (const e of historicalNewsEvents()) {
+    const [y, m, d] = e.date.split('-').map(Number); const [hh, mm] = e.time.split(':').map(Number); const [label, name] = HISTORICAL_LABELS[e.kind];
+    out.push({ time: zonedTimeToUtc(y, m, d, hh, mm, e.tz), label, name, region: 'US' });
+  }
   for (const [label, name, n] of US_GROUPS) {
     for (const [y, m, d, hh, mm] of US_ET_EVENTS.slice(i, i + n)) {
       out.push({ time: zonedTimeToUtc(y, m, d, hh, mm, 'America/New_York'), label, name, region: 'US' });

@@ -272,5 +272,26 @@
       "scripts/runBtcExploration.js",
       "data/backtest-input/btcusd-exploration-2026.md"
     ]
+  },
+  {
+    "id": "news-calendar-2019-2023",
+    "title": "Calendrier de news 2019-2023 depuis des sources officielles",
+    "date": "2026-09-20",
+    "status": "validated-research",
+    "summary": "Dates lues sur des pages officielles (BLS via les copies de l'Internet Archive car bls.gov répond 403 aux scripts, Réserve fédérale, BEA) : CPI 60, NFP 60, FOMC 39 (réunions programmées, dernier jour, 14 h ET), PIB avancé 20, PCE 58 = 237 annonces. La méthode reproduit exactement le calendrier déjà vérifié de 2024 (CPI 12/12, NFP 12/12, PIB 4/4, PCE 12/12 pour les dates). Affiché dans le Simulateur ; PAS ajouté à newsEvents.js pour ne pas modifier les analyses « pas de trade autour des news ».",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "événements",
+    "knownWeaknesses": "Pas de BCE ni de ventes au détail avant 2024 (pages dynamiques / non testées). BEA sans heure : 08:30 ET supposée (parfois 10:00). Les 2 réunions FOMC non programmées de mars 2020 sont exclues (heures non sourcées). PCE 2019 : 10 dates sur 12 (calendrier perturbé par le shutdown).",
+    "files": [
+      "scripts/fetchHistoricalNews.py",
+      "data/news-calendar-2019-2023.json",
+      "src/backtest/newsEventsHistorical.js"
+    ]
   }
 ]
