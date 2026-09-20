@@ -6240,3 +6240,11 @@ Demande d'Esdras : une seule option qui charge toutes les paires que le bot trad
 | >= 3× ATR | 7 629 | +416 | +324 | +92 | 55 556 $ | 40 % | 49 / 47 |
 
 Lecture : le stop d'origine n'a AUCUN avantage mesurable sur 16 ans (+0,008 R/trade, entraînement négatif) - les bons 7 mois de 2026 et 2024 sont une bonne période, pas une preuve. Le plancher en ATR est positif dans l'entraînement ET le test ; 2× bat l'origine 13 années sur 17. Mais les baisses (40-76 %) et un taux de réussite FTMO d'environ 50 % par tentative montrent un avantage modeste, pas une machine. Limites : entrées issues des modules de backtest (limite supposée remplie), spread constant, garde-fous approximés, pas de glissement/rollover. Pas appliqué au bot live.
+
+## 2026-09-20 (suite 2) — Mécanisme par mécanisme : qui garde, qui tire vers le bas, quel plancher de stop
+
+`scripts/runMechanismStopFloorStudy.js` -> `data/backtest-input/mechanisms-stop-floor-2010-2025.md`. 15 mécanismes (paire × stratégie) joués seuls sur 2010-2025, 5 planchers (origine, 1, 1,5, 2, 3 × ATR14 M15), décision sur l'entraînement (<= 2023) seul, vérification sur le test (2024+).
+- **Solides (GARDER, positifs entraînement ET test)** : US500 FVG (stop d'origine, t 3,1, 14 années sur 16), US100 NWOG (1× ATR), US100 FVG (1× ATR), US500 Divergence (1× ATR), US100 Silver Bullet (3× ATR), GER40 NWOG (3× ATR).
+- **A couper (négatifs entraînement ET test à tous les planchers)** : US500 Silver Bullet, US100 CBDR.
+- **A surveiller** : GER40 Silver (bon à l'entraînement, -9R sur le test), GER40 Weekly (+134R entraînement, +3R test), GER40 Breaker (~0 sur le test), EURUSD Judas (quasi nul partout), XAUUSD FVG et US100 Divergence et US500 Weekly (positifs surtout sur le test).
+- **Portefeuilles sur le test 2024-2025 seul (2 ans, 10 000 $, 0,5 %)** : tout à l'origine +92R / 14 691 $ / FTMO 9-9 ; tout à 2× ATR +96R / 15 156 $ / 10-7 ; sans les 2 à couper, meilleur plancher par mécanisme +145R / 19 427 $ / 12-6 (baisse 23 %) ; seulement les GARDER +100R / 15 846 $ / 7-4 (baisse 17 %). Test court : quelques dizaines de trades par mécanisme, verdicts individuels bruités. Rien appliqué au bot live.
