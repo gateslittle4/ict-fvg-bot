@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Anthropic from '@anthropic-ai/sdk';
 import { fetchPerformanceBySymbol, fetchRecentTradeRows } from './dataSources/supabaseTradeLog.js';
+import { loadResearchMemory } from './backtest/researchMemory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKTEST_SUMMARY_PATH = path.join(__dirname, '..', 'data', 'backtest-summary.json');
@@ -52,6 +53,22 @@ function loadBacktestSummary() {
   return cachedBacktestSummary;
 }
 
+// Mémoire de recherche structurée (data/research-memory.json, voir
+// src/backtest/researchMemory.js) - index des hypothèses déjà testées dans
+// ce projet (mécanismes live, idées rejetées, corrections de méthodologie).
+// Chargée une fois et gardée en mémoire comme le backtest ci-dessus :
+// c'est un fichier committé, pas une donnée qui change en cours de process.
+let cachedResearchMemory;
+function loadResearchMemoryForChat() {
+  if (cachedResearchMemory !== undefined) return cachedResearchMemory;
+  try {
+    cachedResearchMemory = loadResearchMemory();
+  } catch (err) {
+    cachedResearchMemory = { reason: `not available (${err.code === 'ENOENT' ? 'fichier manquant' : err.message})` };
+  }
+  return cachedResearchMemory;
+}
+
 // Écrit pour un lecteur non-trader (l'investisseur qu'Esdras a en tête) autant
 // que pour Esdras lui-même - explique les termes au lieu de les supposer
 // connus, et le ton reste celui du rapport PDF déjà envoyé (honnête sur les
@@ -67,6 +84,7 @@ Le bot combine 5 mécanismes de trading automatisés basés sur des concepts ICT
 DEUX SOURCES DE DONNÉES DISTINCTES DANS LE CONTEXTE - ne jamais les mélanger dans une réponse sans préciser laquelle :
 - "journal"/"recentTrades" : le VRAI trading en argent réel depuis que le suivi a été mis en place. C'est la performance réelle du bot.
 - "backtest7Years" : une SIMULATION sur 7 années de données de marché historiques (2019-2025), rejouée avec le code exact de production, mais ce n'est PAS de l'argent réel - c'est "qu'est-ce que le bot aurait fait s'il avait tourné pendant ces 7 années". Utile pour parler de tendances saisonnières (quel mois est historiquement plus faible/fort) ou de résultats sur un grand échantillon, mais dis-le clairement quand tu t'appuies dessus : "sur la simulation historique 2019-2025..." plutôt que de laisser croire que c'est du réel.
+- "researchMemory" : un INDEX des recherches déjà faites sur ce projet (pas des données de marché) - une liste d'entrées, chacune avec un statut ("live" = mécanisme actif dans le bot réel, "validated-research" = piste confirmée mais pas encore activée en réel, "rejected" = testée et abandonnée, "methodology-fix" = une correction d'un biais de mesure qui a affecté d'autres résultats, "inconclusive" = signal trop faible pour trancher). Utilise-le pour répondre à "est-ce qu'on a déjà testé X ?" ou "pourquoi tel mécanisme n'est pas activé ?" en citant le résumé de l'entrée pertinente - jamais pour inventer un chiffre de performance qui ne s'y trouve pas déjà explicitement.
 
 RÈGLES STRICTES :
 1. N'utilise QUE les données fournies ci-dessous dans le contexte. N'invente jamais un chiffre. Si la question demande quelque chose que les données ne permettent pas de calculer avec certitude (ex: une agrégation par jour de semaine sur peu de trades), fais le calcul à partir des "recentTrades" fournis si c'est raisonnable, mais dis clairement que c'est un calcul approximatif sur un échantillon limité si l'échantillon est petit (moins de 20 trades pour la question posée).
@@ -111,6 +129,9 @@ export async function buildChatContext(store) {
   // Backtest 2019-2025 (7 années) - données historiques rejouées, distinctes
   // du journal réel ci-dessus. Voir loadBacktestSummary().
   context.backtest7Years = loadBacktestSummary();
+
+  // Index des recherches déjà faites sur ce projet - voir researchMemory.js.
+  context.researchMemory = loadResearchMemoryForChat();
 
   return context;
 }
