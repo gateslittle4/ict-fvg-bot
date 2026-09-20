@@ -252,5 +252,25 @@
     "files": [
       "scripts/runHaitiForexChallengeSimulation.js"
     ]
+  },
+  {
+    "id": "btcusd-labo-exploration",
+    "title": "BTCUSD : les 22 stratégies du Labo sur 7 mois de bougies réelles du broker",
+    "date": "2026-09-20",
+    "status": "rejected",
+    "summary": "Exploration sans aucun ordre : 22 stratégies (réglages par défaut) sur 14 000 bougies M15 réelles de BTCUSD, séparation en temps (2/3 entraînement, 1/3 test), deux règles d'égalité stop/objectif. Aucune n'est positive dans les deux moitiés avec les deux règles (les meilleures à l'entraînement, Asian Range Breakout +0,56R et Star Patterns +0,32R, passent à -0,02R et -0,32R en test). Sept stratégies n'ont produit aucun trade (besoin de plus d'historique). Pas de raison de remettre BTCUSD en trading.",
+    "markets": [
+      "BTCUSD"
+    ],
+    "timeframe": "M15",
+    "sample": {
+      "candles": 14000,
+      "period": "2026-02-27 -> 2026-09-18"
+    },
+    "knownWeaknesses": "~7 mois seulement, 22 essais, spread supposé à 15 $ (non mesuré), entrées supposées remplies, BTCUSD ferme le week-end chez ce broker.",
+    "files": [
+      "scripts/runBtcExploration.js",
+      "data/backtest-input/btcusd-exploration-2026.md"
+    ]
   }
 ]
