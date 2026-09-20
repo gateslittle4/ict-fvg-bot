@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+// ⚠️ 2026-09-20 - RÉSULTATS PÉRIMÉS : ce script lit data/real-data-2026-02-to-09 SANS le décalage de -5 h (ces CSV sont en UTC réel, le
+// moteur travaille en UTC-5) et règle les trades avec l'ancienne convention qui saute la bougie d'entrée (stop jamais vérifié sur la
+// bougie d'ouverture). Ses chiffres « 7 mois réels » sont trop optimistes et mal alignés sur les sessions. Voir HANDOFF.md
+// (2026-09-19/20) et data/research-memory.json (entry-candle-stop-bug, real-data-utc-shift) ; version à jour :
+// scripts/runFtmo1StepRealisticCycles.js et scripts/runM1Truth.js.
 // testNewComboOnRealData7Months.js
 // Usage: node scripts/testNewComboOnRealData7Months.js <dir-with-real-csvs>
 // (les CSV réels utilisés ici sont committés dans data/real-data-2026-02-to-09/

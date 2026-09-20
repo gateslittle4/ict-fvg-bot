@@ -1,0 +1,1900 @@
+{
+ "generatedAt": "2026-09-20",
+ "method": "fetchHistoricalNews.py - builds data/news-calendar-2019-2023.json from OFFICIAL sources only (2026-09-20).\n\nUsage: python3 scripts/fetchHistoricalNews.py [cache_dir]   (cached HTML is reused when present)\n\nSources (nothing guessed - every date is read from an official page):\n  CPI + Employment Situation (NFP): bls.gov/schedule/news_release/{cpi,empsit}.htm, read through the Internet Archive's\n      copies of the OFFICIAL BLS pages (bls.gov itself answers 403 to scripts). Snapshots every 6 months 2019-2025; for a\n      reference month the LATEST snapshot wins, so a rescheduled release (shutdowns, pandemic) keeps its real date.\n  FOMC statements: federalreserve.gov/monetarypolicy/fomchistorical{2019,2020}.htm and fomccalendars.htm (2021+),\n      scheduled meetings only, last day of the meeting, 14:00 ET. The unscheduled March 2020 meetings are listed under\n      `excluded` (their statement times are not on the page and were not guessed).\n  GDP advance estimate + Personal Income and Outlays (PCE): bea.gov/news/schedule/full through the Internet Archive\n      (snapshots March and September of each year, latest wins). The page has dates but no times: 08:30 ET is assumed\n      (BEA's usual time); BEA occasionally uses 10:00 ET (e.g. PCE 2024-11-27, see newsEvents.js) - flagged `timeAssumed`.\nNot covered (and NOT invented): ECB decisions (ecb.europa.eu lists load dynamically), Census retail sales, ISM/PMI.\nThe same method is checked against the already-verified 2024 list of src/backtest/newsEvents.js (see `validation`).\n",
+ "events": [
+  {
+   "kind": "NFP",
+   "date": "2019-01-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2018",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-01-11",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2018",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2019-01-30",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-02-01",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-02-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2019-02-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-03-01",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-03-08",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-03-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2019-03-20",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-04-05",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-04-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2019-04-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-04-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2019-05-01",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-05-03",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-05-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-05-31",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-06-07",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-06-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2019-06-19",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-06-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-07-05",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-07-11",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2019-07-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-07-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2019-07-31",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-08-02",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-08-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-08-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-09-06",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-09-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2019-09-18",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-09-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-10-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-10-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2019-10-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2019-10-30",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-10-31",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-11-01",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-11-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-11-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2019-12-06",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2019-12-11",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2019-12-11",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2019.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2019-12-20",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20190901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-01-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2019",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-01-14",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2019",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-01-29",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "GDP",
+   "date": "2020-01-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-01-31",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-02-07",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-02-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-02-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-03-06",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-03-11",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-03-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-04-03",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-04-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2020-04-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-04-29",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-04-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-05-08",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-05-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-05-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-06-05",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-06-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-06-10",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-06-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-07-02",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-07-14",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-07-29",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "GDP",
+   "date": "2020-07-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200301)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-07-31",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-08-07",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-08-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-08-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-09-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-09-11",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-09-16",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-10-01",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-10-02",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-10-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2020-10-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-10-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-11-05",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-11-06",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-11-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-11-25",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2020-12-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2020-12-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-12-16",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2020-12-23",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20200901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-01-08",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2020",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-01-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2020",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2021-01-27",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "GDP",
+   "date": "2021-01-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-01-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-02-05",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-02-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-02-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-03-05",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-03-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2021-03-17",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-03-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-04-02",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-04-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2021-04-28",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "GDP",
+   "date": "2021-04-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-04-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-05-07",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-05-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-05-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-06-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-06-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2021-06-16",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-06-25",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-07-02",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-07-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2021-07-28",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "GDP",
+   "date": "2021-07-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-07-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-08-06",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-08-11",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-08-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-09-03",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-09-14",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2021-09-22",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-10-01",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-10-08",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-10-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2021-10-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-10-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2021-11-03",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-11-05",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-11-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-11-24",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2021-12-03",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2021-12-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2021-12-15",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2021-12-23",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20210901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-01-07",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2021",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-01-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2021",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2022-01-26",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "GDP",
+   "date": "2022-01-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-01-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-02-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-02-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-02-25",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-03-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-03-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2022-03-16",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-03-31",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-04-01",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-04-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2022-04-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-04-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2022-05-04",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-05-06",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-05-11",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-05-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-06-03",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-06-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2022-06-15",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-06-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-07-08",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-07-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2022-07-27",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "GDP",
+   "date": "2022-07-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-07-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-08-05",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-08-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-08-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-09-02",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-09-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2022-09-21",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-09-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220301)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-10-07",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-10-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2022-10-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-10-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2022-11-02",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-11-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-11-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-12-01",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2022-12-02",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2022-12-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2022-12-14",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2022-12-23",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20220901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-01-06",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2022",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-01-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "December 2022",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2023-01-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-01-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2023-02-01",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-02-03",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-02-14",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "January 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-02-24",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-03-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-03-14",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "February 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2023-03-22",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-03-31",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-04-07",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-04-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "March 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2023-04-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-04-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2023-05-03",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-05-05",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-05-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "April 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-05-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-06-02",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-06-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "May 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2023-06-14",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-06-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-07-07",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-07-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "June 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2023-07-26",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "GDP",
+   "date": "2023-07-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-07-28",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-08-04",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-08-10",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "July 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-08-31",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-09-01",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-09-13",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "August 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2023-09-20",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-09-29",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-10-06",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-10-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "September 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "GDP",
+   "date": "2023-10-26",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-10-27",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2023-11-01",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-11-03",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20240901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-11-14",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "October 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20240901)"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-11-30",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  },
+  {
+   "kind": "NFP",
+   "date": "2023-12-08",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2023",
+   "source": "https://www.bls.gov/schedule/news_release/empsit.htm (Internet Archive snapshot 20240901)"
+  },
+  {
+   "kind": "CPI",
+   "date": "2023-12-12",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "reference": "November 2023",
+   "source": "https://www.bls.gov/schedule/news_release/cpi.htm (Internet Archive snapshot 20240901)"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2023-12-13",
+   "time": "14:00",
+   "tz": "America/New_York",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+  },
+  {
+   "kind": "PCE",
+   "date": "2023-12-22",
+   "time": "08:30",
+   "tz": "America/New_York",
+   "timeAssumed": true,
+   "source": "https://www.bea.gov/news/schedule/full (Internet Archive snapshot 20230901)"
+  }
+ ],
+ "excluded": [
+  {
+   "kind": "FOMC",
+   "date": "2020-03-02",
+   "why": "listed as unscheduled on the Fed page; statement time not on the page, not guessed",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-03-15",
+   "why": "listed as unscheduled on the Fed page; statement time not on the page, not guessed",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  },
+  {
+   "kind": "FOMC",
+   "date": "2020-03-18",
+   "why": "listed as cancelled on the Fed page; statement time not on the page, not guessed",
+   "source": "https://www.federalreserve.gov/monetarypolicy/fomchistorical2020.htm"
+  }
+ ],
+ "validation": {
+  "CPI 2024": {
+   "archive": 12,
+   "matching the verified list": 12
+  },
+  "NFP 2024": {
+   "archive": 12,
+   "matching the verified list": 12
+  }
+ },
+ "counts": {
+  "CPI": 60,
+  "NFP": 60,
+  "FOMC": 39,
+  "GDP": 20,
+  "PCE": 58
+ }
+}

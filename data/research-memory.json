@@ -1,99 +1,298 @@
 [
   {
-    "id": "live-fvg",
-    "title": "FVG (Fair Value Gap) filtré — US100/US500/XAUUSD",
-    "date": "2026-09-01",
+    "id": "live-eight-mechanisms",
+    "title": "Les 8 mécanismes live du bot",
+    "date": "2026-09-20",
     "status": "live",
-    "summary": "Le mécanisme d'origine du bot. Détecte un Fair Value Gap (déséquilibre de 3 bougies) sur M15, filtré par biais H4/EMA200, structure de marché et fenêtre de session selon le symbole. RR 1:3, stop en fvg-edge. Mécanisme le plus ancien du projet, validé avant que ce journal chronologique détaillé n'existe (pas de section HANDOFF dédiée à son activation d'origine).",
-    "markets": ["US100", "US500", "XAUUSD"],
+    "summary": "FVG filtré (US100/US500/XAUUSD), Divergence US100/US500, NWOG (US100 achat seul + GER40), Judas Swing (EURUSD), Weekly Sweep (GER40+US500), Breaker Block (GER40), Silver Bullet (US100/US500/GER40), CBDR (US100). Garde-fous réels : 3 trades clôturés/jour, pause 30 min après une perte, perte du jour 2 %, une position par paire, filtre « stop >= 3x le spread ». Risque 0,3 % en mode live, 0,5 % en mode challenge.",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
     "timeframe": "M15",
-    "knownWeaknesses": "Config par symbole (variante/filtres) diffère selon l'historique de validation propre à chaque paire - voir src/config.js pour le détail exact par symbole plutôt que de supposer un réglage unique.",
-    "files": ["src/config.js", "src/backtest/gridRunner.js", "data/backtest-input/fvg-multi-touch-analysis.md"]
+    "knownWeaknesses": "Les verdicts par mécanisme changent avec la période (US500 FVG meilleur de l'historique mais négatif en 2026).",
+    "files": [
+      "src/config.js",
+      "src/liveStrategyEngine.js"
+    ],
+    "handoffSection": "POINT DE REPRISE pour une autre session"
   },
   {
-    "id": "live-divergence",
-    "title": "Divergence (z-score statistique US100/US500)",
-    "date": "2026-09-01",
-    "status": "live",
-    "summary": "Retour à la moyenne statistique entre US100 et US500 (paire corrélée) via un z-score de spread. Entrée au marché à l'ouverture de la bougie de décrochage. Actif depuis avant le début de ce journal détaillé, jamais étendu à d'autres paires ni à XAUUSD.",
-    "markets": ["US100", "US500"],
+    "id": "entry-candle-stop-bug",
+    "title": "Le moteur ne vérifiait jamais le stop sur la bougie d'entrée",
+    "date": "2026-09-19",
+    "status": "methodology-fix",
+    "summary": "Un trade entré à l'ouverture d'une bougie dont la même bougie touchait déjà le stop était compté gagnant si l'objectif venait plus tard (28 des 347 trades, tous des +3R). Corrigé dans LiveStrategyEngine (commit 984e889). Sur les mêmes trades et les 7 mois réels : +70 % (ancien règlement) devient +7,3 % (règlement M15 corrigé) puis ~+31 % (règlement M1 exact).",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
     "timeframe": "M15",
-    "knownWeaknesses": "N'a jamais été tenu out-of-sample sur une 3e paire - la config actuelle (US100/US500 uniquement) est la seule validée.",
-    "files": ["src/config.js", "data/backtest-input/divergence-strategy-analysis.md", "data/backtest-input/divergence-momentum-strategy-analysis.md"]
+    "sample": {
+      "trades": 347,
+      "period": "2026-02 -> 2026-09"
+    },
+    "knownWeaknesses": "Les anciens scripts (testFullComboTrainTestReal, testNewComboOnRealData7Months, runFtmo1StepFullComboReal7MonthsCycle) ont encore l'ancien règlement.",
+    "files": [
+      "scripts/runComboVsPyramidAccountImpact.js",
+      "scripts/runFtmo1StepRealisticCycles.js"
+    ]
   },
   {
-    "id": "live-nwog",
-    "title": "NWOG (New Week Opening Gap) — US100 achat seul, GER40 bidirectionnel",
-    "date": "2026-09-16",
-    "status": "live",
-    "summary": "Gap d'ouverture de semaine (dimanche soir). Trouvé LIVE sur US100 alors que documenté comme backtest-only (bug de documentation corrigé le 2026-09-15) - édge en production ressemblant à un piège de biais haussier, d'où la restriction \"achat seulement\" sur US100 décidée par Esdras le même jour. GER40 (bidirectionnel) ajouté le 2026-09-16 après validation walk-forward par blocs de 2 ans.",
-    "markets": ["US100", "GER40"],
+    "id": "real-data-utc-shift",
+    "title": "Les CSV de bougies réelles sont en UTC réel, pas en temps moteur",
+    "date": "2026-09-19",
+    "status": "methodology-fix",
+    "summary": "getHistoricalCandles/export renvoie l'UTC réel (le gap de réouverture est à 22:00 UTC) ; le moteur travaille en UTC-5 fixe. Lire ces CSV sans décalage de -5 h fausse les sessions (Silver Bullet, NWOG...). Corrigé dans le Simulateur (copies décalées côté serveur) et dans les scripts récents.",
     "timeframe": "M15",
-    "sample": "GER40: 518 trades train / 87 test (voir nwog-strategy-analysis.md)",
-    "knownWeaknesses": "US100 restreint au long uniquement par décision explicite, pas par un résultat de backtest qui l'imposerait - le short a simplement semblé moins fiable en production.",
-    "files": ["src/config.js", "data/backtest-input/nwog-strategy-analysis.md"],
-    "handoffSection": "NWOG/GER40 DÉPLOYÉ EN PRODUCTION — 2026-09-16"
+    "knownWeaknesses": "Trois anciens scripts ne décalent pas.",
+    "files": [
+      "src/server.js",
+      "data/real-data-2026-02-to-09/README.md"
+    ]
   },
   {
-    "id": "live-judas-swing",
-    "title": "Judas Swing — EURUSD (sweep+reclaim PDH/PDL, killzone Londres)",
-    "date": "2026-09-10",
-    "status": "live",
-    "summary": "Premier mécanisme à introduire EURUSD dans l'univers live du bot (FVG/Divergence n'y ont jamais été tradés). Sweep puis reclaim du plus haut/bas de la veille pendant la killzone de Londres. Tient 6 années sur 8 dans le backtest historique. Vrai ajout de fréquence de trading, pas une dilution d'un symbole déjà couvert.",
-    "markets": ["EURUSD"],
-    "timeframe": "M15",
-    "knownWeaknesses": "Seul mécanisme actif sur EURUSD - aucune diversification de mécanisme sur cette paire si Judas Swing entre dans une mauvaise phase.",
-    "files": ["src/config.js", "data/backtest-input/judas-swing-strategy-analysis.md"],
-    "handoffSection": "Judas Swing activé en LIVE sur EURUSD — 2026-09-10"
+    "id": "m15-tie-rule-bias",
+    "title": "« Le stop gagne si stop et objectif sont dans la même bougie M15 » pénalise les stops serrés",
+    "date": "2026-09-20",
+    "status": "methodology-fix",
+    "summary": "Avec les vraies bougies d'1 minute (2026-01-16 -> 09-18), réglées minute par minute : sur les trades à stop large, l'issue est identique à 98-100 % ; sur les stops serrés d'origine, la règle prudente M15 sous-estime d'environ 23R (7 trades où l'objectif est touché avant le stop). Les études 2010-2025 réglées en M15 héritent de ce biais : le R moyen d'un même échantillon varie de +0,013 (stop d'abord) à +0,191 (objectif d'abord).",
+    "timeframe": "M1",
+    "sample": {
+      "period": "2026-01-16 -> 2026-09-18",
+      "pairs": 5
+    },
+    "knownWeaknesses": "Pas de M1 avant 2026 : les résultats 2010-2025 ne sont pas re-vérifiables.",
+    "files": [
+      "scripts/runM1Truth.js",
+      "data/real-m1/m1-truth-report.md"
+    ],
+    "handoffSection": "M1 sur 8 mois"
   },
   {
-    "id": "live-weekly-sweep",
-    "title": "Weekly Sweep (liquidité hebdomadaire) — GER40/US500",
-    "date": "2026-09-16",
-    "status": "live",
-    "summary": "Balayage de liquidité hebdomadaire suivi d'une reprise. US500 identifié comme candidat robuste après test sur les 7 autres symboles du projet (2026-09-16), activé après vérification que son chevauchement avec les autres mécanismes déjà live restait propre. GER40 validé indépendamment le même jour.",
-    "markets": ["GER40", "US500"],
+    "id": "fake-gap-fill-artifact",
+    "title": "Faux gaps : attendre la bougie suivante pour juger un trade du backtest",
+    "date": "2026-09-19",
+    "status": "methodology-fix",
+    "summary": "Le backtest date un trade sur la bougie qui suit son remplissage et son prix d'entrée n'est parfois même pas dans cette bougie ; juger le stop seulement à la bougie suivante fabriquait des remplissages de gap fictifs (un trade US100 à -48R). Corrigé dans le Simulateur : le trade est jugé sur sa propre bougie, stop rempli au prix du stop ; les vrais gaps ultérieurs restent appliqués.",
+    "markets": [
+      "US100"
+    ],
     "timeframe": "M15",
-    "knownWeaknesses": "Coupable identifié (avec NWOG) du bust du cycle FTMO mars-mai 2025 - voir l'entrée 'validated-research-ftmo-1step-feasibility'. Vérifié PAS récurrent par saison (positif 11/15 années historiques sur mars-mai).",
-    "files": ["src/config.js", "data/backtest-input/weekly-sweep-strategy-analysis.md", "scripts/runSeasonalMechanismPerformanceAnalysis.js"],
-    "handoffSection": "Weekly Sweep/US500 activé en production — vérification de chevauchement terminée, propre — 2026-09-16"
+    "files": [
+      "src/shared/replayBroker.js"
+    ]
   },
   {
-    "id": "live-breaker-block",
-    "title": "Breaker Block — GER40",
-    "date": "2026-09-16",
-    "status": "live",
-    "summary": "3e candidat trouvé pour GER40 après réhabilitation (spread réel confirmé correct, robustesse re-testée). Implémenté et activé en production le jour même de sa découverte.",
-    "markets": ["GER40"],
-    "timeframe": "M15",
-    "knownWeaknesses": "Comme Weekly Sweep, l'un des 5 mécanismes tombés en même temps pendant le bust FTMO mars-mai 2025 (5/8 mécanismes négatifs simultanément cette fenêtre) - pas de motif saisonnier récurrent confirmé.",
-    "files": ["src/config.js", "data/backtest-input/breaker-block-strategy-analysis.md"],
-    "handoffSection": "Breaker Block/GER40 IMPLÉMENTÉ ET ACTIVÉ EN PRODUCTION — 2026-09-16"
+    "id": "reference-performance-m1",
+    "title": "Performance de référence du bot (vrai moteur, règlement M1, 7 mois réels)",
+    "date": "2026-09-20",
+    "status": "inconclusive",
+    "summary": "Vrai moteur LiveStrategyEngine, 347 trades, 0,5 % de risque, 10 000 $ : +7,3 % réglé en M15 par le moteur, ~+30,8 % réglé minute par minute (12 entrées limite non remplies écartées). Fourchette honnête +31 % (vrai moteur) à +53 % (pipeline simplifié de 412 trades). Ne pas citer +53 % seul.",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M1",
+    "sample": {
+      "trades": 347,
+      "period": "2026-02 -> 2026-09"
+    },
+    "knownWeaknesses": "Spread fixe, pas de glissement/rejets/latence, entrées limite supposées remplies, une seule fenêtre de 7 mois.",
+    "files": [
+      "scripts/runM1Truth.js"
+    ],
+    "handoffSection": "M1 sur 8 mois"
   },
   {
-    "id": "live-silver-bullet",
-    "title": "Silver Bullet — US100/US500/GER40",
-    "date": "2026-09-17",
-    "status": "live",
-    "summary": "Fenêtre de session NY AM (killzone Silver Bullet ICT), entrée avec structure/biais H4. Confirmé par forward-test sur vraies données cTrader avant déploiement en auto-exécution complète sur les 3 symboles.",
-    "markets": ["US100", "US500", "GER40"],
-    "timeframe": "M15",
-    "knownWeaknesses": "Chevauchement partiel avec les autres mécanismes déjà live sur les mêmes symboles (US100/GER40) - le netting du bot n'ouvre qu'une position à la fois par symbole, donc Silver Bullet peut être bloqué par un autre mécanisme déjà en position, et vice-versa.",
-    "files": ["src/config.js", "data/backtest-input/silver-bullet-strategy-analysis.md"],
-    "handoffSection": "Silver Bullet déployé en auto-execute complet (US100/US500/GER40) + bug critique trouvé et corrigé au passage — 2026-09-17"
+    "id": "atr-stop-floor",
+    "title": "Plancher de stop en ATR (1x/2x/3x ATR14)",
+    "date": "2026-09-20",
+    "status": "rejected",
+    "summary": "Sur 2010-2025 réglé en M15 (règle stop d'abord) le plancher paraissait améliorer fortement le résultat. Sur 2026 réglé à la minute : stop d'origine +53 %, 1x ATR +51 %, 2x +15 %, 3x +20 % -> AUCUN gain, artefact de la règle d'égalité. Ne pas appliquer.",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15/M1",
+    "knownWeaknesses": "Les rapports 2010-2025 correspondants portent une bannière INVALIDÉ.",
+    "files": [
+      "scripts/runStopFloorLongHistory.js",
+      "scripts/runMechanismStopFloorStudy.js",
+      "data/backtest-input/stop-floor-atr-2010-2025.md"
+    ],
+    "handoffSection": "M1 sur 8 mois"
   },
   {
-    "id": "live-cbdr",
-    "title": "CBDR (Central Bank Dealer Range) — US100 uniquement",
-    "date": "2026-09-18",
-    "status": "live",
-    "summary": "Projection en écarts-types de l'amplitude de la session asiatique (14h-20h NY). Validé sur 3 couches : profondeur historique 15 ans (train exp +0.11R, test +0.18R), forward-test sur vraies données cTrader jamais vues (+0.34R), analyse de chevauchement avec FVG/Divergence/NWOG/Silver Bullet déjà live sur US100 (71% des trades non-chevauchants, additif réel). Délibérément limité à US100 seul - GER40 a le meilleur historique mais échoue son forward-test réel (régime de tendance persistant, un mois catastrophique), EURUSD/GBPUSD affaiblis une fois la profondeur historique complète prise en compte.",
-    "markets": ["US100"],
+    "id": "mechanism-pruning",
+    "title": "Couper US500 Silver Bullet et US100 CBDR",
+    "date": "2026-09-20",
+    "status": "rejected",
+    "summary": "Recommandé par l'étude 2010-2025 (M15 prudent), démenti en 2026 réglé à la minute : ils sont POSITIFS (+6,0R et +5,3R), et sans eux le résultat baisse (+44,5 % au lieu de +53,4 % dans le pipeline simplifié). Les verdicts par mécanisme sont instables d'une période à l'autre : ne pas élaguer sur un seul verdict.",
+    "markets": [
+      "US500",
+      "US100"
+    ],
+    "timeframe": "M15/M1",
+    "files": [
+      "data/real-m1/m1-truth-report.md",
+      "data/backtest-input/mechanisms-stop-floor-2010-2025.md"
+    ],
+    "handoffSection": "M1 sur 8 mois"
+  },
+  {
+    "id": "ftmo-1step-cycles",
+    "title": "Cycles FTMO 1-Step de +10 % sur les données réelles",
+    "date": "2026-09-20",
+    "status": "inconclusive",
+    "summary": "Règles : +10 %, perte jour 3 %, perte max 10 % trailing fin de journée. 7 mois M1 : bot tel quel 5 réussis / 1 échoué / 1 en cours (pipeline simplifié). Levier le plus sûr connu : baisser le risque par trade (0,25 % ~76 % de tentatives réussies mais des mois ; 0,5 % ~60 %). Échantillon court, pas une garantie ; chaque échec coûterait une nouvelle inscription.",
+    "timeframe": "M15/M1",
+    "sample": {
+      "attempts": "~7 sur 7 mois"
+    },
+    "knownWeaknesses": "Trades issus du pipeline simplifié ; cycles recalculés sur une seule course continue.",
+    "files": [
+      "scripts/runFtmo1StepRealisticCycles.js",
+      "scripts/runFtmoPlan.js",
+      "data/real-data-2026-02-to-09/ftmo-1step-realistic-cycles.md"
+    ],
+    "handoffSection": "Plan FTMO 1-Step"
+  },
+  {
+    "id": "close-before-weekend-rollover",
+    "title": "Fermer les positions avant le week-end / le rollover de 17 h NY",
+    "date": "2026-09-19",
+    "status": "rejected",
+    "summary": "Testé dans le Simulateur sur les 7 mois réels (risque 0,5 %, garde-fous) : aucun gain fiable (week-end +2,1 % contre +4,4 % sans fermeture ; rollover seul +4,5 %). Un seul trade sur 646 a perdu plus que son stop à cause d'un gap. Le spread élargi autour de 17 h n'est pas modélisé.",
     "timeframe": "M15",
-    "sample": "Train n=694 (0.11R), test n=166 (0.18R), forward-test réel n=52 (+0.34R)",
-    "knownWeaknesses": "Fenêtre d'entrée s'étend jusqu'à 20h NY - certaines entrées tardives ne respecteraient pas une règle de clôture avant 16h NY (pertinent seulement pour un compte type HaitiForex, pas pour le compte principal).",
-    "files": ["src/backtest/cbdr.js", "data/backtest-input/cbdr-strategy-analysis.md", "data/backtest-input/cbdr-us100-overlap-analysis.md"],
-    "handoffSection": "CBDR câblé en mécanisme live réel, US100 uniquement — 2026-09-18"
+    "sample": {
+      "trades": 646
+    },
+    "knownWeaknesses": "Spread fixe : le risque de spread au rollover n'est pas mesuré.",
+    "files": [
+      "public/simulateur.html"
+    ]
+  },
+  {
+    "id": "regime-study",
+    "title": "Dépendance du bot au régime de marché (volatilité, tendance, alignement)",
+    "date": "2026-09-20",
+    "status": "rejected",
+    "summary": "14 224 signaux 2010-2025, 3 dimensions définies à l'avance = 8 seaux, deux règles d'égalité : aucune trouvaille (|t|>=2,6 à l'entraînement + même signe en test + deux règles). Pas de base pour un filtre de régime. L'incertitude de la règle d'égalité est bien plus grande que tout effet de régime.",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15",
+    "sample": {
+      "signals": 14224
+    },
+    "knownWeaknesses": "Niveaux absolus incertains sans M1.",
+    "files": [
+      "scripts/runRegimeStudy.js",
+      "data/backtest-input/regime-study-2010-2025.md"
+    ],
+    "handoffSection": "Test de régime de marché"
+  },
+  {
+    "id": "btcusd-on-live-account",
+    "title": "BTCUSD sur le compte live/démo",
+    "date": "2026-09-20",
+    "status": "rejected",
+    "summary": "Ajouté puis retiré le 2026-09-16 : mécanisme non validé (FVG M1 brut, 9,5 % de trades gagnants sur 21 trades réels, -2,12R) qui prenait presque tout le quota de 3 trades/jour. Chez ce broker BTCUSD ferme le week-end (lun.-jeu. complets, ven. jusqu'à ~21 h UTC, sam. rien, dim. 21 h-minuit UTC) : il n'apporte pas de données de week-end. Ne pas le remettre sans test entraînement/test.",
+    "markets": [
+      "BTCUSD"
+    ],
+    "timeframe": "M15",
+    "sample": {
+      "realTrades": 21
+    },
+    "files": [
+      "src/config.js"
+    ],
+    "handoffSection": "POINT DE REPRISE pour une autre session"
+  },
+  {
+    "id": "reserve-account-strategy",
+    "title": "Compte de réserve FTMO (second essai activé seulement quand le premier bust)",
+    "date": "2026-09-20",
+    "status": "inconclusive",
+    "summary": "Étude d'une autre session : sur 27 dates de départ historiques, 24 (88,9 %) finissent réussies avec un compte de réserve chaîné, 4/4 des bustes retrouvés récupérés. Résultat calculé AVANT la correction du stop sur la bougie d'entrée et le règlement M1 : probablement trop optimiste, à refaire avant d'en tirer une décision.",
+    "timeframe": "M15",
+    "sample": {
+      "startDates": 27
+    },
+    "knownWeaknesses": "Ancien règlement (bougie d'entrée sautée).",
+    "files": [
+      "scripts/runFtmo1Step2025FullComboCycle.js",
+      "scripts/runFtmoMultiAccountCorrelationAnalysis.js"
+    ]
+  },
+  {
+    "id": "haitiforex-challenge",
+    "title": "Challenge HaitiForex",
+    "date": "2026-09-19",
+    "status": "rejected",
+    "summary": "Abandonné à la demande d'Esdras (« ça n'en vaut pas la peine »), code laissé inerte.",
+    "files": [
+      "scripts/runHaitiForexChallengeSimulation.js"
+    ]
+  },
+  {
+    "id": "btcusd-labo-exploration",
+    "title": "BTCUSD : les 22 stratégies du Labo sur 7 mois de bougies réelles du broker",
+    "date": "2026-09-20",
+    "status": "rejected",
+    "summary": "Exploration sans aucun ordre : 22 stratégies (réglages par défaut) sur 14 000 bougies M15 réelles de BTCUSD, séparation en temps (2/3 entraînement, 1/3 test), deux règles d'égalité stop/objectif. Aucune n'est positive dans les deux moitiés avec les deux règles (les meilleures à l'entraînement, Asian Range Breakout +0,56R et Star Patterns +0,32R, passent à -0,02R et -0,32R en test). Sept stratégies n'ont produit aucun trade (besoin de plus d'historique). Pas de raison de remettre BTCUSD en trading.",
+    "markets": [
+      "BTCUSD"
+    ],
+    "timeframe": "M15",
+    "sample": {
+      "candles": 14000,
+      "period": "2026-02-27 -> 2026-09-18"
+    },
+    "knownWeaknesses": "~7 mois seulement, 22 essais, spread supposé à 15 $ (non mesuré), entrées supposées remplies, BTCUSD ferme le week-end chez ce broker.",
+    "files": [
+      "scripts/runBtcExploration.js",
+      "data/backtest-input/btcusd-exploration-2026.md"
+    ]
+  },
+  {
+    "id": "news-calendar-2019-2023",
+    "title": "Calendrier de news 2019-2023 depuis des sources officielles",
+    "date": "2026-09-20",
+    "status": "validated-research",
+    "summary": "Dates lues sur des pages officielles (BLS via les copies de l'Internet Archive car bls.gov répond 403 aux scripts, Réserve fédérale, BEA) : CPI 60, NFP 60, FOMC 39 (réunions programmées, dernier jour, 14 h ET), PIB avancé 20, PCE 58 = 237 annonces. La méthode reproduit exactement le calendrier déjà vérifié de 2024 (CPI 12/12, NFP 12/12, PIB 4/4, PCE 12/12 pour les dates). Affiché dans le Simulateur ; PAS ajouté à newsEvents.js pour ne pas modifier les analyses « pas de trade autour des news ».",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "événements",
+    "knownWeaknesses": "Pas de BCE ni de ventes au détail avant 2024 (pages dynamiques / non testées). BEA sans heure : 08:30 ET supposée (parfois 10:00). Les 2 réunions FOMC non programmées de mars 2020 sont exclues (heures non sourcées). PCE 2019 : 10 dates sur 12 (calendrier perturbé par le shutdown).",
+    "files": [
+      "scripts/fetchHistoricalNews.py",
+      "data/news-calendar-2019-2023.json",
+      "src/backtest/newsEventsHistorical.js"
+    ]
   },
   {
     "id": "rejected-htf-support-reversal",
@@ -101,61 +300,18 @@
     "date": "2026-09-19",
     "status": "rejected",
     "summary": "Testé sous 2 lectures distinctes : (1) confluence simultanée day+week+month requise (mauvaise lecture de l'idée d'origine) - rejeté ; (2) lecture corrigée : un niveau qualifie dès 3 touches sur UNE SEULE timeframe (jour, semaine OU mois), puis confirmation par doji/engulfing sur H1 ou H4 - re-testé sur 12 instruments x {H1, H4}, rejeté à nouveau, plus décisivement (0/9 combinaisons avec assez de trades test montrent un edge confirmé). Ce n'est pas une question de mauvaise implémentation de la première tentative - l'idée elle-même ne bat pas le hasard sur les données de ce projet, dans ses deux lectures.",
-    "markets": ["US100", "US500", "XAUUSD", "EURUSD", "GER40"],
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD",
+      "GER40"
+    ],
     "knownWeaknesses": "Ne pas retester cette idée sans un angle véritablement différent (ex: un autre type de confirmation que doji/engulfing).",
-    "files": ["src/backtest/htfSupportReversal.js", "scripts/runHtfSupportReversalStrategyAnalysis.js", "data/backtest-input/htf-support-reversal-strategy-analysis.md"]
-  },
-  {
-    "id": "methodology-fix-entry-candle-stop-bug",
-    "title": "Bug majeur : LiveStrategyEngine ne vérifiait jamais le stop sur la bougie d'entrée elle-même",
-    "date": "2026-09-19",
-    "status": "methodology-fix",
-    "summary": "_resolveOpenPosition() exigeait candle.time > entryTime avant de vérifier stop/cible/timeout - le reste du mouvement de la bougie d'entrée (après l'ouverture, où le trade est réellement rempli) n'était jamais comparé au stop, seulement à partir de la bougie SUIVANTE. Un trade qui touchait son stop dans sa propre bougie d'entrée restait artificiellement 'ouvert' et pouvait redevenir gagnant par pur hasard. Trouvé indépendamment par une autre session Claude Code (comparaison avec le Simulateur de marché rejouable), vérifié avec un exemple réel (US100, vente CBDR, 2026-02-25 09:45). Corrigé : le garde devient candle.time < entryTime (laisse passer l'égalité), plus un second passage de résolution juste après la détection de signal.",
-    "knownWeaknesses": "Touche le moteur central utilisé par TOUS les mécanismes et TOUS les backtests via LiveStrategyEngine/warmUp() depuis le début du projet - portée exacte de l'impact (quels résultats historiques étaient optimistes, et de combien) non quantifiée exhaustivement, trop volumineux pour une seule session. Les mécanismes de recherche autonomes de src/backtest/*.js (hors LiveStrategyEngine - EQH/EQL, Star Patterns, HTF Support Reversal, etc.) partagent le même motif de bug (i > entryIndex), PAS corrigé.",
-    "files": ["src/liveStrategyEngine.js", "test/liveStrategyEngine.test.js"],
-    "handoffSection": "Correctif majeur : le moteur ne vérifiait jamais le stop sur la bougie d'entrée elle-même — TOUS les résultats historiques suspects — 2026-09-19"
-  },
-  {
-    "id": "methodology-fix-m1-vs-m15-settlement",
-    "title": "Nuance de règlement M1 vs M15 : le biais \"stop gagne en cas d'égalité\" pénalise les stops serrés",
-    "date": "2026-09-20",
-    "status": "methodology-fix",
-    "summary": "La règle « stop d'abord si stop et cible sont dans la même bougie M15 » (convention du projet pour éviter de deviner l'ordre réel intra-bougie) pénalise artificiellement les stops serrés par rapport à un règlement exact à la minute (M1). Mesuré sur les mêmes 347 trades réels 2026 : R net +51.6 en M15 \"prudent\" contre +82.6 en M1 exact pour la config à stops d'origine - les stops larges donnent presque le même résultat des deux façons, donc l'écart est concentré sur les mécanismes à stop serré. Chiffre de référence recommandé : le vrai moteur réglé à la minute, ~+31% sur 7 mois réels (fourchette honnête +31% à +53% selon le pipeline), pas +70% (ancien règlement qui sautait carrément la bougie d'entrée, voir methodology-fix-entry-candle-stop-bug).",
-    "sample": "347 trades réels 2026, réglés en parallèle M15 et M1",
-    "knownWeaknesses": "Les données 2010-2025 ne sont PAS re-vérifiables en M1 (le broker ne fournit pas d'historique M1 aussi profond) - le biais reste présent, non quantifié, dans toute conclusion basée sur ces 15 ans.",
-    "files": ["scripts/runM1Truth.js", "src/backtest/m1Store.js", "data/real-m1/m1-truth-report.md"],
-    "handoffSection": "M1 sur 8 mois (2026-01-16 → 09-18) : les conclusions « plancher ATR » et « couper 2 mécanismes » sont INVALIDÉES — 2026-09-20"
-  },
-  {
-    "id": "methodology-fix-atr-stop-floor-invalidated",
-    "title": "Étude \"plancher de stop en ATR\" et \"couper des mécanismes faibles\" — conclusions INVALIDÉES",
-    "date": "2026-09-20",
-    "status": "inconclusive",
-    "summary": "Étude décisive 2010-2025 sur un plancher de stop en multiples d'ATR, et étude mécanisme par mécanisme (garder/couper) - toutes deux basées sur le règlement M15 biaisé (voir methodology-fix-m1-vs-m15-settlement). Une fois vérifié en M1 exact sur les données réelles 2026 disponibles, les mécanismes candidats à la coupe (US500 Silver Bullet, US100 CBDR) se révèlent en fait POSITIFS (+6.0R, +5.3R) - sans eux le combo fait +44.5% au lieu de +53.4%, donc les couper aurait RÉDUIT la performance, pas amélioré. Décision d'Esdras : NE PAS appliquer le plancher ATR ni couper de mécanisme - le combo reste inchangé (stops d'origine, 8 mécanismes) pendant le suivi démo.",
-    "knownWeaknesses": "Les 2010-2025 ne sont pas re-vérifiables en M1 (pas d'historique M1 aussi profond chez ce broker) - l'étude originale reste dans le repo à titre pédagogique (bon exemple d'auto-correction) mais ses bannières marquent explicitement chaque rapport comme INVALIDÉ.",
-    "files": ["scripts/runStopFloorLongHistory.js", "scripts/runMechanismStopFloorStudy.js", "data/backtest-input/stop-floor-atr-2010-2025.md", "data/backtest-input/mechanisms-stop-floor-2010-2025.md"],
-    "handoffSection": "Test décisif 2010-2025 : plancher de stop en ATR sur les 8 mécanismes du bot — 2026-09-20"
-  },
-  {
-    "id": "validated-research-ftmo-1step-feasibility",
-    "title": "Faisabilité du challenge FTMO 1-Step avec le combo actuel (8 mécanismes)",
-    "date": "2026-09-20",
-    "status": "validated-research",
-    "summary": "Le combo actuel PEUT passer un challenge FTMO 1-Step ($10k, cible +10%, perte quotidienne 3%, drawdown 10% trailing-EOD) - confirmé sur plusieurs jeux de données indépendants (historique 2010-2025, données réelles 2026). Le levier le plus sûr pour augmenter le taux de réussite est de RÉDUIRE le risque par trade (0.25% ≈ 76% de tentatives réussies mais des cycles plus longs ; 0.5% ≈ 60%), PAS d'augmenter le risque (plus de tentatives par an mais taux de réussite par tentative en baisse) ni de changer les mécanismes.",
-    "sample": "2025 historique (14 cycles), 2026 réel 7 mois (plusieurs conventions de règlement testées)",
-    "knownWeaknesses": "Les tout premiers chiffres produits pour cette question (13/14 en 2025, 7/7 en 2026, calculés AVANT methodology-fix-entry-candle-stop-bug) étaient optimistes - le chiffre le plus fiable est le règlement réaliste post-correctif : 2 réussis / 1 raté sur les 7 mois réels 2026 (data/real-data-2026-02-to-09/ftmo-1step-realistic-cycles.md), sous la convention \"mi-chemin\" entre l'ancien règlement et le règlement \"prudent\" (qui donne 0/3). Le bust du cycle 2025 mars-mai reste un vrai résultat (5/8 mécanismes négatifs simultanément) mais PAS un motif saisonnier récurrent (vérifié positif 11/15 années historiques pour les 2 mécanismes en cause).",
-    "files": ["scripts/runFtmo1StepRealisticCycles.js", "scripts/runFtmoPlan.js", "scripts/runFtmo1Step2025FullComboCycle.js", "scripts/runFtmo1Step2026Real7MonthsCycle.js", "scripts/runSeasonalMechanismPerformanceAnalysis.js", "data/real-data-2026-02-to-09/ftmo-1step-realistic-cycles.md", "data/backtest-input/ftmo-plan-2010-2026.md"],
-    "handoffSection": "Simulation de cycles FTMO 1-Step réels — 2025 complet, post-mortem du bust, récurrence saisonnière, comptes multiples, 7 mois réels de 2026 — 2026-09-19"
-  },
-  {
-    "id": "validated-research-reserve-account-strategy",
-    "title": "Stratégie de compte de réserve FTMO (déployé seulement après un bust, jamais en parallèle)",
-    "date": "2026-09-19",
-    "status": "validated-research",
-    "summary": "2 comptes achetés mais tradés en SÉQUENCE (pas en parallèle) : le 2e reste en réserve, déployé uniquement quand le 1er buste. Confirmé empiriquement sur les 4 vrais bustes trouvés dans le scan 2025 : 4/4 fois la réserve, déployée immédiatement après le bust du 1er, aurait réussi. Fonctionne parce qu'une mauvaise fenêtre de marché est un régime temporaire et corrélé qui finit par passer - le compte de réserve démarre après coup, dans des conditions différentes. À l'inverse, 2 comptes tradés EN MÊME TEMPS avec le même combo NE diversifient PAS le risque : les 4 bustes de 2025 se regroupent tous dans la même fenêtre de 6 semaines (12 mars → 23 avril), donc 2 comptes simultanés dans cette fenêtre auraient busté ensemble.",
-    "sample": "4 bustes réels trouvés sur 27 dates de départ scannées en 2025 (toutes les 2 semaines)",
-    "knownWeaknesses": "Basé sur les chiffres de cycle pré-correctif (voir methodology-fix-entry-candle-stop-bug) - le principe (séquentiel > simultané) devrait tenir après correction, mais n'a pas été re-testé avec le règlement M1 exact.",
-    "files": ["scripts/runFtmoMultiAccountCorrelationAnalysis.js"],
-    "handoffSection": "Simulation de cycles FTMO 1-Step réels — section 4 (Comptes multiples : simultanés vs réserve) — 2026-09-19"
+    "files": [
+      "src/backtest/htfSupportReversal.js",
+      "scripts/runHtfSupportReversalStrategyAnalysis.js",
+      "data/backtest-input/htf-support-reversal-strategy-analysis.md"
+    ]
   }
 ]
