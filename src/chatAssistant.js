@@ -12,6 +12,7 @@
 // loin le moins cher de la gamme Claude pour ce volume d'usage (un
 // dashboard privé, pas un chatbot public).
 import fs from 'node:fs';
+import { loadResearchMemory } from './backtest/researchMemory.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Anthropic from '@anthropic-ai/sdk';
@@ -42,6 +43,19 @@ export function isChatConfigured() {
 // disque et gardé en mémoire pour le process entier, régénéré manuellement
 // via le script si la stratégie/config change un jour.
 let cachedBacktestSummary;
+// Mémoire de recherche structurée (2026-09-20, data/research-memory.json) : ce qui a déjà été testé, avec son statut
+// (live / rejeté / correction de méthode...). Même principe que loadBacktestSummary() : lue une fois, gardée en mémoire.
+let cachedResearchMemory;
+function loadResearchMemoryForChat() {
+  if (cachedResearchMemory !== undefined) return cachedResearchMemory;
+  try {
+    cachedResearchMemory = loadResearchMemory().map(({ id, title, date, status, summary, knownWeaknesses }) => ({ id, title, date, status, summary, knownWeaknesses }));
+  } catch (err) {
+    cachedResearchMemory = { reason: `not available (${err.code === 'ENOENT' ? 'fichier manquant' : err.message})` };
+  }
+  return cachedResearchMemory;
+}
+
 function loadBacktestSummary() {
   if (cachedBacktestSummary !== undefined) return cachedBacktestSummary;
   try {
@@ -67,6 +81,8 @@ Le bot combine 5 mécanismes de trading automatisés basés sur des concepts ICT
 DEUX SOURCES DE DONNÉES DISTINCTES DANS LE CONTEXTE - ne jamais les mélanger dans une réponse sans préciser laquelle :
 - "journal"/"recentTrades" : le VRAI trading en argent réel depuis que le suivi a été mis en place. C'est la performance réelle du bot.
 - "backtest7Years" : une SIMULATION sur 7 années de données de marché historiques (2019-2025), rejouée avec le code exact de production, mais ce n'est PAS de l'argent réel - c'est "qu'est-ce que le bot aurait fait s'il avait tourné pendant ces 7 années". Utile pour parler de tendances saisonnières (quel mois est historiquement plus faible/fort) ou de résultats sur un grand échantillon, mais dis-le clairement quand tu t'appuies dessus : "sur la simulation historique 2019-2025..." plutôt que de laisser croire que c'est du réel.
+
+- "researchMemory" : l'INDEX de ce que le projet a déjà testé, avec un statut : "live" (actif dans le bot), "rejected" (testé, ne tient pas), "methodology-fix" (un biais ou bug de mesure corrigé, qui a changé la fiabilité d'autres résultats), "inconclusive" (trop peu de données pour trancher), "validated-research". Quand on demande "est-ce qu'on a déjà testé X ?", cherche-le ici et cite le titre, le statut et les limites connues. IMPORTANT : si une entrée "methodology-fix" ou "rejected" contredit un chiffre optimiste ailleurs (par exemple le backtest7Years, calculé avant certaines corrections), dis-le clairement et privilégie l'entrée de researchMemory.
 
 RÈGLES STRICTES :
 1. N'utilise QUE les données fournies ci-dessous dans le contexte. N'invente jamais un chiffre. Si la question demande quelque chose que les données ne permettent pas de calculer avec certitude (ex: une agrégation par jour de semaine sur peu de trades), fais le calcul à partir des "recentTrades" fournis si c'est raisonnable, mais dis clairement que c'est un calcul approximatif sur un échantillon limité si l'échantillon est petit (moins de 20 trades pour la question posée).
@@ -111,6 +127,7 @@ export async function buildChatContext(store) {
   // Backtest 2019-2025 (7 années) - données historiques rejouées, distinctes
   // du journal réel ci-dessus. Voir loadBacktestSummary().
   context.backtest7Years = loadBacktestSummary();
+  context.researchMemory = loadResearchMemoryForChat();
 
   return context;
 }
