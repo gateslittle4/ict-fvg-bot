@@ -6336,3 +6336,19 @@ Esdras : "fais le test alors pour les 7 derniers mois de 2026 avec les mêmes cy
 **Ce qui reste ouvert pour la prochaine session** : aucun changement de code live découlant de cette section — recherche/simulation uniquement, comme HaitiForex plus haut. Si Esdras veut vraiment un "compte de réserve", ça reste une décision opérationnelle (quand acheter le 2e compte) plutôt que quelque chose à coder dans ce projet.
 
 **Fichiers** : `scripts/runFtmo1Step2025FullComboCycle.js`, `scripts/runSeasonalMechanismPerformanceAnalysis.js`, `scripts/runFtmoMultiAccountCorrelationAnalysis.js`, `scripts/runFtmo1Step2026Real7MonthsCycle.js` (tous nouveaux, recherche/simulation uniquement, aucun changement de comportement live). `npm test` : 964/964 après chaque ajout (aucun changement de code de production, seulement des scripts d'analyse).
+
+## EN COURS (poussé inachevé à la demande d'Esdras - changement de session) : mémoire de recherche structurée — 2026-09-20
+
+Contexte : Esdras a fait relire un brainstorm d'un ami (plateforme de recherche quantitative complète - données macro, agent IA autonome, régimes de marché, etc.) - jugé après discussion trop ambitieux à adopter tel quel (la plupart existe déjà ici en plus étroit ; l'agent IA "qui génère librement des hypothèses" a été déconseillé - risque de data snooping industriel, pas juste une question de coût API). La SEULE idée retenue à reprendre : une mémoire de recherche structurée et interrogeable, en plus du journal chronologique de ce fichier.
+
+**Fait** :
+- `src/backtest/researchMemory.js` (nouveau) : `loadResearchMemory()`, `queryResearchMemory(entries, {status, market, text})`, `addEntry()` (mutant, valide + refuse les id dupliqués), `validateEntry()`. Schéma d'une entrée : `id, title, date, status ('live'|'validated-research'|'rejected'|'methodology-fix'|'inconclusive'), summary, markets?, timeframe?, sample?, knownWeaknesses?, files?, handoffSection?`.
+- `data/research-memory.json` (nouveau) : store actuel = **`[]` vide** - RIEN n'a encore été rétro-rempli.
+
+**PAS fait (à faire par la prochaine session)** :
+1. Peupler avec les entrées les plus significatives déjà documentées dans ce fichier - pas un remplissage exhaustif des ~22 mécanismes du Labo, mais au minimum : les 8 mécanismes live, le rejet Support HTF (les deux lectures), le bug "stop jamais vérifié sur la bougie d'entrée" + sa correction, la nuance M1 vs M15 (biais "le stop gagne en cas d'égalité"), l'étude "plancher de stop en ATR" (INVALIDÉE par la vérification M1 - bon exemple pédagogique d'auto-correction), les cycles FTMO 1-Step (2025 et 2026), la stratégie de compte de réserve.
+2. Tests (`test/researchMemory.test.js`) - aucun test écrit pour l'instant, `validateEntry`/`queryResearchMemory`/`addEntry` ne sont PAS encore vérifiés par la suite `npm test`.
+3. Câblage dans `chatAssistant.js` (même pattern que `backtest7Years`/`loadBacktestSummary()` déjà en place - `context.researchMemory = loadResearchMemory()` + paragraphe dans `SYSTEM_PROMPT` expliquant la distinction) pour que l'assistant IA du dashboard puisse répondre "est-ce qu'on a déjà testé ça ?" à partir de vraies entrées.
+4. Un script CLI de consultation rapide (`scripts/queryResearchMemory.js` ou similaire) n'a pas été créé.
+
+`npm test` au moment de cette pause : 1043/1043 (le nouveau module n'a pas encore de test, donc ce compte n'a pas bougé). Rien de cassé, mais la fonctionnalité n'est fonctionnellement utile à personne tant que 1-3 ci-dessus ne sont pas faits.
