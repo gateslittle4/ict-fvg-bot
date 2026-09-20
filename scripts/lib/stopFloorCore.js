@@ -58,7 +58,7 @@ export function makeSimulator({ all, cache }) {
     return { r: (t.dir * (c.close - t.entry)) / d, exit: c.time };
   }
   /** kOf(unit) -> ATR floor multiple (0 = the mechanism's own stop); include = Set of units or null; fromTime/toTime restrict the entry window */
-  return function simulate(kOf, include = null, { fromTime = -Infinity, toTime = Infinity } = {}) {
+  return function simulate(kOf, include = null, { fromTime = -Infinity, toTime = Infinity, resolver = null } = {}) {
     const openUntil = {}; const dayCount = new Map(); const dayR = new Map(); const losses = []; const out = [];
     for (const t of all) {
       if (t.time < fromTime || t.time >= toTime) continue;
@@ -72,7 +72,8 @@ export function makeSimulator({ all, cache }) {
       const day = Math.floor(t.time / DAY);
       if ((dayCount.get(day) ?? 0) >= 3 || (dayR.get(day) ?? 0) <= -4) continue;
       if (losses.some((x) => x <= t.time && t.time < x + 30 * 60000)) continue;
-      const res = resolve(t, d);
+      const res = resolver ? resolver(t, d, resolve) : resolve(t, d);
+      if (!res) continue; // e.g. an entry that never filled at minute resolution
       const net = res.r - spread / d;
       openUntil[t.symbol] = res.exit;
       dayCount.set(day, (dayCount.get(day) ?? 0) + 1);
