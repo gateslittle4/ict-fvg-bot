@@ -38,6 +38,7 @@ import { describeBrokerPayload, extractBrokerError } from './brokerPayload.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes } from './accountReconciliation.js';
+import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields } from './demoTrackingLog.js';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
 import { buildComplianceChecklist, requiredH1LookbackCandles, requiredPreEntryContextCandles } from './tradeCompliance.js';
 import { buildChartOverlays } from '../backtest/chartOverlays.js';
@@ -354,6 +355,16 @@ export class CTraderDataSource {
     // (persistence silently skipped) unless SUPABASE_URL/SUPABASE_SERVICE_KEY
     // are set.
     this.tradeLogClient = createTradeLogClient();
+    // Demo tracking (2026-09-20): spread per 15-minute bucket -> bot_spread_samples, flushed every minute once a bucket has ended
+    this.spreadAggregator = createSpreadAggregator();
+    this.lastSpreadBySymbol = new Map();
+    if (this.tradeLogClient) {
+      this._spreadFlushTimer = setInterval(() => {
+        const done = this.spreadAggregator.take(Date.now());
+        if (done.length) upsertSpreadRows(this.tradeLogClient, done.map(toSpreadRow));
+      }, 60000);
+      this._spreadFlushTimer.unref?.();
+    }
     // 2026-09-14 FIX (Esdras: "corrige pour voir le vrai P&L du courtier",
     // after spotting the durable journal (17%) disagreeing with the live
     // cTrader-queried journal (0%) on the SAME trades): this used to be
@@ -1673,6 +1684,8 @@ export class CTraderDataSource {
           if (!store.recentTicksBySymbol.has(symbolName)) store.recentTicksBySymbol.set(symbolName, []);
           const ticks = store.recentTicksBySymbol.get(symbolName);
           ticks.push({ bid, ask, time: Date.now() });
+          this.spreadAggregator.record(symbolName, ask - bid, Date.now());
+          this.lastSpreadBySymbol.set(symbolName, ask - bid);
           if (ticks.length > MAX_SPREAD_SAMPLES) ticks.shift();
         }
       });
@@ -2269,6 +2282,8 @@ export class CTraderDataSource {
     // fixed - this line plus the ones below at submit/confirm time close
     // that gap.
     console.log(`[auto-execute] entry signal received: ${symbolName} source=${signal.source} side=${signal.suggestedSide} id=${signal.id}`);
+    const signalTimeMs = Date.now();
+    logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'signal', side: signal.suggestedSide, price: signal.entryPrice, detail: `stop=${signal.stopPrice} target=${signal.targetPrice}` });
     try {
       const spec = this._specFor(symbolName);
       if (!spec) {
@@ -2345,6 +2360,7 @@ export class CTraderDataSource {
       // no thrown error would otherwise be silently indistinguishable from
       // a real success in every log Render actually keeps.
       console.log(`[auto-execute] _submitOrder resolved for ${symbolName}: brokerOrderId=${brokerOrderId}`);
+      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: brokerOrderId != null ? 'order_sent' : 'order_no_id', side: signal.suggestedSide, price: signal.entryPrice, detail: `${isFvg ? 'LIMIT' : 'MARKET'} lots=${sizing.lots} orderId=${brokerOrderId}` });
       if (brokerOrderId != null) {
         // Tracked so _handleExecutionEvent can confirm the REAL outcome
         // (filled vs cancelled/expired/rejected) instead of leaving the
@@ -2362,6 +2378,11 @@ export class CTraderDataSource {
           direction: signal.suggestedSide === 'buy' ? 'bullish' : 'bearish',
           entryPrice: signal.entryPrice,
           riskAmount: sizing.actualRiskAmount,
+          signalPrice: signal.entryPrice,
+          signalTime: signalTimeMs,
+          orderTime: submittedAtMs,
+          riskPct: store.strategyEngine.riskPctPerTrade,
+          spreadAtSignal: this.lastSpreadBySymbol.get(symbolName) ?? null,
           // 2026-09-14 (found live: a real position came back stopLoss:null
           // with no working stop order behind it either - see
           // accountReconciliation.js's computeMissingStopFixes) - the ONLY
@@ -2569,6 +2590,7 @@ export class CTraderDataSource {
             // %, not just R-multiples.
             pnlUsd: pnl,
             balanceAfter: store.balance,
+            extra: extraTradeFields(info, Number(event.deal.executionPrice)),
           });
           // 2026-09-14 (found live, monitoring BTCUSD right after the
           // null-orderId fix): the engine's own belief (openPositions) was
@@ -2723,14 +2745,17 @@ export class CTraderDataSource {
         // confirmed broker data, not a simulated guess.
         const filledPositionId = event.position?.positionId ?? event.deal?.positionId;
         if (filledPositionId != null) {
-          this.openPositionInfoByPositionId.set(String(filledPositionId), { ...pending, entryTime: Date.now() });
+          const fillPx = Number(event.deal?.executionPrice ?? event.order?.executionPrice);
+          this.openPositionInfoByPositionId.set(String(filledPositionId), { ...pending, entryTime: Date.now(), fillPrice: Number.isFinite(fillPx) && fillPx > 0 ? fillPx : null, spreadAtEntry: this.lastSpreadBySymbol.get(pending.symbolName) ?? null });
         }
+        logOrderEvent(this.tradeLogClient, { symbol: pending.symbolName, source: pending.source, event: 'filled', side: pending.direction === 'bullish' ? 'buy' : 'sell', price: Number(event.deal?.executionPrice ?? event.order?.executionPrice), detail: `orderId=${event.order.orderId} signalPrice=${pending.signalPrice}` });
         store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'filled', executionType: event.executionType });
         console.log(`[auto-execute] CONFIRMED FILLED: ${pending.symbolName} source=${pending.source} orderId=${event.order.orderId} - real position opened at the broker.`);
         this._notifyText(`✅ [${pending.source.toUpperCase()}] Ordre confirmé REMPLI sur ${pending.symbolName} - position réellement ouverte chez le courtier.`);
       } else if (unfilledTypes.has(event.executionType)) {
         this.pendingEntryOrderByOrderId.delete(pendingOrderKey);
         store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'unfilled', executionType: event.executionType });
+        logOrderEvent(this.tradeLogClient, { symbol: pending.symbolName, source: pending.source, event: event.executionType === 'ORDER_REJECTED' ? 'rejected' : event.executionType === 'ORDER_EXPIRED' ? 'expired' : 'cancelled', side: pending.direction === 'bullish' ? 'buy' : 'sell', price: pending.signalPrice, detail: `orderId=${event.order.orderId} ${event.executionType}` });
         console.log(`[auto-execute] CONFIRMED UNFILLED: ${pending.symbolName} source=${pending.source} orderId=${event.order.orderId} executionType=${event.executionType} - no real position, clearing believed-open.`);
         // The engine believed this was open the moment it validated the
         // signal (see _processFvgEvent etc.) - now confirmed wrong. Clear

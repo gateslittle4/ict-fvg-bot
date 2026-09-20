@@ -50,8 +50,10 @@ export function createTradeLogClient({ url, serviceKey } = {}) {
  * event that opened it - same shape recentPerformanceReport.js already
  * builds) to the row shape bot_trade_events expects.
  */
-export function toTradeRow({ symbol, source, direction, outcome, rMultiple, entryPrice, entryTime, exitTime, pnlUsd, balanceAfter }) {
+export function toTradeRow({ symbol, source, direction, outcome, rMultiple, entryPrice, entryTime, exitTime, pnlUsd, balanceAfter, extra = null }) {
   return {
+    // 2026-09-20 demo tracking: stop/target/exit/slippage/spread/timings - only spread in when provided (nullable columns)
+    ...(extra || {}),
     symbol,
     source,
     direction,
