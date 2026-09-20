@@ -6227,3 +6227,16 @@ Demande d'Esdras : une seule option qui charge toutes les paires que le bot trad
 
 - Le « 50 $ » d'Esdras est le **risque par trade** (0,5 % de 10 000 $), pas la distance du stop : la distance vient de la structure (bord lointain du FVG + 10 %, plus bas des 10 dernières bougies, 1,5×ATR pour la divergence), médiane 0,09 % du prix ; la taille de position s'ajuste pour que le stop coûte 50 $.
 - Test (347 trades du moteur corrigé, entrée jugée dès sa bougie, spread inclus, 0,5 % composé, sans garde-fous) : stop d'origine **+7 %** (R net +17,8, baisse max 18 %) ; stop >= 1×ATR14(M15) même R:R **+26 %** (R +50, baisse 13 %) ; >= 2×ATR **+40 %** (R +71, baisse 15 %) ; >= 3×ATR +13 %. Vrai dans les DEUX moitiés de la période (1re moitié -11,5R -> +6,1R / +17,4R ; 2de moitié +29R -> +44R / +41R). **Non validé** : 7 mois, 7 variantes essayées, pas de séparation train/test ; à confirmer sur l'historique 2010-2025 du Labo avant de toucher au bot live.
+
+## 2026-09-20 (suite) — Test décisif 2010-2025 : plancher de stop en ATR sur les 8 mécanismes du bot
+
+`scripts/runStopFloorLongHistory.js` -> rapport `data/backtest-input/stop-floor-atr-2010-2025.md`. 17 254 trades bruts (8 mécanismes sur leurs paires), re-résolus avec une règle unique (entrée jugée dès sa bougie, stop = max(stop de structure, k × ATR14 M15), même R:R, filtre stop >= 3× spread, garde-fous simplifiés identiques), séparation entraînement <= 2023 / test 2024+, cycles FTMO 1-Step (moteur GuardrailEngine).
+
+| Stop | Trades | R net | Entraînement | Test 2024+ | Compte 10k à 0,5 % | Pire baisse | FTMO réussis / échoués |
+|---|---|---|---|---|---|---|---|
+| d'origine | 9 333 | +78 | **-14 R** | +92 R | 9 103 $ | 76 % | 46 / 61 |
+| >= 1× ATR | 10 067 | +399 | +209 | +190 | 43 035 $ | 71 % | 70 / 74 |
+| >= 2× ATR | 9 186 | +407 | +311 | +96 | 48 065 $ | 48 % | 57 / 57 |
+| >= 3× ATR | 7 629 | +416 | +324 | +92 | 55 556 $ | 40 % | 49 / 47 |
+
+Lecture : le stop d'origine n'a AUCUN avantage mesurable sur 16 ans (+0,008 R/trade, entraînement négatif) - les bons 7 mois de 2026 et 2024 sont une bonne période, pas une preuve. Le plancher en ATR est positif dans l'entraînement ET le test ; 2× bat l'origine 13 années sur 17. Mais les baisses (40-76 %) et un taux de réussite FTMO d'environ 50 % par tentative montrent un avantage modeste, pas une machine. Limites : entrées issues des modules de backtest (limite supposée remplie), spread constant, garde-fous approximés, pas de glissement/rollover. Pas appliqué au bot live.
