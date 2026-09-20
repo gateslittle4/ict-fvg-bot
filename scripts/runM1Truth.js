@@ -19,7 +19,7 @@ import { buildTrades, makeSimulator, ftmoAttempts, RECOMMENDED, DROPPED } from '
 
 const SYMBOLS = ['US100', 'US500', 'GER40', 'XAUUSD', 'EURUSD'];
 const shift = (cs) => cs.map((c) => ({ ...c, time: c.time - FIXED_EST_TO_UTC_OFFSET_MS }));
-const merge15 = (s) => { const m = new Map(); for (const dir of ['data/real-data-2026-02-to-09', 'data/real-data-2026-09-17']) { try { for (const c of loadCandlesFromCsv(path.join(dir, `${s}.csv`)).candles) m.set(c.time, c); } catch {} } return shift([...m.values()].sort((a, b) => a.time - b.time)); };
+const merge15 = (s) => { const m = new Map(); for (const dir of ['data/real-data-2026-09-20', 'data/real-data-2026-02-to-09', 'data/real-data-2026-09-17']) { try { for (const c of loadCandlesFromCsv(path.join(dir, `${s}.csv`)).candles) m.set(c.time, c); } catch {} } return shift([...m.values()].sort((a, b) => a.time - b.time)); };
 const real = buildTrades(SYMBOLS, merge15, () => {});
 const sim = makeSimulator(real);
 
@@ -76,7 +76,7 @@ const money = (n) => `$${n.toFixed(0)}`;
 const day = (t) => new Date(t).toISOString().slice(0, 10);
 const md = [];
 md.push('# La vérité à la minute : mêmes trades, règlement M15 prudent vs M1 exact', '');
-md.push(`Fenêtre couverte par les bougies d'1 minute du broker sur les 5 paires : ${day(from)} → ${day(Math.min(...SYMBOLS.map((s) => m1[s].t[m1[s].n - 1])))} (environ 4 mois, données réelles). 10 000 $, 0,5 % de risque, sans plafond d'objectif, garde-fous simplifiés, spread inclus, filtre « stop ≥ 3× le spread ».`, '');
+md.push(`Fenêtre couverte par les bougies d'1 minute du broker sur les 5 paires : ${day(from)} → ${day(Math.min(...SYMBOLS.map((s) => m1[s].t[m1[s].n - 1])))} (données réelles du broker). 10 000 $, 0,5 % de risque, sans plafond d'objectif, garde-fous simplifiés, spread inclus, filtre « stop ≥ 3× le spread ».`, '');
 md.push('| Configuration | Règlement | Trades | Gagnants | R net | Compte final | Pire baisse | Défis FTMO 1-Step (réussis / échoués / en cours) |', '|---|---|---|---|---|---|---|---|');
 const rows = [];
 for (const [name, kOf, inc] of [['Aujourd\'hui (15 mécanismes, stops d\'origine)', () => 0, null], ['Recommandé (13 mécanismes, planchers ATR)', recK, recSet]]) {
@@ -101,6 +101,25 @@ for (const [name, iA, iB] of [['Aujourd\'hui', 0, 1], ['Recommandé', 2, 3]]) {
   md.push(`| ${name} | ${n} | ${same} (${(same / n * 100).toFixed(0)} %) | ${fmt(ra)} | ${fmt(rb)} |`);
 }
 md.push('');
+// does a wider stop help once the order of stop and target is known exactly? (all 15 mechanisms, same floor everywhere)
+md.push('### Plancher ATR partout, règlement M1 exact', '', '| Plancher | Trades | Gagnants | R net | Compte final | Pire baisse | FTMO (réussis / échoués / en cours) |', '|---|---|---|---|---|---|---|');
+for (const k of [0, 1, 2, 3]) {
+  const list = sim(() => k, null, { fromTime: from, resolver: resolveM1 });
+  const s2 = [...list].sort((a, b) => a.exit - b.exit);
+  let bal = 10000, peak = 10000, dd = 0; for (const t of s2) { bal *= 1 + 0.005 * t.net; peak = Math.max(peak, bal); dd = Math.max(dd, (peak - bal) / peak * 100); }
+  const f = ftmoAttempts(list);
+  md.push(`| ${k ? k + '× ATR' : 'stop d\'origine'} | ${list.length} | ${(list.filter((t) => t.net > 0).length / list.length * 100).toFixed(0)} % | ${fmt(list.reduce((a, t) => a + t.net, 0))} | ${money(bal)} (${fmt((bal - 10000) / 100)} %) | ${dd.toFixed(0)} % | ${f.pass} / ${f.fail} / ${f.attempts.filter((a) => a.result === 'EN COURS').length} |`);
+}
+md.push('');
+// each mechanism ALONE, own stop, exact resolution, and the portfolio without the two mechanisms the long-history study wanted to drop
+{
+  md.push('### Chaque mécanisme (stop d\'origine, M1 exact, seul)', '', '| Mécanisme | Trades | Gagnants | R net |', '|---|---|---|---|');
+  const units = [...new Set(real.all.map((t) => `${t.symbol} ${t.id.replace('bot-', '')}`))].sort();
+  for (const u of units) { const l = sim(() => 0, new Set([u]), { fromTime: from, resolver: resolveM1 }); md.push(`| ${u} | ${l.length} | ${l.length ? (l.filter((t) => t.net > 0).length / l.length * 100).toFixed(0) : 0} % | ${fmt(l.reduce((a, t) => a + t.net, 0))} |`); }
+  const keep = new Set(units.filter((u) => !DROPPED.includes(u)));
+  const l = sim(() => 0, keep, { fromTime: from, resolver: resolveM1 }); let bal = 10000; for (const t of [...l].sort((a, b) => a.exit - b.exit)) bal *= 1 + 0.005 * t.net; const f = ftmoAttempts(l);
+  md.push('', `Sans US500 Silver et US100 CBDR (stops d'origine, M1 exact) : ${l.length} trades, R net ${fmt(l.reduce((a, t) => a + t.net, 0))}, compte ${money(bal)} (${fmt((bal - 10000) / 100)} %), FTMO ${f.pass} / ${f.fail} / ${f.attempts.filter((a) => a.result === 'EN COURS').length}.`, '');
+}
 md.push('## Limites', '', '- Les entrées viennent des modules de backtest (bougies M15) ; un ordre limite est supposé rempli au premier minute de sa bougie M15 qui touche son prix.', '- Bid uniquement (le spread est ajouté comme coût fixe) ; pas de glissement, pas d\'élargissement du spread au rollover.', '- Environ 4 mois : un échantillon, pas une preuve.');
 const out = path.join('data', 'real-m1', 'm1-truth-report.md');
 fs.writeFileSync(out, md.join('\n'));

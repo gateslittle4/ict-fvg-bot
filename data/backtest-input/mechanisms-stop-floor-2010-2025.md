@@ -1,4 +1,4 @@
-# Mécanisme par mécanisme : qui tire vers le bas, qui garde, quel plancher de stop
+> ⚠️ **INVALIDÉ en partie (2026-09-20)** : ce rapport règle un stop et un objectif touchés dans la même bougie M15 en faveur du stop. Avec les vraies bougies d'une minute (`data/real-m1/m1-truth-report.md`), cette règle pénalise à tort les stops serrés d'origine : la conclusion « un plancher de stop en ATR améliore » ne tient PAS en M1 exact (2026 : stop d'origine +53 # Mécanisme par mécanisme : qui tire vers le bas, qui garde, quel plancher de stop
 
 Chaque mécanisme (paire + stratégie) est joué SEUL sur 2010-2025 (une position à la fois par mécanisme), avec 5 planchers de stop (0 = stop d'origine, sinon k × ATR14 M15, même R:R), entrée jugée dès sa bougie, spread inclus, filtre « stop ≥ 3× le spread ». **Décision prise sur l'entraînement seul (≤ 2023)** ; le test (2024+) sert à vérifier. Règle : meilleur plancher = plus haut R moyen par trade à l'entraînement ; GARDER si ce R moyen > 0 avec t ≥ 1,5 ; COUPER s'il est ≤ 0 pour tous les planchers ; sinon A SURVEILLER.
 
