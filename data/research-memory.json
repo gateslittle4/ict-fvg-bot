@@ -426,5 +426,27 @@
       "data/backtest-input/max-trades-per-day-sweep.md"
     ],
     "handoffSection": "Plafond de trades par jour"
+  },
+  {
+    "id": "protocol-m1-full-history-validation",
+    "title": "Protocole PRÉ-ENREGISTRÉ : validation du combo sur tout l'historique M1 du broker (écrit AVANT le backtest)",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Écrit avant d'avoir regardé les résultats sur les années 2023 et avant, pour limiter le data snooping. (1) Le combo actuel est FIGÉ : la mesure de tout l'historique M1 (un chiffre par question, par année et par mois) ne demande pas de découpage, rien n'est réglé dessus. (2) Toute modification du combo (retirer GER40 ou EURUSD, changer un stop, un plafond) est une nouvelle hypothèse : elle est décidée sur la partie ANCIENNE de l'historique, puis lue UNE SEULE FOIS sur la fin (test), sans retouche après lecture. (3) Découpage fixé à l'avance : décision sur tout ce qui précède 2025-01-01, test 2025-01-01 → 2026-09-18 ; validation glissante en plus (entraînement sur une année, test sur la suivante). (4) Critère de rejet écrit à l'avance pour toute modification : R net par trade du test inférieur à celui du combo actuel sur le même test, OU pire baisse plus grande, OU amélioration non retrouvée sur au moins la moitié des tranches glissantes. (5) Nombre d'hypothèses comptées et publiées dans le rapport (chaque variante testée augmente le risque de faux positif). (6) Les années 2010-2025 ont déjà servi à construire et régler le combo (plusieurs découpages, nombreuses comparaisons) : le M1 des mêmes années est une REMESURE plus exacte (règlement à la minute), pas une preuve indépendante. Les seules données vierges sont celles de la démo depuis le 2026-09-21. (7) Le chiffre de référence du vrai moteur (~+31 % sur 7 mois) reste cité à part ; la simulation à garde-fous approximés (~+53 % sur les mêmes mois) sert aux différences entre périodes seulement.",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Un découpage unique reste une seule réalisation du hasard ; coûts (commission, swap, glissement) non modélisés ; garde-fous approximés ; un mois extrême (octobre 2025 : ~1/3 du total sur 16 mois) peut dominer un test ; le M1 d'avant 2023 n'est peut-être pas disponible chez le broker (à vérifier).",
+    "files": [
+      "scripts/downloadAllRealM1.sh",
+      "scripts/runM1Backtest16Months.js",
+      "data/backtest-input/combo-m1-16-months.md"
+    ],
+    "handoffSection": "2026-09-21 — Historique M1 du broker : téléchargement complet en cours, backtest ENSUITE"
   }
 ]
