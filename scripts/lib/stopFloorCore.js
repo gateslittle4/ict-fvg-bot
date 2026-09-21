@@ -58,7 +58,7 @@ export function makeSimulator({ all, cache }) {
     return { r: (t.dir * (c.close - t.entry)) / d, exit: c.time };
   }
   /** kOf(unit) -> ATR floor multiple (0 = the mechanism's own stop); include = Set of units or null; fromTime/toTime restrict the entry window */
-  return function simulate(kOf, include = null, { fromTime = -Infinity, toTime = Infinity, resolver = null } = {}) {
+  return function simulate(kOf, include = null, { fromTime = -Infinity, toTime = Infinity, resolver = null, maxPerDay = 3, cooldownMin = 30, dayLossR = -4 } = {}) {
     const openUntil = {}; const dayCount = new Map(); const dayR = new Map(); const losses = []; const out = [];
     for (const t of all) {
       if (t.time < fromTime || t.time >= toTime) continue;
@@ -70,8 +70,8 @@ export function makeSimulator({ all, cache }) {
       if (spread > 0 && d < 3 * spread) continue;
       if ((openUntil[t.symbol] ?? -1) > t.time) continue;
       const day = Math.floor(t.time / DAY);
-      if ((dayCount.get(day) ?? 0) >= 3 || (dayR.get(day) ?? 0) <= -4) continue;
-      if (losses.some((x) => x <= t.time && t.time < x + 30 * 60000)) continue;
+      if ((dayCount.get(day) ?? 0) >= maxPerDay || (dayR.get(day) ?? 0) <= dayLossR) continue;
+      if (cooldownMin > 0 && losses.some((x) => x <= t.time && t.time < x + cooldownMin * 60000)) continue;
       const res = resolver ? resolver(t, d, resolve) : resolve(t, d);
       if (!res) continue; // e.g. an entry that never filled at minute resolution
       const net = res.r - spread / d;
