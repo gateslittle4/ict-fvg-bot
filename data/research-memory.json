@@ -535,5 +535,27 @@
       "data/backtest-input/order-geometry-live-vs-backtest.md"
     ],
     "handoffSection": "2026-09-21 — Géométrie des ordres au marché"
+  },
+  {
+    "id": "max-trades-per-day-cap-verified-m1",
+    "title": "Plafond 3 trades/jour : la première vérification (M15) était biaisée par le règlement M15, corrigée en M1",
+    "date": "2026-09-21",
+    "status": "methodology-fix",
+    "summary": "runMaxTradesPerDayRealismCheck.js (M15, data/backtest-input/) trouvait les trades vétoés par max_trades_reached PLUS rentables que les pris (+0,117R vs +0,032R) - donnant l'impression que le plafond de 3/jour coûtait de l'edge réel. Refait à l'identique (même moteur réel, même classification des raisons de veto) mais résolu minute par minute sur data/real-m1-full/ (runMaxTradesPerDayRealismCheckM1.js) : le signe s'inverse, -0,095R pour les trades vétoés contre +0,158R pour les pris. Confirme max-trades-per-day-sweep-full-m1.md (autre session) : le plafond de 3/jour n'est pas destructeur. Cause : le biais connu du règlement M15 (stop gagne les égalités stop+cible dans la même bougie de 15 min) classait à tort certains vrais perdants en gagnants parmi les trades vétoés.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M1 (résolution), M15 (détection)",
+    "sample": "1232 trades résolus en M1 sur 2024-2025, 140 vétoés par le seul plafond",
+    "knownWeaknesses": "Fenêtre 2024-2025 seulement (couverture M1 réelle) ; combo actuel (sans GER40, retiré le 2026-09-21) donc pas directement comparable au chiffre M15 original qui incluait GER40.",
+    "files": [
+      "scripts/runMaxTradesPerDayRealismCheckM1.js",
+      "scripts/runMaxTradesPerDayRealismCheck.js",
+      "data/backtest-input/max-trades-per-day-realism-check-m1.md"
+    ],
+    "handoffSection": "Plafond « 3 trades par jour » vérifié en M1 exact — 2026-09-21"
   }
 ]
