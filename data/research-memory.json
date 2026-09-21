@@ -639,5 +639,23 @@
       "data/backtest-input/silver-bullet-second-position-netting.md"
     ],
     "handoffSection": "2026-09-21 (soir, suite 4) — Silver Bullet en 2e position : rejeté, -6.52R historique"
+  },
+  {
+    "id": "prereg-new-instruments-2026-09-21",
+    "title": "PRÉ-ENREGISTREMENT (avant tout calcul) : FVG, Weekly Sweep, NWOG et Divergence sur XAGUSD, US30 et USOIL",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Écrit avant tout téléchargement et tout calcul. 11 hypothèses comptées (FVG, Weekly Sweep, NWOG sur XAGUSD/US30/USOIL ; Divergence sur XAUUSD/XAGUSD et US100/US30), configuration copiée de l'instrument frère sans aucun réglage. Vrai moteur, M1 exact, garde-fous réels ; entraînement < 2025-01-01, test ≥ 2025-01-01 lu UNE fois ; coûts = 2 x le spread du frère. Retenue pour lecture du test si >= 60 trades, >= +0,10 R/trade et positive sur >= 2 années civiles ; réussie au test si >= 30 trades, >= +0,10 R/trade, R total positif et corrélation mensuelle < 0,3 avec le combo. Aucune adoption directe : candidate = suivi en mode alerte jusqu'à 100 signaux hors échantillon à >= +0,1 R/trade. Un succès isolé modeste (< +0,15 R/trade ou < 40 trades) est non concluant (correction des comparaisons multiples). Texte complet : data/backtest-input/preregistration-new-instruments-2026-09-21.md.",
+    "markets": [
+      "XAGUSD",
+      "US30",
+      "USOIL"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Historique court (2,5 à 3 ans d'entraînement) ; coûts partiels et spreads supposés faute de mesure ; instruments corrélés à ceux déjà tradés (argent/or, US30/indices) ; pétrole exploratoire sans frère naturel ; 11 hypothèses = risque de faux positif.",
+    "files": [
+      "data/backtest-input/preregistration-new-instruments-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Pré-enregistrement : nouveaux instruments"
   }
 ]
