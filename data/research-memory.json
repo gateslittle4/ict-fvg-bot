@@ -513,5 +513,27 @@
       "data/backtest-input/combo-m1-full-history.md"
     ],
     "handoffSection": "2026-09-21 — GER40 retiré"
+  },
+  {
+    "id": "market-order-protection-geometry",
+    "title": "Ordres au marché : le stop relatif au prix de remplissage resserre le stop de la valeur du spread (correctif écrit, à déployer)",
+    "date": "2026-09-21",
+    "status": "methodology-fix",
+    "summary": "cTrader n'accepte pas de stop/cible absolus sur un ordre MARKET : le bot envoie des distances relatives ancrées sur le prix de REMPLISSAGE. Un achat se remplit à l'ask (bid + spread) mais stop/cible se déclenchent sur le bid : le stop est plus serré de s (distance en prix bid d - s) et la cible plus loin (3d + s) que les niveaux testés en backtest sur des bougies bid. Trouvé après le premier trade réel (EURUSD 2026-09-21 : stop 3,4 pips, spread 1,1 pip, rempli 1,14755, stop exécuté 1,1472, -1,03 R). Mesuré sur 4 ans de M1 réel sans GER40 et spreads mesurés : géométrie backtest (A) +322 R, géométrie live (B) +266 R (-17 %, US100 -29 R, US500 -23 R), correctif (C : niveaux absolus de la stratégie, lots calculés sur d + s pour garder 1 R de risque) +316 R. Correctif : adjustMarketProtectionForSpread() dans cTraderDataSource.js (distances relatives d + s et T - s ancrées sur le fill attendu, lots sur le stop élargi), MARKET seulement (FVG/LIMIT inchangé). Sans effet si le spread est inconnu. Test : test/marketProtectionSpread.test.js. Le trade EURUSD perdu a une cause simple en plus : stop de 3,4 pips (3,1x le spread) touché par la volatilité de l'ouverture de Londres (bougie 07:00 UTC, plus bas 1,14705).",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Spreads mesurés sur 9 h ; glissement supposé = spread ; comportement réel du broker vérifié sur un seul trade (stop rempli à 3,5 pips du fill) ; le correctif n'est pas encore déployé, donc jamais observé en réel.",
+    "files": [
+      "src/dataSources/cTraderDataSource.js",
+      "test/marketProtectionSpread.test.js",
+      "scripts/runOrderGeometryCheck.js",
+      "data/backtest-input/order-geometry-live-vs-backtest.md"
+    ],
+    "handoffSection": "2026-09-21 — Géométrie des ordres au marché"
   }
 ]

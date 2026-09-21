@@ -150,6 +150,35 @@ export function relativeProtectionStep(priceDigits) {
   return 10 ** (5 - digits);
 }
 
+/**
+ * Compensates a MARKET order's spread-shifted protection (2026-09-21, found after the first real EURUSD trade).
+ *
+ * A MARKET order can only carry RELATIVE stop/target distances, anchored on the FILL price (see toRelativeProtectionDistance). A buy fills at the
+ * ask (= bid + spread) but its stop/target trigger on the bid, so a stop `d` below the fill sits only `d - spread` below the bid the backtest
+ * (bid candles) tested, and the target `T` above sits `T + spread` away: the stop is tighter and the target farther than the strategy's own
+ * levels. A sell fills at the bid and triggers on the ask: same shift. Measured on 4 years of M1 (data/backtest-input/order-geometry-live-vs-backtest.md)
+ * that costs ~17 % of the edge (+266 R live geometry vs +322 R strategy levels).
+ *
+ * Returned prices are what to pass as stopLoss/takeProfit together with referencePrice = the signal's entry price, so the relative distances
+ * become d + spread (stop) and T - spread (target): anchored on the expected fill they land on the strategy's own levels. `stopPrice` for sizing
+ * is the same widened stop, so the worst-case loss stays the planned risk. A missing/invalid spread, or one that would invert the target, returns
+ * the inputs untouched (the previous behaviour).
+ */
+export function adjustMarketProtectionForSpread({ side, entryPrice, stopPrice, targetPrice, spread }) {
+  const s = Number(spread);
+  const untouched = { stopPrice, targetPrice, spreadApplied: 0 };
+  if (!Number.isFinite(s) || s <= 0) return untouched;
+  const isBuy = String(side).toLowerCase() === 'buy';
+  const stopDist = Math.abs(entryPrice - stopPrice);
+  const targetDist = Math.abs(targetPrice - entryPrice);
+  if (!(stopDist > 0) || targetDist - s <= 0 || s > stopDist / 2) return untouched;
+  return {
+    stopPrice: isBuy ? stopPrice - s : stopPrice + s,
+    targetPrice: isBuy ? targetPrice - s : targetPrice + s,
+    spreadApplied: s,
+  };
+}
+
 export function toRelativeProtectionDistance(referencePrice, protectionPrice, priceDigits = null) {
   const reference = Number(referencePrice);
   const protection = Number(protectionPrice);
@@ -2347,14 +2376,25 @@ export class CTraderDataSource {
       // Bug fix (2026-09, multi-account rollout) - see the identical note in
       // _handlePyramidOrderRequested() above: the live per-account risk%,
       // not the boot-time global default.
+      const isFvg = signal.source === 'fvg';
+      // MARKET orders only: widen the stop by the spread (and pull the target in) so the fill-anchored relative distances land on the strategy's
+      // own levels, and size on that widened stop - see adjustMarketProtectionForSpread. LIMIT (FVG) keeps absolute prices, unchanged.
+      const protection = isFvg
+        ? { stopPrice: signal.stopPrice, targetPrice: signal.targetPrice, spreadApplied: 0 }
+        : adjustMarketProtectionForSpread({
+            side: signal.suggestedSide,
+            entryPrice: signal.entryPrice,
+            stopPrice: signal.stopPrice,
+            targetPrice: signal.targetPrice,
+            spread: this.lastSpreadBySymbol.get(symbolName),
+          });
       const sizing = calculateLotSize({
         balance: store.balance,
         riskPct: store.strategyEngine.riskPctPerTrade,
         entryPrice: signal.entryPrice,
-        stopPrice: signal.stopPrice,
+        stopPrice: protection.stopPrice,
         symbolSpec: spec,
       });
-      const isFvg = signal.source === 'fvg';
       // Was a flat 4 candles (~1h) - far shorter than CONFIG.fvg.maxAgeCandles
       // (50, ~12.5h), the window the BACKTEST itself gives an FVG zone to be
       // retested before calling it stale. 'validated' only fires once price
@@ -2399,8 +2439,8 @@ export class CTraderDataSource {
         lots: sizing.lots,
         symbolSpec: spec,
         price: isFvg ? signal.entryPrice : undefined,
-        stopLoss: signal.stopPrice,
-        takeProfit: signal.targetPrice,
+        stopLoss: protection.stopPrice,
+        takeProfit: protection.targetPrice,
         // The anchor the stop/target distances are measured from on a MARKET
         // order (2026-09-18 - see toRelativeProtectionDistance). Ignored on
         // the FVG/LIMIT path, which keeps absolute prices. `price` is
@@ -2414,7 +2454,7 @@ export class CTraderDataSource {
       // no thrown error would otherwise be silently indistinguishable from
       // a real success in every log Render actually keeps.
       console.log(`[auto-execute] _submitOrder resolved for ${symbolName}: brokerOrderId=${brokerOrderId}`);
-      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: brokerOrderId != null ? 'order_sent' : 'order_no_id', side: signal.suggestedSide, price: signal.entryPrice, detail: `${isFvg ? 'LIMIT' : 'MARKET'} lots=${sizing.lots} orderId=${brokerOrderId}` });
+      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: brokerOrderId != null ? 'order_sent' : 'order_no_id', side: signal.suggestedSide, price: signal.entryPrice, detail: `${isFvg ? 'LIMIT' : 'MARKET'} lots=${sizing.lots} orderId=${brokerOrderId}${protection.spreadApplied ? ` spreadComp=${protection.spreadApplied}` : ''}` });
       if (brokerOrderId != null) {
         // Tracked so _handleExecutionEvent can confirm the REAL outcome
         // (filled vs cancelled/expired/rejected) instead of leaving the
