@@ -1579,7 +1579,7 @@ function createAccountRouter(getStore) {
     // ?timeframe=M1|M5|M15 (default: the account's own timeframe). M1 and M5 are fetched in several windows and merged
     // (2026-09-20): capped at 245 days here; how far back the broker actually keeps M1 is reported in the headers.
     const timeframe = ['M1', 'M5', 'M15'].includes(req.query.timeframe) ? req.query.timeframe : null;
-    const dayCap = 245; // 245 = cTrader's own single-request cap for the M15 bucket (~35 weeks)
+    const dayCap = 245; // per request; windows inside getHistoricalCandles are capped by MAX_TRENDBARS_PER_REQUEST (broker caps ~14 000 bars per response)
     const days = Math.min(Number(req.query.days) || dayCap, dayCap);
     // ?skip=N starts the window N days in the past (2026-09-21): pulls older history in 245-day chunks to probe how far back the broker keeps M1
     const skipDays = Math.min(Math.max(Number(req.query.skip) || 0, 0), 5000);

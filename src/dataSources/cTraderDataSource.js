@@ -64,7 +64,10 @@ const store = getDefaultAccount();
 
 // cTrader trendbar period enum name for our configured timeframe.
 const PERIOD_BY_TIMEFRAME = { M1: 'M1', M5: 'M5', M15: 'M15', M30: 'M30', H1: 'H1' };
-const MAX_TRENDBARS_PER_REQUEST = 24000; // >= the 23 520 bars (245 days of M15) the broker is known to return in one call, so the M15 export stays a single request
+// 2026-09-21: the broker returns AT MOST ~14 000 bars per trendbar response (M15 exports came back with exactly 14 000). Windows of 16 days of M1
+// (24 000 counted, ~16 400 real trading bars) silently lost ~2 days at one edge every window (~14 % of all M1). 11 520 = 8 days of M1 (~11 500 real
+// bars, probe verified gap-free) keeps every window under that cap; M15 splits into ~120-day windows.
+export const MAX_TRENDBARS_PER_REQUEST = 11520;
 
 /** Splits a look-back of `days` into windows of at most maxBars bars each: [{fromDaysAgo, toDaysAgo, spanDays}], newest first. */
 export function planHistoryWindows(days, barsPerDay, maxBars) {
