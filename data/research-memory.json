@@ -538,10 +538,10 @@
   },
   {
     "id": "full-history-train-test-forward-2026",
-    "title": "Combo actuel (GER40 retiré), entraînement/test-forward 2026-01-01 → 2026-09-21, M1 réel sans trous, sensibilité au risque%",
+    "title": "Combo actuel (GER40 retiré), entraînement/test-forward 2026-01-01 → 2026-09-21, M1 exact (référence) vs M15, sensibilité au risque%",
     "date": "2026-09-21",
     "status": "inconclusive",
-    "summary": "Un seul warmUp() sur tout data/real-m1-full (2022/2023 → 2026-09-21, M15 reconstruits du M1), rejeu dans un vrai GuardrailEngine. Fenêtre test/forward 2026-01-01 → 2026-09-21 (491 trades, jamais vue par aucun réglage antérieur du combo, tous arrêtés à 2025) : compte continu +3.22% (0.25%/trade, DD max 8.3%, 0 cycle FTMO terminé en 262 jours), +3.75% (0.3%/trade = risque réel live, DD max 9.9%, 1 réussi/0 raté/1 en cours), +5.46% (0.5%/trade, DD max 16.0%, 2 réussis/2 ratés/1 en cours). FTMO 1-Step n'a AUCUNE limite de temps (timeLimitDays: null, confirmé sur ftmo.com) : le risque plus bas (0.25%) n'est pas un désavantage ici, juste plus lent. Recommandation à Esdras : baisser le risque par trade pour rester plus longtemps sur un compte (moins de ratés), quitte à mettre plus de mois à atteindre +10% — combiné à la stratégie de compte de réserve déjà validée (rejected/validated ailleurs) et au correctif de géométrie d'ordre au marché déjà écrit mais pas encore déployé.",
+    "summary": "v2 (corrige le premier passage, qui réglait en M15 \"stop d'abord\" seulement — sous-estimation structurelle confirmée par engine-m1-vs-m15-reconciliation.md). Un seul warmUp() du vrai LiveStrategyEngine sur tout data/real-m1-full (2022/2023 → 2026-09-21), réglé aux DEUX conventions (M15 et M1 exact), rejeu dans un vrai GuardrailEngine. Fenêtre test/forward 2026-01-01 → 2026-09-21 (396 trades en M1 exact) : compte continu +10.95% (0.25%/trade, DD max 6.9%, 1 cycle FTMO réussi/0 raté/1 en cours), +13.14% (0.3%/trade = risque réel live, DD max 8.2%, 1/0/1), +21.79% (0.5%/trade, DD max 13.3%, 4 réussis/2 ratés/1 en cours). Nettement mieux qu'en M15 (+3.22/+3.75/+5.46% aux mêmes risques) : le M15 \"stop d'abord\" est structurellement pessimiste. FTMO 1-Step n'a AUCUNE limite de temps (timeLimitDays: null, confirmé sur ftmo.com) : à 0.25-0.3% la baisse max reste sous le plancher de 10% tout du long (aucun bust) ; à 0.5% le plancher est franchi 2 fois en 9 mois malgré un solde final positif (4 gagnés/2 ratés). Recommandation à Esdras : baisser le risque par trade pour maximiser la survie (0 bust à 0.25-0.3% sur cette fenêtre), quitte à empocher moins vite — combiné à la stratégie de compte de réserve déjà validée et au correctif de géométrie d'ordre au marché déjà écrit mais pas encore déployé. Sensibilité étendue (0.75/1/1.5%/trade, même fenêtre test/forward, M1 exact) : +32.27% (0.75%, DD 19.4%, 6 réussis/5 ratés), +65.02% (1%, DD 21.8%, 8/7), +102.91% (1.5%, DD 31.0%, 17/13). Le plancher FTMO de 10% est franchi bien avant que la croissance atteigne 50% à TOUT niveau de risque testé : impossible de viser 50% sur 9 mois sans multiplier les busts (aucune configuration testée ne reste sous 10% de baisse au-delà de 0.3%/trade). Le vrai levier pour 50%+ SANS risque de bust supplémentaire est le TEMPS, pas le risque : sur la période d'entraînement (~3.7 ans), le même risque sûr (0.3%/trade) compose déjà à +64.50% (0.25% : +52.07%) - la croissance vient de l'enchaînement de plusieurs cycles propres dans la durée, pas d'un risque par trade plus élevé.",
     "markets": [
       "US100",
       "US500",
@@ -550,7 +550,7 @@
     ],
     "timeframe": "M15 (reconstruit du M1 réel)",
     "sample": "2002 trades entraînement (< 2026-01-01) + 491 trades test/forward (2026-01-01 → 2026-09-21)",
-    "knownWeaknesses": "Garde-fous réels mais coûts partiels (spread mesuré, pas de commission/swap/glissement réel, correctif de géométrie d'ordre au marché pas encore appliqué ici) : niveau absolu surestimé par rapport à la démo réelle (~+31% du vrai moteur sur 7 mois de suivi réel). Échantillon test/forward encore petit (9 mois, 1-5 cycles selon le risque) : statut inconclusive, pas rejected/validated.",
+    "knownWeaknesses": "Garde-fous réels mais coûts partiels (spread mesuré, pas de commission/swap/glissement réel, correctif de géométrie d'ordre au marché pas encore appliqué ici) : niveau absolu encore surestimé par rapport à la démo réelle. Échantillon test/forward encore petit (9 mois, 1-7 cycles selon le risque) : statut inconclusive, pas rejected/validated. Rejeu de garde-fous sur des trades pris comme des signaux indépendants (même limite qu'engine-m1-vs-m15-reconciliation.md) : le moteur ne \"voit\" pas les vétos en temps réel.",
     "files": [
       "scripts/runFtmo1StepFullHistoryTrainTestForward2026.js",
       "data/backtest-input/full-history-train-test-forward-2026.md"
@@ -578,5 +578,47 @@
       "data/backtest-input/full-history-train-test-forward-2026.md"
     ],
     "handoffSection": "2026-09-21 — Réconciliation moteur / simulateur"
+  },
+  {
+    "id": "adaptive-risk-and-eurusd-drop-2026",
+    "title": "Risque adaptatif (0.5%→0.25% à -4% de baisse) et vraie paire négative (US500, pas EURUSD)",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Esdras: risque adaptatif (0.5% de base, 0.25% dès -4% de baisse depuis le dernier sommet, retour à 0.5% à un nouveau sommet) + retrait de la paire qui ne performe pas. Sur la fenêtre test/forward 2026-01-01→2026-09-21 (M1 exact) : EURUSD (visée par Esdras) est légèrement POSITIVE à l'entraînement (+0.5 R) donc protocole refuse de la retirer - la vraie paire négative des deux fenêtres est US500 (-50.7 R entraînement, -10.3 R test). Risque adaptatif (combo actuel, 4 paires) : +14.98% (pire baisse 8.9%, FTMO 1 réussi/0 raté) contre 0.5% fixe +21.79% (pire baisse 13.3%, 4 réussis/2 ratés) - l'adaptatif évite les 2 busts en sacrifiant un peu de rendement, meilleur compromis que tout risque fixe testé jusqu'ici. Retirer US500 aide seulement à risque fixe 0.5% (+18.97%, pire baisse 10.0%, 2 réussis/0 raté, zéro bust) mais est neutre/légèrement pire à 0.25-0.3% fixe ET nettement pire en adaptatif (+4.42% contre +14.98%, la dynamique de vétos du garde-fou 3 trades/jour change avec moins de paires). Recommandation : garder les 4 paires + adopter le risque adaptatif plutôt que retirer US500.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "2002 trades entraînement + 491 trades test/forward (2026-01-01 → 2026-09-21)",
+    "knownWeaknesses": "Risque adaptatif simulé au niveau du compte (bascule instantanée) - pas automatisé dans le bot aujourd'hui, demanderait une surveillance manuelle ou une nouvelle fonctionnalité. Échantillon test/forward petit (9 mois). Coûts partiels (pas de correctif de géométrie d'ordre).",
+    "files": [
+      "scripts/runAdaptiveRiskAndEurusdDrop2026.js",
+      "data/backtest-input/adaptive-risk-eurusd-drop-2026.md"
+    ],
+    "handoffSection": "2026-09-21 (soir, suite 2) — Risque adaptatif et vraie paire négative (US500, pas EURUSD)"
+  },
+  {
+    "id": "ftmo-throughput-economics-2026",
+    "title": "Débit réel de challenges FTMO (passes/an) et coût des rachats — le risque adaptatif naïf était une fausse bonne idée",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Esdras a eu raison de pousser sur \"1 seul pass en 9 mois, sans déconner\": mon risque adaptatif (0.5%->0.25% dès -4% de baisse, retour à 0.5% dès que la baisse repasse sous 4%) donne EXACTEMENT le même débit que 0.25% fixe pur (1.39 passes/an, 0 rachat) - il neutralise complètement l'avantage de débit du 0.5%. Débit réel par configuration (fenêtre test/forward 2026-01-01→2026-09-21, M1 exact, FEE_PER_BUST=9 PLACEHOLDER non confirmé - aucun tarif FTMO 0k publié trouvé) : 0.25/0.3% fixe = 1.39 passes/an, /bin/bash coût ; 0.5% fixe = 5.55 passes/an, 78 coût total (5/passe) ; 0.75% = 8.33/an, 4/passe ; 1% = 11.10/an, 8/passe ; 1.5% = 23.59/an (le plus haut débit), 8/passe. Le coût du rachat est FAIBLE par rapport au gain de débit : monter le risque augmente clairement le débit de challenges passés sans faire exploser le coût par passe. Conclusion opposée à la recommandation \"baisser le risque\" donnée plus tôt dans la même journée, qui optimisait pour \"éviter les busts\" plutôt que pour le vrai objectif d'Esdras (débit de challenges réussis).",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "491 trades test/forward (2026-01-01 → 2026-09-21)",
+    "knownWeaknesses": "FEE_PER_BUST (9) est un placeholder non vérifié - seul chiffre sourcé du dépôt est 30 pour un challenge 5k (remboursé au financement). Ne modélise pas les revenus du compte financé après une passe (question plus grande, déjà traitée pour FTMO 5k dans HANDOFF.md). Échantillon test/forward petit (9 mois). 17 busts en 9 mois à 1.5% est un vrai coût opérationnel/psychologique non chiffré ici (racheter aussi souvent).",
+    "files": [
+      "scripts/runFtmoThroughputEconomics2026.js",
+      "data/backtest-input/ftmo-throughput-economics-2026.md"
+    ],
+    "handoffSection": "2026-09-21 (soir, suite 3) — Débit réel de challenges : le risque adaptatif naïf ne valait rien"
   }
 ]

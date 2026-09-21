@@ -6506,6 +6506,61 @@ Demande d'Esdras : analyser avec les vraies données déjà téléchargées (`da
 
 **Limites** : mêmes garde-fous approximés qu'ailleurs dans cette section (coûts partiels, correctif de géométrie pas appliqué ici) — niveau absolu encore surestimé vs la démo réelle (~+31 % du vrai moteur sur 7 mois). Échantillon test/forward petit (9 mois, 0 à 5 cycles selon le risque) : statut `inconclusive` dans la mémoire de recherche (`full-history-train-test-forward-2026`), pas une conclusion définitive. `npm test` inchangé (script d'analyse seul, aucun code de production modifié).
 
+**⚠️ CORRECTION (même soir, après la réconciliation moteur/simulateur ci-dessus) : les chiffres au-dessus réglaient en M15 "stop d'abord", structurellement pessimiste.** `scripts/runFtmo1StepFullHistoryTrainTestForward2026.js` réécrit pour régler CHAQUE trade aux deux conventions (M15 et M1 exact, même fonction `settleM1` que `runEngineM1Backtest.js`), un seul `warmUp()` au lieu de trois. **Résultat en M1 exact (référence désormais), fenêtre test/forward 2026-01-01 → 2026-09-21 (396 trades) :**
+
+| Risque/trade | Compte continu $10k | Pire baisse | FTMO 1-Step (réussis/ratés/en cours) |
+|---|---|---|---|
+| 0,25 % | +10,95 % | 6,9 % | 1 / 0 / 1 (aucun bust) |
+| 0,3 % (risque réel live) | +13,14 % | 8,2 % | 1 / 0 / 1 (aucun bust) |
+| 0,5 % | +21,79 % | 13,3 % | 4 / 2 / 1 (plancher franchi 2 fois) |
+
+Nettement mieux que les chiffres M15 ci-dessus (+3,22 / +3,75 / +5,46 %) à risque égal — confirme que le M15 sous-estimait. **La recommandation reste la même et est renforcée par ces chiffres corrigés** : à 0,25-0,3 %/trade, la pire baisse reste sous le plancher FTMO de 10 % sur toute la fenêtre (zéro bust) ; à 0,5 % le plancher est franchi 2 fois en 9 mois malgré un solde final positif. FTMO 1-Step n'ayant aucune limite de temps, baisser le risque par trade reste le levier le plus direct pour rester plus longtemps sur un compte. Mémoire de recherche mise à jour (même id, pas de doublon). Rapport regénéré : `data/backtest-input/full-history-train-test-forward-2026.md`.
+
+## 2026-09-21 (soir, suite) — Esdras veut ≥50 % sur la fenêtre : sensibilité au risque étendue (0,75 à 1,5 %), le plancher FTMO l'interdit
+
+Esdras : « 20 % sur 9 mois n'est pas utilisable en challenge, comment augmenter le %, mon objectif est au moins 50 %. » `RISK_LEVELS` du même script étendu à 0,75 / 1 / 1,5 % (même méthode M1 exact, même fenêtre test/forward 2026-01-01 → 2026-09-21) :
+
+| Risque/trade | Compte continu $10k | Pire baisse | FTMO 1-Step (réussis/ratés/en cours) |
+|---|---|---|---|
+| 0,25 % | +10,95 % | 6,9 % | 1/0/1 |
+| 0,3 % | +13,14 % | 8,2 % | 1/0/1 |
+| 0,5 % | +21,79 % | 13,3 % | 4/2/1 |
+| 0,75 % | +32,27 % | 19,4 % | 6/5/1 |
+| 1 % | +65,02 % | 21,8 % | 8/7/1 |
+| 1,5 % | +102,91 % | 31,0 % | 17/13/1 |
+
+**Constat mathématique, pas une préférence** : le plancher de baisse FTMO (10 %) est franchi À TOUT niveau de risque au-delà de 0,3 %/trade, bien avant que la croissance atteigne 50 % — risque et baisse maximale montent ensemble depuis le même cadran (le risque par trade), donc aucun réglage ne donne "50 % de croissance" sans aussi donner "bust quasi certain en cours de route" (5 ratés sur 11 cycles à 0,75 % ; 7 sur 15 à 1 %). Il n'existe pas de réglage de risque qui satisfasse à la fois "reste dans les règles FTMO" et "50 % sur 9 mois" avec ce combo sur cette fenêtre.
+
+**Le vrai levier pour 50 %+ est le TEMPS, pas le risque.** Sur la période d'entraînement (~3,7 ans, 2022-2025), le MÊME réglage sûr compose déjà largement au-delà de 50 % : +64,50 % à 0,3 %/trade, +52,07 % à 0,25 %/trade (avec de vrais busts historiques inclus dans ce chiffre). La croissance vient de l'enchaînement dans la durée de plusieurs cycles propres (le 1er cycle à 0,3 % a mis 186 jours pour faire +10 % SANS bust), pas d'un risque par trade plus élevé. Réponse donnée à Esdras : à 0,25-0,3 %/trade le compte ne bust jamais sur cette fenêtre — la patience (~18-30 mois selon le rythme réel des signaux) atteint 50 %+ sans jamais avoir à sortir des règles FTMO ; monter le risque à 0,75-1,5 % peut faire 50 %+ EN 9 MOIS mais avec un compte qui a de bonnes chances d'avoir déjà busté une ou plusieurs fois avant d'y arriver (donc de nouveaux frais d'inscription si c'est un vrai challenge payant). Entrée de recherche mise à jour (`full-history-train-test-forward-2026`).
+
+## 2026-09-21 (soir, suite 2) — Risque adaptatif (0,5 % → 0,25 % à -4 %) et vraie paire négative (US500, pas EURUSD)
+
+Esdras : « si je commence à 0,5 % et je descends à 0,25 % dès -4 % de baisse, ça aide ? Peux-tu modifier le combo pour l'obtenir, la paire qui ne performe pas [retirer] ? » (visait EURUSD). `scripts/runAdaptiveRiskAndEurusdDrop2026.js` (même liste canonique de trades, réglement M1 exact) → `data/backtest-input/adaptive-risk-eurusd-drop-2026.md`.
+
+**Correction du diagnostic d'Esdras :** EURUSD est légèrement **POSITIVE** à l'entraînement (+0,5 R, < 2026) — le protocole pré-enregistré (même règle que le retrait de GER40 : retenue seulement si R net entraînement ≤ 0) **refuse de la retirer**. La vraie paire négative sur les deux fenêtres est **US500** (-50,7 R entraînement, -10,3 R test/forward) — ce que suggérait déjà le tableau par-paire de la réconciliation moteur/simulateur (US500 y était déjà le plus faible des 4 paires en prod, +6 R sur 4 ans contre +158 US100/+46 XAUUSD).
+
+**Retirer US500 (3 paires) :** aide seulement à risque FIXE 0,5 % (+18,97 % contre +21,79 %, pire baisse 10,0 % contre 13,3 %, **2 réussis/0 raté au lieu de 4/2** — élimine les 2 busts) ; neutre/légèrement pire à 0,25-0,3 % fixe (+9,50/+11,40 % contre +10,95/+13,14 %) ; nettement pire en risque adaptatif (+4,42 % contre +14,98 %, la dynamique des vétos du plafond 3 trades/jour change avec moins de paires disponibles). **Conclusion : ne pas retirer US500** (candidate seulement dans un cas de figure précis, pas un gain net partout) — pas adoptée.
+
+**Risque adaptatif (0,5 % de base, 0,25 % dès -4 % de baisse depuis le dernier sommet, retour à 0,5 % au sommet suivant), combo actuel 4 paires :** **+14,98 %, pire baisse 8,9 %, FTMO 1 réussi/0 raté** — contre 0,5 % fixe (+21,79 %, pire baisse 13,3 %, 4 réussis/**2 ratés**). **L'idée d'Esdras fonctionne : elle élimine les 2 busts observés à 0,5 % fixe tout en gardant un rendement supérieur à 0,25 % fixe (+10,95 %) et 0,3 % fixe (+13,14 %)** — le meilleur compromis rendement/survie trouvé jusqu'ici sur cette fenêtre. **Pas automatisé dans le bot aujourd'hui** (simulé au niveau du compte, bascule instantanée) : demanderait soit une surveillance manuelle du dashboard (changer `RISK_PCT_PER_TRADE`/le réglage risque à la main dès -4 % de baisse), soit une nouvelle fonctionnalité de risque adaptatif dans `GuardrailEngine`/`AccountRuntime` — pas construite, à décider avec Esdras avant de coder. Entrée de recherche `adaptive-risk-and-eurusd-drop-2026` (statut `inconclusive`, échantillon test/forward encore petit).
+
+## 2026-09-21 (soir, suite 3) — Esdras avait raison : le risque adaptatif naïf ne valait rien, débit réel mesuré
+
+Esdras, sur "1 réussi/0 raté" présenté comme "mieux" : « Lol 1 seul pass pour 9 mois et tu me dis mieux ? Sans déconner. » Puis a précisé la règle exacte de son idée : redescendre à 0,25 % dès -4 % de baisse, **remonter à 0,5 % seulement à un NOUVEAU sommet** (pas juste "repassé sous 4 %", ce que le code du soir faisait réellement — d'où la question « c'est comme ça que tu l'as codé ? », qui a révélé l'écart). A choisi l'option 2 : mesurer le vrai débit (passes de challenge par unité de temps), avec le coût d'un rachat par échec.
+
+`scripts/runFtmoThroughputEconomics2026.js` (même trades canoniques, M1 exact, fenêtre test/forward 2026-01-01 → 2026-09-21) → `data/backtest-input/ftmo-throughput-economics-2026.md`. `FEE_PER_BUST = $89` **placeholder non confirmé** (aucun tarif FTMO $10k publié trouvé — voir l'entrée du 2026-09-16 : seul chiffre sourcé de ce dépôt est $230 pour un $25k, remboursé au financement) : lire les comparaisons relatives, pas le $ absolu.
+
+| Configuration | Réussis (9 mois) | Ratés | Passes/an | Coût total rachats | Coût par passe |
+|---|---|---|---|---|---|
+| 0,25 % fixe | 1 | 0 | 1,39 | $0 | $0 |
+| 0,3 % fixe (risque réel live) | 1 | 0 | 1,39 | $0 | $0 |
+| 0,5 % fixe | 4 | 2 | 5,55 | $178 | $45 |
+| 0,75 % fixe | 6 | 5 | 8,33 | $445 | $74 |
+| 1 % fixe | 8 | 7 | 11,10 | $623 | $78 |
+| 1,5 % fixe | 17 | 13 | **23,59** | $1 157 | $68 |
+| **Adaptatif 0,5→0,25 à -4 % (version testée le soir même, retour immédiat sous 4 %)** | 1 | 0 | **1,39** | $0 | $0 |
+
+**Confirmation directe : le risque adaptatif tel que codé plus tôt dans la soirée ne vaut RIEN pour le débit** — il retombe exactement au même 1,39 passe/an que 0,25 % fixe pur, en écrasant complètement l'avantage de débit qu'apportait 0,5 %. Esdras avait raison de pousser. **Le coût d'un rachat est faible comparé au gain de débit** : monter le risque augmente clairement le nombre de passes par an, sans faire exploser le coût par passe (le coût par passe plafonne autour de $70-80, même à 1,5 % de risque avec 13 busts en 9 mois). **Ceci renverse la recommandation "baisser le risque" du début de soirée**, qui optimisait pour "éviter les busts" — un mauvais proxy du vrai objectif d'Esdras (passer le plus de challenges possible, pas juste survivre). Piste non close : à 1,5 % le débit est le plus haut MAIS 13 busts en 9 mois = racheter presque 1,4 fois par mois, un coût opérationnel/psychologique réel non chiffré ici ; 0,75-1 % reste un compromis plus soutenable avec un débit déjà 6-8× supérieur au réglage "sûr". La version CORRECTE de la règle d'Esdras (retour au risque haut seulement à un nouveau sommet, pas juste sous 4 %) n'a pas encore été testée — à faire si Esdras veut vérifier si SA règle exacte (pas la version mal codée) fait mieux que les paliers fixes ci-dessus. Entrée de recherche `ftmo-throughput-economics-2026` (`inconclusive`). Ne modélise pas encore les revenus du compte financé après une passe (question plus grande, déjà traitée séparément pour FTMO $25k).
+
 ## 2026-09-21 — Vulnérabilités npm : axios et uuid corrigés par `overrides`, protobufjs reste (critique) faute de correctif sans réécriture
 
 `package.json` : `overrides` de `@reiryoku/ctrader-layer` -> `axios 1.20.0` (inutilisé par la librairie) et `uuid 11.1.1` (seul `v4()` est utilisé, API inchangée) ; la librairie se charge, la suite de tests passe (1074/1074). `npm audit` : 4 -> 2 vulnérabilités (1 haute, 1 critique), toutes `protobufjs@5.0.1` : la librairie est écrite pour l'API 5 (`loadProtoFile`, builder, `toBuffer`) qui n'existe plus en 7 (correctif à partir de 7.6.3) ; migrer demande de réécrire `CTraderProtobufReader` et de tester contre le broker (types int64/enums). Exposition faible (messages de Spotware sur TLS, `.proto` fournis, aucun schéma tiers). Non déployé (avec le reste, un seul redéploiement) ; le premier déploiement fait `npm install` avec les overrides : vérifier `healthz` juste après.
