@@ -293,5 +293,30 @@
       "data/news-calendar-2019-2023.json",
       "src/backtest/newsEventsHistorical.js"
     ]
+  },
+  {
+    "id": "macro-news-proximity",
+    "title": "Performance du bot autour des annonces macro (étage 1 du plan macro)",
+    "date": "2026-09-21",
+    "status": "rejected",
+    "summary": "7 132 trades indépendants 2019-2025 (8 mécanismes, stops d'origine), 328 annonces officielles (CPI, emplois, Fed, PIB avancé, PCE), 8 groupes définis à l'avance (0-2 h après / 2 h avant une annonce, par type) : aucune trouvaille (|t|>=2,6 en entraînement + même signe en test + deux règles d'égalité). Le bot trade peu près des annonces (218 trades sur 7 132 dans les 2 h suivantes) et les résultats de ces petits groupes changent de signe entre entraînement et test : du bruit. Pas de base pour une règle « pas de trade autour des news ». Les étages suivants (contexte macro point-in-time via ALFRED, surprises) ne sont pas justifiés à ce stade.",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15",
+    "sample": {
+      "trades": 7132,
+      "events": 328,
+      "period": "2019-2025"
+    },
+    "knownWeaknesses": "Calendrier sans BCE ni ventes au détail avant 2024, heures BEA supposées, échantillons de 10 à 150 trades par groupe, règlement M15 (borné par deux règles), pas de chiffres macro ni de surprises.",
+    "files": [
+      "scripts/runNewsProximityStudy.js",
+      "data/backtest-input/news-proximity-2019-2025.md"
+    ]
   }
 ]
