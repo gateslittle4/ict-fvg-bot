@@ -389,8 +389,19 @@ export class LiveStrategyEngine {
   ingestCandle(symbol, candle, guardrailNow = candle.time, { deferCloseToRealConfirmation = false } = {}) {
     if (!this.history.has(symbol)) return [];
     const hist = this.history.get(symbol);
-    if (hist.length > 0 && candle.time <= hist[hist.length - 1].time) {
-      return []; // stale/duplicate candle - ignore defensively, real feeds shouldn't send these
+    const last = hist.length > 0 ? hist[hist.length - 1] : null;
+    if (last && candle.time === last.time) {
+      // FIX 2026-09-21: the live feed (cTrader live trendbar) sends the bar being FORMED on every tick, and this used to
+      // throw every tick after the first away as a "duplicate" - so the history kept, for each bar received live since the
+      // last boot, a one-tick STUB (high = low = close = open). Every detector that reads the highs/lows/closes of previous
+      // bars (weekly sweep, FVG, breaker, divergence...) then worked on wrong data; a clean US500 Weekly Sweep was missed
+      // that way on 2026-09-21. The tracked bar now follows the feed. Deliberately NO signal evaluation on an update:
+      // signals fire once, on the bar's first tick (entries are at the bar's open).
+      hist[hist.length - 1] = { ...candle, open: last.open };
+      return [];
+    }
+    if (last && candle.time < last.time) {
+      return []; // stale (older) candle - ignore defensively, real feeds shouldn't send these
     }
     hist.push(candle);
 
@@ -1525,6 +1536,38 @@ export class LiveStrategyEngine {
   // during the partner's (this is pre-existing behavior, not something this
   // refactor changes).
   // -------------------------------------------------------------------------
+
+  /** True when `time` starts a bar the history has not seen yet (the live feed's first tick of a new bar). */
+  isNewBar(symbol, time) {
+    const hist = this.history.get(symbol);
+    return Boolean(hist) && (hist.length === 0 || time > hist[hist.length - 1].time);
+  }
+
+  /**
+   * Overwrites already-tracked bars with the broker's FINAL values (2026-09-21). The live feed only sends ticks, so the
+   * tracked bar can miss its last ticks; at each new bar the data source asks the broker for the last few finished bars
+   * and passes them here BEFORE the new bar is evaluated. Only bars already in the history are touched (never adds, never
+   * reorders; the newest tracked bar is only touched with includeNewest: true, which the data source passes when a NEW bar
+   * has just started, i.e. when that newest tracked bar is by definition finished).
+   * @returns {Array<{time:number, dOpen:number, dHigh:number, dLow:number, dClose:number}>} what changed (empty = the tracked bars were already exact)
+   */
+  reconcileRecentCandles(symbol, finalBars, { lookback = 6, includeNewest = false } = {}) {
+    const hist = this.history.get(symbol);
+    if (!hist || hist.length < (includeNewest ? 1 : 2)) return [];
+    const changes = [];
+    const byTime = new Map(finalBars.map((b) => [b.time, b]));
+    for (let i = hist.length - (includeNewest ? 1 : 2); i >= Math.max(0, hist.length - 1 - lookback); i--) {
+      const fin = byTime.get(hist[i].time);
+      if (!fin) continue;
+      const cur = hist[i];
+      const d = { time: cur.time, dOpen: fin.open - cur.open, dHigh: fin.high - cur.high, dLow: fin.low - cur.low, dClose: fin.close - cur.close };
+      if (d.dOpen !== 0 || d.dHigh !== 0 || d.dLow !== 0 || d.dClose !== 0) {
+        hist[i] = { ...cur, open: fin.open, high: fin.high, low: fin.low, close: fin.close };
+        changes.push(d);
+      }
+    }
+    return changes;
+  }
 
   /**
    * @param {Record<string, Array>} candlesBySymbol - symbol -> full sorted-ascending array of CLOSED historical candles

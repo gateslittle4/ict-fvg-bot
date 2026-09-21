@@ -338,5 +338,48 @@
       "scripts/runNewsProximityStudy.js",
       "data/backtest-input/news-proximity-2019-2025.md"
     ]
+  },
+  {
+    "id": "live-first-tick-stub-bars",
+    "title": "Historique live du moteur rempli de bougies « premier tick »",
+    "date": "2026-09-21",
+    "status": "methodology-fix",
+    "summary": "Le moteur live jetait tous les ticks d'une bougie après le premier (« doublon »), donc pour chaque bougie reçue en direct depuis le boot son historique contenait une bougie stub (haut = bas = clôture = ouverture). Les détecteurs qui lisent les hauts/bas/clôtures des bougies précédentes (Weekly Sweep, FVG, breaker, divergence...) travaillaient sur des données fausses : un Weekly Sweep US500 baissier valide (2026-09-21 00:15 UTC) a été manqué, prouvé par émulation fidèle du chemin live et par un test de régression sur bougies réelles. Corrigé : la bougie suivie est mise à jour à chaque tick et finalisée avec les valeurs du broker au premier tick de la suivante. Les signaux et trades live réels antérieurs au correctif ne sont pas une référence fiable de ce que le moteur corrigé aurait fait.",
+    "markets": [
+      "US500",
+      "US100",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15",
+    "knownWeaknesses": "Le contenu exact des trendbar reçus en production n'était pas journalisé avant le correctif ; le journal [bar-reconcile] le mesure désormais. La croyance interne de clôture (stop/objectif) voit toujours le premier tick de la bougie.",
+    "files": [
+      "src/liveStrategyEngine.js",
+      "src/dataSources/cTraderDataSource.js",
+      "test/liveIngestion.test.js",
+      "test/cTraderDataSourceLiveBar.test.js",
+      "docs/LIVE_DATA_FLOW.md"
+    ],
+    "handoffSection": "CORRECTIF LIVE"
+  },
+  {
+    "id": "server-asleep-sunday-nwog",
+    "title": "Signal NWOG du dimanche soir manqué : serveur endormi",
+    "date": "2026-09-21",
+    "status": "methodology-fix",
+    "summary": "Le service Render gratuit dort le week-end ; le 2026-09-20 le gap NWOG (22:00 UTC) a donné un signal valide sur US100 et GER40 à 22:15 UTC alors que le serveur ne s'est réveillé qu'à 22:35 UTC. Au boot le warm-up rejoue le signal comme du passé (« cleared stale believed-open position on boot »), donc pas de trade. NWOG est structurellement le mécanisme du réveil du dimanche. Atténuation : workflow GitHub wake-sunday (curl /healthz le dimanche 19-21 h UTC). Garantie complète : plan Render payant ou pinger externe.",
+    "markets": [
+      "US100",
+      "GER40"
+    ],
+    "timeframe": "M15",
+    "knownWeaknesses": "Les crons GitHub sont « au mieux » (retards possibles de plusieurs dizaines de minutes).",
+    "files": [
+      ".github/workflows/wake-sunday.yml",
+      ".github/workflows/watchdog.yml",
+      "docs/LIVE_DATA_FLOW.md"
+    ],
+    "handoffSection": "CORRECTIF LIVE"
   }
 ]
