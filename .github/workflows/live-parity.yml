@@ -1,0 +1,41 @@
+# Contrôle hebdomadaire direct / rejeu (voir scripts/checkLiveParity.js et docs/LIVE_DATA_FLOW.md).
+# OPTIONNEL : il faut ajouter trois secrets au dépôt (Settings > Secrets and variables > Actions) : ADMIN_EXPORT_TOKEN,
+# SUPABASE_URL et SUPABASE_SERVICE_KEY (les mêmes valeurs que sur Render ; la clé de service donne un accès complet à la base,
+# n'active ce workflow que si tu acceptes ce stockage). Sans les secrets, le job s'arrête proprement sans rien faire.
+# Le rapport est publié comme artefact du run (pas commité, pas de donnée sensible dedans).
+name: live-parity
+
+on:
+  schedule:
+    - cron: '30 6 * * 1'   # lundi 06:30 UTC : la semaine précédente
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ADMIN_EXPORT_TOKEN: ${{ secrets.ADMIN_EXPORT_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - name: Secrets présents ?
+        id: gate
+        run: |
+          if [ -z "$ADMIN_EXPORT_TOKEN" ] || [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then
+            echo "Secrets absents : contrôle non exécuté (voir l'en-tête du workflow)."; echo "run=false" >> "$GITHUB_OUTPUT"
+          else echo "run=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: '22'
+      - name: Contrôle direct / rejeu (7 jours)
+        if: steps.gate.outputs.run == 'true'
+        run: node scripts/checkLiveParity.js --days 7 --out parity-report.md
+      - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          name: parity-report
+          path: parity-report.md
