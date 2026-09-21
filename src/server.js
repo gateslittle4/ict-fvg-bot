@@ -1581,8 +1581,10 @@ function createAccountRouter(getStore) {
     const timeframe = ['M1', 'M5', 'M15'].includes(req.query.timeframe) ? req.query.timeframe : null;
     const dayCap = 245; // 245 = cTrader's own single-request cap for the M15 bucket (~35 weeks)
     const days = Math.min(Number(req.query.days) || dayCap, dayCap);
+    // ?skip=N starts the window N days in the past (2026-09-21): pulls older history in 245-day chunks to probe how far back the broker keeps M1
+    const skipDays = Math.min(Math.max(Number(req.query.skip) || 0, 0), 5000);
     try {
-      const candles = await store.liveDataSource.getHistoricalCandles({ symbol, days, timeframe });
+      const candles = await store.liveDataSource.getHistoricalCandles({ symbol, days, timeframe, skipDays });
       res.set('X-Candle-Count', String(candles.length));
       if (candles.length) { res.set('X-First-Candle', new Date(candles[0].time).toISOString()); res.set('X-Last-Candle', new Date(candles[candles.length - 1].time).toISOString()); }
       res.set('Content-Type', 'text/csv');

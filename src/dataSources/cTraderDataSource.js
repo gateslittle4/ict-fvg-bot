@@ -1447,7 +1447,7 @@ export class CTraderDataSource {
    * exists purely to export raw candles for offline research with the SAME
    * backtestEngine.js used for the 2019-2025 CSVs, not to feed anything live.
    */
-  async getHistoricalCandles({ symbol, days, timeframe = null }) {
+  async getHistoricalCandles({ symbol, days, timeframe = null, skipDays = 0 }) {
     const symbolId = this.symbolIdByName.get(symbol);
     if (!symbolId) throw new Error(`Unknown symbol "${symbol}" on this cTrader account`);
     const tf = timeframe || CONFIG.timeframe;
@@ -1463,7 +1463,7 @@ export class CTraderDataSource {
       const history = await sendCommandWithTimeout(
         this.connection,
         'ProtoOAGetTrendbarsReq',
-        { ctidTraderAccountId: Number(this.accountId), fromTimestamp: now - w.fromDaysAgo * 86400000, toTimestamp: now - w.toDaysAgo * 86400000, symbolId, period, count: Math.ceil(w.spanDays * barsPerDay) + 10 },
+        { ctidTraderAccountId: Number(this.accountId), fromTimestamp: now - (skipDays + w.fromDaysAgo) * 86400000, toTimestamp: now - (skipDays + w.toDaysAgo) * 86400000, symbolId, period, count: Math.ceil(w.spanDays * barsPerDay) + 10 },
         60000
       );
       for (const bar of history.trendbar || []) { const c = this._trendbarToCandle(bar); byTime.set(c.time, c); }
