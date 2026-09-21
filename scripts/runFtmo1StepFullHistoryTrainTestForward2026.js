@@ -217,7 +217,7 @@ function main() {
   md.push('Données : `data/real-m1-full/*.csv.gz` (FP Markets, M1 réel, EURUSD/XAUUSD dès 2022-05-19, US100/US500 dès 2023-01-11, jusqu\'à ~2026-09-21), M15 reconstruits du M1. Un seul `warmUp()` du VRAI moteur (`LiveStrategyEngine`) sur tout l\'historique disponible, réglé aux DEUX conventions (M15 "stop d\'abord", comme le moteur en solo ; M1 exact, minute par minute — méthode identique à `scripts/runEngineM1Backtest.js`, la réconciliation de la session précédente qui a montré que le M15 sous-estime structurellement le résultat), puis rejeu dans un vrai `GuardrailEngine` (3 trades/jour, pause 30 min après perte, arrêt du jour à -2%). **Entraînement** = avant 2026-01-01 (contexte + référence). **Test/forward** = 2026-01-01 → dernière bougie dispo, jamais vu par aucun réglage antérieur du combo.', '');
   md.push('**Lecture :** coûts partiels (spread mesuré par paire, sans commission/swap/glissement réel ni le correctif de géométrie d\'ordre au marché, encore non déployé) : niveau absolu encore surestimé par rapport à la démo réelle. Le M1 exact est la convention de référence désormais (voir `engine-m1-vs-m15-reconciliation.md`) ; le M15 reste affiché pour comparaison, pas comme vérité.', '');
 
-  const RISK_LEVELS = [0.25, 0.3, 0.5];
+  const RISK_LEVELS = [0.25, 0.3, 0.5, 0.75, 1.0, 1.5];
   for (const risk of RISK_LEVELS) {
     md.push(`## Risque ${risk}%/trade`, '');
     md.push('| Fenêtre | Réglement | Trades | Vétos | Compte continu $10k | Pire baisse | FTMO 1-Step (réussis/ratés/en cours) |');

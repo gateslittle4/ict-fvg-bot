@@ -6516,6 +6516,23 @@ Demande d'Esdras : analyser avec les vraies données déjà téléchargées (`da
 
 Nettement mieux que les chiffres M15 ci-dessus (+3,22 / +3,75 / +5,46 %) à risque égal — confirme que le M15 sous-estimait. **La recommandation reste la même et est renforcée par ces chiffres corrigés** : à 0,25-0,3 %/trade, la pire baisse reste sous le plancher FTMO de 10 % sur toute la fenêtre (zéro bust) ; à 0,5 % le plancher est franchi 2 fois en 9 mois malgré un solde final positif. FTMO 1-Step n'ayant aucune limite de temps, baisser le risque par trade reste le levier le plus direct pour rester plus longtemps sur un compte. Mémoire de recherche mise à jour (même id, pas de doublon). Rapport regénéré : `data/backtest-input/full-history-train-test-forward-2026.md`.
 
+## 2026-09-21 (soir, suite) — Esdras veut ≥50 % sur la fenêtre : sensibilité au risque étendue (0,75 à 1,5 %), le plancher FTMO l'interdit
+
+Esdras : « 20 % sur 9 mois n'est pas utilisable en challenge, comment augmenter le %, mon objectif est au moins 50 %. » `RISK_LEVELS` du même script étendu à 0,75 / 1 / 1,5 % (même méthode M1 exact, même fenêtre test/forward 2026-01-01 → 2026-09-21) :
+
+| Risque/trade | Compte continu $10k | Pire baisse | FTMO 1-Step (réussis/ratés/en cours) |
+|---|---|---|---|
+| 0,25 % | +10,95 % | 6,9 % | 1/0/1 |
+| 0,3 % | +13,14 % | 8,2 % | 1/0/1 |
+| 0,5 % | +21,79 % | 13,3 % | 4/2/1 |
+| 0,75 % | +32,27 % | 19,4 % | 6/5/1 |
+| 1 % | +65,02 % | 21,8 % | 8/7/1 |
+| 1,5 % | +102,91 % | 31,0 % | 17/13/1 |
+
+**Constat mathématique, pas une préférence** : le plancher de baisse FTMO (10 %) est franchi À TOUT niveau de risque au-delà de 0,3 %/trade, bien avant que la croissance atteigne 50 % — risque et baisse maximale montent ensemble depuis le même cadran (le risque par trade), donc aucun réglage ne donne "50 % de croissance" sans aussi donner "bust quasi certain en cours de route" (5 ratés sur 11 cycles à 0,75 % ; 7 sur 15 à 1 %). Il n'existe pas de réglage de risque qui satisfasse à la fois "reste dans les règles FTMO" et "50 % sur 9 mois" avec ce combo sur cette fenêtre.
+
+**Le vrai levier pour 50 %+ est le TEMPS, pas le risque.** Sur la période d'entraînement (~3,7 ans, 2022-2025), le MÊME réglage sûr compose déjà largement au-delà de 50 % : +64,50 % à 0,3 %/trade, +52,07 % à 0,25 %/trade (avec de vrais busts historiques inclus dans ce chiffre). La croissance vient de l'enchaînement dans la durée de plusieurs cycles propres (le 1er cycle à 0,3 % a mis 186 jours pour faire +10 % SANS bust), pas d'un risque par trade plus élevé. Réponse donnée à Esdras : à 0,25-0,3 %/trade le compte ne bust jamais sur cette fenêtre — la patience (~18-30 mois selon le rythme réel des signaux) atteint 50 %+ sans jamais avoir à sortir des règles FTMO ; monter le risque à 0,75-1,5 % peut faire 50 %+ EN 9 MOIS mais avec un compte qui a de bonnes chances d'avoir déjà busté une ou plusieurs fois avant d'y arriver (donc de nouveaux frais d'inscription si c'est un vrai challenge payant). Entrée de recherche mise à jour (`full-history-train-test-forward-2026`).
+
 ## 2026-09-21 — Vulnérabilités npm : axios et uuid corrigés par `overrides`, protobufjs reste (critique) faute de correctif sans réécriture
 
 `package.json` : `overrides` de `@reiryoku/ctrader-layer` -> `axios 1.20.0` (inutilisé par la librairie) et `uuid 11.1.1` (seul `v4()` est utilisé, API inchangée) ; la librairie se charge, la suite de tests passe (1074/1074). `npm audit` : 4 -> 2 vulnérabilités (1 haute, 1 critique), toutes `protobufjs@5.0.1` : la librairie est écrite pour l'API 5 (`loadProtoFile`, builder, `toBuffer`) qui n'existe plus en 7 (correctif à partir de 7.6.3) ; migrer demande de réécrire `CTraderProtobufReader` et de tester contre le broker (types int64/enums). Exposition faible (messages de Spotware sur TLS, `.proto` fournis, aucun schéma tiers). Non déployé (avec le reste, un seul redéploiement) ; le premier déploiement fait `npm install` avec les overrides : vérifier `healthz` juste après.
