@@ -410,7 +410,7 @@
     "title": "Le plafond « 3 trades par jour » détruit-il la combo ?",
     "date": "2026-09-21",
     "status": "inconclusive",
-    "summary": "Mesuré sur les mêmes trades des 8 mécanismes en variant seulement le plafond (1 à illimité). 2010-2025 en M15 (règle « stop d'abord », niveaux indicatifs) : 3/jour donne +78R, 4 ou 5/jour +185 à +193R, illimité +200R ; les trades refusés par le plafond de 3 valent en moyenne +0,10R (autre session : 19 % des signaux vétoés par ce plafond sur 2010-2025). Entraînement <= 2023 : 3/jour est NÉGATIF (-14R) contre +74 à +96R à 4-5/jour. MAIS sur 2024-2025 les plafonds bas font mieux (1 : +121R, 2 : +130R, 3 : +91R, 4 : +110R) et sur les 8 derniers mois réels réglés à la minute 3/jour est le MEILLEUR (+90,6R, compte 15 340 $, baisse 11 %, FTMO 5/1) : les 83 trades qu'il refuse valent -0,34R en moyenne, illimité donne +65,8R. Verdict : pas de preuve robuste que 3/jour soit destructeur ; l'historique long suggère un léger gain à 4-5 (+0,01R par trade), le seul test hors échantillon dit l'inverse. A ne pas changer avant des données de démo.",
+    "summary": "Mesuré sur les mêmes trades des 8 mécanismes en variant seulement le plafond (1 à illimité). 2010-2025 en M15 (règle « stop d'abord », niveaux indicatifs) : 3/jour donne +78R, 4 ou 5/jour +185 à +193R, illimité +200R ; les trades refusés par le plafond de 3 valent en moyenne +0,10R (autre session : 19 % des signaux vétoés par ce plafond sur 2010-2025). Entraînement <= 2023 : 3/jour est NÉGATIF (-14R) contre +74 à +96R à 4-5/jour. MAIS sur 2024-2025 les plafonds bas font mieux (1 : +121R, 2 : +130R, 3 : +91R, 4 : +110R) et sur les 8 derniers mois réels réglés à la minute 3/jour est le MEILLEUR (+90,6R, compte 15 340 $, baisse 11 %, FTMO 5/1) : les 83 trades qu'il refuse valent -0,34R en moyenne, illimité donne +65,8R. Verdict : pas de preuve robuste que 3/jour soit destructeur ; l'historique long suggère un léger gain à 4-5 (+0,01R par trade), le seul test hors échantillon dit l'inverse. A ne pas changer avant des données de démo. MISE A JOUR 2026-09-21 : la partie M1 ci-dessus utilisait un M1 avec trous de 2 jours tous les 16 jours ; refaite sur le M1 réel sans trous (2022-06 → 2026-09, 8 variantes) : 3/jour donne le meilleur R net total (+305 R contre +282 R illimité, +294 R à 4/jour) et la meilleure lecture sur le test 2025→ (+228 R, +0,191 R/trade contre +0,138 illimité) ; à l'entraînement 5/jour est un peu au-dessus (+100 R contre +77 R) ; les 534 trades refusés par le plafond de 3 valent -0,04 R en moyenne (+0,05 à l'entraînement, -0,13 au test). Verdict inchangé : pas de preuve que 3/jour soit destructeur, les écarts entre 3 et 5 sont dans le bruit, ne pas changer avant la démo. Rapport : data/backtest-input/max-trades-per-day-sweep-full-m1.md.",
     "markets": [
       "US100",
       "US500",
@@ -423,7 +423,8 @@
     "files": [
       "scripts/runMaxTradesSweep.js",
       "scripts/runMaxTradesPerDayRealismCheck.js",
-      "data/backtest-input/max-trades-per-day-sweep.md"
+      "data/backtest-input/max-trades-per-day-sweep.md",
+      "scripts/runMaxTradesSweepFullM1.js"
     ],
     "handoffSection": "Plafond de trades par jour"
   },
