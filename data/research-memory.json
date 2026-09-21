@@ -535,5 +535,26 @@
       "data/backtest-input/order-geometry-live-vs-backtest.md"
     ],
     "handoffSection": "2026-09-21 — Géométrie des ordres au marché"
+  },
+  {
+    "id": "full-history-train-test-forward-2026",
+    "title": "Combo actuel (GER40 retiré), entraînement/test-forward 2026-01-01 → 2026-09-21, M1 réel sans trous, sensibilité au risque%",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Un seul warmUp() sur tout data/real-m1-full (2022/2023 → 2026-09-21, M15 reconstruits du M1), rejeu dans un vrai GuardrailEngine. Fenêtre test/forward 2026-01-01 → 2026-09-21 (491 trades, jamais vue par aucun réglage antérieur du combo, tous arrêtés à 2025) : compte continu +3.22% (0.25%/trade, DD max 8.3%, 0 cycle FTMO terminé en 262 jours), +3.75% (0.3%/trade = risque réel live, DD max 9.9%, 1 réussi/0 raté/1 en cours), +5.46% (0.5%/trade, DD max 16.0%, 2 réussis/2 ratés/1 en cours). FTMO 1-Step n'a AUCUNE limite de temps (timeLimitDays: null, confirmé sur ftmo.com) : le risque plus bas (0.25%) n'est pas un désavantage ici, juste plus lent. Recommandation à Esdras : baisser le risque par trade pour rester plus longtemps sur un compte (moins de ratés), quitte à mettre plus de mois à atteindre +10% — combiné à la stratégie de compte de réserve déjà validée (rejected/validated ailleurs) et au correctif de géométrie d'ordre au marché déjà écrit mais pas encore déployé.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (reconstruit du M1 réel)",
+    "sample": "2002 trades entraînement (< 2026-01-01) + 491 trades test/forward (2026-01-01 → 2026-09-21)",
+    "knownWeaknesses": "Garde-fous réels mais coûts partiels (spread mesuré, pas de commission/swap/glissement réel, correctif de géométrie d'ordre au marché pas encore appliqué ici) : niveau absolu surestimé par rapport à la démo réelle (~+31% du vrai moteur sur 7 mois de suivi réel). Échantillon test/forward encore petit (9 mois, 1-5 cycles selon le risque) : statut inconclusive, pas rejected/validated.",
+    "files": [
+      "scripts/runFtmo1StepFullHistoryTrainTestForward2026.js",
+      "data/backtest-input/full-history-train-test-forward-2026.md"
+    ],
+    "handoffSection": "2026-09-21 — Entraînement/test-forward 2026 sur M1 réel complet (sensibilité au risque%)"
   }
 ]
