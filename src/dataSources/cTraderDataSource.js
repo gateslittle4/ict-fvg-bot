@@ -1633,6 +1633,17 @@ export class CTraderDataSource {
             });
             store.pushSignalEvents(events);
             store.lastCandleBySymbol.set(symbolName, candle);
+            // Unconditional, one line per closed M15 candle per symbol (2026-09-21,
+            // Esdras: "des signaux n'ont pas ete declanche" - a Weekly Sweep US500
+            // signal existed in an offline replay of the exported broker candles at
+            // a moment ticks were confirmed flowing live (bot_spread_samples had
+            // ~900 samples/bucket), yet nothing at all was logged that night -
+            // no [auto-execute] line, no blockedReason, no bot_order_events row.
+            // Every OTHER log line here only fires when an event/signal already
+            // exists, so there was no way to tell whether ingestCandle() was ever
+            // called for that candle in the first place. This line answers that
+            // for next time, regardless of outcome.
+            console.log(`[candle-close] ${symbolName} time=${new Date(candle.time).toISOString()} close=${candle.close} events=${events.length}${events.length ? ' types=' + events.map((e) => `${e.type}${e.blockedReason ? `(${e.blockedReason})` : ''}`).join(',') : ''}`);
             const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
             if (actionable.length > 0) this._notify(actionable);
             if (actionable.length > 0 && store.isAutoExecuteActive()) {
