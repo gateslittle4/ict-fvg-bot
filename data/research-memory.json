@@ -381,5 +381,28 @@
       "docs/LIVE_DATA_FLOW.md"
     ],
     "handoffSection": "CORRECTIF LIVE"
+  },
+  {
+    "id": "live-replay-parity-check",
+    "title": "Contrôle permanent : signaux traités en direct vs moteur rejoué sur bougies complètes",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Après deux incidents (bougies premier tick, serveur endormi), un contrôle compare chaque semaine les signaux réellement traités par le bot (bot_order_events) au rejeu du vrai moteur sur les bougies finales du broker. Premier rapport, AVANT le correctif (16-21 sept.) : 11 signaux propres au rejeu, 7 traités en direct, 2 concordants, 9 manquants, 5 en direct absents du rejeu ; non décomposé par cause (netting sans positions réelles, redémarrages, journaux incomplets). Le contrôle utile est celui d'après le correctif, à relancer après une semaine de marché.",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15",
+    "knownWeaknesses": "Le rejeu ignore les positions réelles du broker ; la liste « direct » d'avant le 2026-09-20 vient des journaux Render ; échantillon de 7 signaux.",
+    "files": [
+      "scripts/checkLiveParity.js",
+      "src/backtest/liveParity.js",
+      "data/live-parity/parity-2026-09-16_to_09-21-avant-correctif.md",
+      ".github/workflows/live-parity.yml"
+    ],
+    "handoffSection": "Contrôle direct / rejeu"
   }
 ]

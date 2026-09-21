@@ -1,0 +1,9 @@
+[
+ {"event_time":"2026-09-17T14:00:00.97Z","symbol":"US500","source":"divergence","side":"buy"},
+ {"event_time":"2026-09-17T15:15:01.48Z","symbol":"US100","source":"silverbullet","side":"buy"},
+ {"event_time":"2026-09-18T11:00:01.94Z","symbol":"US500","source":"divergence","side":"buy"},
+ {"event_time":"2026-09-18T14:45:00.66Z","symbol":"US100","source":"silverbullet","side":"sell"},
+ {"event_time":"2026-09-18T14:45:01.27Z","symbol":"GER40","source":"silverbullet","side":"sell"},
+ {"event_time":"2026-09-18T15:15:02.27Z","symbol":"US100","source":"silverbullet","side":"sell"},
+ {"event_time":"2026-09-18T18:30:02.25Z","symbol":"US100","source":"silverbullet","side":"sell"}
+]
