@@ -494,5 +494,24 @@
       "scripts/runGer40SpreadByHour.mjs"
     ],
     "handoffSection": "2026-09-21 — POINT DE REPRISE (backtest M1 complet, spreads réels)"
+  },
+  {
+    "id": "ger40-retired",
+    "title": "GER40 retiré de l'exécution live (décision d'Esdras, 2026-09-21)",
+    "date": "2026-09-21",
+    "status": "live",
+    "summary": "GER40 retiré de CONFIG.symbols : le moteur live ne traite plus cette paire (aucun signal, aucun ordre). Motifs : R net négatif sur tout l'historique M1 réel (-71 R aux spreads supposés, -98 R aux spreads mesurés, ~700-800 trades), négatif à l'entraînement et sur 2023-2025 (positif en 2026, +14 R), et négatif MÊME aux heures où son spread est 0,5 (06-08 h UTC : -0,19 R/trade sur 189 trades ; 09-16 h UTC : -0,13 R/trade sur 367 trades) : problème de stratégie sur cette paire, pas de coût. Sans GER40 : +322 R contre +258 R, baisse max 13 % contre 20 %, défis FTMO 20/7 contre 19/10. Critère pré-enregistré pour le réintégrer : au moins 100 signaux HORS ÉCHANTILLON (mesurés par rejeu hors ligne sur les nouvelles données du broker, pas en exécution) à au moins +0,1 R/trade net de coûts réels, avec séparation entraînement / test. Les autres paires ne sont pas modifiées. Hypothèse H1 du protocole `protocol-m1-full-history-validation` (déjà lue sur le test une fois).",
+    "markets": [
+      "GER40"
+    ],
+    "timeframe": "M15/M1",
+    "knownWeaknesses": "Décision prise sur des données déjà lues (H1 lue sur le test) ; spreads GER40 des heures 8-21 h UTC et de New York non mesurés ; les configs de mécanismes (fvg, nwog, weeklySweep, breakerBlock, silverBullet, cbdr) listent encore GER40 mais sont inertes.",
+    "files": [
+      "src/config.js",
+      "test/ger40Retired.test.js",
+      "data/backtest-input/combo-m1-real-costs.md",
+      "data/backtest-input/combo-m1-full-history.md"
+    ],
+    "handoffSection": "2026-09-21 — GER40 retiré"
   }
 ]

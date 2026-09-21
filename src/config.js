@@ -96,7 +96,13 @@ export const CONFIG = {
   // (the most credible finding of that session: real spread confirmed 0.5
   // via Esdras's own cTrader screenshot, bidirectional, robust across 2-year
   // blocks - but only ONE train/test split, never observed live before now).
-  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'],
+  //
+  // GER40 RETIRED from live execution (2026-09-21, Esdras's decision after the M1 backtest, see HANDOFF.md "GER40 retiré" and research-memory
+  // `ger40-retired`): negative in every period and cost scenario (-71 R at the assumed spread, -98 R at the measured spread over ~700-800 trades),
+  // and it loses even in hours where its spread is only 0.5 (06-16 h UTC), so it is a strategy problem on this pair, not a cost problem.
+  // Its mechanism configs below (fvg/nwog/weeklySweep/breakerBlock/silverBullet/cbdr) still list GER40 but are inert: LiveStrategyEngine only
+  // processes CONFIG.symbols. Re-add ONLY with a pre-registered criterion (>= 100 out-of-sample signals at >= +0.1 R/trade) and a train/test split.
+  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD'],
   timeframe: 'M15',
   accountMode: ACCOUNT_MODE, // 'challenge' | 'live' - see ACCOUNT_MODE comment above
   risk: {
