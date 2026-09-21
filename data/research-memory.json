@@ -448,5 +448,28 @@
       "data/backtest-input/combo-m1-16-months.md"
     ],
     "handoffSection": "2026-09-21 — Historique M1 du broker : téléchargement complet en cours, backtest ENSUITE"
+  },
+  {
+    "id": "combo-m1-full-history",
+    "title": "Combo actuel sur ~4 ans de M1 réel du broker (2022-06 → 2026-09), protocole pré-enregistré appliqué",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "M1 réel FP Markets sans trous (fenêtres de 8 jours ; seul vrai trou restant : EURUSD 2022-11-14→18 et XAUUSD 2022-11-14→12-01, les autres écarts sont des week-ends/fériés/horaires d'indices), règlement à la minute, garde-fous approximés (niveau absolu surestimé). Combo figé : 2574 trades, +305 R, +0,119 R/trade, 23 défis FTMO 1-Step réussis / 14 échoués, baisse max 22 %. Année par année : 2022 (partiel) -0,22 ; 2023 +0,075 ; 2024 +0,067 ; 2025 +0,211 ; 2026 +0,164 R/trade (4 années sur 5 positives, 29 mois sur 52 positifs, meilleur mois 2025-10 = 18 % du total). Entraînement (<2025) +0,056 R/trade avec 11 défis réussis / 10 échoués ; test (2025→) +0,191 avec 13 / 4. Par paire : US100 +278 R (+0,35 R/trade, 804 trades), XAUUSD +52 R (+0,35, 150), US500 +47 R (+0,10, 471), EURUSD -1 R (≈0, 340), GER40 -71 R (-0,088, 809 ; négatif 2023-2025, positif 2026). Hypothèses testées (3, comptées) : H1 retirer GER40 = candidate (R/trade test +0,198 contre +0,191, baisse 13 % contre 17 %, amélioré 3 années sur 4) MAIS R net total du test plus bas (+183 R contre +228 R) ; H2 retirer EURUSD = REJETÉE (baisse max plus grande) ; H3 retirer les deux = candidate mais +168 R contre +228 R. Aucune modification adoptée : à confirmer en démo. Les 3 hypothèses viennent d'un premier regard sur un rapport invalide (biais de sélection déclaré). Le spread GER40 réel (2,1 à 8,1 la nuit contre 0,5 supposé) pourrait rendre GER40 pire que simulé : non vérifié en séances européenne et NY.",
+    "markets": [
+      "US100",
+      "US500",
+      "GER40",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Combo réglé sur 2010-2025 (2023-2025 = remesure exacte, pas preuve indépendante) ; garde-fous approximés (+53 % simulé contre +31 % vrai moteur sur 7 mois) ; commissions/swap/glissement non modélisés ; les indices n'ont du M1 que depuis 2023-01 ; sensibilité à un mois extrême ; 2023-2024 ne donnent que +0,07 R/trade avec 11 défis réussis pour 10 échoués : la moitié des tentatives échouent sur cette période.",
+    "files": [
+      "scripts/runM1ProtocolBacktest.js",
+      "scripts/mergeRealM1History.js",
+      "data/backtest-input/combo-m1-full-history.md",
+      "data/real-m1-full/README.md"
+    ],
+    "handoffSection": "2026-09-21 — Résultat du backtest M1 sur tout l'historique"
   }
 ]
