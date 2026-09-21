@@ -556,5 +556,27 @@
       "data/backtest-input/full-history-train-test-forward-2026.md"
     ],
     "handoffSection": "2026-09-21 — Entraînement/test-forward 2026 sur M1 réel complet (sensibilité au risque%)"
+  },
+  {
+    "id": "engine-vs-simulator-reconciliation",
+    "title": "Réconciliation : le VRAI moteur sur tout le M1 réel, règlement M15 (moteur/site) contre M1 exact",
+    "date": "2026-09-21",
+    "status": "validated-research",
+    "summary": "Un warmUp() du vrai LiveStrategyEngine (mécanismes réels) sur tout le M1 réel sans trous (EURUSD/XAUUSD dès 2022-05, indices dès 2023-01), trades réglés soit comme le moteur (M15, stop d'abord) soit à la minute, rejeu dans le vrai GuardrailEngine. Combo en production (sans GER40) : M15 = +88,9 R (+25,7 % à 0,3 % par trade, baisse max 17 %), M1 exact = +220,3 R (+86 % à 0,3 %, baisse max 12,2 %) : le règlement M15 « stop d'abord » de la page du site et du moteur sous-estime fortement (~130 R en 4 ans). Avec GER40 : M1 exact +91,7 R contre +220,3 R sans lui : GER40 coûte -106 R (-0,124 R/trade sur 853 trades) dans le VRAI moteur aussi, ce qui confirme son retrait avec l'implémentation de production et pas seulement avec le simulateur des backtests. Par paire (M1 exact) : US100 +158 R, XAUUSD +46 R, US500 +6 R, EURUSD -13 R. Par année : 2022 -16,5 R, 2023 +21,6, 2024 -29,7, 2025 +47,6, 2026 +68,8 (5 paires, 0,5 %). Le simulateur des backtests précédents (scripts/lib/stopFloorCore.js) donne des niveaux plus hauts que le vrai moteur (+53 % contre ~+31 % sur 7 mois) : à lire pour ses différences relatives seulement ; les décisions de fond (GER40, plafond de 3/jour) sont cohérentes avec le vrai moteur. Le chiffre de référence des futurs rapports = vrai moteur + M1 exact.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD",
+      "GER40"
+    ],
+    "timeframe": "M1/M15",
+    "knownWeaknesses": "Coûts partiels (pas de commission/swap/glissement réel, géométrie d'ordre non corrigée dans ce calcul) ; garde-fous rejoués sur une liste canonique de trades (le moteur ne voit pas les vétos) ; entrée supposée remplie au niveau du signal dans sa bougie M15 ; mécanismes déséquilibrés (breakerblock -97 R, cbdr -29 R, fvg +184 R sur 5 paires) à analyser séparément sans GER40 avant toute décision.",
+    "files": [
+      "scripts/runEngineM1Backtest.js",
+      "data/backtest-input/engine-m1-vs-m15-reconciliation.md",
+      "data/backtest-input/full-history-train-test-forward-2026.md"
+    ],
+    "handoffSection": "2026-09-21 — Réconciliation moteur / simulateur"
   }
 ]
