@@ -657,5 +657,26 @@
       "data/backtest-input/preregistration-new-instruments-2026-09-21.md"
     ],
     "handoffSection": "2026-09-21 — Pré-enregistrement : nouveaux instruments"
+  },
+  {
+    "id": "prereg-new-instruments-results-2026-09-21",
+    "title": "Résultats du pré-enregistrement : FVG, Weekly Sweep, NWOG, Divergence sur XAGUSD, US30, XTIUSD (1 candidate sur 11)",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Procédure respectée : entraînement (< 2025) décidé et commité AVANT la lecture unique du test (>= 2025). Vrai moteur, M1 exact, garde-fous réels (0,3 %), spread = 2 x celui du frère (XAGUSD 0,0073, US30 2,51, XTIUSD 0,0065 en valeur absolue). Entraînement : 3 retenues sur 11 : FVG XAGUSD +0,299 R/trade (98 trades, 1re moitié seulement +1,9 R), FVG XTIUSD +0,331 (78), Weekly Sweep US30 +0,122 (93). Rejetées : FVG US30 -0,055 ; Weekly XAGUSD -0,168, XTIUSD -0,258 ; NWOG XAGUSD -0,594, US30 -0,487 (19 trades), XTIUSD -0,075 ; Divergence XAU/XAG +0,135 mais 1re moitié négative (-9,8 R), US100/US30 +0,028. Test (lu une fois) : FVG XAGUSD +0,209 R/trade sur 67 trades (+14,0 R), corrélation mensuelle -0,61 avec le combo actuel -> SEULE CANDIDATE (mode alerte, jamais adoption directe) ; FVG XTIUSD -0,058 (63 trades) ÉCHEC, et -1,005 R/trade si le spread pétrole est 10 fois plus grand (plausible pour un CFD pétrole) ; Weekly Sweep US30 +0,009 (79 trades) ÉCHEC. Avec 11 hypothèses on attendait ~1 succès par chance : la candidate n'est pas une preuve. Point faible principal : le spread supposé de l'argent (2 x le relatif de l'or, 0,0073 soit ~0,025 % du prix) est probablement plus bas que le vrai spread d'un CFD argent, à MESURER avant toute exécution ; l'argent est aussi fortement lié à l'or (même config que FVG XAUUSD).",
+    "markets": [
+      "XAGUSD",
+      "US30",
+      "XTIUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Historique court (XAGUSD 2022-06 -> 2026-09, indices/pétrole 2023-01 ->) ; spreads supposés non mesurés ; 11 essais (1 faux positif attendu) ; FVG XAGUSD très concentré dans la 2e moitié de l'entraînement ; corrélation mensuelle calculée sur 21 mois seulement.",
+    "files": [
+      "scripts/runPreregNewInstruments.js",
+      "data/backtest-input/prereg-new-instruments-train.md",
+      "data/backtest-input/prereg-new-instruments-test.md",
+      "data/backtest-input/preregistration-new-instruments-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Résultats : nouveaux instruments"
   }
 ]
