@@ -65,7 +65,7 @@ const guard0 = new GuardrailEngine({ maxTradesPerDay: 1000, cooldownMinutesAfter
 guard0.setBalance(START, Math.min(...orderedSymbols.map((s) => ordered[s][0].time)));
 const engine = new LiveStrategyEngine({ symbols: orderedSymbols, fvgConfig: CONFIG.fvg.perSymbol, divergenceConfig: CONFIG.divergence, nwogConfig: CONFIG.nwog, judasSwingConfig: CONFIG.judasSwing, weeklySweepConfig: CONFIG.weeklySweep, breakerBlockConfig: CONFIG.breakerBlock, silverBulletConfig: CONFIG.silverBullet, cbdrConfig: CONFIG.cbdr, guardrail: guard0, riskPctPerTrade: 0.5, spreads: DEFAULT_SPREADS });
 const pending = new Map(); const trades = [];
-engine.warmUp(ordered, { onEvent: (sig, candle) => {
+engine.warmUp(ordered, { completeDivergencePair: true, onEvent: (sig, candle) => {
   if (sig.type === 'validated' && !sig.blockedReason) { pending.set(sig.symbol, { symbol: sig.symbol, source: sig.source, direction: sig.direction, entryPrice: sig.entryPrice, stopPrice: sig.stopPrice, targetPrice: sig.targetPrice, distance: sig.distance, entryTime: candle.time }); return; }
   if (sig.type !== 'closed') return;
   const o = pending.get(sig.symbol); pending.delete(sig.symbol); if (!o) return;

@@ -6,19 +6,19 @@ Un `warmUp()` du vrai moteur sur EURUSD/XAUUSD (dès 2022-05) et US100/US500/GER
 
 | Variante | Règlement | Trades | Vétos | R net (tous trades pris) | Compte 10 000 $ | Pire baisse |
 |---|---|---|---|---|---|---|
-| 5 paires (GER40 inclus) | M15 (moteur) | 2693 | 912 | -32.4 R | -13.8% | 31.6 % |
-| 5 paires (GER40 inclus) | M1 exact | 2683 | 922 | +91.7 R | +25.0% | 27.0 % |
-| Production (sans GER40) | M15 (moteur) | 2037 | 456 | +88.9 R | +25.7% | 17.0 % |
-| Production (sans GER40) | M1 exact | 2022 | 471 | +220.3 R | +86.1% | 12.2 % |
+| 5 paires (GER40 inclus) | M15 (moteur) | 2739 | 966 | -17.6 R | -9.9% | 28.0 % |
+| 5 paires (GER40 inclus) | M1 exact | 2729 | 976 | +96.5 R | +26.8% | 23.5 % |
+| Production (sans GER40) | M15 (moteur) | 2085 | 508 | +101.4 R | +30.4% | 19.0 % |
+| Production (sans GER40) | M1 exact | 2071 | 522 | +227.7 R | +90.3% | 11.4 % |
 
 ## Risque 0.5 % par trade
 
 | Variante | Règlement | Trades | Vétos | R net (tous trades pris) | Compte 10 000 $ | Pire baisse |
 |---|---|---|---|---|---|---|
-| 5 paires (GER40 inclus) | M15 (moteur) | 2693 | 912 | -32.4 R | -26.1% | 48.3 % |
-| 5 paires (GER40 inclus) | M1 exact | 2683 | 922 | +91.7 R | +36.9% | 41.6 % |
-| Production (sans GER40) | M15 (moteur) | 2037 | 456 | +88.9 R | +40.3% | 27.5 % |
-| Production (sans GER40) | M1 exact | 2022 | 471 | +220.3 R | +169.6% | 19.6 % |
+| 5 paires (GER40 inclus) | M15 (moteur) | 2739 | 966 | -17.6 R | -20.5% | 43.6 % |
+| 5 paires (GER40 inclus) | M1 exact | 2729 | 976 | +96.5 R | +40.1% | 36.8 % |
+| Production (sans GER40) | M15 (moteur) | 2085 | 508 | +101.4 R | +49.2% | 30.2 % |
+| Production (sans GER40) | M1 exact | 2071 | 522 | +227.7 R | +179.6% | 18.6 % |
 
 ## Détail (5 paires, M1 exact, 0,5 %)
 
@@ -26,34 +26,34 @@ Un `warmUp()` du vrai moteur sur EURUSD/XAUUSD (dès 2022-05) et US100/US500/GER
 
 | Paire | Trades | R net | R / trade |
 |---|---|---|---|
-| US500 | 484 | +6.2 | +0.013 |
-| US100 | 828 | +158.5 | +0.191 |
-| XAUUSD | 154 | +45.8 | +0.297 |
+| US500 | 538 | +18.8 | +0.035 |
+| US100 | 824 | +138.8 | +0.168 |
+| XAUUSD | 151 | +48.8 | +0.323 |
 | EURUSD | 364 | -12.7 | -0.035 |
-| GER40 | 853 | -106.1 | -0.124 |
+| GER40 | 852 | -97.1 | -0.114 |
 
 ### Par mécanisme
 
 | Mécanisme | Trades | R net | R / trade |
 |---|---|---|---|
-| breakerblock | 424 | -96.9 | -0.229 |
-| cbdr | 175 | -28.9 | -0.165 |
-| divergence | 117 | +38.1 | +0.326 |
-| fvg | 648 | +183.7 | +0.283 |
+| breakerblock | 416 | -94.6 | -0.227 |
+| cbdr | 172 | -33.7 | -0.196 |
+| divergence | 253 | +51.6 | +0.204 |
+| fvg | 619 | +186.2 | +0.301 |
 | judaswing | 364 | -12.7 | -0.035 |
 | nwog | 192 | -5.9 | -0.031 |
-| silverbullet | 527 | +20.9 | +0.040 |
-| weeklysweep | 236 | -6.6 | -0.028 |
+| silverbullet | 499 | -5.4 | -0.011 |
+| weeklysweep | 214 | +11.0 | +0.051 |
 
 ### Par année
 
 | Année | Trades | R net | R / trade |
 |---|---|---|---|
 | 2022 | 85 | -16.5 | -0.194 |
-| 2023 | 687 | +21.6 | +0.031 |
-| 2024 | 680 | -29.7 | -0.044 |
-| 2025 | 691 | +47.6 | +0.069 |
-| 2026 | 540 | +68.8 | +0.127 |
+| 2023 | 710 | +21.6 | +0.030 |
+| 2024 | 691 | -19.5 | -0.028 |
+| 2025 | 698 | +54.0 | +0.077 |
+| 2026 | 545 | +57.0 | +0.105 |
 
 ## Détail (5 paires, M15 du moteur, 0,5 %)
 
@@ -61,60 +61,60 @@ Un `warmUp()` du vrai moteur sur EURUSD/XAUUSD (dès 2022-05) et US100/US500/GER
 
 | Paire | Trades | R net | R / trade |
 |---|---|---|---|
-| US500 | 487 | -7.8 | -0.016 |
-| US100 | 834 | +68.2 | +0.082 |
-| XAUUSD | 154 | +45.9 | +0.298 |
+| US500 | 540 | +7.8 | +0.014 |
+| US100 | 830 | +52.5 | +0.063 |
+| XAUUSD | 151 | +48.9 | +0.324 |
 | EURUSD | 364 | -12.7 | -0.035 |
-| GER40 | 854 | -126.0 | -0.148 |
+| GER40 | 854 | -114.1 | -0.134 |
 
 ### Par mécanisme
 
 | Mécanisme | Trades | R net | R / trade |
 |---|---|---|---|
-| breakerblock | 428 | -107.0 | -0.250 |
-| cbdr | 174 | -59.9 | -0.344 |
-| divergence | 122 | +33.1 | +0.271 |
-| fvg | 658 | +122.2 | +0.186 |
+| breakerblock | 420 | -104.7 | -0.249 |
+| cbdr | 171 | -60.6 | -0.355 |
+| divergence | 258 | +46.6 | +0.181 |
+| fvg | 628 | +125.8 | +0.200 |
 | judaswing | 364 | -12.7 | -0.035 |
 | nwog | 192 | -11.8 | -0.062 |
-| silverbullet | 519 | +9.2 | +0.018 |
-| weeklysweep | 236 | -5.5 | -0.023 |
+| silverbullet | 490 | -16.0 | -0.033 |
+| weeklysweep | 216 | +16.0 | +0.074 |
 
 ### Par année
 
 | Année | Trades | R net | R / trade |
 |---|---|---|---|
 | 2022 | 85 | -16.5 | -0.195 |
-| 2023 | 689 | -8.9 | -0.013 |
-| 2024 | 683 | -53.6 | -0.079 |
-| 2025 | 694 | +15.8 | +0.023 |
-| 2026 | 542 | +30.8 | +0.057 |
+| 2023 | 712 | +5.2 | +0.007 |
+| 2024 | 694 | -43.5 | -0.063 |
+| 2025 | 701 | +22.2 | +0.032 |
+| 2026 | 547 | +15.0 | +0.027 |
 
 ## Mécanisme × paire (M1 exact, 0,5 %) : trades / R net / R par trade
 
 | Mécanisme | US500 | US100 | XAUUSD | EURUSD | GER40 |
 |---|---|---|---|---|---|
-| breakerblock | — | — | — | — | 424 / -96.9 / -0.23 |
-| cbdr | — | 175 / -28.9 / -0.17 | — | — | — |
-| divergence | — | 117 / +38.1 / +0.33 | — | — | — |
-| fvg | 166 / -5.1 / -0.03 | 328 / +143.0 / +0.44 | 154 / +45.8 / +0.30 | — | — |
+| breakerblock | — | — | — | — | 416 / -94.6 / -0.23 |
+| cbdr | — | 172 / -33.7 / -0.20 | — | — | — |
+| divergence | 136 / +13.5 / +0.10 | 117 / +38.1 / +0.33 | — | — | — |
+| fvg | 137 / -2.5 / -0.02 | 331 / +139.8 / +0.42 | 151 / +48.8 / +0.32 | — | — |
 | judaswing | — | — | — | 364 / -12.7 / -0.03 | — |
 | nwog | — | 42 / +10.0 / +0.24 | — | — | 150 / -15.9 / -0.11 |
-| silverbullet | 202 / +2.5 / +0.01 | 166 / -3.6 / -0.02 | — | — | 159 / +22.1 / +0.14 |
-| weeklysweep | 116 / +8.8 / +0.08 | — | — | — | 120 / -15.4 / -0.13 |
+| silverbullet | 172 / -13.7 / -0.08 | 162 / -15.5 / -0.10 | — | — | 165 / +23.7 / +0.14 |
+| weeklysweep | 93 / +21.4 / +0.23 | — | — | — | 121 / -10.4 / -0.09 |
 
 ## Mécanisme × paire (M15 du moteur, 0,5 %) : trades / R net / R par trade
 
 | Mécanisme | US500 | US100 | XAUUSD | EURUSD | GER40 |
 |---|---|---|---|---|---|
-| breakerblock | — | — | — | — | 428 / -107.0 / -0.25 |
-| cbdr | — | 174 / -59.9 / -0.34 | — | — | — |
-| divergence | — | 122 / +33.1 / +0.27 | — | — | — |
-| fvg | 170 / -12.1 / -0.07 | 334 / +88.4 / +0.26 | 154 / +45.9 / +0.30 | — | — |
+| breakerblock | — | — | — | — | 420 / -104.7 / -0.25 |
+| cbdr | — | 171 / -60.6 / -0.35 | — | — | — |
+| divergence | 136 / +13.5 / +0.10 | 122 / +33.1 / +0.27 | — | — | — |
+| fvg | 140 / -8.5 / -0.06 | 337 / +85.3 / +0.25 | 151 / +48.9 / +0.32 | — | — |
 | judaswing | — | — | — | 364 / -12.7 / -0.03 | — |
 | nwog | — | 42 / +10.0 / +0.24 | — | — | 150 / -21.8 / -0.15 |
-| silverbullet | 201 / -4.5 / -0.02 | 162 / -3.4 / -0.02 | — | — | 156 / +17.1 / +0.11 |
-| weeklysweep | 116 / +8.8 / +0.08 | — | — | — | 120 / -14.3 / -0.12 |
+| silverbullet | 169 / -22.5 / -0.13 | 158 / -15.3 / -0.10 | — | — | 163 / +21.8 / +0.13 |
+| weeklysweep | 95 / +25.3 / +0.27 | — | — | — | 121 / -9.3 / -0.08 |
 
 ## Breaker Block et CBDR par année (M1 exact, 0,5 %, R net / trades)
 
@@ -122,8 +122,8 @@ Un `warmUp()` du vrai moteur sur EURUSD/XAUUSD (dès 2022-05) et US100/US500/GER
 |---|---|---|---|---|---|
 | breakerblock US100 | — | — | — | — | — |
 | breakerblock US500 | — | — | — | — | — |
-| breakerblock GER40 | — | -50.6 / 110 | -7.3 / 104 | -29.6 / 120 | -9.4 / 90 |
-| cbdr US100 | — | -9.4 / 49 | -17.7 / 45 | -2.8 / 40 | +0.9 / 41 |
+| breakerblock GER40 | — | -55.5 / 109 | -3.2 / 100 | -27.6 / 118 | -8.4 / 89 |
+| cbdr US100 | — | -11.2 / 47 | -16.6 / 44 | -2.8 / 40 | -3.1 / 41 |
 
 ## Limites
 

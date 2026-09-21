@@ -90,6 +90,7 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
   const trades = [];
 
   engine.warmUp(windowed, {
+    completeDivergencePair: true, // 2026-09-21: keep BOTH legs of the divergence pair (the default warm-up loses one, see liveStrategyEngine.warmUp)
     onEvent: (e) => {
       if (!e) return;
       if (e.type === 'validated' && !e.blockedReason) {
