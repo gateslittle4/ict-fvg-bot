@@ -599,5 +599,26 @@
       "data/backtest-input/adaptive-risk-eurusd-drop-2026.md"
     ],
     "handoffSection": "2026-09-21 (soir, suite 2) — Risque adaptatif et vraie paire négative (US500, pas EURUSD)"
+  },
+  {
+    "id": "ftmo-throughput-economics-2026",
+    "title": "Débit réel de challenges FTMO (passes/an) et coût des rachats — le risque adaptatif naïf était une fausse bonne idée",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Esdras a eu raison de pousser sur \"1 seul pass en 9 mois, sans déconner\": mon risque adaptatif (0.5%->0.25% dès -4% de baisse, retour à 0.5% dès que la baisse repasse sous 4%) donne EXACTEMENT le même débit que 0.25% fixe pur (1.39 passes/an, 0 rachat) - il neutralise complètement l'avantage de débit du 0.5%. Débit réel par configuration (fenêtre test/forward 2026-01-01→2026-09-21, M1 exact, FEE_PER_BUST=9 PLACEHOLDER non confirmé - aucun tarif FTMO 0k publié trouvé) : 0.25/0.3% fixe = 1.39 passes/an, /bin/bash coût ; 0.5% fixe = 5.55 passes/an, 78 coût total (5/passe) ; 0.75% = 8.33/an, 4/passe ; 1% = 11.10/an, 8/passe ; 1.5% = 23.59/an (le plus haut débit), 8/passe. Le coût du rachat est FAIBLE par rapport au gain de débit : monter le risque augmente clairement le débit de challenges passés sans faire exploser le coût par passe. Conclusion opposée à la recommandation \"baisser le risque\" donnée plus tôt dans la même journée, qui optimisait pour \"éviter les busts\" plutôt que pour le vrai objectif d'Esdras (débit de challenges réussis).",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "491 trades test/forward (2026-01-01 → 2026-09-21)",
+    "knownWeaknesses": "FEE_PER_BUST (9) est un placeholder non vérifié - seul chiffre sourcé du dépôt est 30 pour un challenge 5k (remboursé au financement). Ne modélise pas les revenus du compte financé après une passe (question plus grande, déjà traitée pour FTMO 5k dans HANDOFF.md). Échantillon test/forward petit (9 mois). 17 busts en 9 mois à 1.5% est un vrai coût opérationnel/psychologique non chiffré ici (racheter aussi souvent).",
+    "files": [
+      "scripts/runFtmoThroughputEconomics2026.js",
+      "data/backtest-input/ftmo-throughput-economics-2026.md"
+    ],
+    "handoffSection": "2026-09-21 (soir, suite 3) — Débit réel de challenges : le risque adaptatif naïf ne valait rien"
   }
 ]
