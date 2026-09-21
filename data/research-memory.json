@@ -620,5 +620,24 @@
       "data/backtest-input/ftmo-throughput-economics-2026.md"
     ],
     "handoffSection": "2026-09-21 (soir, suite 3) — Débit réel de challenges : le risque adaptatif naïf ne valait rien"
+  },
+  {
+    "id": "silverbullet-second-position-netting",
+    "title": "Silver Bullet en 2e position malgré une paire déjà ouverte : REJETÉ (-6.52R sur 196 cas historiques)",
+    "date": "2026-09-21",
+    "status": "rejected",
+    "summary": "Déclenché par un cas réel en direct (2026-09-21) : Silver Bullet US500 haussier (entrée 7733.4) bloqué par netting car Divergence US500 était déjà ouverte (entrée 7719.05, clôturée gagnante +2.92R 45 min plus tard). Si allouée en 2e position indépendante, cette trade précise serait actuellement en cours, +1.38R non réalisé, jamais menacée par son stop. MAIS sur tout l'historique M1 réel (2022/2023→2026-09), 196 signaux Silver Bullet ont été bloqués par netting (sur 1026 signaux Silver Bullet au total, 667 exécutés normalement) - réglés en position indépendante (M1 exact) : seulement 8% gagnants, -6.52R net total, -0.033R/trade. Le cas d'aujourd'hui est un favorable OUTLIER, pas la norme : la grande majorité (92%) de ces situations auraient perdu ~-1R rapidement après l'entrée. REJETÉ - ne pas autoriser Silver Bullet en 2e position.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "196 signaux Silver Bullet bloqués par netting sur tout l'historique real-m1-full (~3.7 ans)",
+    "knownWeaknesses": "Suppose que la 2e position n'a aucune interaction avec la 1ère (sizing indépendant). Contrainte broker NON vérifiée : le blocage netting reflète peut-être une vraie limite du compte cTrader (mode netting vs hedging) - même si le résultat avait été positif, il aurait fallu vérifier le support du mode hedging chez FP Markets avant tout changement de code. Coûts partiels (spread mesuré, pas commission/swap/glissement réel).",
+    "files": [
+      "scripts/runSilverBulletSecondPositionCheck.js",
+      "data/backtest-input/silver-bullet-second-position-netting.md"
+    ],
+    "handoffSection": "2026-09-21 (soir, suite 4) — Silver Bullet en 2e position : rejeté, -6.52R historique"
   }
 ]
