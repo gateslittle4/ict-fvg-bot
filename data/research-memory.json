@@ -538,10 +538,10 @@
   },
   {
     "id": "full-history-train-test-forward-2026",
-    "title": "Combo actuel (GER40 retiré), entraînement/test-forward 2026-01-01 → 2026-09-21, M1 réel sans trous, sensibilité au risque%",
+    "title": "Combo actuel (GER40 retiré), entraînement/test-forward 2026-01-01 → 2026-09-21, M1 exact (référence) vs M15, sensibilité au risque%",
     "date": "2026-09-21",
     "status": "inconclusive",
-    "summary": "Un seul warmUp() sur tout data/real-m1-full (2022/2023 → 2026-09-21, M15 reconstruits du M1), rejeu dans un vrai GuardrailEngine. Fenêtre test/forward 2026-01-01 → 2026-09-21 (491 trades, jamais vue par aucun réglage antérieur du combo, tous arrêtés à 2025) : compte continu +3.22% (0.25%/trade, DD max 8.3%, 0 cycle FTMO terminé en 262 jours), +3.75% (0.3%/trade = risque réel live, DD max 9.9%, 1 réussi/0 raté/1 en cours), +5.46% (0.5%/trade, DD max 16.0%, 2 réussis/2 ratés/1 en cours). FTMO 1-Step n'a AUCUNE limite de temps (timeLimitDays: null, confirmé sur ftmo.com) : le risque plus bas (0.25%) n'est pas un désavantage ici, juste plus lent. Recommandation à Esdras : baisser le risque par trade pour rester plus longtemps sur un compte (moins de ratés), quitte à mettre plus de mois à atteindre +10% — combiné à la stratégie de compte de réserve déjà validée (rejected/validated ailleurs) et au correctif de géométrie d'ordre au marché déjà écrit mais pas encore déployé.",
+    "summary": "v2 (corrige le premier passage, qui réglait en M15 \"stop d'abord\" seulement — sous-estimation structurelle confirmée par engine-m1-vs-m15-reconciliation.md). Un seul warmUp() du vrai LiveStrategyEngine sur tout data/real-m1-full (2022/2023 → 2026-09-21), réglé aux DEUX conventions (M15 et M1 exact), rejeu dans un vrai GuardrailEngine. Fenêtre test/forward 2026-01-01 → 2026-09-21 (396 trades en M1 exact) : compte continu +10.95% (0.25%/trade, DD max 6.9%, 1 cycle FTMO réussi/0 raté/1 en cours), +13.14% (0.3%/trade = risque réel live, DD max 8.2%, 1/0/1), +21.79% (0.5%/trade, DD max 13.3%, 4 réussis/2 ratés/1 en cours). Nettement mieux qu'en M15 (+3.22/+3.75/+5.46% aux mêmes risques) : le M15 \"stop d'abord\" est structurellement pessimiste. FTMO 1-Step n'a AUCUNE limite de temps (timeLimitDays: null, confirmé sur ftmo.com) : à 0.25-0.3% la baisse max reste sous le plancher de 10% tout du long (aucun bust) ; à 0.5% le plancher est franchi 2 fois en 9 mois malgré un solde final positif (4 gagnés/2 ratés). Recommandation à Esdras : baisser le risque par trade pour maximiser la survie (0 bust à 0.25-0.3% sur cette fenêtre), quitte à empocher moins vite — combiné à la stratégie de compte de réserve déjà validée et au correctif de géométrie d'ordre au marché déjà écrit mais pas encore déployé.",
     "markets": [
       "US100",
       "US500",
@@ -550,7 +550,7 @@
     ],
     "timeframe": "M15 (reconstruit du M1 réel)",
     "sample": "2002 trades entraînement (< 2026-01-01) + 491 trades test/forward (2026-01-01 → 2026-09-21)",
-    "knownWeaknesses": "Garde-fous réels mais coûts partiels (spread mesuré, pas de commission/swap/glissement réel, correctif de géométrie d'ordre au marché pas encore appliqué ici) : niveau absolu surestimé par rapport à la démo réelle (~+31% du vrai moteur sur 7 mois de suivi réel). Échantillon test/forward encore petit (9 mois, 1-5 cycles selon le risque) : statut inconclusive, pas rejected/validated.",
+    "knownWeaknesses": "Garde-fous réels mais coûts partiels (spread mesuré, pas de commission/swap/glissement réel, correctif de géométrie d'ordre au marché pas encore appliqué ici) : niveau absolu encore surestimé par rapport à la démo réelle. Échantillon test/forward encore petit (9 mois, 1-7 cycles selon le risque) : statut inconclusive, pas rejected/validated. Rejeu de garde-fous sur des trades pris comme des signaux indépendants (même limite qu'engine-m1-vs-m15-reconciliation.md) : le moteur ne \"voit\" pas les vétos en temps réel.",
     "files": [
       "scripts/runFtmo1StepFullHistoryTrainTestForward2026.js",
       "data/backtest-input/full-history-train-test-forward-2026.md"

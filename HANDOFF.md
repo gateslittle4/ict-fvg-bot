@@ -6506,6 +6506,16 @@ Demande d'Esdras : analyser avec les vraies données déjà téléchargées (`da
 
 **Limites** : mêmes garde-fous approximés qu'ailleurs dans cette section (coûts partiels, correctif de géométrie pas appliqué ici) — niveau absolu encore surestimé vs la démo réelle (~+31 % du vrai moteur sur 7 mois). Échantillon test/forward petit (9 mois, 0 à 5 cycles selon le risque) : statut `inconclusive` dans la mémoire de recherche (`full-history-train-test-forward-2026`), pas une conclusion définitive. `npm test` inchangé (script d'analyse seul, aucun code de production modifié).
 
+**⚠️ CORRECTION (même soir, après la réconciliation moteur/simulateur ci-dessus) : les chiffres au-dessus réglaient en M15 "stop d'abord", structurellement pessimiste.** `scripts/runFtmo1StepFullHistoryTrainTestForward2026.js` réécrit pour régler CHAQUE trade aux deux conventions (M15 et M1 exact, même fonction `settleM1` que `runEngineM1Backtest.js`), un seul `warmUp()` au lieu de trois. **Résultat en M1 exact (référence désormais), fenêtre test/forward 2026-01-01 → 2026-09-21 (396 trades) :**
+
+| Risque/trade | Compte continu $10k | Pire baisse | FTMO 1-Step (réussis/ratés/en cours) |
+|---|---|---|---|
+| 0,25 % | +10,95 % | 6,9 % | 1 / 0 / 1 (aucun bust) |
+| 0,3 % (risque réel live) | +13,14 % | 8,2 % | 1 / 0 / 1 (aucun bust) |
+| 0,5 % | +21,79 % | 13,3 % | 4 / 2 / 1 (plancher franchi 2 fois) |
+
+Nettement mieux que les chiffres M15 ci-dessus (+3,22 / +3,75 / +5,46 %) à risque égal — confirme que le M15 sous-estimait. **La recommandation reste la même et est renforcée par ces chiffres corrigés** : à 0,25-0,3 %/trade, la pire baisse reste sous le plancher FTMO de 10 % sur toute la fenêtre (zéro bust) ; à 0,5 % le plancher est franchi 2 fois en 9 mois malgré un solde final positif. FTMO 1-Step n'ayant aucune limite de temps, baisser le risque par trade reste le levier le plus direct pour rester plus longtemps sur un compte. Mémoire de recherche mise à jour (même id, pas de doublon). Rapport regénéré : `data/backtest-input/full-history-train-test-forward-2026.md`.
+
 ## 2026-09-21 — Vulnérabilités npm : axios et uuid corrigés par `overrides`, protobufjs reste (critique) faute de correctif sans réécriture
 
 `package.json` : `overrides` de `@reiryoku/ctrader-layer` -> `axios 1.20.0` (inutilisé par la librairie) et `uuid 11.1.1` (seul `v4()` est utilisé, API inchangée) ; la librairie se charge, la suite de tests passe (1074/1074). `npm audit` : 4 -> 2 vulnérabilités (1 haute, 1 critique), toutes `protobufjs@5.0.1` : la librairie est écrite pour l'API 5 (`loadProtoFile`, builder, `toBuffer`) qui n'existe plus en 7 (correctif à partir de 7.6.3) ; migrer demande de réécrire `CTraderProtobufReader` et de tester contre le broker (types int64/enums). Exposition faible (messages de Spotware sur TLS, `.proto` fournis, aucun schéma tiers). Non déployé (avec le reste, un seul redéploiement) ; le premier déploiement fait `npm install` avec les overrides : vérifier `healthz` juste après.
