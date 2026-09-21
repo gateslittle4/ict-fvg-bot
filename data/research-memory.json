@@ -578,5 +578,26 @@
       "data/backtest-input/full-history-train-test-forward-2026.md"
     ],
     "handoffSection": "2026-09-21 — Réconciliation moteur / simulateur"
+  },
+  {
+    "id": "adaptive-risk-and-eurusd-drop-2026",
+    "title": "Risque adaptatif (0.5%→0.25% à -4% de baisse) et vraie paire négative (US500, pas EURUSD)",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Esdras: risque adaptatif (0.5% de base, 0.25% dès -4% de baisse depuis le dernier sommet, retour à 0.5% à un nouveau sommet) + retrait de la paire qui ne performe pas. Sur la fenêtre test/forward 2026-01-01→2026-09-21 (M1 exact) : EURUSD (visée par Esdras) est légèrement POSITIVE à l'entraînement (+0.5 R) donc protocole refuse de la retirer - la vraie paire négative des deux fenêtres est US500 (-50.7 R entraînement, -10.3 R test). Risque adaptatif (combo actuel, 4 paires) : +14.98% (pire baisse 8.9%, FTMO 1 réussi/0 raté) contre 0.5% fixe +21.79% (pire baisse 13.3%, 4 réussis/2 ratés) - l'adaptatif évite les 2 busts en sacrifiant un peu de rendement, meilleur compromis que tout risque fixe testé jusqu'ici. Retirer US500 aide seulement à risque fixe 0.5% (+18.97%, pire baisse 10.0%, 2 réussis/0 raté, zéro bust) mais est neutre/légèrement pire à 0.25-0.3% fixe ET nettement pire en adaptatif (+4.42% contre +14.98%, la dynamique de vétos du garde-fou 3 trades/jour change avec moins de paires). Recommandation : garder les 4 paires + adopter le risque adaptatif plutôt que retirer US500.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "2002 trades entraînement + 491 trades test/forward (2026-01-01 → 2026-09-21)",
+    "knownWeaknesses": "Risque adaptatif simulé au niveau du compte (bascule instantanée) - pas automatisé dans le bot aujourd'hui, demanderait une surveillance manuelle ou une nouvelle fonctionnalité. Échantillon test/forward petit (9 mois). Coûts partiels (pas de correctif de géométrie d'ordre).",
+    "files": [
+      "scripts/runAdaptiveRiskAndEurusdDrop2026.js",
+      "data/backtest-input/adaptive-risk-eurusd-drop-2026.md"
+    ],
+    "handoffSection": "2026-09-21 (soir, suite 2) — Risque adaptatif et vraie paire négative (US500, pas EURUSD)"
   }
 ]
