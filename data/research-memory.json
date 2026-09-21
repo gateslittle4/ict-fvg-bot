@@ -295,6 +295,26 @@
     ]
   },
   {
+    "id": "rejected-htf-support-reversal",
+    "title": "Support/résistance HTF (jour/semaine/mois) + confirmation par pattern de renversement",
+    "date": "2026-09-19",
+    "status": "rejected",
+    "summary": "Testé sous 2 lectures distinctes : (1) confluence simultanée day+week+month requise (mauvaise lecture de l'idée d'origine) - rejeté ; (2) lecture corrigée : un niveau qualifie dès 3 touches sur UNE SEULE timeframe (jour, semaine OU mois), puis confirmation par doji/engulfing sur H1 ou H4 - re-testé sur 12 instruments x {H1, H4}, rejeté à nouveau, plus décisivement (0/9 combinaisons avec assez de trades test montrent un edge confirmé). Ce n'est pas une question de mauvaise implémentation de la première tentative - l'idée elle-même ne bat pas le hasard sur les données de ce projet, dans ses deux lectures.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD",
+      "GER40"
+    ],
+    "knownWeaknesses": "Ne pas retester cette idée sans un angle véritablement différent (ex: un autre type de confirmation que doji/engulfing).",
+    "files": [
+      "src/backtest/htfSupportReversal.js",
+      "scripts/runHtfSupportReversalStrategyAnalysis.js",
+      "data/backtest-input/htf-support-reversal-strategy-analysis.md"
+    ]
+  },
+  {
     "id": "macro-news-proximity",
     "title": "Performance du bot autour des annonces macro (étage 1 du plan macro)",
     "date": "2026-09-21",
