@@ -1,3 +1,5 @@
+> **⚠️ RÉSULTATS INVALIDES (2026-09-21) — ne pas citer.** Les M1 utilisés ont un trou systématique d'environ 52 h tous les 16 jours (bord de chaque fenêtre de requête de l'export, environ 14 % des bougies manquent). Le M15 reconstruit et le règlement M1 de ce rapport en sont faussés. À refaire après ré-export des données. Voir HANDOFF.md, entrée du 2026-09-21 « Trous périodiques dans le M1 exporté ».
+
 # Combo inchangé sur ~16 mois réels, M1 exact
 
 Données : bougies M1 réelles FP Markets (2025-05-16 → 2026-09-18), M15 reconstruits du M1, 30 jours de chauffe ignorés (2025-06-15 → 2026-09-18). Mêmes garde-fous approximés que `runFinalBacktestReport.js` : lire les différences entre périodes, le niveau absolu est surestimé (~+53 % ici contre ~+31 % pour le vrai moteur sur les 7 derniers mois).

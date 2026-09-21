@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+// mergeRealM1History.js
+// Usage: node scripts/mergeRealM1History.js
+//
+// Fusionne toutes les tranches M1 du broker (data/real-m1-history/skip-N, data/real-m1-2025, data/real-m1) en UN fichier compresse par paire :
+// data/real-m1-full/<PAIRE>.csv.gz  (colonnes time,open,high,low,close ; time = ms UTC REEL, comme l'export du broker - decaler de -5 h pour le moteur).
+// Dedoublonne par `time`, trie, refuse les lignes invalides, et rapporte les trous (> 4 h hors week-end) pour ne pas les decouvrir plus tard.
+import fs from 'node:fs';
+import path from 'node:path';
+import zlib from 'node:zlib';
+
+const SYMBOLS = ['EURUSD', 'XAUUSD', 'US100', 'US500', 'GER40'];
+const SRC = [...(fs.existsSync('data/real-m1-history') ? fs.readdirSync('data/real-m1-history').filter((d) => d.startsWith('skip-')).map((d) => path.join('data/real-m1-history', d)) : []), 'data/real-m1-2025', 'data/real-m1'];
+fs.mkdirSync('data/real-m1-full', { recursive: true });
+const day = (t) => new Date(t).toISOString().slice(0, 16).replace('T', ' ');
+const report = ['| Paire | Bougies | Début (UTC) | Fin (UTC) | Doublons retirés | Lignes invalides | Trous > 4 h hors week-end |', '|---|---|---|---|---|---|---|'];
+const gapsDetail = [];
+for (const sym of SYMBOLS) {
+  const m = new Map(); let raw = 0, bad = 0;
+  for (const dir of SRC) {
+    const f = path.join(dir, `${sym}.csv`);
+    if (!fs.existsSync(f)) continue;
+    for (const line of fs.readFileSync(f, 'utf8').split('\n')) {
+      const p = line.split(',');
+      const t = Number(p[0]);
+      if (!Number.isFinite(t) || p.length < 5) { if (line && !line.startsWith('time')) bad++; continue; }
+      const o = +p[1], h = +p[2], l = +p[3], c = +p[4];
+      raw++;
+      if (![o, h, l, c].every(Number.isFinite) || h < l || h < Math.max(o, c) - 1e-9 || l > Math.min(o, c) + 1e-9) { bad++; continue; }
+      m.set(t, [o, h, l, c]);
+    }
+  }
+  const times = [...m.keys()].sort((a, b) => a - b);
+  let gaps = 0;
+  for (let i = 1; i < times.length; i++) {
+    const g = times[i] - times[i - 1];
+    if (g <= 4 * 3600000) continue;
+    const dow = new Date(times[i - 1]).getUTCDay();
+    if (g < 72 * 3600000 && (dow === 5 || dow === 6 || dow === 0)) continue; // week-end normal
+    gaps++; gapsDetail.push(`${sym} ${day(times[i - 1])} -> ${day(times[i])} (${(g / 3600000).toFixed(1)} h)`);
+  }
+  const csv = ['time,open,high,low,close', ...times.map((t) => `${t},${m.get(t).join(',')}`)].join('\n');
+  fs.writeFileSync(path.join('data/real-m1-full', `${sym}.csv.gz`), zlib.gzipSync(csv, { level: 9 }));
+  report.push(`| ${sym} | ${times.length} | ${day(times[0])} | ${day(times[times.length - 1])} | ${raw - m.size - bad} | ${bad} | ${gaps} |`);
+}
+const md = ['# Historique M1 du broker, fusionné', '', ...report, '', '## Trous', '', gapsDetail.length ? gapsDetail.map((g) => `- ${g}`).join('\n') : 'Aucun trou > 4 h hors week-end.', ''].join('\n');
+fs.writeFileSync('data/real-m1-full/README.md', md);
+console.log(md);
