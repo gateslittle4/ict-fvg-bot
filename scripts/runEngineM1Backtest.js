@@ -108,6 +108,19 @@ for (const mode of ['m1', 'm15']) {
   for (const y of [2022, 2023, 2024, 2025, 2026]) { const l = a.taken.filter((t) => t.entryTime >= eng(y) && t.entryTime < eng(y + 1)); if (l.length) md.push(`| ${y} | ${l.length} | ${fmt(sumR(l))} | ${fmt(sumR(l) / l.length, 3)} |`); }
   md.push('');
 }
+// mécanisme x paire (0,5 %, garde-fous réels rejoués), M1 exact et M15 côte à côte
+for (const mode of ['m1', 'm15']) {
+  const a = account(trades, mode, 0.5);
+  md.push(`## Mécanisme × paire (${mode === 'm1' ? 'M1 exact' : 'M15 du moteur'}, 0,5 %) : trades / R net / R par trade`, '', `| Mécanisme | ${SYMBOLS.join(' | ')} |`, `|---|${SYMBOLS.map(() => '---|').join('')}`);
+  for (const src of [...new Set(a.taken.map((t) => t.source))].sort()) md.push(`| ${src} | ${SYMBOLS.map((sy) => { const l = a.taken.filter((t) => t.source === src && t.symbol === sy); return l.length ? `${l.length} / ${fmt(sumR(l))} / ${fmt(sumR(l) / l.length, 2)}` : '—'; }).join(' | ')} |`);
+  md.push('');
+}
+{
+  const a = account(trades, 'm1', 0.5);
+  md.push('## Breaker Block et CBDR par année (M1 exact, 0,5 %, R net / trades)', '', '| Mécanisme + paire | 2022 | 2023 | 2024 | 2025 | 2026 |', '|---|---|---|---|---|---|');
+  for (const [src, sy] of [['breakerblock', 'US100'], ['breakerblock', 'US500'], ['breakerblock', 'GER40'], ['cbdr', 'US100']]) md.push(`| ${src} ${sy} | ${[2022, 2023, 2024, 2025, 2026].map((y) => { const l = a.taken.filter((t) => t.source === src && t.symbol === sy && t.entryTime >= eng(y) && t.entryTime < eng(y + 1)); return l.length ? `${fmt(sumR(l))} / ${l.length}` : '—'; }).join(' | ')} |`);
+  md.push('');
+}
 md.push('## Limites', '', '- Rejeu de garde-fous sur des trades pris comme des signaux indépendants : le moteur ne « voit » pas les vétos (netting et blocages internes reposent sur ses propres clôtures M15).', '- Même remarque sur le niveau absolu : coûts partiels (pas de commission, swap, glissement réel ; géométrie d\'ordre au marché non corrigée dans ce calcul).', '- Le règlement M1 remplit l\'entrée au niveau du signal dans sa bougie M15 (le moteur l\'a validée) ; aucune donnée ne dit si l\'ordre réel serait passé.');
 fs.writeFileSync('data/backtest-input/engine-m1-vs-m15-reconciliation.md', md.join('\n'));
 console.log(md.join('\n'));
