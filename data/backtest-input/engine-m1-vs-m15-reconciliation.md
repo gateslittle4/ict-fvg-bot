@@ -90,6 +90,41 @@ Un `warmUp()` du vrai moteur sur EURUSD/XAUUSD (dès 2022-05) et US100/US500/GER
 | 2025 | 694 | +15.8 | +0.023 |
 | 2026 | 542 | +30.8 | +0.057 |
 
+## Mécanisme × paire (M1 exact, 0,5 %) : trades / R net / R par trade
+
+| Mécanisme | US500 | US100 | XAUUSD | EURUSD | GER40 |
+|---|---|---|---|---|---|
+| breakerblock | — | — | — | — | 424 / -96.9 / -0.23 |
+| cbdr | — | 175 / -28.9 / -0.17 | — | — | — |
+| divergence | — | 117 / +38.1 / +0.33 | — | — | — |
+| fvg | 166 / -5.1 / -0.03 | 328 / +143.0 / +0.44 | 154 / +45.8 / +0.30 | — | — |
+| judaswing | — | — | — | 364 / -12.7 / -0.03 | — |
+| nwog | — | 42 / +10.0 / +0.24 | — | — | 150 / -15.9 / -0.11 |
+| silverbullet | 202 / +2.5 / +0.01 | 166 / -3.6 / -0.02 | — | — | 159 / +22.1 / +0.14 |
+| weeklysweep | 116 / +8.8 / +0.08 | — | — | — | 120 / -15.4 / -0.13 |
+
+## Mécanisme × paire (M15 du moteur, 0,5 %) : trades / R net / R par trade
+
+| Mécanisme | US500 | US100 | XAUUSD | EURUSD | GER40 |
+|---|---|---|---|---|---|
+| breakerblock | — | — | — | — | 428 / -107.0 / -0.25 |
+| cbdr | — | 174 / -59.9 / -0.34 | — | — | — |
+| divergence | — | 122 / +33.1 / +0.27 | — | — | — |
+| fvg | 170 / -12.1 / -0.07 | 334 / +88.4 / +0.26 | 154 / +45.9 / +0.30 | — | — |
+| judaswing | — | — | — | 364 / -12.7 / -0.03 | — |
+| nwog | — | 42 / +10.0 / +0.24 | — | — | 150 / -21.8 / -0.15 |
+| silverbullet | 201 / -4.5 / -0.02 | 162 / -3.4 / -0.02 | — | — | 156 / +17.1 / +0.11 |
+| weeklysweep | 116 / +8.8 / +0.08 | — | — | — | 120 / -14.3 / -0.12 |
+
+## Breaker Block et CBDR par année (M1 exact, 0,5 %, R net / trades)
+
+| Mécanisme + paire | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|
+| breakerblock US100 | — | — | — | — | — |
+| breakerblock US500 | — | — | — | — | — |
+| breakerblock GER40 | — | -50.6 / 110 | -7.3 / 104 | -29.6 / 120 | -9.4 / 90 |
+| cbdr US100 | — | -9.4 / 49 | -17.7 / 45 | -2.8 / 40 | +0.9 / 41 |
+
 ## Limites
 
 - Rejeu de garde-fous sur des trades pris comme des signaux indépendants : le moteur ne « voit » pas les vétos (netting et blocages internes reposent sur ses propres clôtures M15).
