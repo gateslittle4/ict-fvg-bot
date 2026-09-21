@@ -678,5 +678,23 @@
       "data/backtest-input/preregistration-new-instruments-2026-09-21.md"
     ],
     "handoffSection": "2026-09-21 — Résultats : nouveaux instruments"
+  },
+  {
+    "id": "prereg-batch2-2026-09-21",
+    "title": "PRÉ-ENREGISTREMENT LOT 2 (avant tout calcul) : Silver Bullet, CBDR, Judas Swing, Breaker Block sur XAGUSD, US30, XTIUSD",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "12 hypothèses (4 mécanismes x 3 instruments déjà téléchargés), configuration = bloc de mécanisme codé sans réglage, vrai moteur M1 exact, garde-fous réels, spread = 2 x le frère. Critères durcis : retenue à l'entraînement si >= 80 trades, >= +0,15 R/trade, deux moitiés positives ; réussite au test si >= 40 trades, >= +0,12 R/trade, R total positif, corrélation mensuelle < 0,3 avec le combo ET t >= 2,0 ; sinon non concluante. Lots 1+2 = 23 hypothèses (~0,5 faux positif attendu à t >= 2). Contexte : la candidate du lot 1 (FVG XAGUSD) a un t de 0,81 sur son test (+0,209 R/trade, écart-type 2,11, 67 trades) : indiscernable du hasard, candidate faible. Texte complet : data/backtest-input/preregistration-batch2-2026-09-21.md.",
+    "markets": [
+      "XAGUSD",
+      "US30",
+      "XTIUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Mêmes limites que le lot 1 ; mécanismes conçus pour d'autres instruments (échecs attendus).",
+    "files": [
+      "data/backtest-input/preregistration-batch2-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Pré-enregistrement lot 2"
   }
 ]
