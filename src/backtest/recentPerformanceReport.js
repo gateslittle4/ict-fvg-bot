@@ -48,7 +48,7 @@ import { DEFAULT_SPREADS } from './transactionCosts.js';
  * @param {number} [opts.days=90]
  * @returns {Promise<{trades: object[], summary: object}>}
  */
-export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 } = {}) {
+export async function buildRecentPerformanceReport(historyBySymbol, { days = 90, completeDivergencePair = true } = {}) {
   const windowMs = days * 24 * 60 * 60 * 1000;
   // 2026-09-21: this replay used to run ONLY FVG + Divergence with default guardrails - the two mechanisms that existed when it was written - while the
   // live bot has since gained six more (NWOG, Judas Swing, Weekly Sweep, Breaker Block, Silver Bullet, CBDR) and real guardrails. On the last 90 days it
@@ -90,7 +90,7 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
   const trades = [];
 
   engine.warmUp(windowed, {
-    completeDivergencePair: true, // 2026-09-21: keep BOTH legs of the divergence pair (the default warm-up loses one, see liveStrategyEngine.warmUp)
+    completeDivergencePair, // 2026-09-21: keep BOTH legs of the divergence pair (the default warm-up loses one, see liveStrategyEngine.warmUp)
     onEvent: (e) => {
       if (!e) return;
       if (e.type === 'validated' && !e.blockedReason) {

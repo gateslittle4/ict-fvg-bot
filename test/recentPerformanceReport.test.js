@@ -155,7 +155,8 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
   }
   referenceTrades.sort((a, b) => b.exitTime - a.exitTime);
 
-  const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90 });
+  // completeDivergencePair: false = the sequential-replay quirk (first pair symbol loses its divergence legs) this reference loop shares
+  const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90, completeDivergencePair: false });
   assert.ok(referenceTrades.length > 0, 'fixture must produce at least one trade, or this comparison is vacuous');
   assert.deepEqual(report.trades, referenceTrades);
 });
