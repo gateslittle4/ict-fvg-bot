@@ -1614,34 +1614,16 @@ export class CTraderDataSource {
         if (event.trendbar) {
           for (const bar of event.trendbar) {
             const candle = this._trendbarToCandle(bar);
-            // Date.now() explicitly (2026-09-14) - see liveStrategyEngine.js's
-            // ingestCandle() comment: _toEngineCandle's -5h shift is correct
-            // for signal/session logic but must NOT reach GuardrailEngine's
-            // real-calendar-day bookkeeping, or its cooldown/daily-trade-count
-            // protection silently resets itself every day between ~00:00-05:00
-            // UTC (confirmed live: a real loss's 30-min cooldown vanished
-            // after ~3 minutes instead of holding for the full 30).
-            // deferCloseToRealConfirmation: true (2026-09-14, real
-            // double-position bug found monitoring overnight - see
-            // liveStrategyEngine.js's _resolveOpenPosition for the full
-            // story) - only this live call site gets it: this data source
-            // alone has the real ProtoOAExecutionEvent confirmation loop
-            // (_handleExecutionEvent -> clearBelievedPosition) needed to
-            // eventually release a belief held pending under this flag.
-            const events = store.strategyEngine.ingestCandle(symbolName, this._toEngineCandle(candle), Date.now(), {
-              deferCloseToRealConfirmation: true,
-            });
-            store.pushSignalEvents(events);
-            store.lastCandleBySymbol.set(symbolName, candle);
-            const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
-            if (actionable.length > 0) this._notify(actionable);
-            if (actionable.length > 0 && store.isAutoExecuteActive()) {
-              for (const sig of actionable) this._handleAutoExecuteEntry(symbolName, symbolId, sig);
-            }
-
-            for (const e of events) {
-              if (e.type === 'pyramid-order-requested') this._handlePyramidOrderRequested(symbolName, symbolId, e);
-              if (e.type === 'pyramid-order-cancel-requested') this._handlePyramidOrderCancelRequested(symbolName, e);
+            const engineCandle = this._toEngineCandle(candle);
+            if (store.strategyEngine.isNewBar(symbolName, engineCandle.time)) {
+              // First tick of a new bar: finish the previous bar with the broker's final values, THEN evaluate signals (see
+              // _ingestNewLiveBar). Async on purpose; a duplicate first-tick event while it runs is dropped by its own guard.
+              this._ingestNewLiveBar(symbolName, symbolId, candle, engineCandle);
+            } else {
+              // Later ticks of the bar already tracked: keep its OHLC current (2026-09-21 fix - they used to be thrown away, which
+              // left one-tick stubs in the engine's history). No signal evaluation on an update.
+              store.strategyEngine.ingestCandle(symbolName, engineCandle, Date.now(), { deferCloseToRealConfirmation: true });
+              store.lastCandleBySymbol.set(symbolName, candle);
             }
           }
         }
@@ -1690,6 +1672,75 @@ export class CTraderDataSource {
         }
       });
     }
+  }
+
+  /**
+   * First tick of a NEW bar (2026-09-21). 1) Ask the broker for the last few bars and overwrite the ones the engine tracked from
+   * ticks with their final values (the feed can miss a bar's last ticks); 2) only then evaluate the new bar. If the broker
+   * request fails or times out (4 s), the tick-tracked values are used - never a reason to miss the entry.
+   */
+  async _ingestNewLiveBar(symbolName, symbolId, candle, engineCandle) {
+    const store = this.account;
+    const key = `${symbolName}|${engineCandle.time}`;
+    if (!this._newBarInFlight) this._newBarInFlight = new Set();
+    if (this._newBarInFlight.has(key)) return;
+    this._newBarInFlight.add(key);
+    try {
+      try {
+        await this._reconcileRecentBars(symbolName, symbolId);
+      } catch (err) {
+        console.warn(`[bar-reconcile] ${symbolName}: broker refresh failed (tick-tracked bars kept): ${err.message}`);
+      }
+      if (!store.strategyEngine.isNewBar(symbolName, engineCandle.time)) return;
+      // Date.now() explicitly (2026-09-14) - see liveStrategyEngine.js's ingestCandle() comment: _toEngineCandle's -5h shift is
+      // correct for signal/session logic but must NOT reach GuardrailEngine's real-calendar-day bookkeeping.
+      // deferCloseToRealConfirmation: true (2026-09-14) - only this live call site gets it (real-close confirmation loop).
+      const events = store.strategyEngine.ingestCandle(symbolName, engineCandle, Date.now(), { deferCloseToRealConfirmation: true });
+      store.pushSignalEvents(events);
+      store.lastCandleBySymbol.set(symbolName, candle);
+      const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
+      if (actionable.length > 0) this._notify(actionable);
+      if (actionable.length > 0 && store.isAutoExecuteActive()) {
+        for (const sig of actionable) this._handleAutoExecuteEntry(symbolName, symbolId, sig);
+      }
+      for (const e of events) {
+        if (e.type === 'pyramid-order-requested') this._handlePyramidOrderRequested(symbolName, symbolId, e);
+        if (e.type === 'pyramid-order-cancel-requested') this._handlePyramidOrderCancelRequested(symbolName, e);
+      }
+    } catch (err) {
+      console.error(`[live-bar] ${symbolName}: new-bar handling failed: ${err.stack || err.message}`);
+    } finally {
+      this._newBarInFlight.delete(key);
+    }
+  }
+
+  async _reconcileRecentBars(symbolName, symbolId) {
+    const store = this.account;
+    const timeframe = resolveSymbolTimeframe(symbolName);
+    const period = PERIOD_BY_TIMEFRAME[timeframe] || 'M15';
+    const barMs = TIMEFRAME_DURATION_MS[timeframe] || TIMEFRAME_DURATION_MS.M15;
+    const now = Date.now();
+    const res = await sendCommandWithTimeout(
+      this.connection,
+      'ProtoOAGetTrendbarsReq',
+      { ctidTraderAccountId: Number(this.accountId), fromTimestamp: now - 6 * barMs, toTimestamp: now, symbolId, period, count: 8 },
+      4000
+    );
+    const finals = (res.trendbar || []).map((b) => this._toEngineCandle(this._trendbarToCandle(b)));
+    const changes = store.strategyEngine.reconcileRecentCandles(symbolName, finals, { includeNewest: true });
+    this._reconcileStats = this._reconcileStats || { checks: 0, mismatches: 0 };
+    this._reconcileStats.checks++;
+    if (changes.length > 0) {
+      this._reconcileStats.mismatches++;
+      // Evidence for the 2026-09-21 diagnosis, and a permanent health signal: how far the tick-tracked bar was from the final one.
+      // Rate-limited (first 40, then every 20th) so a chatty feed cannot flood the logs.
+      const n = this._reconcileStats.mismatches;
+      if (n <= 40 || n % 20 === 0) {
+        const c = changes[0];
+        console.log(`[bar-reconcile] ${symbolName}: tracked bar ${new Date(c.time + FIXED_EST_TO_UTC_OFFSET_MS).toISOString().slice(11, 16)}Z corrected by the broker's final values (dHigh ${c.dHigh.toFixed(4)}, dLow ${c.dLow.toFixed(4)}, dClose ${c.dClose.toFixed(4)}) - ${n} of ${this._reconcileStats.checks} bar checks so far`);
+      }
+    }
+    return changes;
   }
 
   _trendbarToCandle(bar) {

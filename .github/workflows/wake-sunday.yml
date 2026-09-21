@@ -1,0 +1,31 @@
+# Réveil du bot le dimanche avant la réouverture du marché.
+#
+# Pourquoi : le service Render (offre gratuite) s'endort le week-end (keepAlive.js ne s'active que marché ouvert, et une
+# instance endormie ne peut pas se réveiller seule). Le 2026-09-20, le gap NWOG de 22:00 UTC a produit un signal valide sur
+# US100 et GER40 à 22:15 UTC alors que le serveur ne s'est réveillé qu'à 22:35 : au boot, le warm-up rejoue le signal comme du
+# passé et ne trade pas (voulu). NWOG est justement le mécanisme du réveil du dimanche : il faut que le serveur soit DEBOUT avant.
+#
+# Ce workflow ne fait qu'appeler /healthz (aucune alerte : c'est watchdog.yml qui surveille et alerte). La réouverture est à
+# 21:00 UTC (heure d'été américaine) ou 22:00 UTC (heure d'hiver) ; on tape toutes les 10 min de 19:00 à 21:59 UTC. Les crons
+# GitHub sont « au mieux » (retards de plusieurs dizaines de minutes possibles), d'où les nombreux essais.
+name: wake-sunday
+
+on:
+  schedule:
+    - cron: '*/10 19-21 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: wake-sunday
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: "Réveiller le bot (démarrage à froid possible, jusqu'à ~2 min)"
+        run: |
+          curl -sS --max-time 150 --retry 3 --retry-delay 20 --retry-all-errors \
+            -o /dev/null -w "healthz: HTTP %{http_code} en %{time_total}s\n" \
+            https://ict-fvg-bot.onrender.com/healthz
