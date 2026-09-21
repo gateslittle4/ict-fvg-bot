@@ -717,5 +717,24 @@
       "data/backtest-input/preregistration-batch2-2026-09-21.md"
     ],
     "handoffSection": "2026-09-21 — Résultats du lot 2"
+  },
+  {
+    "id": "prereg-batch3-2026-09-21",
+    "title": "PRÉ-ENREGISTREMENT LOT 3 (avant tout calcul) : suivi de tendance Donchian et retour à la moyenne RSI(2) sur bougies journalières",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "8 hypothèses : T1-T4 Donchian 55/20, stop 2 ATR(20), long/short, sur US100/US500/XAUUSD/EURUSD ; M1-M4 RSI(2) < 10 au-dessus de la moyenne 200 j, sortie clôture > moyenne 5 j ou 10 jours, stop 3 ATR(14), achat seul, mêmes 4 instruments. Journée 17:00-17:00 temps moteur. Données 2010-2025 (M15 reconstruits en journalier) : entraînement 2011-2019, test 2020-2025 lu UNE fois. Coûts : 2 x le spread par défaut + swap 0,01 %/jour supposé. Retenue si >= 30 trades (T) / 60 (M), >= +0,10 R/trade, facteur de profit >= 1,15, deux moitiés positives ; réussie au test si >= 25 (T) / 40 (M) trades, >= +0,10 R/trade, R total positif, t >= 2,0, corrélation mensuelle < 0,3 avec le combo (2023-2025) et pire baisse < 6 % à 0,3 % de risque. Lots 1+2+3 = 31 hypothèses (~0,7 faux positif attendu à t >= 2). Aucune adoption directe. Texte complet : data/backtest-input/preregistration-batch3-2026-09-21.md.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "D1",
+    "knownWeaknesses": "Swap supposé non mesuré ; spreads historiques 2011-2019 approximés par un facteur 2 ; longues baisses du suivi de tendance ; instruments corrélés.",
+    "files": [
+      "data/backtest-input/preregistration-batch3-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Pré-enregistrement lot 3"
   }
 ]
