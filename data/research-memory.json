@@ -696,5 +696,26 @@
       "data/backtest-input/preregistration-batch2-2026-09-21.md"
     ],
     "handoffSection": "2026-09-21 — Pré-enregistrement lot 2"
+  },
+  {
+    "id": "prereg-batch2-results-2026-09-21",
+    "title": "Résultats du LOT 2 : Silver Bullet, CBDR, Judas Swing, Breaker Block sur XAGUSD, US30, XTIUSD : aucune candidate",
+    "date": "2026-09-21",
+    "status": "rejected",
+    "summary": "Procédure respectée (entraînement commité avant la lecture unique du test). Entraînement (>= 80 trades, >= +0,15 R/trade, deux moitiés positives) : 1 retenue sur 12 : Silver Bullet XTIUSD +0,211 R/trade (148 trades). Rejetées : Silver Bullet XAGUSD +0,095 (2e moitié +0,1 R) et US30 -0,177 ; CBDR négatif partout (-0,19 à -0,30 R/trade) ; Judas Swing à zéro (-0,055 à +0,004) ; Breaker Block négatif partout (-0,10 à -0,18). Test de la retenue : Silver Bullet XTIUSD +0,082 R/trade sur 148 trades, t = 0,55, corrélation -0,28 : ÉCHEC. Bilan des lots 1 et 2 (23 hypothèses) : aucune candidate solide ; la seule candidate restante est FVG XAGUSD (lot 1, test +0,209 R/trade, t = 0,81, candidate faible). Enseignement : les mécanismes conçus pour d'autres instruments ne se transposent pas à l'argent, au Dow ou au pétrole sans réglage, comme attendu.",
+    "markets": [
+      "XAGUSD",
+      "US30",
+      "XTIUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Historique court ; spreads supposés non mesurés ; corrélation sur ~21 mois.",
+    "files": [
+      "scripts/runPreregBatch2.js",
+      "data/backtest-input/prereg-batch2-train.md",
+      "data/backtest-input/prereg-batch2-test.md",
+      "data/backtest-input/preregistration-batch2-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Résultats du lot 2"
   }
 ]
