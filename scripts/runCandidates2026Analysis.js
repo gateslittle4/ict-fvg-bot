@@ -41,7 +41,11 @@ const OFF = FIXED_EST_TO_UTC_OFFSET_MS;
 const eng = (y, m = 0, d = 1) => Date.UTC(y, m, d) - OFF;
 const CUT_TEST = eng(2025);
 const CUT_FWD = eng(2026);
-const YEAR = Number(process.argv[2] ?? 2026);
+const HIST = process.argv.includes('--histdata');
+// --optimiste (avec --histdata) : la bougie M15 d'entrée n'est pas regardée pour le stop/la cible (borne haute) ; par
+// défaut elle l'est, stop d'abord (borne basse). Le M1 exact est entre les deux.
+const OPT = HIST && process.argv.includes('--optimiste');
+const YEAR = Number(process.argv.slice(2).find((a) => !a.startsWith('--')) ?? 2026);
 const Y = String(YEAR);
 const RISKS = [0.3, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const RRS = [2, 3, 4, 5, 6, 7];
@@ -93,11 +97,26 @@ function toM15(m1) {
 }
 const lower = (a, n, x) => { let lo = 0, hi = n; while (hi > lo) { const m = (lo + hi) >> 1; if (a[m] >= x) hi = m; else lo = m + 1; } return lo; };
 
-console.log('Chargement M1 réel + reconstruction M15...');
+// --histdata : historique long HistData.com (data/backtest-input/<paire>.csv, M15 seulement, déjà à l'heure du moteur
+// « EST sans heure d'été »). Pas de M1 : le règlement se fait sur les bougies M15 (stop d'abord si stop et cible
+// sont dans la même bougie), plus pessimiste que le M1 exact - calibré dans le rapport sur les années communes.
+function loadHist(sym) {
+  const lines = fs.readFileSync(`data/backtest-input/${sym}.csv`, 'utf8').split('\n');
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    const p = lines[i].split(',');
+    if (p.length < 5) continue;
+    out.push({ time: +p[0], open: +p[1], high: +p[2], low: +p[3], close: +p[4], volume: 0 });
+  }
+  return out;
+}
+const BAR_MS = HIST ? 900000 : 60000;
+
+console.log(HIST ? 'Chargement HistData M15...' : 'Chargement M1 réel + reconstruction M15...');
 const m15 = {}; const M1 = {};
 for (const s of SYMBOLS) {
-  const cs = loadGz(s);
-  m15[s] = toM15(cs);
+  const cs = HIST ? loadHist(s) : loadGz(s);
+  m15[s] = HIST ? cs : toM15(cs);
   M1[s] = { t: Float64Array.from(cs, (c) => c.time), h: Float64Array.from(cs, (c) => c.high), l: Float64Array.from(cs, (c) => c.low), c: Float64Array.from(cs, (c) => c.close), n: cs.length };
 }
 
@@ -108,8 +127,8 @@ function settleM1(tr) {
   for (let i = start; i < end; i++) if (S.l[i] <= tr.entryPrice && tr.entryPrice <= S.h[i]) { fill = i; break; }
   if (fill < 0) fill = start < S.n ? start : -1;
   if (fill < 0) return null;
-  const maxI = Math.min(S.n, fill + 480 * 15);
-  for (let i = fill; i < maxI; i++) {
+  const maxI = Math.min(S.n, fill + Math.round(5 * DAY / BAR_MS));
+  for (let i = OPT ? fill + 1 : fill; i < maxI; i++) {
     if (bull ? S.l[i] <= tr.stopPrice : S.h[i] >= tr.stopPrice) return { exitPrice: tr.stopPrice, exitTime: S.t[i], fillTime: S.t[fill] };
     if (bull ? S.h[i] >= tr.targetPrice : S.l[i] <= tr.targetPrice) return { exitPrice: tr.targetPrice, exitTime: S.t[i], fillTime: S.t[fill] };
   }
@@ -173,7 +192,10 @@ function rsi2Trades() {
 // Compte par événements : entrée à son heure (garde-fou consulté), P&L appliqué à la SORTIE.
 function simulate(trades, risk, { ftmo }) {
   const evs = [];
-  trades.forEach((t, i) => { evs.push({ time: t.entryTime, kind: 1, i }); evs.push({ time: t.exitTime, kind: 0, i }); });
+  // Ordre à heure égale : sorties (0), puis entrées (1), puis les sorties des trades stoppés à l'heure même de leur entrée
+  // (2). Sans ce dernier rang, la sortie d'un tel trade passait AVANT son entrée et le trade n'était jamais compté
+  // (bug corrigé le 2026-09-22 : il gonflait FVG, dont beaucoup de pertes sont stoppées dans la minute d'entrée).
+  trades.forEach((t, i) => { evs.push({ time: t.entryTime, kind: 1, i }); evs.push({ time: Math.max(t.exitTime, t.entryTime), kind: t.exitTime <= t.entryTime ? 2 : 0, i }); });
   evs.sort((a, b) => a.time - b.time || a.kind - b.kind);
   const guard = ftmo ? buildEffectiveConfig({ id: 'cand-2026', propFirmProgramId: 'ftmo-1step', phaseIndex: 0, guardrails: CONFIG.guardrails, riskPctPerTrade: risk }).guardrails : CONFIG.guardrails;
   const cycles = []; let c = null;
@@ -319,4 +341,94 @@ function main() {
   console.log(`\nRapport écrit : ${out}`);
 }
 
-main();
+// --- Mode --histdata : les mêmes idées sur l'historique long, année par année. Aucun réglage refait : RRR figés à
+// US100 1:5 / XAUUSD 1:7 (C) et aux RRR actuels (C0), combo = config de production.
+function mainHist() {
+  const FIRST = 2011, LAST = 2025; // US100/US500 démarrent le 2010-11-14 : 2011 = première année complète
+  const inY = (y) => (t) => t.entryTime >= eng(y) && t.entryTime < eng(y + 1);
+  const inRange = (t) => t.entryTime >= eng(FIRST) && t.entryTime < eng(LAST + 1);
+  const cur = { US100: CONFIG.fvg.perSymbol.US100.rrMultiple, XAUUSD: CONFIG.fvg.perSymbol.XAUUSD.rrMultiple };
+  const fvgFor = (rrU, rrX) => engineTrades({ fvgConfig: { US100: { ...CONFIG.fvg.perSymbol.US100, rrMultiple: rrU }, XAUUSD: { ...CONFIG.fvg.perSymbol.XAUUSD, rrMultiple: rrX } } });
+  console.log('FVG C (1:5 / 1:7)...'); const fvgC = fvgFor(5, 7);
+  console.log('FVG C0 (RRR actuels)...'); const fvgC0 = fvgFor(cur.US100, cur.XAUUSD);
+  console.log('Combo actuel...');
+  const combo = engineTrades({ fvgConfig: Object.fromEntries(Object.entries(CONFIG.fvg.perSymbol).filter(([s]) => SYMBOLS.includes(s))), divergenceConfig: CONFIG.divergence, nwogConfig: CONFIG.nwog, judasSwingConfig: CONFIG.judasSwing, weeklySweepConfig: CONFIG.weeklySweep, breakerBlockConfig: CONFIG.breakerBlock, silverBulletConfig: CONFIG.silverBullet, cbdrConfig: CONFIG.cbdr });
+  console.log('RSI(2) US500...'); const rsi2 = rsi2Trades();
+  const both = [...fvgC, ...rsi2].sort((a, b) => a.entryTime - b.entryTime);
+  const variants = [['A. Combo actuel', combo], [`C0. FVG US100 1:${cur.US100} + XAUUSD 1:${cur.XAUUSD} (RRR actuels)`, fvgC0], ['C. FVG US100 1:5 + XAUUSD 1:7', fvgC], ['R. RSI(2) US500', rsi2], ['C+R. FVG + RSI(2)', both]];
+  const short = ['A', 'C0', 'C', 'R', 'C+R'];
+  const years = []; for (let y = FIRST; y <= LAST; y++) years.push(y);
+
+  const md = [`# Candidates sur l'historique long HistData (${FIRST}-${LAST}) : FVG US100+XAUUSD, RSI(2) US500, contre le combo actuel`, ''];
+  if (OPT) md.push('**Borne OPTIMISTE** (`--optimiste`) : la bougie M15 d\'entrée est ignorée pour le stop et la cible. La borne pessimiste (stop d\'abord dans cette bougie) est dans `candidates-histdata-analysis.md` ; le M1 exact est entre les deux.', '');
+  md.push(`Même script que \`candidates-2026-analysis.md\` (\`--histdata\`) : vrai \`LiveStrategyEngine\` et vraie classe \`DailyAlertEngine\`, garde-fou du bot, FTMO 1-Step réel simulé par événements, spread par défaut + swap réel d'aujourd'hui. **Aucun réglage refait** : RRR figés (C : US100 1:5 / XAUUSD 1:7 ; C0 : RRR actuels ${cur.US100}/${cur.XAUUSD}), combo = config de production.`, '');
+  md.push('**Ce que vaut ce test.** Les filtres FVG et les RRR ont été mis au point sur 2019-2025 : **2011-2018 n\'a jamais servi à aucun choix**, c\'est le vrai test hors échantillon. 2019-2025 est montré pour la continuité (déjà vu pendant la mise au point).', '');
+  md.push('**Limites propres à cette source** : prix HistData.com (pas le flux du broker) ; **bougies M15 seulement**, donc règlement M15 avec le stop d\'abord quand stop et cible sont touchés dans la même bougie - nettement plus pessimiste que le M1 exact (voir calibration en fin de rapport) : lire les écarts entre variantes plus que les niveaux ; swap d\'aujourd\'hui (taux proches de 0 en 2011-2021 : coût de l\'achat surestimé) ; perte quotidienne FTMO sur le P&L clôturé.', '');
+
+  md.push('## 1. R net par année (garde-fou du bot, compte continu)', '');
+  md.push(`| Année | ${short.map((x) => `${x} : trades`).join(' | ')} | ${short.map((x) => `${x} : R net`).join(' | ')} |`, `|---|${short.map(() => '---|').join('')}${short.map(() => '---|').join('')}`);
+  const tot = variants.map(() => ({ n: 0, r: 0, pos: 0 }));
+  for (const y of years) {
+    const ss = variants.map(([, tr]) => simulate(tr.filter(inY(y)), 0.5, { ftmo: false }));
+    ss.forEach((x, i) => { if (y <= 2018) { tot[i].n += x.n; tot[i].r += x.sum; if (x.sum > 0) tot[i].pos++; } });
+    md.push(`| ${y}${y <= 2018 ? '' : ' (vu)'} | ${ss.map((x) => x.n).join(' | ')} | ${ss.map((x) => sgn(x.sum)).join(' | ')} |`);
+  }
+  md.push('', `### Hors échantillon ${FIRST}-2018 (jamais vu)`, '', '| Variante | Trades | Win rate | RRR réalisé | R net | R/trade | t | Années positives |', '|---|---|---|---|---|---|---|---|');
+  variants.forEach(([name, tr], i) => {
+    const s = simulate(tr.filter((t) => t.entryTime >= eng(FIRST) && t.entryTime < eng(2019)), 0.5, { ftmo: false });
+    md.push(`| ${name} | ${s.n} | ${s.winRate.toFixed(0)} % | ${s.payoff > 0 ? s.payoff.toFixed(2) : '—'} | ${sgn(s.sum)} | ${sgn(s.mean, 3)} | ${s.t.toFixed(2)} | ${tot[i].pos} / 8 |`);
+  });
+  md.push('', '### Part de chaque paire (C, trades isolés, 2011-2018)', '', '| Paire | Trades | Win rate | R net |', '|---|---|---|---|');
+  for (const sym of ['US100', 'XAUUSD']) {
+    const l = fvgC.filter((t) => t.symbol === sym && t.entryTime >= eng(FIRST) && t.entryTime < eng(2019));
+    md.push(`| ${sym} | ${l.length} | ${l.length ? (l.filter((t) => t.r > 0).length / l.length * 100).toFixed(0) : 0} % | ${sgn(l.reduce((a, t) => a + t.r, 0))} |`);
+  }
+
+  md.push('', '## 2. FTMO 1-Step (+10 %) : réussis / ratés par année (cycles remis à zéro le 1er janvier)', '');
+  for (const risk of [0.5, 1.0]) {
+    md.push(`### Risque ${risk} % par trade`, '', `| Année | ${short.join(' | ')} |`, `|---|${short.map(() => '---|').join('')}`);
+    const sumPF = variants.map(() => ({ p: 0, f: 0 }));
+    for (const y of years) {
+      const ss = variants.map(([, tr]) => simulate(tr.filter(inY(y)), risk, { ftmo: true }));
+      ss.forEach((x, i) => { if (y <= 2018) { sumPF[i].p += x.pass; sumPF[i].f += x.fail; } });
+      md.push(`| ${y}${y <= 2018 ? '' : ' (vu)'} | ${ss.map((x) => `${x.pass} / ${x.fail}`).join(' | ')} |`);
+    }
+    md.push(`| **Total ${FIRST}-2018** | ${sumPF.map((x) => `**${x.p} / ${x.f}**`).join(' | ')} |`, '');
+  }
+
+  md.push(`## 3. FTMO enchaîné sur toute la période hors échantillon (${FIRST}-2018), par risque`, '', 'Les cycles s\'enchaînent sans remise à zéro annuelle. Meilleur % : réussis − ratés, puis le moins de ratés.', '', '| Variante | Risque | Réussis | Ratés | Durée médiane d\'un cycle réussi (jours) | Pire baisse du compte continu | Compte continu |', '|---|---|---|---|---|---|---|');
+  const oos = (t) => t.entryTime >= eng(FIRST) && t.entryTime < eng(2019);
+  for (const [name, tr] of variants) {
+    for (const risk of RISKS) {
+      const s = simulate(tr.filter(oos), risk, { ftmo: true }); const cont = simulate(tr.filter(oos), risk, { ftmo: false });
+      const durs = s.cycles.filter((x) => x.outcome === 'RÉUSSI').map((x) => (x.end - x.start) / DAY).sort((a, b) => a - b);
+      md.push(`| ${name} | ${risk} % | ${s.pass} | ${s.fail} | ${durs.length ? Math.round(durs[durs.length >> 1]) : '—'} | ${cont.dd.toFixed(1)} % | ${pct(cont.ret)} |`);
+    }
+  }
+
+  md.push('', '## 4. RRR par année (trades isolés, R net) - le choix 1:5 / 1:7 tient-il avant 2019 ?', '');
+  const rrs = {};
+  for (const rr of RRS) { console.log(`RRR 1:${rr}...`); rrs[rr] = fvgFor(rr, rr); }
+  for (const sym of ['US100', 'XAUUSD']) {
+    md.push(`### ${sym}`, '', `| RRR | ${years.filter((y) => y <= 2018).join(' | ')} | Total ${FIRST}-2018 |`, `|---|${years.filter((y) => y <= 2018).map(() => '---|').join('')}---|`);
+    for (const rr of RRS) {
+      const l = rrs[rr].filter((t) => t.symbol === sym);
+      const per = years.filter((y) => y <= 2018).map((y) => l.filter(inY(y)).reduce((a, t) => a + t.r, 0));
+      md.push(`| 1:${rr} | ${per.map((x) => sgn(x)).join(' | ')} | **${sgn(per.reduce((a, b) => a + b, 0))}** |`);
+    }
+    md.push('');
+  }
+
+  // Chiffres broker M1 exact (après correction du bug d'ordre des événements), repris de candidates-<année>-analysis.md.
+  const BROKER = { 2023: { A: 72.6, C0: 77.6, C: 67.4, R: null, 'C+R': 66.9 }, 2024: { A: 3.9, C0: 24.4, C: 35.5, R: 3.2, 'C+R': 38.7 }, 2025: { A: 79.5, C0: 62.6, C: 71.7, R: null, 'C+R': 73.5 } };
+  md.push('## 5. Calibration : HistData M15 contre broker M1 exact (2023-2025)', '', 'Même moteur, mêmes années ; seules la source des prix et la façon de régler changent. R net au garde-fou du bot. Chiffres broker : `candidates-<année>-analysis.md`. Lancer les deux bornes (`--histdata` et `--histdata --optimiste`) pour situer le vrai chiffre.', '', '| Variante | Année | HistData M15 (cette borne) | Broker M1 exact |', '|---|---|---|---|');
+  variants.forEach(([name, tr], i) => { for (const y of [2023, 2024, 2025]) { const b = BROKER[y][short[i]]; if (b === null) continue; md.push(`| ${name} | ${y} | ${sgn(simulate(tr.filter(inY(y)), 0.5, { ftmo: false }).sum)} | ${sgn(b)} |`); } });
+  md.push('');
+
+  const out = `data/backtest-input/candidates-histdata${OPT ? '-optimiste' : ''}-analysis.md`;
+  fs.writeFileSync(out, md.join('\n'));
+  console.log(md.join('\n'));
+  console.log(`\nRapport écrit : ${out}`);
+}
+
+if (HIST) mainHist(); else main();

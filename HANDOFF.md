@@ -6713,3 +6713,30 @@ Demande d'Esdras : pour 2026 et seulement les candidates les plus prometteuses �
 - FTMO 2024 à 1 % : combo 11 réussis / 10 ratés (baisse continue 25,1 %) ; FVG C 7 / 2 (13,6 %). Meilleur % de C en 2024 : 1 % (1,25 % en 2025 et 2026).
 - Dates C à 1 % : raté 9 jan → 12 avr (94 jours), réussi 13 mai, raté 13 juin, puis 6 réussis d'affilée (25 juin, 9 juil, 18 juil, 16 août, 17 sept, 11 nov), en cours -7,2 % au 31 déc.
 - À noter : en 2024 le garde-fou pèse lourd sur C (trades isolés US100+XAU : +35,4 R sur 206 ; avec le garde-fou du bot : +67,7 R sur 155). En 2026 l'écart était faible (+59,6 vs +64,2). Le résultat 2024 dépend donc en partie du plafond de 3 trades/jour et de la pause.
+
+## ⚠️ Correction : bug dans la simulation par événements des candidates + test sur l'historique long HistData (2026-09-22)
+
+**Les chiffres des deux sections ci-dessus (« Candidates 2026… » et « Candidates rejouées sur 2024 ») étaient GONFLÉS et sont remplacés par ceux-ci.** Dans `simulate()` de `scripts/runCandidates2026Analysis.js`, un trade stoppé dans la minute même de son entrée (sortie à la même heure que l'entrée) voyait sa sortie traitée AVANT son entrée : il n'était jamais compté. Ce sont presque toujours des pertes, surtout FVG (stops serrés). Démasqué parce que les trades isolés et les trades au garde-fou ne collaient pas (2024 : +35,4 R isolés contre +67,7 R au garde-fou). Corrigé (rang d'ordre propre à ces sorties) ; aucun autre script n'utilise cette simulation. Les rapports 2026/2024 sont régénérés, et 2023/2025 ajoutés.
+
+**Broker M1 exact, corrigé, FVG US100 1:5 + XAUUSD 1:7 (C) contre combo (A), FTMO 1-Step (cycles remis à zéro chaque 1er janvier), réussis / ratés :**
+
+| Année | R net A / C | 0,5 % A / C | 0,75 % A / C | 1 % A / C | 1,25 % A / C |
+|---|---|---|---|---|---|
+| 2023 | +72,6 / +67,4 | 6/4 · 3/0 | 7/6 · 4/0 | 11/9 · 7/2 | 18/16 · 9/3 |
+| 2024 | +3,9 / +35,5 | 3/4 · 2/0 | 6/9 · 4/3 | 9/13 · 6/5 | 12/18 · 8/7 |
+| 2025 | +79,5 / +71,7 | 4/2 · 3/0 | 10/7 · 5/1 | 12/10 · 8/4 | 15/14 · 11/5 |
+| 2026 (→ 18 sept.) | +28,7 / +52,2 | 2/2 · 3/0 | 5/4 · 4/1 | 8/8 · 5/1 | 12/13 · 7/3 |
+| **Total** | **+184,7 / +226,8** | **15/12 · 11/0** | **28/26 · 17/5** | **40/40 · 26/12** | **57/61 · 35/18** |
+
+En R, C ≈ combo (un peu mieux) avec 3 fois moins de trades ; ce qui le distingue vraiment : bien moins de challenges ratés et une baisse environ deux fois plus petite. « Bat à plate couture » est exagéré.
+
+**Historique long HistData 2011-2018** (`--histdata`, jamais utilisé pour mettre au point FVG ni les RRR) → `candidates-histdata-analysis.md` (borne basse) et `candidates-histdata-optimiste-analysis.md` (borne haute). HistData n'a que des bougies M15 : la bougie d'entrée est ambiguë (stop d'abord = borne basse ; ignorée = borne haute). Calibration 2023-2025 contre broker M1 : le vrai chiffre est environ 20 % du chemin de la borne basse à la haute pour le combo, 40 % pour FVG (fragile : source de prix différente).
+
+| 2011-2018 | Borne basse R net | Borne haute R net | FTMO 1 % bas / haut |
+|---|---|---|---|
+| A. Combo | -550,1 (t -4,75) | +95,8 (t 0,78) | 40/119 · 67/89 |
+| C. FVG US100 1:5 + XAU 1:7 | -200,1 (t -2,90) | +207,6 (t 2,64) | 11/42 · 32/24 |
+
+Lecture : C fait mieux que le combo dans les DEUX bornes (combo probablement perdant en 2011-2018), mais on ne peut pas dire si C lui-même était gagnant avant 2019 (interpolation calibrée ≈ -40 R, proche de zéro à négatif). Pour trancher : il faut les fichiers **HistData M1** (NSXUSD et XAUUSD 2010-2018 - les zips d'origine avaient été convertis en M15 puis non gardés) pour régler à la minute.
+
+Recommandation révisée : si on passe à FVG seul US100 + XAUUSD, risque **0,5 à 0,75 %** plutôt que 1 % (broker 2023-2026 : 11 réussis / 0 raté à 0,5 %, 17/5 à 0,75 %, 26/12 à 1 %), vu l'incertitude d'avant 2019. RSI(2) reste en alerte seulement.

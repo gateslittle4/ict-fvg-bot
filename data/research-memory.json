@@ -867,8 +867,8 @@
     "id": "candidates-2026-fvg-us100-xau-vs-combo",
     "title": "2026 : FVG US100+XAUUSD bat le combo (FTMO, R, baisse) ; RRR XAUUSD 1:7 ; RSI(2) marginal",
     "date": "2026-09-22",
-    "status": "validated-research",
-    "summary": "2026 (événements, M1 exact, spread + swap réel) : FVG US100 1:5 + XAUUSD 1:7 = 102 trades, +64,2 R, +0,630 R/trade, t = 2,18 contre combo 373 trades, +39,8 R, t = 0,99. FTMO 1-Step à 1 % : FVG 6 réussis / 1 raté contre combo 8/8 ; à 0,75 % 5/1 contre 3/2. Meilleur risque (réussis - ratés) 1,25 % en 2026 et 2025, recommandé 1 % par marge de sécurité. RRR choisi sur l'entraînement : US100 1:5, XAUUSD 1:7 (confirmé 2025 et 2026). RSI(2) US500 : 11 trades gagnants en 2026 mais +2,9 R seulement, n'atteint jamais +10 % seul.",
+    "status": "methodology-fix",
+    "summary": "REMPLACÉ (bug de simulation, voir candidates-corrected-and-histdata-2011-2018). 2026 (événements, M1 exact, spread + swap réel) : FVG US100 1:5 + XAUUSD 1:7 = 102 trades, +64,2 R, +0,630 R/trade, t = 2,18 contre combo 373 trades, +39,8 R, t = 0,99. FTMO 1-Step à 1 % : FVG 6 réussis / 1 raté contre combo 8/8 ; à 0,75 % 5/1 contre 3/2. Meilleur risque (réussis - ratés) 1,25 % en 2026 et 2025, recommandé 1 % par marge de sécurité. RRR choisi sur l'entraînement : US100 1:5, XAUUSD 1:7 (confirmé 2025 et 2026). RSI(2) US500 : 11 trades gagnants en 2026 mais +2,9 R seulement, n'atteint jamais +10 % seul.",
     "markets": [
       "US100",
       "XAUUSD",
@@ -882,5 +882,30 @@
       "data/backtest-input/candidates-2026-analysis.md"
     ],
     "handoffSection": "Candidates 2026 : FVG US100+XAUUSD, RSI(2) US500, les deux, contre le combo actuel — 2026-09-22"
+  },
+  {
+    "id": "candidates-corrected-and-histdata-2011-2018",
+    "title": "Candidates corrigées (bug d'ordre des événements) + historique HistData 2011-2018 : FVG US100+XAU mieux que le combo surtout en challenges ratés, rentabilité avant 2019 non tranchée",
+    "date": "2026-09-22",
+    "status": "validated-research",
+    "summary": "Broker M1 exact 2023-2026 (corrigé) : FVG US100 1:5 + XAUUSD 1:7 +226,8 R contre combo +184,7 R ; FTMO réussis/ratés 0,5 % 11/0 contre 15/12, 0,75 % 17/5 contre 28/26, 1 % 26/12 contre 40/40 ; baisse ~2x plus petite. HistData M15 2011-2018 (jamais vu) : bornes C -200 à +208 R, combo -550 à +96 R ; C devant le combo dans les deux bornes, rentabilité propre de C avant 2019 non tranchée. Recommandation : 0,5 à 0,75 % si passage à FVG seul.",
+    "markets": [
+      "US100",
+      "XAUUSD",
+      "US500"
+    ],
+    "timeframe": "M15 (détection), M1 broker / M15 HistData (règlement)",
+    "sample": "broker 2023-01 → 2026-09-18 ; HistData 2011-2018",
+    "knownWeaknesses": "HistData M15 seulement (bougie d'entrée ambiguë, calibration sur 3 ans et source de prix différente) ; swap d'aujourd'hui appliqué au passé ; perte quotidienne FTMO sur P&L clôturé ; cycles remis à zéro chaque année.",
+    "files": [
+      "scripts/runCandidates2026Analysis.js",
+      "data/backtest-input/candidates-2023-analysis.md",
+      "data/backtest-input/candidates-2024-analysis.md",
+      "data/backtest-input/candidates-2025-analysis.md",
+      "data/backtest-input/candidates-2026-analysis.md",
+      "data/backtest-input/candidates-histdata-analysis.md",
+      "data/backtest-input/candidates-histdata-optimiste-analysis.md"
+    ],
+    "handoffSection": "⚠️ Correction : bug dans la simulation par événements des candidates + test sur l'historique long HistData (2026-09-22)"
   }
 ]
