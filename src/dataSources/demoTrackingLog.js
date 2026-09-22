@@ -104,3 +104,19 @@ export async function upsertSpreadRows(client, rows, { log = console } = {}) {
 }
 
 export const logOrderEvent = (client, ev, opts) => insertRows(client, 'bot_order_events', toOrderEventRow(ev), opts);
+
+// Mode alerte (2026-09-22, Esdras: "suis le en mode alerte" - voir dailyAlertEngine.js et la candidate RSI(2)/US500, jamais adoptée en
+// execution reelle) : une ligne par signal d'entree/sortie, jamais un ordre. `bot_alert_signals` uniquement.
+export const toAlertSignalRow = (ev) => ({
+  strategy: ev.strategy,
+  symbol: ev.symbol,
+  event: ev.event,
+  direction: ev.direction ?? null,
+  price: Number.isFinite(ev.price) ? ev.price : null,
+  stop_price: Number.isFinite(ev.stopPrice) ? ev.stopPrice : null,
+  target_price: Number.isFinite(ev.targetPrice) ? ev.targetPrice : null,
+  r_multiple: Number.isFinite(ev.rMultiple) ? ev.rMultiple : null,
+  bar_time: new Date(ev.barTime).toISOString(),
+  detail: ev.detail == null ? null : String(ev.detail).slice(0, 200),
+});
+export const logAlertSignal = (client, ev, opts) => insertRows(client, 'bot_alert_signals', toAlertSignalRow(ev), opts);

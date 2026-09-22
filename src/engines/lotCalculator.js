@@ -256,5 +256,35 @@ export function buildSpecFromBrokerSymbol(brokerSymbol, placeholder) {
     // a fully verified spec and must not claim to be one.
     verified: false,
     volumeVerified: true,
+    // Real overnight financing (2026-09-22, Esdras: "mesure le swap" - see HANDOFF.md's RSI(2)/US500 daily candidate, whose backtest assumed an
+    // unmeasured 0.01 %/day). ProtoOASymbol carries the broker's ACTUAL swap rate per side - no need to hold a position overnight to observe it.
+    // swapLong/swapShort: PIPS = points per lot per day (same unit as pointSize below); PERCENTAGE = annual %, applied to notional. Both sides kept
+    // (a short RSI(2) variant or another symbol could need swapShort) - undefined (not 0) when the broker didn't send a usable value, so a missing
+    // spec never silently reads as "no swap cost" the way a 0 default would.
+    swapLong: Number.isFinite(Number(brokerSymbol.swapLong)) ? Number(brokerSymbol.swapLong) : undefined,
+    swapShort: Number.isFinite(Number(brokerSymbol.swapShort)) ? Number(brokerSymbol.swapShort) : undefined,
+    swapCalculationType: brokerSymbol.swapCalculationType === 1 ? 'PERCENTAGE' : brokerSymbol.swapCalculationType === 0 ? 'PIPS' : undefined,
+    swapPeriodHours: Number.isFinite(Number(brokerSymbol.swapPeriod)) ? Number(brokerSymbol.swapPeriod) : undefined,
+    swapRollover3Days: brokerSymbol.swapRollover3Days ?? undefined, // e.g. 'WEDNESDAY' - that day charges 3x (weekend rollover), not a bigger daily rate
   };
+}
+
+/**
+ * Converts a broker swap rate (from buildSpecFromBrokerSymbol's swapLong/swapShort) into a fraction of NOTIONAL per calendar day - the same unit
+ * `SWAP` uses in scripts/runPreregBatch3.js's daily backtest. Returns null when the spec has no usable swap (never 0, for the same "don't silently
+ * claim zero cost" reason as the fields above).
+ * PERCENTAGE: swapLong/swapShort is already an annual percentage -> /100/365.
+ * PIPS: swapLong/swapShort is points per LOT per day; converted to a fraction of notional via pointSize and lotSize*price (one lot's notional).
+ */
+export function swapFractionPerDay(spec, side, price) {
+  if (!spec) return null;
+  const rate = side === 'short' ? spec.swapShort : spec.swapLong;
+  if (!Number.isFinite(rate)) return null;
+  if (spec.swapCalculationType === 'PERCENTAGE') return rate / 100 / 365;
+  if (spec.swapCalculationType === 'PIPS') {
+    if (!Number.isFinite(spec.pointSize) || !Number.isFinite(spec.lotSize) || !(price > 0)) return null;
+    const notionalPerLot = spec.lotSize * price;
+    return notionalPerLot > 0 ? (rate * spec.pointSize) / notionalPerLot : null;
+  }
+  return null;
 }

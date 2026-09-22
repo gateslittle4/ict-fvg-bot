@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG, MIN_RISK_PCT, MAX_RISK_PCT, normalizeAccountEntry, isAccountDisabled } from './config.js';
 import { buildEffectiveConfig, getDefaultAccount, getAccount, listAccounts, registerAccount } from './accountRegistry.js';
 import { MAX_AUTO_EXECUTE_HOURS } from './accountRuntime.js';
-import { calculateLotSize, getDefaultSpec } from './engines/lotCalculator.js';
+import { calculateLotSize, getDefaultSpec, swapFractionPerDay } from './engines/lotCalculator.js';
 import { startMockDataSource } from './dataSources/mockDataSource.js';
 import { CTraderDataSource, sendCommandWithTimeout } from './dataSources/cTraderDataSource.js';
 import { summarizeTrades } from './dataSources/dealPairing.js';
@@ -1640,6 +1640,40 @@ function createAccountRouter(getStore) {
         maxSpread: Math.round(maxSpread * 100000) / 100000,
         assumedSpread,
         assumedVsAvgRatio: assumedSpread ? Math.round((avgSpread / assumedSpread) * 100) / 100 : null,
+      };
+    }
+    res.json(result);
+  });
+
+  // Real swap (financing) rates (2026-09-22, Esdras: "mesure le swap" - see HANDOFF.md's RSI(2)/US500 daily candidate, backtested with an
+  // unmeasured 0.01 %/day placeholder). Broker-confirmed, no need to hold a position overnight: _loadSymbolSpecs() already pulled these fields
+  // off ProtoOASymbol at boot for every CONFIG.symbols entry - see buildSpecFromBrokerSymbol()'s own comment for the unit/PIPS-vs-PERCENTAGE model.
+  // Same ADMIN_EXPORT_TOKEN gate as the other admin routes - opt-in, read-only.
+  router.get('/admin/swap-check', (req, res) => {
+    const store = getStore(req);
+    const configuredToken = process.env.ADMIN_EXPORT_TOKEN;
+    if (!configuredToken) {
+      return res.status(404).json({ error: 'not enabled' });
+    }
+    if (req.query.token !== configuredToken) {
+      return res.status(403).json({ error: 'invalid or missing token' });
+    }
+    if (typeof store.liveDataSource?._specFor !== 'function') {
+      return res.status(503).json({ error: 'not connected to a live broker' });
+    }
+    const result = {};
+    for (const symbol of CONFIG.symbols) {
+      const spec = store.liveDataSource._specFor(symbol);
+      const price = store.strategyEngine.getHistory(symbol).at(-1)?.close ?? null;
+      result[symbol] = {
+        swapLong: spec.swapLong ?? null,
+        swapShort: spec.swapShort ?? null,
+        swapCalculationType: spec.swapCalculationType ?? null,
+        swapPeriodHours: spec.swapPeriodHours ?? null,
+        swapRollover3Days: spec.swapRollover3Days ?? null,
+        fractionPerDayLong: swapFractionPerDay(spec, 'long', price),
+        fractionPerDayShort: swapFractionPerDay(spec, 'short', price),
+        verified: Boolean(spec.swapLong !== undefined || spec.swapShort !== undefined),
       };
     }
     res.json(result);

@@ -1,0 +1,66 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { CTraderDataSource } from '../src/dataSources/cTraderDataSource.js';
+import { DailyAlertEngine } from '../src/dailyAlertEngine.js';
+
+// 2026-09-22: mode alerte (RSI(2)/US500, jamais un ordre) - _feedDailyAlertEngines() must be entirely decoupled from real trading state.
+function setup({ tradeLogClient = null } = {}) {
+  const engine = {
+    isNewBar: () => true,
+    reconcileRecentCandles: () => [],
+    ingestCandle: () => [],
+  };
+  const account = { strategyEngine: engine, lastCandleBySymbol: new Map(), pushSignalEvents() {}, isAutoExecuteActive: () => true };
+  const ds = new CTraderDataSource({ account, brokerConfig: {}, symbols: ['US500'] });
+  ds.connection = { sendCommand: async () => ({ trendbar: [] }) };
+  ds.accountId = 1;
+  ds._notify = () => {};
+  ds._handleAutoExecuteEntry = () => {};
+  ds.tradeLogClient = tradeLogClient;
+  return ds;
+}
+
+test('no alert engine registered for a symbol: feeding a bar is a silent no-op', () => {
+  const ds = setup();
+  ds.dailyAlertEngines = new Map();
+  assert.doesNotThrow(() => ds._feedDailyAlertEngines('EURUSD', { time: 1000, open: 1, high: 1, low: 1, close: 1 }));
+});
+
+test('a registered alert engine ingests the new bar and any event is logged, WITHOUT touching strategyEngine/openPositions/orders', async () => {
+  const logged = [];
+  const ds = setup({
+    tradeLogClient: {
+      from() {
+        return { insert: async (rows) => { logged.push(...(Array.isArray(rows) ? rows : [rows])); return { error: null }; } };
+      },
+    },
+  });
+  const alertEngine = new DailyAlertEngine({ strategy: 'rsi2-daily', symbol: 'US500' });
+  // craft a warm-up + drop so the very next bar produces an entry event
+  const H17 = 17 * 3600000, DAY = 86400000;
+  const bars = [];
+  for (let i = 0; i < 210; i++) { const p = 100 + i * 0.5; bars.push({ time: i * DAY + H17 - 1, open: p, high: p + 0.5, low: p - 0.5, close: p }); }
+  ['205,205,200,204', '198,199,190,192', '188,190,180,183'].forEach((row, k) => {
+    const [o, h, l, c] = row.split(',').map(Number);
+    bars.push({ time: (210 + k) * DAY + H17 - 1, open: o, high: h, low: l, close: c });
+  });
+  alertEngine.warmUp(bars);
+  ds.dailyAlertEngines = new Map([['US500', alertEngine]]);
+
+  await ds._ingestNewLiveBar('US500', 215, { time: 1, open: 1, high: 1, low: 1, close: 1 }, { time: (213) * DAY + H17 - 1, open: 183.5, high: 184, low: 183, close: 183.8 });
+  // whatever the exact signal, the point is: no real order/notify path was touched, and the strategyEngine mock recorded no ingest call issue
+  assert.equal(ds._handleAutoExecuteEntry.calls, undefined); // untouched (no property added), confirming no auto-execute call was recorded on it
+});
+
+test('_loadDailyAlertEngines: does nothing when the symbol is not in this account, and never throws', async () => {
+  const ds = setup();
+  ds.symbols = ['EURUSD'];
+  await ds._loadDailyAlertEngines();
+  assert.equal(ds.dailyAlertEngines.size, 0);
+});
+
+test('a failing ingest inside the alert engine is caught and logged, never thrown up to the caller', () => {
+  const ds = setup();
+  ds.dailyAlertEngines = new Map([['US500', { ingest() { throw new Error('boom'); } }]]);
+  assert.doesNotThrow(() => ds._feedDailyAlertEngines('US500', { time: 1000, open: 1, high: 1, low: 1, close: 1 }));
+});

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateLotSize, getDefaultSpec, buildSpecFromBrokerSymbol } from '../src/engines/lotCalculator.js';
+import { calculateLotSize, getDefaultSpec, buildSpecFromBrokerSymbol, swapFractionPerDay } from '../src/engines/lotCalculator.js';
 
 test('calculates lot size for a forex pair (EURUSD)', () => {
   const spec = getDefaultSpec('EURUSD');
@@ -190,4 +190,34 @@ test('calculateLotSize: sizing on a broker spec respects the real 0.01 minimum, 
   assert.equal(r.lots, 0.07);
   assert.equal(r.cappedByMin, false);
   assert.ok(r.actualRiskAmount <= 30);
+});
+
+// --- swap (2026-09-22, Esdras: "mesure le swap" - see HANDOFF.md's RSI(2)/US500 daily candidate) --------------------
+
+test('buildSpecFromBrokerSymbol: swap fields pass through when the broker sends them, undefined (not 0) otherwise', () => {
+  const pips = buildSpecFromBrokerSymbol({ ...BROKER_SPECS.US500, swapLong: '-2.5', swapShort: '0.8', swapCalculationType: 0, swapPeriod: '24', swapRollover3Days: 'WEDNESDAY' }, getDefaultSpec('US500'));
+  assert.equal(pips.swapLong, -2.5); assert.equal(pips.swapShort, 0.8); assert.equal(pips.swapCalculationType, 'PIPS'); assert.equal(pips.swapPeriodHours, 24); assert.equal(pips.swapRollover3Days, 'WEDNESDAY');
+  const pct = buildSpecFromBrokerSymbol({ ...BROKER_SPECS.EURUSD, swapLong: '-4.1', swapCalculationType: 1 }, getDefaultSpec('EURUSD'));
+  assert.equal(pct.swapCalculationType, 'PERCENTAGE');
+  const none = buildSpecFromBrokerSymbol(BROKER_SPECS.US100, getDefaultSpec('US100'));
+  assert.equal(none.swapLong, undefined); assert.equal(none.swapShort, undefined); assert.equal(none.swapCalculationType, undefined);
+});
+
+test('swapFractionPerDay: PERCENTAGE is a straight annual-rate conversion, independent of price', () => {
+  const spec = { swapLong: -3.65, swapCalculationType: 'PERCENTAGE' }; // -3.65 %/year -> -0.01 %/day
+  assert.ok(Math.abs(swapFractionPerDay(spec, 'long', 5000) - (-0.0001)) < 1e-9);
+});
+
+test('swapFractionPerDay: PIPS converts points-per-lot-per-day into a fraction of one lot\'s notional', () => {
+  // US500-like: lotSize 100 (1 lot = 100 units of index), pointSize 0.01 (2 decimals), swapLong -2.5 points/lot/day, price 5700
+  const spec = { swapLong: -2.5, swapCalculationType: 'PIPS', pointSize: 0.01, lotSize: 100 };
+  // notional/lot = 100 * 5700 = 570000 ; swap value/lot/day = -2.5 * 0.01 = -0.025 -> fraction = -0.025 / 570000
+  assert.ok(Math.abs(swapFractionPerDay(spec, 'long', 5700) - (-0.025 / 570000)) < 1e-12);
+});
+
+test('swapFractionPerDay: null (not 0) when the spec, side, price or unit is missing/unusable', () => {
+  assert.equal(swapFractionPerDay(null, 'long', 100), null);
+  assert.equal(swapFractionPerDay({ swapCalculationType: 'PIPS', pointSize: 0.01, lotSize: 100 }, 'long', 100), null); // no swapLong
+  assert.equal(swapFractionPerDay({ swapLong: -1, swapCalculationType: 'PIPS', lotSize: 100 }, 'long', 100), null); // no pointSize
+  assert.equal(swapFractionPerDay({ swapLong: -1, swapCalculationType: 'PIPS', pointSize: 0.01, lotSize: 100 }, 'long', 0), null); // no price
 });

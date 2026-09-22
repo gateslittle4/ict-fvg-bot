@@ -755,5 +755,28 @@
       "data/backtest-input/preregistration-batch3-2026-09-21.md"
     ],
     "handoffSection": "2026-09-21 — Résultats du lot 3"
+  },
+  {
+    "id": "swap-check-and-alert-mode-2026-09-22",
+    "title": "Route de mesure du swap réel + suivi en mode alerte de RSI(2)/US500 (déployés)",
+    "date": "2026-09-22",
+    "status": "live",
+    "summary": "(1) buildSpecFromBrokerSymbol() capture maintenant swapLong/swapShort/swapCalculationType/swapPeriodHours/swapRollover3Days depuis ProtoOASymbol (déjà reçu au démarrage pour les 4 symboles live, jamais gardé avant) ; nouvelle fonction swapFractionPerDay(spec, side, price) convertit en fraction de notionnel par jour (PIPS ou PERCENTAGE) ; nouvelle route /admin/swap-check (même garde ADMIN_EXPORT_TOKEN) qui affiche le swap réel par symbole, sans attendre qu'une position reste ouverte une nuit. (2) src/dailyAlertEngine.js : moteur d'alerte journalier RSI(2) (règles du pré-enregistrement lot 3, achat seul, RSI(2)<10 + clôture > SMA200, sortie SMA5 ou 10 jours, stop 3xATR14), entièrement découplé de LiveStrategyEngine (aucun ordre, aucune position réelle). Câblé pour US500 uniquement (la seule candidate qui a passé t>=2) : warm-up au démarrage depuis data/real-m1-full/US500.csv.gz (M1 réel, décalé -5h), puis alimenté à chaque nouvelle bougie M15 live, événements loggés dans la nouvelle table bot_alert_signals (créée). Best-effort partout (une erreur ne bloque jamais le vrai trading). Prochaine étape : mesurer le swap réel via /admin/swap-check dès le prochain déploiement et comparer à l'hypothèse de 0,01 %/jour du lot 3 ; laisser le mode alerte accumuler des signaux (aucune adoption avant un nombre suffisant hors échantillon).",
+    "markets": [
+      "US500"
+    ],
+    "timeframe": "D1",
+    "knownWeaknesses": "Le warm-up utilise un fichier local (jusqu'au 2026-09-21) : un petit écart avec le tout premier live bar est possible mais sans conséquence (mode alerte seulement) ; swap-check n'a pas encore été appelé en production.",
+    "files": [
+      "src/dailyAlertEngine.js",
+      "src/dataSources/cTraderDataSource.js",
+      "src/dataSources/demoTrackingLog.js",
+      "src/engines/lotCalculator.js",
+      "src/server.js",
+      "test/dailyAlertEngine.test.js",
+      "test/cTraderDataSourceDailyAlert.test.js",
+      "test/lotCalculator.test.js"
+    ],
+    "handoffSection": "2026-09-22 — Swap mesuré + mode alerte RSI(2)/US500"
   }
 ]

@@ -38,7 +38,10 @@ import { describeBrokerPayload, extractBrokerError } from './brokerPayload.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes } from './accountReconciliation.js';
-import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields } from './demoTrackingLog.js';
+import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields, logAlertSignal } from './demoTrackingLog.js';
+import { DailyAlertEngine } from '../dailyAlertEngine.js';
+import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
 import { buildComplianceChecklist, requiredH1LookbackCandles, requiredPreEntryContextCandles } from './tradeCompliance.js';
 import { buildChartOverlays } from '../backtest/chartOverlays.js';
@@ -568,6 +571,13 @@ export class CTraderDataSource {
     );
     console.log('[cTrader] loading balance...');
     await this._loadBalance(accountId);
+    // Mode alerte (2026-09-22, Esdras: "suis le en mode alerte" - la candidate RSI(2)/US500, data/research-memory.json
+    // `prereg-batch3-results-2026-09-21`, t=2.23, JAMAIS adoptee en execution reelle). Entierement decouple de strategyEngine/openPositions/
+    // guardrail/ordres : voir dailyAlertEngine.js. Best-effort comme les autres lectures de demarrage - une erreur ici ne doit jamais bloquer
+    // le vrai trading.
+    this._loadDailyAlertEngines().catch((err) =>
+      console.warn('[cTrader] could not warm up daily alert engines (non-fatal, mode-alerte only):', err.message)
+    );
     console.log('[cTrader] subscribing to live candles for', this.symbols.join(', '));
     await this._subscribeLiveCandles(accountId);
 
@@ -1711,6 +1721,53 @@ export class CTraderDataSource {
    * ticks with their final values (the feed can miss a bar's last ticks); 2) only then evaluate the new bar. If the broker
    * request fails or times out (4 s), the tick-tracked values are used - never a reason to miss the entry.
    */
+
+  /**
+   * Boot-time warm-up of the "mode alerte" daily engines (2026-09-22) - see this method's own caller comment and dailyAlertEngine.js's header.
+   * Only US500/RSI(2) exists today (the sole candidate that cleared the pre-registered t>=2 bar - FVG/XAGUSD is a WEAKER candidate, t=0.81,
+   * deliberately NOT tracked live yet). Warms up from the bundled real M1 history (data/real-m1-full/US500.csv.gz, real UTC, shifted -5h to
+   * engine time like every other real-data script in this project) rather than the live feed's own 90-day window, because the daily engine
+   * needs ~200 daily bars (SMA200) - far more history than 90 days of M15 warm-up gives it. Silent (warmUp()), so this never logs a flood of
+   * historical alerts - only NEW live bars produce events from here on.
+   */
+  async _loadDailyAlertEngines() {
+    this.dailyAlertEngines = new Map();
+    if (!this.symbols.includes('US500')) return; // nothing to track if this account doesn't even trade US500
+    const file = 'data/real-m1-full/US500.csv.gz';
+    if (!fs.existsSync(file)) {
+      console.warn('[cTrader] mode-alerte: no local M1 history for US500 (data/real-m1-full/US500.csv.gz missing) - skipping');
+      return;
+    }
+    const engine = new DailyAlertEngine({ strategy: 'rsi2-daily', symbol: 'US500' });
+    const lines = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8').split('\n');
+    const candles = [];
+    for (let i = 1; i < lines.length; i++) {
+      const p = lines[i].split(',');
+      if (p.length < 5) continue;
+      candles.push({ time: Number(p[0]) - FIXED_EST_TO_UTC_OFFSET_MS, open: Number(p[1]), high: Number(p[2]), low: Number(p[3]), close: Number(p[4]) });
+    }
+    engine.warmUp(candles);
+    this.dailyAlertEngines.set('US500', engine);
+    console.log(`[cTrader] mode-alerte: RSI(2)/US500 warmed up on ${candles.length} bars (${engine.bars.length} jours), position=${engine.position ? 'ouverte' : 'plate'}`);
+  }
+
+  /** Feeds one new live M15 candle to any "mode alerte" engine tracking this symbol, and logs whatever it fires. Never touches real trading state. */
+  _feedDailyAlertEngines(symbolName, engineCandle) {
+    const engine = this.dailyAlertEngines?.get(symbolName);
+    if (!engine) return;
+    let events;
+    try {
+      events = engine.ingest(engineCandle);
+    } catch (err) {
+      console.warn(`[cTrader] mode-alerte (${symbolName}) ingest failed (non-fatal): ${err.message}`);
+      return;
+    }
+    for (const ev of events) {
+      console.log(`[mode-alerte] ${ev.strategy} ${ev.symbol} ${ev.event} ${ev.direction ?? ''} @ ${ev.price} (${ev.detail})`);
+      logAlertSignal(this.tradeLogClient, ev);
+    }
+  }
+
   async _ingestNewLiveBar(symbolName, symbolId, candle, engineCandle) {
     const store = this.account;
     const key = `${symbolName}|${engineCandle.time}`;
@@ -1730,6 +1787,7 @@ export class CTraderDataSource {
       const events = store.strategyEngine.ingestCandle(symbolName, engineCandle, Date.now(), { deferCloseToRealConfirmation: true });
       store.pushSignalEvents(events);
       store.lastCandleBySymbol.set(symbolName, candle);
+      this._feedDailyAlertEngines(symbolName, engineCandle);
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
       if (actionable.length > 0) this._notify(actionable);
       if (actionable.length > 0 && store.isAutoExecuteActive()) {
