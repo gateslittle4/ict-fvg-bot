@@ -1671,6 +1671,8 @@ function createAccountRouter(getStore) {
         swapCalculationType: spec.swapCalculationType ?? null,
         swapPeriodHours: spec.swapPeriodHours ?? null,
         swapRollover3Days: spec.swapRollover3Days ?? null,
+        swapTimeMinutesUtc: spec.swapTimeMinutesUtc ?? null,
+        swapTimeUtc: Number.isFinite(spec.swapTimeMinutesUtc) ? `${String(Math.floor(spec.swapTimeMinutesUtc / 60)).padStart(2, '0')}:${String(spec.swapTimeMinutesUtc % 60).padStart(2, '0')}` : null,
         fractionPerDayLong: swapFractionPerDay(spec, 'long', price),
         fractionPerDayShort: swapFractionPerDay(spec, 'short', price),
         verified: Boolean(spec.swapLong !== undefined || spec.swapShort !== undefined),

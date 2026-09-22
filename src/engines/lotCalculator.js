@@ -266,6 +266,7 @@ export function buildSpecFromBrokerSymbol(brokerSymbol, placeholder) {
     swapCalculationType: brokerSymbol.swapCalculationType === 1 ? 'PERCENTAGE' : brokerSymbol.swapCalculationType === 0 ? 'PIPS' : undefined,
     swapPeriodHours: Number.isFinite(Number(brokerSymbol.swapPeriod)) ? Number(brokerSymbol.swapPeriod) : undefined,
     swapRollover3Days: brokerSymbol.swapRollover3Days ?? undefined, // e.g. 'WEDNESDAY' - that day charges 3x (weekend rollover), not a bigger daily rate
+    swapTimeMinutesUtc: Number.isFinite(Number(brokerSymbol.swapTime)) ? Number(brokerSymbol.swapTime) : undefined, // minutes since 00:00 UTC when the daily charge posts (e.g. 1320 = 22:00 UTC, near the classic 17:00 NY rollover)
   };
 }
 

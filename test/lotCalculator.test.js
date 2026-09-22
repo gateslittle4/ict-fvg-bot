@@ -195,8 +195,8 @@ test('calculateLotSize: sizing on a broker spec respects the real 0.01 minimum, 
 // --- swap (2026-09-22, Esdras: "mesure le swap" - see HANDOFF.md's RSI(2)/US500 daily candidate) --------------------
 
 test('buildSpecFromBrokerSymbol: swap fields pass through when the broker sends them, undefined (not 0) otherwise', () => {
-  const pips = buildSpecFromBrokerSymbol({ ...BROKER_SPECS.US500, swapLong: '-2.5', swapShort: '0.8', swapCalculationType: 0, swapPeriod: '24', swapRollover3Days: 'WEDNESDAY' }, getDefaultSpec('US500'));
-  assert.equal(pips.swapLong, -2.5); assert.equal(pips.swapShort, 0.8); assert.equal(pips.swapCalculationType, 'PIPS'); assert.equal(pips.swapPeriodHours, 24); assert.equal(pips.swapRollover3Days, 'WEDNESDAY');
+  const pips = buildSpecFromBrokerSymbol({ ...BROKER_SPECS.US500, swapLong: '-2.5', swapShort: '0.8', swapCalculationType: 0, swapPeriod: '24', swapTime: '1320', swapRollover3Days: 'WEDNESDAY' }, getDefaultSpec('US500'));
+  assert.equal(pips.swapLong, -2.5); assert.equal(pips.swapShort, 0.8); assert.equal(pips.swapCalculationType, 'PIPS'); assert.equal(pips.swapPeriodHours, 24); assert.equal(pips.swapTimeMinutesUtc, 1320); assert.equal(pips.swapRollover3Days, 'WEDNESDAY');
   const pct = buildSpecFromBrokerSymbol({ ...BROKER_SPECS.EURUSD, swapLong: '-4.1', swapCalculationType: 1 }, getDefaultSpec('EURUSD'));
   assert.equal(pct.swapCalculationType, 'PERCENTAGE');
   const none = buildSpecFromBrokerSymbol(BROKER_SPECS.US100, getDefaultSpec('US100'));
