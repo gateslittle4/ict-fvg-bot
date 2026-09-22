@@ -841,5 +841,26 @@
       "data/backtest-input/fvg-only-ftmo-risk-2026.md"
     ],
     "handoffSection": "2026-09-22 — FVG seul avec risque plus élevé sur FTMO 1-Step"
+  },
+  {
+    "id": "fvg-only-real-costs-selection-check",
+    "title": "FVG seul (US100 + XAUUSD) : swap réel mesuré et biais de sélection contrôlé",
+    "date": "2026-09-22",
+    "status": "validated-research",
+    "summary": "Swap réel du broker (~-5,2 %/an à l'achat sur US100/US500/or) ajouté nuit par nuit : effet faible (variante C : entraînement +0,266, test 2025 +0,383, 2026 +0,324 R/trade). Contrôle de sélection : sur l'entraînement seul, FVG est premier en R total (+69,2 R, 474 trades) parmi les mécanismes seuls ; le retrait de FVG US500 venait déjà de l'entraînement. 2025+2026 sont donc un vrai hors échantillon : 286 trades, +0,358 R/trade, t = 2,45 avec swap ; FTMO 1-Step 0,5 % 5/0 (baisse 7,6 %), 0,75 % 8/1 (11,3 %), 1 % 12/5 (14,1 %). Commission ≈ 0 sur 2 trades réels. Rien changé dans le bot : décision d'Esdras.",
+    "markets": [
+      "US100",
+      "XAUUSD"
+    ],
+    "timeframe": "M15 (détection), M1 (règlement)",
+    "sample": "286 trades hors échantillon (2025-01 → 2026-09)",
+    "knownWeaknesses": "Règle « premier en R total » énoncée après coup (par R/trade, NWOG passe devant sur 19 trades) ; taux de swap d'aujourd'hui appliqués au passé ; taille du pip déduite (pas encore relue en production) ; aucun cycle FTMO réussi depuis le 2 juin 2026 à ≤ 0,75 % ; glissement des ordres LIMIT non mesuré.",
+    "files": [
+      "scripts/runFvgOnlyRealCostsCheck.js",
+      "data/backtest-input/fvg-only-real-costs-check.md",
+      "scripts/runFvgOnlyFtmoRiskAnalysis.js",
+      "src/engines/lotCalculator.js"
+    ],
+    "handoffSection": "FVG seul : les trous de l'analyse comblés — 2026-09-22"
   }
 ]

@@ -258,12 +258,15 @@ export function buildSpecFromBrokerSymbol(brokerSymbol, placeholder) {
     volumeVerified: true,
     // Real overnight financing (2026-09-22, Esdras: "mesure le swap" - see HANDOFF.md's RSI(2)/US500 daily candidate, whose backtest assumed an
     // unmeasured 0.01 %/day). ProtoOASymbol carries the broker's ACTUAL swap rate per side - no need to hold a position overnight to observe it.
-    // swapLong/swapShort: PIPS = points per lot per day (same unit as pointSize below); PERCENTAGE = annual %, applied to notional. Both sides kept
-    // (a short RSI(2) variant or another symbol could need swapShort) - undefined (not 0) when the broker didn't send a usable value, so a missing
-    // spec never silently reads as "no swap cost" the way a 0 default would.
+    // swapLong/swapShort: PIPS = PIPS (10^-pipPosition, NOT the price's last digit) per lot per day; PERCENTAGE = annual %, applied to notional.
+    // Both sides kept (a short variant or another symbol could need swapShort) - undefined (not 0) when the broker didn't send a usable value,
+    // so a missing spec never silently reads as "no swap cost" the way a 0 default would.
     swapLong: Number.isFinite(Number(brokerSymbol.swapLong)) ? Number(brokerSymbol.swapLong) : undefined,
     swapShort: Number.isFinite(Number(brokerSymbol.swapShort)) ? Number(brokerSymbol.swapShort) : undefined,
-    swapCalculationType: brokerSymbol.swapCalculationType === 1 ? 'PERCENTAGE' : brokerSymbol.swapCalculationType === 0 ? 'PIPS' : undefined,
+    // The decoder hands enums over as their NAME ('PIPS', like swapRollover3Days arrives as 'FRIDAY'), not their number - checking only 0/1 left
+    // this undefined in production (2026-09-22). Field absent while a swap rate IS present = the proto's own declared default, PIPS.
+    swapCalculationType: parseSwapCalculationType(brokerSymbol.swapCalculationType, brokerSymbol.swapLong ?? brokerSymbol.swapShort),
+    pipPosition: Number.isFinite(Number(brokerSymbol.pipPosition)) && brokerSymbol.pipPosition !== null ? Number(brokerSymbol.pipPosition) : undefined,
     swapPeriodHours: Number.isFinite(Number(brokerSymbol.swapPeriod)) ? Number(brokerSymbol.swapPeriod) : undefined,
     swapRollover3Days: brokerSymbol.swapRollover3Days ?? undefined, // e.g. 'WEDNESDAY' - that day charges 3x (weekend rollover), not a bigger daily rate
     swapTimeMinutesUtc: Number.isFinite(Number(brokerSymbol.swapTime)) ? Number(brokerSymbol.swapTime) : undefined, // minutes since 00:00 UTC when the daily charge posts (e.g. 1320 = 22:00 UTC, near the classic 17:00 NY rollover)
@@ -275,7 +278,10 @@ export function buildSpecFromBrokerSymbol(brokerSymbol, placeholder) {
  * `SWAP` uses in scripts/runPreregBatch3.js's daily backtest. Returns null when the spec has no usable swap (never 0, for the same "don't silently
  * claim zero cost" reason as the fields above).
  * PERCENTAGE: swapLong/swapShort is already an annual percentage -> /100/365.
- * PIPS: swapLong/swapShort is points per LOT per day; converted to a fraction of notional via pointSize and lotSize*price (one lot's notional).
+ * PIPS: swapLong/swapShort is pips per LOT per day. Cash per lot = rate * pipSize * unitsPerLot and notional per lot = price * unitsPerLot, so the
+ * lot size cancels out: fraction = rate * 10^-pipPosition / price. (The previous version used the placeholder pointSize and cTrader's lotSize,
+ * which is in hundredths of a unit - both wrong, off by 10x-100x.) Checked on the real 2026-09-22 values: US100/US500/XAUUSD long all come out
+ * at ~-5.2 %/year and short at ~+2 to +3 %/year, i.e. a ~3.7 % USD rate +/- the broker's markup - the only reading that is financially plausible.
  */
 export function swapFractionPerDay(spec, side, price) {
   if (!spec) return null;
@@ -283,9 +289,15 @@ export function swapFractionPerDay(spec, side, price) {
   if (!Number.isFinite(rate)) return null;
   if (spec.swapCalculationType === 'PERCENTAGE') return rate / 100 / 365;
   if (spec.swapCalculationType === 'PIPS') {
-    if (!Number.isFinite(spec.pointSize) || !Number.isFinite(spec.lotSize) || !(price > 0)) return null;
-    const notionalPerLot = spec.lotSize * price;
-    return notionalPerLot > 0 ? (rate * spec.pointSize) / notionalPerLot : null;
+    if (!Number.isFinite(spec.pipPosition) || !(price > 0)) return null;
+    return (rate * Math.pow(10, -spec.pipPosition)) / price;
   }
   return null;
+}
+
+export function parseSwapCalculationType(raw, anySwapRate) {
+  if (raw === 1 || raw === 'PERCENTAGE') return 'PERCENTAGE';
+  if (raw === 0 || raw === 'PIPS') return 'PIPS';
+  if (raw === undefined || raw === null) return Number.isFinite(Number(anySwapRate)) && anySwapRate !== null ? 'PIPS' : undefined;
+  return undefined;
 }

@@ -203,21 +203,33 @@ test('buildSpecFromBrokerSymbol: swap fields pass through when the broker sends 
   assert.equal(none.swapLong, undefined); assert.equal(none.swapShort, undefined); assert.equal(none.swapCalculationType, undefined);
 });
 
+test('buildSpecFromBrokerSymbol: enum NAMES as the decoder really sends them (production 2026-09-22), absent type = proto default PIPS, pipPosition kept', () => {
+  const named = buildSpecFromBrokerSymbol({ ...BROKER_SPECS.US100, swapLong: -43.7, swapShort: 18.4, swapCalculationType: 'PIPS', pipPosition: 1 }, getDefaultSpec('US100'));
+  assert.equal(named.swapCalculationType, 'PIPS'); assert.equal(named.pipPosition, 1);
+  assert.equal(buildSpecFromBrokerSymbol({ ...BROKER_SPECS.EURUSD, swapLong: -1, swapCalculationType: 'PERCENTAGE' }, getDefaultSpec('EURUSD')).swapCalculationType, 'PERCENTAGE');
+  assert.equal(buildSpecFromBrokerSymbol({ ...BROKER_SPECS.US500, swapLong: -11 }, getDefaultSpec('US500')).swapCalculationType, 'PIPS');
+  assert.equal(buildSpecFromBrokerSymbol({ ...BROKER_SPECS.US500, swapCalculationType: 'SOMETHING_NEW', swapLong: -11 }, getDefaultSpec('US500')).swapCalculationType, undefined);
+});
+
 test('swapFractionPerDay: PERCENTAGE is a straight annual-rate conversion, independent of price', () => {
   const spec = { swapLong: -3.65, swapCalculationType: 'PERCENTAGE' }; // -3.65 %/year -> -0.01 %/day
   assert.ok(Math.abs(swapFractionPerDay(spec, 'long', 5000) - (-0.0001)) < 1e-9);
 });
 
-test('swapFractionPerDay: PIPS converts points-per-lot-per-day into a fraction of one lot\'s notional', () => {
-  // US500-like: lotSize 100 (1 lot = 100 units of index), pointSize 0.01 (2 decimals), swapLong -2.5 points/lot/day, price 5700
-  const spec = { swapLong: -2.5, swapCalculationType: 'PIPS', pointSize: 0.01, lotSize: 100 };
-  // notional/lot = 100 * 5700 = 570000 ; swap value/lot/day = -2.5 * 0.01 = -0.025 -> fraction = -0.025 / 570000
-  assert.ok(Math.abs(swapFractionPerDay(spec, 'long', 5700) - (-0.025 / 570000)) < 1e-12);
+test('swapFractionPerDay: PIPS = rate * 10^-pipPosition / price (lot size cancels out), checked on the real 2026-09-22 broker values', () => {
+  // US100: -43.7 pips/lot/day, pip 0.1, price 30749.3 -> -5.19 %/year ; XAUUSD: -63.88, pip 0.01, price 4357.51 -> -5.35 %/year ; EURUSD -0.65, pip 0.0001
+  const us100 = swapFractionPerDay({ swapLong: -43.7, swapShort: 18.4, swapCalculationType: 'PIPS', pipPosition: 1 }, 'long', 30749.3);
+  assert.ok(Math.abs(us100 - (-43.7 * 0.1) / 30749.3) < 1e-15);
+  assert.ok(Math.abs(us100 * 365 * 100 - -5.19) < 0.01);
+  const xau = swapFractionPerDay({ swapLong: -63.88, swapCalculationType: 'PIPS', pipPosition: 2 }, 'long', 4357.51);
+  assert.ok(Math.abs(xau * 365 * 100 - -5.35) < 0.01);
+  const eurShort = swapFractionPerDay({ swapShort: 0.28, swapCalculationType: 'PIPS', pipPosition: 4 }, 'short', 1.14474);
+  assert.ok(eurShort > 0); // a positive swap is a credit, not silently turned into a cost
 });
 
 test('swapFractionPerDay: null (not 0) when the spec, side, price or unit is missing/unusable', () => {
   assert.equal(swapFractionPerDay(null, 'long', 100), null);
-  assert.equal(swapFractionPerDay({ swapCalculationType: 'PIPS', pointSize: 0.01, lotSize: 100 }, 'long', 100), null); // no swapLong
-  assert.equal(swapFractionPerDay({ swapLong: -1, swapCalculationType: 'PIPS', lotSize: 100 }, 'long', 100), null); // no pointSize
-  assert.equal(swapFractionPerDay({ swapLong: -1, swapCalculationType: 'PIPS', pointSize: 0.01, lotSize: 100 }, 'long', 0), null); // no price
+  assert.equal(swapFractionPerDay({ swapCalculationType: 'PIPS', pipPosition: 1 }, 'long', 100), null); // no swapLong
+  assert.equal(swapFractionPerDay({ swapLong: -1, swapCalculationType: 'PIPS' }, 'long', 100), null); // no pipPosition
+  assert.equal(swapFractionPerDay({ swapLong: -1, swapCalculationType: 'PIPS', pipPosition: 1 }, 'long', 0), null); // no price
 });

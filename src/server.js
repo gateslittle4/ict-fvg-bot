@@ -1665,16 +1665,22 @@ function createAccountRouter(getStore) {
     for (const symbol of CONFIG.symbols) {
       const spec = store.liveDataSource._specFor(symbol);
       const price = store.strategyEngine.getHistory(symbol).at(-1)?.close ?? null;
+      const long = swapFractionPerDay(spec, 'long', price);
+      const short = swapFractionPerDay(spec, 'short', price);
       result[symbol] = {
         swapLong: spec.swapLong ?? null,
         swapShort: spec.swapShort ?? null,
         swapCalculationType: spec.swapCalculationType ?? null,
+        pipPosition: spec.pipPosition ?? null,
+        price,
+        annualPctLong: long === null ? null : Math.round(long * 365 * 100 * 100) / 100,
+        annualPctShort: short === null ? null : Math.round(short * 365 * 100 * 100) / 100,
         swapPeriodHours: spec.swapPeriodHours ?? null,
         swapRollover3Days: spec.swapRollover3Days ?? null,
         swapTimeMinutesUtc: spec.swapTimeMinutesUtc ?? null,
         swapTimeUtc: Number.isFinite(spec.swapTimeMinutesUtc) ? `${String(Math.floor(spec.swapTimeMinutesUtc / 60)).padStart(2, '0')}:${String(spec.swapTimeMinutesUtc % 60).padStart(2, '0')}` : null,
-        fractionPerDayLong: swapFractionPerDay(spec, 'long', price),
-        fractionPerDayShort: swapFractionPerDay(spec, 'short', price),
+        fractionPerDayLong: long,
+        fractionPerDayShort: short,
         verified: Boolean(spec.swapLong !== undefined || spec.swapShort !== undefined),
       };
     }
