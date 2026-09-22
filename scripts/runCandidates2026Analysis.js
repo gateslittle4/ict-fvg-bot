@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // runCandidates2026Analysis.js
-// Usage: node --max-old-space-size=4096 scripts/runCandidates2026Analysis.js
+// Usage: node --max-old-space-size=4096 scripts/runCandidates2026Analysis.js [année, défaut 2026]
+// Une autre année (ex. 2024) écrit candidates-<année>-analysis.md ; le RRR reste choisi sur l'entraînement (< 2025),
+// donc une année d'avant 2025 est DANS l'échantillon d'entraînement (signalé dans le rapport).
 //
 // Esdras (2026-09-22) : pour l'année 2026 et seulement les candidates les plus prometteuses analysées avec lui -
 // nombre de cycles de +10 %, challenges gagnés/perdus, win rate, meilleur RRR, dates de passage/perte, meilleur % par
@@ -39,6 +41,8 @@ const OFF = FIXED_EST_TO_UTC_OFFSET_MS;
 const eng = (y, m = 0, d = 1) => Date.UTC(y, m, d) - OFF;
 const CUT_TEST = eng(2025);
 const CUT_FWD = eng(2026);
+const YEAR = Number(process.argv[2] ?? 2026);
+const Y = String(YEAR);
 const RISKS = [0.3, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const RRS = [2, 3, 4, 5, 6, 7];
 const day = (ms) => new Date(ms + OFF).toISOString().slice(0, 10);
@@ -214,9 +218,11 @@ function main() {
     ['2025', (t) => t.entryTime >= CUT_TEST && t.entryTime < CUT_FWD],
     ['2026', (t) => t.entryTime >= CUT_FWD],
   ];
-  const [, inTrain] = windows[0]; const [, in2025] = windows[1]; const [, in2026] = windows[2];
-  const md = ['# Candidates 2026 : FVG US100+XAUUSD, RSI(2) US500, les deux ensemble, contre le combo actuel', ''];
-  md.push('Vrai `LiveStrategyEngine` (FVG, combo) et vraie classe `DailyAlertEngine` (RSI(2)) sur `data/real-m1-full` reconstruit en M15, règlement M1 exact, spread + **swap réel du broker** (relevé du 2026-09-22). FTMO 1-Step réel (`buildEffectiveConfig` : +10 %, perte max 10 % trailing fin de journée, perte quotidienne), simulé **par événements** (P&L à la sortie : dates exactes). Garde-fou du bot (3 trades/jour, pause 30 min) partagé entre toutes les stratégies d\'une variante. Limites : perte quotidienne sur P&L clôturé (pas l\'équité flottante), pas de commission (≈ 0 sur les trades réels) ni de glissement réel, taux de swap d\'aujourd\'hui appliqués au passé, 2026 = 1er janvier → 18 septembre.', '');
+  const [, inTrain] = windows[0]; const [, in2025] = windows[1];
+  const in2026 = (t) => t.entryTime >= eng(YEAR) && t.entryTime < eng(YEAR + 1);
+  const md = [`# Candidates ${Y} : FVG US100+XAUUSD, RSI(2) US500, les deux ensemble, contre le combo actuel`, ''];
+  md.push(`Vrai \`LiveStrategyEngine\` (FVG, combo) et vraie classe \`DailyAlertEngine\` (RSI(2)) sur \`data/real-m1-full\` reconstruit en M15, règlement M1 exact, spread + **swap réel du broker** (relevé du 2026-09-22). FTMO 1-Step réel (\`buildEffectiveConfig\` : +10 %, perte max 10 % trailing fin de journée, perte quotidienne), simulé **par événements** (P&L à la sortie : dates exactes). Garde-fou du bot (3 trades/jour, pause 30 min) partagé entre toutes les stratégies d'une variante. Limites : perte quotidienne sur P&L clôturé (pas l'équité flottante), pas de commission (≈ 0 sur les trades réels) ni de glissement réel, taux de swap d'aujourd'hui appliqués au passé, ${YEAR === 2026 ? '2026 = 1er janvier → 18 septembre.' : `${Y} = année complète.`}`, '');
+  if (YEAR < 2025) md.push(`**Attention : ${Y} fait partie de l'entraînement (< 2025)** sur lequel FVG seul, le retrait de US500 et les RRR ont été choisis. Ce n'est donc PAS une année indépendante : elle dit si l'idée tenait déjà cette année-là, pas si elle marchera. La colonne 2025 reste, elle, hors échantillon.`, '');
 
   // --- RRR de FVG, choisi sur l'entraînement
   console.log('FVG US100 + XAUUSD : un warmUp par RRR...');
@@ -227,8 +233,8 @@ function main() {
     byRR[rr] = engineTrades({ fvgConfig: cfg });
     console.log(`  1:${rr} -> ${byRR[rr].length} trades`);
   }
-  md.push('## 1. Meilleur RRR pour FVG (choisi sur l\'entraînement, 2026 lu ensuite)', '', 'Par paire, trades isolés (sans garde-fou), R net avec spread + swap. Le netting est par paire, donc le RRR d\'une paire ne change pas les trades de l\'autre.', '');
-  md.push('| Paire | RRR | Trades entr. | Gagnants entr. | R net entraînement | R net 2025 | R net 2026 | R/trade 2026 |', '|---|---|---|---|---|---|---|---|');
+  md.push(`## 1. Meilleur RRR pour FVG (choisi sur l'entraînement, ${Y} lu ensuite)`, '', 'Par paire, trades isolés (sans garde-fou), R net avec spread + swap. Le netting est par paire, donc le RRR d\'une paire ne change pas les trades de l\'autre.', '');
+  md.push(`| Paire | RRR | Trades entr. | Gagnants entr. | R net entraînement | R net 2025 | R net ${Y} | R/trade ${Y} |`, '|---|---|---|---|---|---|---|---|');
   const chosen = {};
   for (const s of ['US100', 'XAUUSD']) {
     let best = null;
@@ -260,12 +266,12 @@ function main() {
   ];
 
   // --- 2026 : statistiques de trades
-  md.push('## 2. 2026 — trades (garde-fou du bot, compte continu)', '', '| Variante | Trades | Win rate | RRR réalisé (gain moy. / perte moy.) | R net | R/trade | t |', '|---|---|---|---|---|---|---|');
+  md.push(`## 2. ${Y} — trades (garde-fou du bot, compte continu)`, '', '| Variante | Trades | Win rate | RRR réalisé (gain moy. / perte moy.) | R net | R/trade | t |', '|---|---|---|---|---|---|---|');
   for (const [name, trades] of variants) {
     const s = simulate(trades.filter(in2026), 0.5, { ftmo: false });
     md.push(`| ${name} | ${s.n} | ${s.winRate.toFixed(0)} % | ${s.payoff > 0 ? s.payoff.toFixed(2) : '— (aucune perte)'} | ${sgn(s.sum)} | ${sgn(s.mean, 3)} | ${s.t.toFixed(2)} |`);
   }
-  md.push('', '### Part de chaque paire dans FVG (variante C, 2026, trades isolés)', '', '| Paire | Trades | Win rate | R net |', '|---|---|---|---|');
+  md.push('', `### Part de chaque paire dans FVG (variante C, ${Y}, trades isolés)`, '', '| Paire | Trades | Win rate | R net |', '|---|---|---|---|');
   for (const sym of ['US100', 'XAUUSD']) {
     const l = fvgC.filter((t) => t.symbol === sym && in2026(t));
     md.push(`| ${sym} | ${l.length} | ${l.length ? (l.filter((t) => t.r > 0).length / l.length * 100).toFixed(0) : 0} % | ${sgn(l.reduce((a, t) => a + t.r, 0))} |`);
@@ -275,8 +281,8 @@ function main() {
   // --- 2026 : FTMO par risque, + contrôle sur 2025
   const score = (s) => [s.pass - s.fail, -s.fail, -s.contDd];
   const better = (a, b) => { const x = score(a), y = score(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
-  md.push('## 3. 2026 — cycles FTMO 1-Step (+10 %) par risque par trade', '', 'Critère du « meilleur % » : réussis − ratés, puis le moins de ratés, puis la plus petite baisse. Colonne 2025 : le même critère sur 2025, pour voir si le risque choisi tient sur une autre année.', '');
-  md.push('| Variante | Risque | Réussis | Ratés | En cours | Compte continu 2026 | Pire baisse du compte continu | 2025 : réussis / ratés |', '|---|---|---|---|---|---|---|---|');
+  md.push(`## 3. ${Y} — cycles FTMO 1-Step (+10 %) par risque par trade`, '', 'Critère du « meilleur % » : réussis − ratés, puis le moins de ratés, puis la plus petite baisse. Colonne 2025 : le même critère sur 2025, pour voir si le risque choisi tient sur une autre année.', '');
+  md.push(`| Variante | Risque | Réussis | Ratés | En cours | Compte continu ${Y} | Pire baisse du compte continu | 2025 : réussis / ratés |`, '|---|---|---|---|---|---|---|---|');
   const bestRisk = {};
   for (const [name, trades] of variants) {
     let b26 = null, b25 = null;
@@ -292,22 +298,22 @@ function main() {
     }
     bestRisk[name] = { r26: b26.risk, r25: b25.risk };
   }
-  md.push('', '| Variante | Meilleur % en 2026 | Meilleur % en 2025 |', '|---|---|---|');
+  md.push('', `| Variante | Meilleur % en ${Y} | Meilleur % en 2025 |`, '|---|---|---|');
   for (const [name] of variants) md.push(`| ${name} | ${bestRisk[name].r26} % | ${bestRisk[name].r25} % |`);
   md.push('');
 
   // --- dates des cycles au meilleur risque 2026 (et au 0,5 % de référence)
-  md.push('## 4. 2026 — dates de passage / perte', '');
+  md.push(`## 4. ${Y} — dates de passage / perte`, '');
   for (const [name, trades] of variants) {
     for (const risk of [...new Set([bestRisk[name].r26, 0.5, 1.0])]) {
       const s = simulate(trades.filter(in2026), risk, { ftmo: true });
-      md.push(`### ${name} — risque ${risk} %${risk === bestRisk[name].r26 ? ' (meilleur en 2026)' : ''}`, '', '| Cycle | Début | Fin | Jours | Trades | Résultat |', '|---|---|---|---|---|---|');
+      md.push(`### ${name} — risque ${risk} %${risk === bestRisk[name].r26 ? ` (meilleur en ${Y})` : ''}`, '', '| Cycle | Début | Fin | Jours | Trades | Résultat |', '|---|---|---|---|---|---|');
       s.cycles.forEach((x, i) => md.push(`| ${i + 1} | ${day(x.start)} | ${day(x.end)} | ${Math.max(0, Math.round((x.end - x.start) / DAY))} | ${x.taken.length} | ${x.outcome} |`));
       md.push('');
     }
   }
 
-  const out = 'data/backtest-input/candidates-2026-analysis.md';
+  const out = `data/backtest-input/candidates-${Y}-analysis.md`;
   fs.writeFileSync(out, md.join('\n'));
   console.log(md.join('\n'));
   console.log(`\nRapport écrit : ${out}`);
