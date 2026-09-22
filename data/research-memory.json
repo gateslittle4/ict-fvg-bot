@@ -865,7 +865,7 @@
   },
   {
     "id": "candidates-2026-fvg-us100-xau-vs-combo",
-    "title": "2026 : FVG US100+XAUUSD bat le combo (FTMO, R, baisse) ; RRR XAUUSD 1:7 ; RSI(2) marginal",
+    "title": "BUG CORRIGÉ : les chiffres 2026 des candidates étaient gonflés (trades stoppés dans la minute d'entrée jamais comptés) - voir candidates-corrected-and-histdata-2011-2018",
     "date": "2026-09-22",
     "status": "methodology-fix",
     "summary": "REMPLACÉ (bug de simulation, voir candidates-corrected-and-histdata-2011-2018). 2026 (événements, M1 exact, spread + swap réel) : FVG US100 1:5 + XAUUSD 1:7 = 102 trades, +64,2 R, +0,630 R/trade, t = 2,18 contre combo 373 trades, +39,8 R, t = 0,99. FTMO 1-Step à 1 % : FVG 6 réussis / 1 raté contre combo 8/8 ; à 0,75 % 5/1 contre 3/2. Meilleur risque (réussis - ratés) 1,25 % en 2026 et 2025, recommandé 1 % par marge de sécurité. RRR choisi sur l'entraînement : US100 1:5, XAUUSD 1:7 (confirmé 2025 et 2026). RSI(2) US500 : 11 trades gagnants en 2026 mais +2,9 R seulement, n'atteint jamais +10 % seul.",
