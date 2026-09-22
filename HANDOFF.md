@@ -6641,3 +6641,19 @@ Ajouté à `/admin/swap-check` : `swapTimeMinutesUtc`/`swapTimeUtc` (champ `swap
 **Leçon retenue :** avant d'ajouter un chargement de fichier volumineux au démarrage du bot partagé (512 Mo, voir `feedback_measure_shared_process_features`), mesurer la mémoire réelle AVANT de déployer, pas après — un fichier de 1,3 million de lignes ne doit jamais être transformé en tableau JS complet sur ce processus.
 
 **Déployé en urgence** (commit SANS `[skip render]`, pour un redéploiement automatique immédiat vu la gravité).
+
+## 2026-09-22 — RSI(2)/US500 câblé en EXÉCUTION RÉELLE (décision explicite d'Esdras, PAS ENCORE DÉPLOYÉ)
+
+Après la correction de l'incident OOM, Esdras a demandé une généralisation rapide de la règle RSI(2) (même règle, aucun réglage) sur GER40/UKX/AUX plutôt que d'attendre des années le mode alerte (~8-10 trades/an sur US500 seul). Résultat (`data/backtest-input/rsi2-generalization-results-2026-09-22.md`) : **GER40 passe aussi le seuil t≥2 (2,18), confirmé dans les deux moitiés** ; AUX va dans le même sens sans l'atteindre (t=1,12) ; **UKX échoue clairement** (t=-0,86, négatif dans les deux moitiés). Renforce sans prouver.
+
+Face à ça, Esdras a choisi explicitement (confirmation demandée et obtenue) de **coder l'exécution réelle maintenant**, en acceptant le risque de ne pas attendre. Câblage :
+- **Entrée réelle** : réutilise `_handleAutoExecuteEntry` (même sizing/risque 0,3 %, même compensation de spread), `targetPrice: null` (sortie sur signal, pas sur objectif) — `adjustMarketProtectionForSpread` accepte maintenant `targetPrice: null`.
+- **Sortie réelle sur signal** (SMA5/10 jours) : envoie un **VRAI `ProtoOAClosePositionReq`, jamais utilisé dans ce projet avant aujourd'hui**. Sortie sur stop laissée au stop du broker (jamais de course avec lui).
+- **Même `GuardrailEngine` partagé** que le combo intraday : un trade/une perte RSI(2) compte dans le MÊME budget FTMO (3 trades/jour, pause 30 min, perte du jour) que le reste, et réciproquement.
+- **Exclusion mutuelle stricte avec le combo intraday sur US500** (déjà tradé par fvg/divergence/silverbullet/weeklysweep) : jamais deux positions réelles sur le même instrument, dans un sens ou dans l'autre (`dailyPositionBySymbol`).
+- **Bug trouvé et corrigé AVANT tout déploiement** : incohérence `'rsi2daily'` vs `'rsi2-daily'` entre deux vérifications (aurait cassé silencieusement l'auto-exemption et le suivi de position) — capturée par `test/dailyStrategyRealExecution.test.js`, remplacée par une constante unique `DAILY_RSI2_STRATEGY`.
+- Pour revenir en mode observation seule : vider `this.dailyLiveExecutionSymbols` dans `_loadDailyAlertEngines()` (une ligne).
+
+**Limites à ne pas oublier :** `ProtoOAClosePositionReq` n'a jamais été testé contre le vrai broker ; la décision de sortie repose sur notre reconstruction de bougie journalière (M15 réel → jour 17h-17h), qui peut différer légèrement du fil de prix exact du broker ; pas de répétition à blanc avant le premier vrai signal.
+
+Suite de tests : 1103/1103. **Pas encore déployé** (commit `[skip render]`) : à déployer au calme, sans position ouverte, et Esdras doit confirmer le moment.

@@ -778,5 +778,26 @@
       "test/lotCalculator.test.js"
     ],
     "handoffSection": "2026-09-22 — Swap mesuré + mode alerte RSI(2)/US500"
+  },
+  {
+    "id": "rsi2-us500-real-execution-2026-09-22",
+    "title": "RSI(2)/US500 câblé en EXÉCUTION RÉELLE (décision explicite d'Esdras, risque accepté)",
+    "date": "2026-09-22",
+    "status": "live",
+    "summary": "Esdras a explicitement choisi de coder l'exécution réelle de RSI(2)/US500 MAINTENANT, en acceptant le risque de ne pas attendre la confirmation en mode alerte (~8-10 trades/an, des années pour accumuler assez de signaux hors échantillon). La candidate reste ce qu'elle était : t=2,23 sur le test, mais 58 trades probablement non indépendants, US100 a presque réussi le même test, testée presque uniquement dans un marché haussier, swap supposé non mesuré. Un test de généralisation (même règle, sans réglage) sur GER40/UKX/AUX a été fait le même jour : GER40 passe aussi le seuil t>=2 (2,18) et confirme dans les deux moitiés, AUX va dans le même sens sans l'atteindre, UKX échoue clairement (négatif dans les deux moitiés) - résultat mitigé qui renforce sans prouver. Implémentation : entrée réelle réutilise _handleAutoExecuteEntry (même sizing, même compensation de spread pour le stop, targetPrice=null car sortie sur signal et non sur objectif de prix) ; sortie réelle sur signal (SMA5/10 jours) envoie un VRAI ProtoOAClosePositionReq (jamais utilisé dans ce projet avant aujourd'hui) ; sortie sur stop laissée au stop du broker (jamais de course avec lui) ; MÊME GuardrailEngine partagé que le combo intraday (budget de risque FTMO unique) ; exclusion mutuelle stricte avec le combo intraday sur US500 (jamais deux positions réelles sur le même instrument). Bug trouvé et corrigé avant déploiement : incohérence 'rsi2daily' vs 'rsi2-daily' entre deux vérifications, qui aurait cassé silencieusement l'auto-exemption et le suivi de position - capturé par les tests avant tout déploiement.",
+    "markets": [
+      "US500"
+    ],
+    "timeframe": "D1",
+    "knownWeaknesses": "ProtoOAClosePositionReq jamais testé contre le vrai broker (implémentation neuve) ; la décision de sortie repose sur NOTRE reconstruction de bougie journalière depuis le M15 réel, qui peut légèrement différer du vrai fil de prix du broker ; commission/swap réels toujours non mesurés pour cette position ; pas de dry-run avant le premier vrai signal.",
+    "files": [
+      "src/dataSources/cTraderDataSource.js",
+      "test/dailyStrategyRealExecution.test.js",
+      "test/marketProtectionSpread.test.js",
+      "scripts/runRsi2Generalization.js",
+      "data/backtest-input/rsi2-generalization-check-2026-09-22.md",
+      "data/backtest-input/rsi2-generalization-results-2026-09-22.md"
+    ],
+    "handoffSection": "2026-09-22 — RSI(2)/US500 en exécution réelle"
   }
 ]
