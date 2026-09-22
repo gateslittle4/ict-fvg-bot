@@ -557,5 +557,269 @@
       "data/backtest-input/max-trades-per-day-realism-check-m1.md"
     ],
     "handoffSection": "Plafond « 3 trades par jour » vérifié en M1 exact — 2026-09-21"
+  },
+  {
+    "id": "full-history-train-test-forward-2026",
+    "title": "Combo actuel (GER40 retiré), entraînement/test-forward 2026-01-01 → 2026-09-21, M1 exact (référence) vs M15, sensibilité au risque%",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "v2 (corrige le premier passage, qui réglait en M15 \"stop d'abord\" seulement — sous-estimation structurelle confirmée par engine-m1-vs-m15-reconciliation.md). Un seul warmUp() du vrai LiveStrategyEngine sur tout data/real-m1-full (2022/2023 → 2026-09-21), réglé aux DEUX conventions (M15 et M1 exact), rejeu dans un vrai GuardrailEngine. Fenêtre test/forward 2026-01-01 → 2026-09-21 (396 trades en M1 exact) : compte continu +10.95% (0.25%/trade, DD max 6.9%, 1 cycle FTMO réussi/0 raté/1 en cours), +13.14% (0.3%/trade = risque réel live, DD max 8.2%, 1/0/1), +21.79% (0.5%/trade, DD max 13.3%, 4 réussis/2 ratés/1 en cours). Nettement mieux qu'en M15 (+3.22/+3.75/+5.46% aux mêmes risques) : le M15 \"stop d'abord\" est structurellement pessimiste. FTMO 1-Step n'a AUCUNE limite de temps (timeLimitDays: null, confirmé sur ftmo.com) : à 0.25-0.3% la baisse max reste sous le plancher de 10% tout du long (aucun bust) ; à 0.5% le plancher est franchi 2 fois en 9 mois malgré un solde final positif (4 gagnés/2 ratés). Recommandation à Esdras : baisser le risque par trade pour maximiser la survie (0 bust à 0.25-0.3% sur cette fenêtre), quitte à empocher moins vite — combiné à la stratégie de compte de réserve déjà validée et au correctif de géométrie d'ordre au marché déjà écrit mais pas encore déployé. Sensibilité étendue (0.75/1/1.5%/trade, même fenêtre test/forward, M1 exact) : +32.27% (0.75%, DD 19.4%, 6 réussis/5 ratés), +65.02% (1%, DD 21.8%, 8/7), +102.91% (1.5%, DD 31.0%, 17/13). Le plancher FTMO de 10% est franchi bien avant que la croissance atteigne 50% à TOUT niveau de risque testé : impossible de viser 50% sur 9 mois sans multiplier les busts (aucune configuration testée ne reste sous 10% de baisse au-delà de 0.3%/trade). Le vrai levier pour 50%+ SANS risque de bust supplémentaire est le TEMPS, pas le risque : sur la période d'entraînement (~3.7 ans), le même risque sûr (0.3%/trade) compose déjà à +64.50% (0.25% : +52.07%) - la croissance vient de l'enchaînement de plusieurs cycles propres dans la durée, pas d'un risque par trade plus élevé.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (reconstruit du M1 réel)",
+    "sample": "2002 trades entraînement (< 2026-01-01) + 491 trades test/forward (2026-01-01 → 2026-09-21)",
+    "knownWeaknesses": "Garde-fous réels mais coûts partiels (spread mesuré, pas de commission/swap/glissement réel, correctif de géométrie d'ordre au marché pas encore appliqué ici) : niveau absolu encore surestimé par rapport à la démo réelle. Échantillon test/forward encore petit (9 mois, 1-7 cycles selon le risque) : statut inconclusive, pas rejected/validated. Rejeu de garde-fous sur des trades pris comme des signaux indépendants (même limite qu'engine-m1-vs-m15-reconciliation.md) : le moteur ne \"voit\" pas les vétos en temps réel.",
+    "files": [
+      "scripts/runFtmo1StepFullHistoryTrainTestForward2026.js",
+      "data/backtest-input/full-history-train-test-forward-2026.md"
+    ],
+    "handoffSection": "2026-09-21 — Entraînement/test-forward 2026 sur M1 réel complet (sensibilité au risque%)"
+  },
+  {
+    "id": "engine-vs-simulator-reconciliation",
+    "title": "Réconciliation : le VRAI moteur sur tout le M1 réel, règlement M15 (moteur/site) contre M1 exact",
+    "date": "2026-09-21",
+    "status": "validated-research",
+    "summary": "Un warmUp() du vrai LiveStrategyEngine (mécanismes réels) sur tout le M1 réel sans trous (EURUSD/XAUUSD dès 2022-05, indices dès 2023-01), trades réglés soit comme le moteur (M15, stop d'abord) soit à la minute, rejeu dans le vrai GuardrailEngine. Combo en production (sans GER40) : M15 = +88,9 R (+25,7 % à 0,3 % par trade, baisse max 17 %), M1 exact = +220,3 R (+86 % à 0,3 %, baisse max 12,2 %) : le règlement M15 « stop d'abord » de la page du site et du moteur sous-estime fortement (~130 R en 4 ans). Avec GER40 : M1 exact +91,7 R contre +220,3 R sans lui : GER40 coûte -106 R (-0,124 R/trade sur 853 trades) dans le VRAI moteur aussi, ce qui confirme son retrait avec l'implémentation de production et pas seulement avec le simulateur des backtests. Par paire (M1 exact) : US100 +158 R, XAUUSD +46 R, US500 +6 R, EURUSD -13 R. Par année : 2022 -16,5 R, 2023 +21,6, 2024 -29,7, 2025 +47,6, 2026 +68,8 (5 paires, 0,5 %). Le simulateur des backtests précédents (scripts/lib/stopFloorCore.js) donne des niveaux plus hauts que le vrai moteur (+53 % contre ~+31 % sur 7 mois) : à lire pour ses différences relatives seulement ; les décisions de fond (GER40, plafond de 3/jour) sont cohérentes avec le vrai moteur. Le chiffre de référence des futurs rapports = vrai moteur + M1 exact.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD",
+      "GER40"
+    ],
+    "timeframe": "M1/M15",
+    "knownWeaknesses": "Coûts partiels (pas de commission/swap/glissement réel, géométrie d'ordre non corrigée dans ce calcul) ; garde-fous rejoués sur une liste canonique de trades (le moteur ne voit pas les vétos) ; entrée supposée remplie au niveau du signal dans sa bougie M15 ; mécanismes déséquilibrés (breakerblock -97 R, cbdr -29 R, fvg +184 R sur 5 paires) à analyser séparément sans GER40 avant toute décision.",
+    "files": [
+      "scripts/runEngineM1Backtest.js",
+      "data/backtest-input/engine-m1-vs-m15-reconciliation.md",
+      "data/backtest-input/full-history-train-test-forward-2026.md"
+    ],
+    "handoffSection": "2026-09-21 — Réconciliation moteur / simulateur"
+  },
+  {
+    "id": "adaptive-risk-and-eurusd-drop-2026",
+    "title": "Risque adaptatif (0.5%→0.25% à -4% de baisse) et vraie paire négative (US500, pas EURUSD)",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Esdras: risque adaptatif (0.5% de base, 0.25% dès -4% de baisse depuis le dernier sommet, retour à 0.5% à un nouveau sommet) + retrait de la paire qui ne performe pas. Sur la fenêtre test/forward 2026-01-01→2026-09-21 (M1 exact) : EURUSD (visée par Esdras) est légèrement POSITIVE à l'entraînement (+0.5 R) donc protocole refuse de la retirer - la vraie paire négative des deux fenêtres est US500 (-50.7 R entraînement, -10.3 R test). Risque adaptatif (combo actuel, 4 paires) : +14.98% (pire baisse 8.9%, FTMO 1 réussi/0 raté) contre 0.5% fixe +21.79% (pire baisse 13.3%, 4 réussis/2 ratés) - l'adaptatif évite les 2 busts en sacrifiant un peu de rendement, meilleur compromis que tout risque fixe testé jusqu'ici. Retirer US500 aide seulement à risque fixe 0.5% (+18.97%, pire baisse 10.0%, 2 réussis/0 raté, zéro bust) mais est neutre/légèrement pire à 0.25-0.3% fixe ET nettement pire en adaptatif (+4.42% contre +14.98%, la dynamique de vétos du garde-fou 3 trades/jour change avec moins de paires). Recommandation : garder les 4 paires + adopter le risque adaptatif plutôt que retirer US500.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "2002 trades entraînement + 491 trades test/forward (2026-01-01 → 2026-09-21)",
+    "knownWeaknesses": "Risque adaptatif simulé au niveau du compte (bascule instantanée) - pas automatisé dans le bot aujourd'hui, demanderait une surveillance manuelle ou une nouvelle fonctionnalité. Échantillon test/forward petit (9 mois). Coûts partiels (pas de correctif de géométrie d'ordre).",
+    "files": [
+      "scripts/runAdaptiveRiskAndEurusdDrop2026.js",
+      "data/backtest-input/adaptive-risk-eurusd-drop-2026.md"
+    ],
+    "handoffSection": "2026-09-21 (soir, suite 2) — Risque adaptatif et vraie paire négative (US500, pas EURUSD)"
+  },
+  {
+    "id": "ftmo-throughput-economics-2026",
+    "title": "Débit réel de challenges FTMO (passes/an) et coût des rachats — le risque adaptatif naïf était une fausse bonne idée",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Esdras a eu raison de pousser sur \"1 seul pass en 9 mois, sans déconner\": mon risque adaptatif (0.5%->0.25% dès -4% de baisse, retour à 0.5% dès que la baisse repasse sous 4%) donne EXACTEMENT le même débit que 0.25% fixe pur (1.39 passes/an, 0 rachat) - il neutralise complètement l'avantage de débit du 0.5%. Débit réel par configuration (fenêtre test/forward 2026-01-01→2026-09-21, M1 exact, FEE_PER_BUST=9 PLACEHOLDER non confirmé - aucun tarif FTMO 0k publié trouvé) : 0.25/0.3% fixe = 1.39 passes/an, /bin/bash coût ; 0.5% fixe = 5.55 passes/an, 78 coût total (5/passe) ; 0.75% = 8.33/an, 4/passe ; 1% = 11.10/an, 8/passe ; 1.5% = 23.59/an (le plus haut débit), 8/passe. Le coût du rachat est FAIBLE par rapport au gain de débit : monter le risque augmente clairement le débit de challenges passés sans faire exploser le coût par passe. Conclusion opposée à la recommandation \"baisser le risque\" donnée plus tôt dans la même journée, qui optimisait pour \"éviter les busts\" plutôt que pour le vrai objectif d'Esdras (débit de challenges réussis).",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "491 trades test/forward (2026-01-01 → 2026-09-21)",
+    "knownWeaknesses": "FEE_PER_BUST (9) est un placeholder non vérifié - seul chiffre sourcé du dépôt est 30 pour un challenge 5k (remboursé au financement). Ne modélise pas les revenus du compte financé après une passe (question plus grande, déjà traitée pour FTMO 5k dans HANDOFF.md). Échantillon test/forward petit (9 mois). 17 busts en 9 mois à 1.5% est un vrai coût opérationnel/psychologique non chiffré ici (racheter aussi souvent).",
+    "files": [
+      "scripts/runFtmoThroughputEconomics2026.js",
+      "data/backtest-input/ftmo-throughput-economics-2026.md"
+    ],
+    "handoffSection": "2026-09-21 (soir, suite 3) — Débit réel de challenges : le risque adaptatif naïf ne valait rien"
+  },
+  {
+    "id": "silverbullet-second-position-netting",
+    "title": "Silver Bullet en 2e position malgré une paire déjà ouverte : REJETÉ (-6.52R sur 196 cas historiques)",
+    "date": "2026-09-21",
+    "status": "rejected",
+    "summary": "Déclenché par un cas réel en direct (2026-09-21) : Silver Bullet US500 haussier (entrée 7733.4) bloqué par netting car Divergence US500 était déjà ouverte (entrée 7719.05, clôturée gagnante +2.92R 45 min plus tard). Si allouée en 2e position indépendante, cette trade précise serait actuellement en cours, +1.38R non réalisé, jamais menacée par son stop. MAIS sur tout l'historique M1 réel (2022/2023→2026-09), 196 signaux Silver Bullet ont été bloqués par netting (sur 1026 signaux Silver Bullet au total, 667 exécutés normalement) - réglés en position indépendante (M1 exact) : seulement 8% gagnants, -6.52R net total, -0.033R/trade. Le cas d'aujourd'hui est un favorable OUTLIER, pas la norme : la grande majorité (92%) de ces situations auraient perdu ~-1R rapidement après l'entrée. REJETÉ - ne pas autoriser Silver Bullet en 2e position.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "196 signaux Silver Bullet bloqués par netting sur tout l'historique real-m1-full (~3.7 ans)",
+    "knownWeaknesses": "Suppose que la 2e position n'a aucune interaction avec la 1ère (sizing indépendant). Contrainte broker NON vérifiée : le blocage netting reflète peut-être une vraie limite du compte cTrader (mode netting vs hedging) - même si le résultat avait été positif, il aurait fallu vérifier le support du mode hedging chez FP Markets avant tout changement de code. Coûts partiels (spread mesuré, pas commission/swap/glissement réel).",
+    "files": [
+      "scripts/runSilverBulletSecondPositionCheck.js",
+      "data/backtest-input/silver-bullet-second-position-netting.md"
+    ],
+    "handoffSection": "2026-09-21 (soir, suite 4) — Silver Bullet en 2e position : rejeté, -6.52R historique"
+  },
+  {
+    "id": "prereg-new-instruments-2026-09-21",
+    "title": "PRÉ-ENREGISTREMENT (avant tout calcul) : FVG, Weekly Sweep, NWOG et Divergence sur XAGUSD, US30 et USOIL",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Écrit avant tout téléchargement et tout calcul. 11 hypothèses comptées (FVG, Weekly Sweep, NWOG sur XAGUSD/US30/USOIL ; Divergence sur XAUUSD/XAGUSD et US100/US30), configuration copiée de l'instrument frère sans aucun réglage. Vrai moteur, M1 exact, garde-fous réels ; entraînement < 2025-01-01, test ≥ 2025-01-01 lu UNE fois ; coûts = 2 x le spread du frère. Retenue pour lecture du test si >= 60 trades, >= +0,10 R/trade et positive sur >= 2 années civiles ; réussie au test si >= 30 trades, >= +0,10 R/trade, R total positif et corrélation mensuelle < 0,3 avec le combo. Aucune adoption directe : candidate = suivi en mode alerte jusqu'à 100 signaux hors échantillon à >= +0,1 R/trade. Un succès isolé modeste (< +0,15 R/trade ou < 40 trades) est non concluant (correction des comparaisons multiples). Texte complet : data/backtest-input/preregistration-new-instruments-2026-09-21.md.",
+    "markets": [
+      "XAGUSD",
+      "US30",
+      "USOIL"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Historique court (2,5 à 3 ans d'entraînement) ; coûts partiels et spreads supposés faute de mesure ; instruments corrélés à ceux déjà tradés (argent/or, US30/indices) ; pétrole exploratoire sans frère naturel ; 11 hypothèses = risque de faux positif.",
+    "files": [
+      "data/backtest-input/preregistration-new-instruments-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Pré-enregistrement : nouveaux instruments"
+  },
+  {
+    "id": "prereg-new-instruments-results-2026-09-21",
+    "title": "Résultats du pré-enregistrement : FVG, Weekly Sweep, NWOG, Divergence sur XAGUSD, US30, XTIUSD (1 candidate sur 11)",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Procédure respectée : entraînement (< 2025) décidé et commité AVANT la lecture unique du test (>= 2025). Vrai moteur, M1 exact, garde-fous réels (0,3 %), spread = 2 x celui du frère (XAGUSD 0,0073, US30 2,51, XTIUSD 0,0065 en valeur absolue). Entraînement : 3 retenues sur 11 : FVG XAGUSD +0,299 R/trade (98 trades, 1re moitié seulement +1,9 R), FVG XTIUSD +0,331 (78), Weekly Sweep US30 +0,122 (93). Rejetées : FVG US30 -0,055 ; Weekly XAGUSD -0,168, XTIUSD -0,258 ; NWOG XAGUSD -0,594, US30 -0,487 (19 trades), XTIUSD -0,075 ; Divergence XAU/XAG +0,135 mais 1re moitié négative (-9,8 R), US100/US30 +0,028. Test (lu une fois) : FVG XAGUSD +0,209 R/trade sur 67 trades (+14,0 R), corrélation mensuelle -0,61 avec le combo actuel -> SEULE CANDIDATE (mode alerte, jamais adoption directe) ; FVG XTIUSD -0,058 (63 trades) ÉCHEC, et -1,005 R/trade si le spread pétrole est 10 fois plus grand (plausible pour un CFD pétrole) ; Weekly Sweep US30 +0,009 (79 trades) ÉCHEC. Avec 11 hypothèses on attendait ~1 succès par chance : la candidate n'est pas une preuve. Point faible principal : le spread supposé de l'argent (2 x le relatif de l'or, 0,0073 soit ~0,025 % du prix) est probablement plus bas que le vrai spread d'un CFD argent, à MESURER avant toute exécution ; l'argent est aussi fortement lié à l'or (même config que FVG XAUUSD).",
+    "markets": [
+      "XAGUSD",
+      "US30",
+      "XTIUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Historique court (XAGUSD 2022-06 -> 2026-09, indices/pétrole 2023-01 ->) ; spreads supposés non mesurés ; 11 essais (1 faux positif attendu) ; FVG XAGUSD très concentré dans la 2e moitié de l'entraînement ; corrélation mensuelle calculée sur 21 mois seulement.",
+    "files": [
+      "scripts/runPreregNewInstruments.js",
+      "data/backtest-input/prereg-new-instruments-train.md",
+      "data/backtest-input/prereg-new-instruments-test.md",
+      "data/backtest-input/preregistration-new-instruments-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Résultats : nouveaux instruments"
+  },
+  {
+    "id": "prereg-batch2-2026-09-21",
+    "title": "PRÉ-ENREGISTREMENT LOT 2 (avant tout calcul) : Silver Bullet, CBDR, Judas Swing, Breaker Block sur XAGUSD, US30, XTIUSD",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "12 hypothèses (4 mécanismes x 3 instruments déjà téléchargés), configuration = bloc de mécanisme codé sans réglage, vrai moteur M1 exact, garde-fous réels, spread = 2 x le frère. Critères durcis : retenue à l'entraînement si >= 80 trades, >= +0,15 R/trade, deux moitiés positives ; réussite au test si >= 40 trades, >= +0,12 R/trade, R total positif, corrélation mensuelle < 0,3 avec le combo ET t >= 2,0 ; sinon non concluante. Lots 1+2 = 23 hypothèses (~0,5 faux positif attendu à t >= 2). Contexte : la candidate du lot 1 (FVG XAGUSD) a un t de 0,81 sur son test (+0,209 R/trade, écart-type 2,11, 67 trades) : indiscernable du hasard, candidate faible. Texte complet : data/backtest-input/preregistration-batch2-2026-09-21.md.",
+    "markets": [
+      "XAGUSD",
+      "US30",
+      "XTIUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Mêmes limites que le lot 1 ; mécanismes conçus pour d'autres instruments (échecs attendus).",
+    "files": [
+      "data/backtest-input/preregistration-batch2-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Pré-enregistrement lot 2"
+  },
+  {
+    "id": "prereg-batch2-results-2026-09-21",
+    "title": "Résultats du LOT 2 : Silver Bullet, CBDR, Judas Swing, Breaker Block sur XAGUSD, US30, XTIUSD : aucune candidate",
+    "date": "2026-09-21",
+    "status": "rejected",
+    "summary": "Procédure respectée (entraînement commité avant la lecture unique du test). Entraînement (>= 80 trades, >= +0,15 R/trade, deux moitiés positives) : 1 retenue sur 12 : Silver Bullet XTIUSD +0,211 R/trade (148 trades). Rejetées : Silver Bullet XAGUSD +0,095 (2e moitié +0,1 R) et US30 -0,177 ; CBDR négatif partout (-0,19 à -0,30 R/trade) ; Judas Swing à zéro (-0,055 à +0,004) ; Breaker Block négatif partout (-0,10 à -0,18). Test de la retenue : Silver Bullet XTIUSD +0,082 R/trade sur 148 trades, t = 0,55, corrélation -0,28 : ÉCHEC. Bilan des lots 1 et 2 (23 hypothèses) : aucune candidate solide ; la seule candidate restante est FVG XAGUSD (lot 1, test +0,209 R/trade, t = 0,81, candidate faible). Enseignement : les mécanismes conçus pour d'autres instruments ne se transposent pas à l'argent, au Dow ou au pétrole sans réglage, comme attendu.",
+    "markets": [
+      "XAGUSD",
+      "US30",
+      "XTIUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Historique court ; spreads supposés non mesurés ; corrélation sur ~21 mois.",
+    "files": [
+      "scripts/runPreregBatch2.js",
+      "data/backtest-input/prereg-batch2-train.md",
+      "data/backtest-input/prereg-batch2-test.md",
+      "data/backtest-input/preregistration-batch2-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Résultats du lot 2"
+  },
+  {
+    "id": "prereg-batch3-2026-09-21",
+    "title": "PRÉ-ENREGISTREMENT LOT 3 (avant tout calcul) : suivi de tendance Donchian et retour à la moyenne RSI(2) sur bougies journalières",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "8 hypothèses : T1-T4 Donchian 55/20, stop 2 ATR(20), long/short, sur US100/US500/XAUUSD/EURUSD ; M1-M4 RSI(2) < 10 au-dessus de la moyenne 200 j, sortie clôture > moyenne 5 j ou 10 jours, stop 3 ATR(14), achat seul, mêmes 4 instruments. Journée 17:00-17:00 temps moteur. Données 2010-2025 (M15 reconstruits en journalier) : entraînement 2011-2019, test 2020-2025 lu UNE fois. Coûts : 2 x le spread par défaut + swap 0,01 %/jour supposé. Retenue si >= 30 trades (T) / 60 (M), >= +0,10 R/trade, facteur de profit >= 1,15, deux moitiés positives ; réussie au test si >= 25 (T) / 40 (M) trades, >= +0,10 R/trade, R total positif, t >= 2,0, corrélation mensuelle < 0,3 avec le combo (2023-2025) et pire baisse < 6 % à 0,3 % de risque. Lots 1+2+3 = 31 hypothèses (~0,7 faux positif attendu à t >= 2). Aucune adoption directe. Texte complet : data/backtest-input/preregistration-batch3-2026-09-21.md.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "D1",
+    "knownWeaknesses": "Swap supposé non mesuré ; spreads historiques 2011-2019 approximés par un facteur 2 ; longues baisses du suivi de tendance ; instruments corrélés.",
+    "files": [
+      "data/backtest-input/preregistration-batch3-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Pré-enregistrement lot 3"
+  },
+  {
+    "id": "prereg-batch3-results-2026-09-21",
+    "title": "Résultats du LOT 3 : RSI(2) journalier sur US500 est CANDIDATE (1 sur 8), t=2,23, faible corrélation avec le combo",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Procédure respectée (entraînement commité avant la lecture unique du test). Entraînement (2011-2019) : 1 retenue sur 8 : RSI(2) retour à la moyenne sur US500, +0,121 R/trade (73 trades, PF 2,02, deux moitiés positives). Rejetées : Donchian sur les 4 paires (toutes négatives ou nulles, PF 0,53 à 1,03) ; RSI(2) sur US100 (+0,119 mais PF 1,87 avec facteur limite, 2e moitié à -0,1 R), XAUUSD (0,000), EURUSD (-0,053). Test (2020-2025, lu une fois) de RSI(2) US500 : +0,135 R/trade sur 58 trades (+7,8 R), t = 2,23 (>= seuil), corrélation mensuelle -0,12 avec le combo intraday actuel (2023-2025), pire baisse 0,8 % à 0,3 % de risque -> RÉUSSIE, CANDIDATE (sensibilité swap doublé : t = 2,02, toujours au-dessus du seuil). Bilan des 3 lots (31 hypothèses) : 2 candidates au total, aucune adoptée : FVG XAGUSD (lot 1, t=0,81, FAIBLE) et RSI(2) US500 journalier (lot 3, t=2,23, la plus solide des deux). Prochaine étape (décision d'Esdras) : suivi en mode alerte de RSI(2) US500 jusqu'à un nombre suffisant de signaux hors échantillon ; mesurer le vrai swap US500 (supposé 0,01 %/jour) avant toute exécution réelle ; le complément forward 2026 (données M1 réelles) n'a pas encore été calculé pour cette candidate.",
+    "markets": [
+      "US500"
+    ],
+    "timeframe": "D1",
+    "knownWeaknesses": "Swap supposé, non mesuré ; seulement 58 trades au test (peu) ; entrée/sortie à l'ouverture du jour suivant, pas testée à la minute ; corrélation calculée sur 36 mois seulement ; stop réglé au M15 « stop d'abord », pénalité probablement faible vu la largeur du stop (3 ATR) mais non quantifiée séparément.",
+    "files": [
+      "scripts/runPreregBatch3.js",
+      "data/backtest-input/prereg-batch3-train.md",
+      "data/backtest-input/prereg-batch3-test.md",
+      "data/backtest-input/preregistration-batch3-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Résultats du lot 3"
+  },
+  {
+    "id": "swap-check-and-alert-mode-2026-09-22",
+    "title": "Route de mesure du swap réel + suivi en mode alerte de RSI(2)/US500 (déployés)",
+    "date": "2026-09-22",
+    "status": "live",
+    "summary": "(1) buildSpecFromBrokerSymbol() capture maintenant swapLong/swapShort/swapCalculationType/swapPeriodHours/swapRollover3Days depuis ProtoOASymbol (déjà reçu au démarrage pour les 4 symboles live, jamais gardé avant) ; nouvelle fonction swapFractionPerDay(spec, side, price) convertit en fraction de notionnel par jour (PIPS ou PERCENTAGE) ; nouvelle route /admin/swap-check (même garde ADMIN_EXPORT_TOKEN) qui affiche le swap réel par symbole, sans attendre qu'une position reste ouverte une nuit. (2) src/dailyAlertEngine.js : moteur d'alerte journalier RSI(2) (règles du pré-enregistrement lot 3, achat seul, RSI(2)<10 + clôture > SMA200, sortie SMA5 ou 10 jours, stop 3xATR14), entièrement découplé de LiveStrategyEngine (aucun ordre, aucune position réelle). Câblé pour US500 uniquement (la seule candidate qui a passé t>=2) : warm-up au démarrage depuis data/real-m1-full/US500.csv.gz (M1 réel, décalé -5h), puis alimenté à chaque nouvelle bougie M15 live, événements loggés dans la nouvelle table bot_alert_signals (créée). Best-effort partout (une erreur ne bloque jamais le vrai trading). Prochaine étape : mesurer le swap réel via /admin/swap-check dès le prochain déploiement et comparer à l'hypothèse de 0,01 %/jour du lot 3 ; laisser le mode alerte accumuler des signaux (aucune adoption avant un nombre suffisant hors échantillon).",
+    "markets": [
+      "US500"
+    ],
+    "timeframe": "D1",
+    "knownWeaknesses": "Le warm-up utilise un fichier local (jusqu'au 2026-09-21) : un petit écart avec le tout premier live bar est possible mais sans conséquence (mode alerte seulement) ; swap-check n'a pas encore été appelé en production.",
+    "files": [
+      "src/dailyAlertEngine.js",
+      "src/dataSources/cTraderDataSource.js",
+      "src/dataSources/demoTrackingLog.js",
+      "src/engines/lotCalculator.js",
+      "src/server.js",
+      "test/dailyAlertEngine.test.js",
+      "test/cTraderDataSourceDailyAlert.test.js",
+      "test/lotCalculator.test.js"
+    ],
+    "handoffSection": "2026-09-22 — Swap mesuré + mode alerte RSI(2)/US500"
+  },
+  {
+    "id": "rsi2-us500-real-execution-2026-09-22",
+    "title": "RSI(2)/US500 câblé en EXÉCUTION RÉELLE (décision explicite d'Esdras, risque accepté)",
+    "date": "2026-09-22",
+    "status": "live",
+    "summary": "Esdras a explicitement choisi de coder l'exécution réelle de RSI(2)/US500 MAINTENANT, en acceptant le risque de ne pas attendre la confirmation en mode alerte (~8-10 trades/an, des années pour accumuler assez de signaux hors échantillon). La candidate reste ce qu'elle était : t=2,23 sur le test, mais 58 trades probablement non indépendants, US100 a presque réussi le même test, testée presque uniquement dans un marché haussier, swap supposé non mesuré. Un test de généralisation (même règle, sans réglage) sur GER40/UKX/AUX a été fait le même jour : GER40 passe aussi le seuil t>=2 (2,18) et confirme dans les deux moitiés, AUX va dans le même sens sans l'atteindre, UKX échoue clairement (négatif dans les deux moitiés) - résultat mitigé qui renforce sans prouver. Implémentation : entrée réelle réutilise _handleAutoExecuteEntry (même sizing, même compensation de spread pour le stop, targetPrice=null car sortie sur signal et non sur objectif de prix) ; sortie réelle sur signal (SMA5/10 jours) envoie un VRAI ProtoOAClosePositionReq (jamais utilisé dans ce projet avant aujourd'hui) ; sortie sur stop laissée au stop du broker (jamais de course avec lui) ; MÊME GuardrailEngine partagé que le combo intraday (budget de risque FTMO unique) ; exclusion mutuelle stricte avec le combo intraday sur US500 (jamais deux positions réelles sur le même instrument). Bug trouvé et corrigé avant déploiement : incohérence 'rsi2daily' vs 'rsi2-daily' entre deux vérifications, qui aurait cassé silencieusement l'auto-exemption et le suivi de position - capturé par les tests avant tout déploiement.",
+    "markets": [
+      "US500"
+    ],
+    "timeframe": "D1",
+    "knownWeaknesses": "ProtoOAClosePositionReq jamais testé contre le vrai broker (implémentation neuve) ; la décision de sortie repose sur NOTRE reconstruction de bougie journalière depuis le M15 réel, qui peut légèrement différer du vrai fil de prix du broker ; commission/swap réels toujours non mesurés pour cette position ; pas de dry-run avant le premier vrai signal.",
+    "files": [
+      "src/dataSources/cTraderDataSource.js",
+      "test/dailyStrategyRealExecution.test.js",
+      "test/marketProtectionSpread.test.js",
+      "scripts/runRsi2Generalization.js",
+      "data/backtest-input/rsi2-generalization-check-2026-09-22.md",
+      "data/backtest-input/rsi2-generalization-results-2026-09-22.md"
+    ],
+    "handoffSection": "2026-09-22 — RSI(2)/US500 en exécution réelle"
   }
 ]

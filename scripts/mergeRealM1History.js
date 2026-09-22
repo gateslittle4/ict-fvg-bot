@@ -9,9 +9,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 
-const SYMBOLS = ['EURUSD', 'XAUUSD', 'US100', 'US500', 'GER40'];
-const SRC = fs.readdirSync('data/real-m1-history-v2').filter((d) => d.startsWith('skip-')).map((d) => path.join('data/real-m1-history-v2', d));
-fs.mkdirSync('data/real-m1-full', { recursive: true });
+const SYMBOLS = (process.env.SYMBOLS || 'EURUSD,XAUUSD,US100,US500,GER40').split(',');
+const SRC_ROOT = process.env.SRC_ROOT || 'data/real-m1-history-v2';
+const OUT_DIR = process.env.OUT_DIR || 'data/real-m1-full';
+const SRC = fs.readdirSync(SRC_ROOT).filter((d) => d.startsWith('skip-')).map((d) => path.join(SRC_ROOT, d));
+fs.mkdirSync(OUT_DIR, { recursive: true });
 const day = (t) => new Date(t).toISOString().slice(0, 16).replace('T', ' ');
 const report = ['| Paire | Bougies | Début (UTC) | Fin (UTC) | Doublons retirés | Lignes invalides | Trous > 4 h hors week-end (fériés compris) |', '|---|---|---|---|---|---|---|'];
 const gapsDetail = [];
@@ -40,9 +42,9 @@ for (const sym of SYMBOLS) {
     if (g >= 30 * 3600000) suspect++; gaps++; gapsDetail.push(`${sym} ${day(times[i - 1])} -> ${day(times[i])} (${(g / 3600000).toFixed(1)} h)`);
   }
   const csv = ['time,open,high,low,close', ...times.map((t) => `${t},${m.get(t).join(',')}`)].join('\n');
-  fs.writeFileSync(path.join('data/real-m1-full', `${sym}.csv.gz`), zlib.gzipSync(csv, { level: 6 }));
+  fs.writeFileSync(path.join(OUT_DIR, `${sym}.csv.gz`), zlib.gzipSync(csv, { level: 6 }));
   report.push(`| ${sym} | ${times.length} | ${day(times[0])} | ${day(times[times.length - 1])} | ${raw - m.size - bad} | ${bad} | ${gaps} (dont ${suspect} de 30 h ou plus) |`);
 }
 const md = ['# Historique M1 du broker, fusionné', '', ...report, '', '## Trous', '', gapsDetail.length ? gapsDetail.map((g) => `- ${g}`).join('\n') : 'Aucun trou > 4 h hors week-end.', ''].join('\n');
-fs.writeFileSync('data/real-m1-full/README.md', md);
+fs.writeFileSync(path.join(OUT_DIR, 'README.md'), md);
 console.log(md);

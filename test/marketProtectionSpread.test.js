@@ -38,3 +38,15 @@ test('the relative distances the broker receives are stop = d + s and target = T
   assert.equal(toRelativeProtectionDistance(29000, r.stopPrice, 2), 1060000); // 10.6 points in 1/100000 units
   assert.equal(toRelativeProtectionDistance(29000, r.targetPrice, 2), 2940000); // 29.4 points
 });
+
+test('no target (signal-based exit, e.g. RSI(2)/US500 daily): only the stop is widened, target stays null', () => {
+  const r = adjustMarketProtectionForSpread({ side: 'buy', entryPrice: 100, stopPrice: 97, targetPrice: null, spread: 0.5 });
+  near(r.stopPrice, 96.5); assert.equal(r.targetPrice, null); assert.equal(r.spreadApplied, 0.5);
+  const s = adjustMarketProtectionForSpread({ side: 'sell', entryPrice: 100, stopPrice: 103, targetPrice: null, spread: 0.5 });
+  near(s.stopPrice, 103.5); assert.equal(s.targetPrice, null);
+});
+
+test('no target: still untouched when the spread is absurd relative to the stop distance', () => {
+  const r = adjustMarketProtectionForSpread({ side: 'buy', entryPrice: 100, stopPrice: 99, targetPrice: null, spread: 5 });
+  assert.equal(r.stopPrice, 99); assert.equal(r.spreadApplied, 0);
+});

@@ -48,9 +48,13 @@ import { DEFAULT_SPREADS } from './transactionCosts.js';
  * @param {number} [opts.days=90]
  * @returns {Promise<{trades: object[], summary: object}>}
  */
-export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 } = {}) {
+export async function buildRecentPerformanceReport(historyBySymbol, { days = 90, completeDivergencePair = true } = {}) {
   const windowMs = days * 24 * 60 * 60 * 1000;
-  const guardrail = new GuardrailEngine({});
+  // 2026-09-21: this replay used to run ONLY FVG + Divergence with default guardrails - the two mechanisms that existed when it was written - while the
+  // live bot has since gained six more (NWOG, Judas Swing, Weekly Sweep, Breaker Block, Silver Bullet, CBDR) and real guardrails. On the last 90 days it
+  // showed -17.7 R (7 wins of 50, US100/US500 only) while the full live combo replayed at M1 precision made +33.5 R over the same window. It now mirrors
+  // the live engine's mechanisms and guardrails, so the page answers "what would the bot have done", not "what would two of its eight mechanisms have done".
+  const guardrail = new GuardrailEngine(CONFIG.guardrails);
   // spreads (2026-09-14, Esdras: "on fait tout de facon honnete" - this
   // report used to run with NO spread at all, unlike the real live engine
   // (accountRegistry.js wires DEFAULT_SPREADS into every real account) -
@@ -62,6 +66,12 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
     symbols: CONFIG.symbols,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
+    nwogConfig: CONFIG.nwog,
+    judasSwingConfig: CONFIG.judasSwing,
+    weeklySweepConfig: CONFIG.weeklySweep,
+    breakerBlockConfig: CONFIG.breakerBlock,
+    silverBulletConfig: CONFIG.silverBullet,
+    cbdrConfig: CONFIG.cbdr,
     guardrail,
     spreads: DEFAULT_SPREADS,
   });
@@ -80,6 +90,7 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
   const trades = [];
 
   engine.warmUp(windowed, {
+    completeDivergencePair, // 2026-09-21: keep BOTH legs of the divergence pair (the default warm-up loses one, see liveStrategyEngine.warmUp)
     onEvent: (e) => {
       if (!e) return;
       if (e.type === 'validated' && !e.blockedReason) {
@@ -128,6 +139,8 @@ export async function buildRecentPerformanceReport(historyBySymbol, { days = 90 
     trades,
     summary: {
       windowDays: days,
+      // Settlement is on M15 candles with the project's "stop wins ties" rule: pessimistic for tight stops (measured ~12 R lower than minute-exact on US100 FVG over 90 days).
+      settlement: 'M15, stop d\'abord (pessimiste)',
       count: trades.length,
       wins,
       losses,

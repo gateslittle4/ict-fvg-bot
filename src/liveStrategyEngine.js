@@ -1574,15 +1574,19 @@ export class LiveStrategyEngine {
    * @param {object} [opts]
    * @param {(event: object, candle: object) => void} [opts.onEvent] - called with every event the replay produces, in order, plus the candle that produced it. Omitted by default, which keeps warm-up exactly as silent as before (the production boot path passes nothing). Used by the chart-overlay builder to recover the FVG zones and signals this replay would otherwise compute and throw away - the candle is passed alongside because some engine events ('expired') carry no timestamp of their own.
    */
-  warmUp(candlesBySymbol, { onEvent = null } = {}) {
+  warmUp(candlesBySymbol, { onEvent = null, completeDivergencePair = false } = {}) {
     for (const symbol of this.symbols) {
       const candles = candlesBySymbol[symbol];
       if (!candles || candles.length === 0) continue;
-      this._warmUpOneSymbol(symbol, candles, onEvent);
+      this._warmUpOneSymbol(symbol, candles, onEvent, completeDivergencePair ? candlesBySymbol : null);
     }
   }
 
-  _warmUpOneSymbol(symbol, candles, onEvent = null) {
+  // completeDivergencePair (2026-09-21, REPLAYS/REPORTS ONLY - the production boot never passes it): the sequential-equivalence quirk described above
+  // means the FIRST symbol of the divergence pair never discovers its own divergence candidates (its partner has no history yet), so every warmUp()
+  // replay silently loses half of the Divergence signals (one leg; which one depends on key order). With this flag both legs are computed from the
+  // COMPLETE candle arrays of the pair, which is what the live per-tick path (_detectDivergenceSignal, both histories present) sees.
+  _warmUpOneSymbol(symbol, candles, onEvent = null, fullCandlesBySymbol = null) {
     const hist = this.history.get(symbol);
     const cfg = this.fvgConfig[symbol];
     const formationIndex = this.formationIndexBySymbol.get(symbol);
@@ -1599,7 +1603,7 @@ export class LiveStrategyEngine {
     if (this.divergenceConfig && this.divergenceConfig.pair.includes(symbol)) {
       const [symA, symB] = this.divergenceConfig.pair;
       const otherSymbol = symA === symbol ? symB : symA;
-      const otherHist = this.history.get(otherSymbol);
+      const otherHist = fullCandlesBySymbol && fullCandlesBySymbol[otherSymbol]?.length > 0 ? fullCandlesBySymbol[otherSymbol] : this.history.get(otherSymbol);
       if (otherHist && otherHist.length > 0) {
         const histA = symA === symbol ? candles : otherHist;
         const histB = symA === symbol ? otherHist : candles;

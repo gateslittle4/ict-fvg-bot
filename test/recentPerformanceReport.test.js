@@ -20,6 +20,7 @@ test('empty history for every symbol produces an empty, well-shaped report', asy
   assert.deepEqual(report.trades, []);
   assert.deepEqual(report.summary, {
     windowDays: 90,
+    settlement: 'M15, stop d\'abord (pessimiste)',
     count: 0,
     wins: 0,
     losses: 0,
@@ -47,7 +48,8 @@ test('against real historical data: every trade resolves to a valid outcome and 
 
   for (const t of report.trades) {
     assert.ok(['win', 'loss', 'timeout'].includes(t.outcome));
-    assert.ok(['fvg', 'divergence'].includes(t.source));
+    // 2026-09-21: the report mirrors ALL live mechanisms now (it used to run only FVG + Divergence).
+    assert.ok(['fvg', 'divergence', 'nwog', 'judaswing', 'weeklysweep', 'breakerblock', 'silverbullet', 'cbdr'].includes(t.source), t.source);
     // 2026-09-19: exit can now legitimately equal entry - a stop/target hit
     // within the entry candle's OWN range is caught immediately instead of
     // waiting for a later candle (see LiveStrategyEngine._resolveOpenPosition's
@@ -96,11 +98,7 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
     US100: loadCsv('data/backtest-input/US100.csv').slice(0, N),
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, N),
     XAUUSD: loadCsv('data/backtest-input/XAUUSD.csv').slice(0, N),
-    // EURUSD included even though buildRecentPerformanceReport() deliberately
-    // doesn't pass judasSwingConfig (matching production - see this file's own
-    // header on NWOG's same exclusion) - exercises that a symbol with NO
-    // matching strategy config on this report just contributes history, no
-    // signals, same as the real code path.
+    // EURUSD included: it only has Judas Swing among the live mechanisms, which the report now mirrors (2026-09-21).
     EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, N),
   };
 
@@ -114,7 +112,13 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
     symbols: CONFIG.symbols,
     fvgConfig: CONFIG.fvg.perSymbol,
     divergenceConfig: CONFIG.divergence,
-    guardrail: new GuardrailEngine({}),
+    nwogConfig: CONFIG.nwog,
+    judasSwingConfig: CONFIG.judasSwing,
+    weeklySweepConfig: CONFIG.weeklySweep,
+    breakerBlockConfig: CONFIG.breakerBlock,
+    silverBulletConfig: CONFIG.silverBullet,
+    cbdrConfig: CONFIG.cbdr,
+    guardrail: new GuardrailEngine(CONFIG.guardrails),
     spreads: DEFAULT_SPREADS,
   });
   const windowMs = 90 * 24 * 60 * 60 * 1000;
@@ -151,7 +155,8 @@ test('warmUp-based report is byte-identical to the old per-candle ingestCandle()
   }
   referenceTrades.sort((a, b) => b.exitTime - a.exitTime);
 
-  const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90 });
+  // completeDivergencePair: false = the sequential-replay quirk (first pair symbol loses its divergence legs) this reference loop shares
+  const report = await buildRecentPerformanceReport(historyBySymbol, { days: 90, completeDivergencePair: false });
   assert.ok(referenceTrades.length > 0, 'fixture must produce at least one trade, or this comparison is vacuous');
   assert.deepEqual(report.trades, referenceTrades);
 });
@@ -165,4 +170,16 @@ test('a position already open before the report window started is excluded rathe
   const US100 = loadCsv('data/backtest-input/US100.csv').slice(0, 2000);
   const report = await buildRecentPerformanceReport({ US100, US500: [], XAUUSD: [] }, { days: 0.001 });
   assert.equal(report.trades.length, 0);
+});
+
+// 2026-09-21: the site's "performance récente" used to replay only FVG + Divergence (-17.7 R over 90 days) while the live combo has eight mechanisms.
+test('the report includes mechanisms other than FVG and Divergence (it mirrors the live engine)', async () => {
+  const historyBySymbol = {
+    US100: loadCsv('data/backtest-input/US100.csv').slice(0, 6000),
+    US500: loadCsv('data/backtest-input/US500.csv').slice(0, 6000),
+    EURUSD: loadCsv('data/backtest-input/EURUSD.csv').slice(0, 6000),
+  };
+  const report = await buildRecentPerformanceReport(historyBySymbol, { days: 365 });
+  const sources = new Set(report.trades.map((t) => t.source));
+  assert.ok([...sources].some((x) => !['fvg', 'divergence'].includes(x)), `only ${[...sources].join(',')}`);
 });

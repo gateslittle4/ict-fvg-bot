@@ -1738,3 +1738,24 @@ test('LiveStrategyEngine.adoptExternalPosition: once adopted, netting blocks a n
   assert.equal(validated.blockedReason, 'netting');
   assert.equal(engine.getOpenPosition('TEST1').source, 'adopted', 'the adopted position must remain the one tracked');
 });
+
+// 2026-09-21: warmUp() replays lose one leg of the Divergence pair (the first symbol processed never sees its partner's history), unless the
+// replay-only option completeDivergencePair is passed. The production boot never passes it, so its behaviour is unchanged.
+test('warmUp completeDivergencePair: both legs of the divergence pair find their candidates, whatever the key order; default behaviour unchanged', async () => {
+  const fs = await import('node:fs');
+  const load = (f, n) => fs.readFileSync(f, 'utf8').trim().split('\n').slice(1, n + 1).map((l) => { const [t, o, h, lo, c] = l.split(','); return { time: +t, open: +o, high: +h, low: +lo, close: +c }; });
+  const N = 30000;
+  const data = { US100: load('data/backtest-input/US100.csv', N), US500: load('data/backtest-input/US500.csv', N) };
+  const run = (order, opts) => {
+    const eng = new LiveStrategyEngine({ symbols: order, fvgConfig: {}, divergenceConfig: CONFIG.divergence, guardrail: new GuardrailEngine({ maxTradesPerDay: 1000, cooldownMinutesAfterLoss: 0, dailyLossLimitPct: 100 }) });
+    const seen = new Set();
+    eng.warmUp(Object.fromEntries(order.map((s) => [s, data[s]])), { ...opts, onEvent: (e) => { if (e.type === 'validated' && e.source === 'divergence') seen.add(e.symbol); } });
+    return seen;
+  };
+  const plain = run(['US100', 'US500'], {});
+  assert.equal(plain.size, 1, 'default warm-up finds only the second leg (documented quirk)');
+  for (const order of [['US100', 'US500'], ['US500', 'US100']]) {
+    const full = run(order, { completeDivergencePair: true });
+    assert.deepEqual([...full].sort(), ['US100', 'US500'], `both legs, order ${order.join(',')}`);
+  }
+});

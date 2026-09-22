@@ -38,7 +38,15 @@ import { describeBrokerPayload, extractBrokerError } from './brokerPayload.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes } from './accountReconciliation.js';
-import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields } from './demoTrackingLog.js';
+import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields, logAlertSignal } from './demoTrackingLog.js';
+import { DailyAlertEngine } from '../dailyAlertEngine.js';
+
+// 2026-09-22: single source of truth for the daily strategy's identifier, used by _loadDailyAlertEngines (registers the engine), the mutual-
+// exclusion check and the fill/close handlers below - was two inconsistent literals ('rsi2-daily' vs 'rsi2daily') before this constant, which
+// would have silently broken both the self-exemption and the fill tracking (caught by test/dailyStrategyRealExecution.test.js before deploy).
+const DAILY_RSI2_STRATEGY = 'rsi2-daily';
+import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
 import { buildComplianceChecklist, requiredH1LookbackCandles, requiredPreEntryContextCandles } from './tradeCompliance.js';
 import { buildChartOverlays } from '../backtest/chartOverlays.js';
@@ -170,8 +178,12 @@ export function adjustMarketProtectionForSpread({ side, entryPrice, stopPrice, t
   if (!Number.isFinite(s) || s <= 0) return untouched;
   const isBuy = String(side).toLowerCase() === 'buy';
   const stopDist = Math.abs(entryPrice - stopPrice);
+  if (!(stopDist > 0) || s > stopDist / 2) return untouched;
+  // 2026-09-22 (RSI(2)/US500 daily, Esdras: "on le code" - see dailyAlertEngine.js): this strategy has NO fixed target - it exits on its own
+  // signal (SMA5 recovery / time-out), not on a price level. Widen the stop only in that case; a real target still gets pulled in as before.
+  if (targetPrice == null) return { stopPrice: isBuy ? stopPrice - s : stopPrice + s, targetPrice: null, spreadApplied: s };
   const targetDist = Math.abs(targetPrice - entryPrice);
-  if (!(stopDist > 0) || targetDist - s <= 0 || s > stopDist / 2) return untouched;
+  if (targetDist - s <= 0) return untouched;
   return {
     stopPrice: isBuy ? stopPrice - s : stopPrice + s,
     targetPrice: isBuy ? targetPrice - s : targetPrice + s,
@@ -412,6 +424,9 @@ export class CTraderDataSource {
     // trade-history view already uses, not a second, independently-guessed
     // outcome.
     this.openPositionInfoByPositionId = new Map();
+    // 2026-09-22 (RSI(2)/US500 daily, real execution): symbol -> {positionId, volumeCents} for the ONE real position this process's daily
+    // strategy currently holds, if any - see _handleAutoExecuteEntry's mutual-exclusion check and _feedDailyAlertEngines' exit handling.
+    this.dailyPositionBySymbol = new Map();
     // 2026-09-17, real incident: a connection can silently degrade into
     // still receiving spot/candle ticks (so the dashboard looks fine) while
     // no longer delivering ProtoOAExecutionEvent pushes at all - two real
@@ -568,6 +583,13 @@ export class CTraderDataSource {
     );
     console.log('[cTrader] loading balance...');
     await this._loadBalance(accountId);
+    // Mode alerte (2026-09-22, Esdras: "suis le en mode alerte" - la candidate RSI(2)/US500, data/research-memory.json
+    // `prereg-batch3-results-2026-09-21`, t=2.23, JAMAIS adoptee en execution reelle). Entierement decouple de strategyEngine/openPositions/
+    // guardrail/ordres : voir dailyAlertEngine.js. Best-effort comme les autres lectures de demarrage - une erreur ici ne doit jamais bloquer
+    // le vrai trading.
+    this._loadDailyAlertEngines().catch((err) =>
+      console.warn('[cTrader] could not warm up daily alert engines (non-fatal, mode-alerte only):', err.message)
+    );
     console.log('[cTrader] subscribing to live candles for', this.symbols.join(', '));
     await this._subscribeLiveCandles(accountId);
 
@@ -1711,6 +1733,138 @@ export class CTraderDataSource {
    * ticks with their final values (the feed can miss a bar's last ticks); 2) only then evaluate the new bar. If the broker
    * request fails or times out (4 s), the tick-tracked values are used - never a reason to miss the entry.
    */
+
+  /**
+   * Boot-time warm-up of the "mode alerte" daily engines (2026-09-22) - see this method's own caller comment and dailyAlertEngine.js's header.
+   * Only US500/RSI(2) exists today (the sole candidate that cleared the pre-registered t>=2 bar - FVG/XAGUSD is a WEAKER candidate, t=0.81,
+   * deliberately NOT tracked live yet). Warms up from the bundled real M1 history (data/real-m1-full/US500.csv.gz, real UTC, shifted -5h to
+   * engine time like every other real-data script in this project) rather than the live feed's own 90-day window, because the daily engine
+   * needs ~200 daily bars (SMA200) - far more history than 90 days of M15 warm-up gives it. Silent (warmUp()), so this never logs a flood of
+   * historical alerts - only NEW live bars produce events from here on.
+   */
+  async _loadDailyAlertEngines() {
+    this.dailyAlertEngines = new Map();
+    // 2026-09-22, Esdras's EXPLICIT, eyes-open decision ("on le code" - real execution now, not waiting for more mode-alerte confirmation):
+    // RSI(2)/US500 (research-memory `prereg-batch3-results-2026-09-21`, t=2.23 - the pre-registered bar was cleared, but this is still a candidate
+    // with real caveats: ~58 test trades likely not independent, US100 nearly passed the same test, tested almost entirely inside one long bull
+    // market, swap assumed not measured). To revert to observation-only, empty this Set - dailyAlertEngines above keeps logging to
+    // bot_alert_signals either way, real orders only fire for a symbol listed here.
+    this.dailyLiveExecutionSymbols = new Set(['US500']);
+    if (!this.symbols.includes('US500')) return; // nothing to track if this account doesn't even trade US500
+    const file = 'data/real-m1-full/US500.csv.gz';
+    if (!fs.existsSync(file)) {
+      console.warn('[cTrader] mode-alerte: no local M1 history for US500 (data/real-m1-full/US500.csv.gz missing) - skipping');
+      return;
+    }
+    const engine = new DailyAlertEngine({ strategy: DAILY_RSI2_STRATEGY, symbol: 'US500' });
+    // 2026-09-22 FIX (production incident: OOM crash loop within ~35s of every boot, heap saturated at 256 MB - see HANDOFF.md): this used to
+    // .split('\n') the whole decompressed text (~1.5M lines) into an array, then map it into a SECOND array of ~1.5M candle objects, both held
+    // in memory at once on top of the live bot's own state - on Render's 512 MB instance that alone was enough to crash it. Now scans the
+    // decompressed string in place (no line array) and feeds each candle to warmUp() one at a time (no candle array) - peak extra memory is
+    // just the decompressed text itself (a few tens of MB), not two ~1.5M-element arrays.
+    const text = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8');
+    let pos = text.indexOf('\n') + 1; // skip the header line
+    let count = 0;
+    while (pos > 0 && pos < text.length) {
+      let end = text.indexOf('\n', pos);
+      if (end === -1) end = text.length;
+      if (end > pos) {
+        const line = text.slice(pos, end);
+        const c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1), c3 = line.indexOf(',', c2 + 1), c4 = line.indexOf(',', c3 + 1);
+        if (c1 > 0 && c2 > c1 && c3 > c2 && c4 > c3) {
+          engine.ingest(
+            { time: Number(line.slice(0, c1)) - FIXED_EST_TO_UTC_OFFSET_MS, open: Number(line.slice(c1 + 1, c2)), high: Number(line.slice(c2 + 1, c3)), low: Number(line.slice(c3 + 1, c4)), close: Number(line.slice(c4 + 1)) },
+            { silent: true }
+          );
+          count++;
+        }
+      }
+      pos = end + 1;
+    }
+    this.dailyAlertEngines.set('US500', engine);
+    console.log(`[cTrader] mode-alerte: RSI(2)/US500 warmed up on ${count} bars (${engine.bars.length} jours), position=${engine.position ? 'ouverte' : 'plate'}`);
+  }
+
+  /**
+   * Feeds one new live M15 candle to any daily engine tracking this symbol and logs whatever it fires (always, for the durable record -
+   * bot_alert_signals). For a symbol in `dailyLiveExecutionSymbols` (2026-09-22, Esdras: "on le code", explicit eyes-open acceptance of an
+   * unvalidated candidate - see HANDOFF.md and research-memory `prereg-batch3-results-2026-09-21`, t=2.23, NOT a strong result), an 'entry'/'exit'
+   * event ALSO drives a real order, through the SAME guardrail and the SAME _handleAutoExecuteEntry() every other mechanism uses - see that
+   * method's own mutual-exclusion check and this method's guardrail check below for why a second, uncoordinated real position on the same
+   * symbol can never happen. A failure anywhere in this path is caught and logged, never thrown - the live intraday combo must never be affected
+   * by this strategy's own trouble.
+   */
+  _feedDailyAlertEngines(symbolName, engineCandle) {
+    const engine = this.dailyAlertEngines?.get(symbolName);
+    if (!engine) return;
+    let events;
+    try {
+      events = engine.ingest(engineCandle);
+    } catch (err) {
+      console.warn(`[cTrader] mode-alerte (${symbolName}) ingest failed (non-fatal): ${err.message}`);
+      return;
+    }
+    for (const ev of events) {
+      console.log(`[mode-alerte] ${ev.strategy} ${ev.symbol} ${ev.event} ${ev.direction ?? ''} @ ${ev.price} (${ev.detail})`);
+      logAlertSignal(this.tradeLogClient, ev);
+      if (this.dailyLiveExecutionSymbols?.has(symbolName)) {
+        this._executeDailyStrategySignal(symbolName, ev).catch((err) =>
+          console.error(`[mode-alerte->reel] ${ev.strategy} ${symbolName} ${ev.event}: échec (non-fatal pour le reste du bot): ${err.message}`)
+        );
+      }
+    }
+  }
+
+  /** Turns one DailyAlertEngine event into a real order, reusing the existing auto-execute/close machinery. Never throws (caller wraps it). */
+  async _executeDailyStrategySignal(symbolName, ev) {
+    const store = this.account;
+    const symbolId = this.symbolIdByName.get(symbolName);
+    if (symbolId == null) { console.warn(`[mode-alerte->reel] ${symbolName}: pas de symbolId - abandon`); return; }
+    if (ev.event === 'entry') {
+      // Same guardrail every intraday mechanism is subject to (3 trades clôturés/jour, pause 30 min après perte, arrêt du jour) - a real RSI(2)
+      // trade/loss counts against the SAME shared FTMO-facing budget as the rest of the combo, and vice versa, by design (one account, one risk).
+      if (!store.guardrail.canTakeNewTrade(Date.now(), symbolName)) {
+        console.log(`[mode-alerte->reel] ${ev.strategy} ${symbolName}: entrée bloquée par le garde-fou partagé (voir GuardrailEngine).`);
+        logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: ev.strategy, event: 'skipped', side: 'buy', price: ev.price, detail: 'blocked by shared guardrail' });
+        return;
+      }
+      await this._handleAutoExecuteEntry(symbolName, symbolId, {
+        id: `${ev.strategy}-${symbolName}-${ev.barTime}`,
+        source: ev.strategy,
+        suggestedSide: ev.direction === 'bullish' ? 'buy' : 'sell',
+        entryPrice: ev.price,
+        stopPrice: ev.stopPrice,
+        targetPrice: null, // signal-based exit (SMA5/time-out), not a price target - see adjustMarketProtectionForSpread's null-target branch
+        distance: Math.abs(ev.price - ev.stopPrice),
+      });
+      return;
+    }
+    if (ev.event === 'exit') {
+      const held = this.dailyPositionBySymbol.get(symbolName);
+      if (!held) {
+        // Nothing real to close: either the entry order never actually filled at the broker (rejected/expired), or the broker's own stop
+        // already closed it and _handleExecutionEvent's generic close branch already cleared dailyPositionBySymbol - either way, correct to do
+        // nothing here, not an error worth escalating (ev.detail === 'stop' from OUR simulation is the expected, harmless case for the latter).
+        if (ev.detail !== 'stop') console.log(`[mode-alerte->reel] ${ev.strategy} ${symbolName}: signal de sortie (${ev.detail}) mais aucune position réelle suivie - rien à faire.`);
+        return;
+      }
+      if (ev.detail === 'stop') return; // our own simulated stop-touch: the broker's real stop order resolves this on its own, never race it with a close
+      try {
+        await sendCommandWithTimeout(this.connection, 'ProtoOAClosePositionReq', {
+          ctidTraderAccountId: Number(this.accountId),
+          positionId: held.positionId,
+          volume: held.volumeCents,
+        });
+        console.log(`[mode-alerte->reel] ${ev.strategy} ${symbolName}: clôture envoyée (positionId=${held.positionId}, raison=${ev.detail}).`);
+        logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: ev.strategy, event: 'close_sent', side: 'sell', price: ev.price, detail: `positionId=${held.positionId} reason=${ev.detail}` });
+        // dailyPositionBySymbol is cleared by _handleExecutionEvent's generic close branch once the broker confirms the close, not here - this
+        // request can still be rejected, and a rejection must leave the position tracked as open (it still is).
+      } catch (err) {
+        console.error(`[mode-alerte->reel] ${ev.strategy} ${symbolName}: échec de l'envoi de la clôture (positionId=${held.positionId}): ${err.message}`);
+      }
+    }
+  }
+
   async _ingestNewLiveBar(symbolName, symbolId, candle, engineCandle) {
     const store = this.account;
     const key = `${symbolName}|${engineCandle.time}`;
@@ -1730,6 +1884,7 @@ export class CTraderDataSource {
       const events = store.strategyEngine.ingestCandle(symbolName, engineCandle, Date.now(), { deferCloseToRealConfirmation: true });
       store.pushSignalEvents(events);
       store.lastCandleBySymbol.set(symbolName, candle);
+      this._feedDailyAlertEngines(symbolName, engineCandle);
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
       if (actionable.length > 0) this._notify(actionable);
       if (actionable.length > 0 && store.isAutoExecuteActive()) {
@@ -2355,6 +2510,14 @@ export class CTraderDataSource {
    */
   async _handleAutoExecuteEntry(symbolName, symbolId, signal) {
     const store = this.account;
+    // 2026-09-22 (RSI(2)/US500 daily, real execution): mutual exclusion with the daily strategy on the SAME symbol - never two independent real
+    // positions on one instrument, in either direction. The daily strategy's own entry (source DAILY_RSI2_STRATEGY) is exempt from this check against
+    // itself (dailyPositionBySymbol isn't set yet when ITS OWN entry runs), only intraday sources are blocked while a daily position is open.
+    if (signal.source !== DAILY_RSI2_STRATEGY && this.dailyPositionBySymbol?.has(symbolName)) {
+      console.log(`[auto-execute] ${symbolName} source=${signal.source}: skipped, RSI(2)/daily already holds a real position on this symbol.`);
+      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'skipped', side: signal.suggestedSide, price: signal.entryPrice, detail: 'daily strategy already holds a position on this symbol' });
+      return;
+    }
     // 2026-09-13: this was the ONLY path that can submit a real order, yet
     // had zero console output - _notifyText is ntfy-only (fetch to
     // ntfy.sh, never logged) and only warns on push failure, so Render's
@@ -2669,6 +2832,11 @@ export class CTraderDataSource {
         const info = this.openPositionInfoByPositionId.get(closedPositionId);
         if (info) {
           this.openPositionInfoByPositionId.delete(closedPositionId);
+          // 2026-09-22: whatever closed it (the broker's own stop, or our proactive ProtoOAClosePositionReq below on a signal exit) - the daily
+          // strategy no longer holds a real position on this symbol either way, so the mutual-exclusion check above must see it as flat again.
+          if (info.source === DAILY_RSI2_STRATEGY && String(this.dailyPositionBySymbol.get(info.symbolName)?.positionId) === closedPositionId) {
+            this.dailyPositionBySymbol.delete(info.symbolName);
+          }
           logClosedTrade(this.tradeLogClient, {
             symbol: info.symbolName,
             source: info.source,
@@ -2841,6 +3009,18 @@ export class CTraderDataSource {
         if (filledPositionId != null) {
           const fillPx = Number(event.deal?.executionPrice ?? event.order?.executionPrice);
           this.openPositionInfoByPositionId.set(String(filledPositionId), { ...pending, entryTime: Date.now(), fillPrice: Number.isFinite(fillPx) && fillPx > 0 ? fillPx : null, spreadAtEntry: this.lastSpreadBySymbol.get(pending.symbolName) ?? null });
+          // 2026-09-22 (RSI(2)/US500 daily, real execution): remember which real position is "the daily strategy's" so its later signal-based
+          // exit (SMA5 recovery / time-out - never a stop/target the broker itself resolves) knows exactly what to close, and so
+          // _handleAutoExecuteEntry's mutual-exclusion check above can see it. volumeCents straight from the broker fill, in the SAME 0.01-of-a-
+          // unit the close request needs (ProtoOAClosePositionReq.volume) - no re-derivation from our own lot math.
+          if (pending.source === DAILY_RSI2_STRATEGY) {
+            const volumeCents = Number(event.deal?.filledVolume ?? event.deal?.volume);
+            if (Number.isFinite(volumeCents) && volumeCents > 0) {
+              this.dailyPositionBySymbol.set(pending.symbolName, { positionId: filledPositionId, volumeCents });
+            } else {
+              console.warn(`[mode-alerte->reel] RSI(2)/${pending.symbolName}: fill confirmed but no usable volume on the deal - a later signal exit may not find anything to close.`);
+            }
+          }
         }
         logOrderEvent(this.tradeLogClient, { symbol: pending.symbolName, source: pending.source, event: 'filled', side: pending.direction === 'bullish' ? 'buy' : 'sell', price: Number(event.deal?.executionPrice ?? event.order?.executionPrice), detail: `orderId=${event.order.orderId} signalPrice=${pending.signalPrice}` });
         store.recordOrderOutcome({ symbol: pending.symbolName, source: pending.source, signalId: pending.signalId, outcome: 'filled', executionType: event.executionType });
