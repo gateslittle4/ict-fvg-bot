@@ -1739,16 +1739,32 @@ export class CTraderDataSource {
       return;
     }
     const engine = new DailyAlertEngine({ strategy: 'rsi2-daily', symbol: 'US500' });
-    const lines = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8').split('\n');
-    const candles = [];
-    for (let i = 1; i < lines.length; i++) {
-      const p = lines[i].split(',');
-      if (p.length < 5) continue;
-      candles.push({ time: Number(p[0]) - FIXED_EST_TO_UTC_OFFSET_MS, open: Number(p[1]), high: Number(p[2]), low: Number(p[3]), close: Number(p[4]) });
+    // 2026-09-22 FIX (production incident: OOM crash loop within ~35s of every boot, heap saturated at 256 MB - see HANDOFF.md): this used to
+    // .split('\n') the whole decompressed text (~1.5M lines) into an array, then map it into a SECOND array of ~1.5M candle objects, both held
+    // in memory at once on top of the live bot's own state - on Render's 512 MB instance that alone was enough to crash it. Now scans the
+    // decompressed string in place (no line array) and feeds each candle to warmUp() one at a time (no candle array) - peak extra memory is
+    // just the decompressed text itself (a few tens of MB), not two ~1.5M-element arrays.
+    const text = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8');
+    let pos = text.indexOf('\n') + 1; // skip the header line
+    let count = 0;
+    while (pos > 0 && pos < text.length) {
+      let end = text.indexOf('\n', pos);
+      if (end === -1) end = text.length;
+      if (end > pos) {
+        const line = text.slice(pos, end);
+        const c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1), c3 = line.indexOf(',', c2 + 1), c4 = line.indexOf(',', c3 + 1);
+        if (c1 > 0 && c2 > c1 && c3 > c2 && c4 > c3) {
+          engine.ingest(
+            { time: Number(line.slice(0, c1)) - FIXED_EST_TO_UTC_OFFSET_MS, open: Number(line.slice(c1 + 1, c2)), high: Number(line.slice(c2 + 1, c3)), low: Number(line.slice(c3 + 1, c4)), close: Number(line.slice(c4 + 1)) },
+            { silent: true }
+          );
+          count++;
+        }
+      }
+      pos = end + 1;
     }
-    engine.warmUp(candles);
     this.dailyAlertEngines.set('US500', engine);
-    console.log(`[cTrader] mode-alerte: RSI(2)/US500 warmed up on ${candles.length} bars (${engine.bars.length} jours), position=${engine.position ? 'ouverte' : 'plate'}`);
+    console.log(`[cTrader] mode-alerte: RSI(2)/US500 warmed up on ${count} bars (${engine.bars.length} jours), position=${engine.position ? 'ouverte' : 'plate'}`);
   }
 
   /** Feeds one new live M15 candle to any "mode alerte" engine tracking this symbol, and logs whatever it fires. Never touches real trading state. */

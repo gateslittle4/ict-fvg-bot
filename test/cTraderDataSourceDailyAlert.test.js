@@ -64,3 +64,20 @@ test('a failing ingest inside the alert engine is caught and logged, never throw
   ds.dailyAlertEngines = new Map([['US500', { ingest() { throw new Error('boom'); } }]]);
   assert.doesNotThrow(() => ds._feedDailyAlertEngines('US500', { time: 1000, open: 1, high: 1, low: 1, close: 1 }));
 });
+
+test('_loadDailyAlertEngines warms up from the real US500 file WITHOUT materializing giant line/candle arrays (2026-09-22 OOM incident regression guard)', async () => {
+  const ds = setup();
+  ds.symbols = ['US500'];
+  await ds._loadDailyAlertEngines();
+  const engine = ds.dailyAlertEngines.get('US500');
+  assert.ok(engine, 'engine registered for US500');
+  assert.ok(engine.bars.length > 500, `expected several hundred daily bars, got ${engine.bars.length}`);
+  // the fix streams the decompressed text (indexOf/slice) instead of .split('\n') + a mapped candle array - guard against a straight regression to
+  // that shape by grepping the loader's own source for the pattern that caused the 2026-09-22 OOM crash loop (511 MB RSS for this file alone,
+  // see HANDOFF.md), rather than trying to assert a live heap number here (unit tests shouldn't depend on measured memory).
+  const src = (await import('node:fs')).readFileSync(new URL('../src/dataSources/cTraderDataSource.js', import.meta.url), 'utf8');
+  const start = src.indexOf('async _loadDailyAlertEngines(');
+  const loader = src.slice(start, src.indexOf('\n  }\n', start)); // just the method body, not the doc comment above it
+  assert.ok(!loader.includes('const candles = []'), 'must not build a second full-size candle array (the 2026-09-22 OOM cause)');
+  assert.ok(!loader.includes('lines.length'), 'must not iterate a materialized .split(\'\\n\') line array');
+});

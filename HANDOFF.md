@@ -6631,3 +6631,13 @@ Suite de tests : 1090/1090. **Rien n'est encore déployé** (commit `[skip rende
 ## 2026-09-22 — Complément : l'heure exacte du rollover (swapTime) capturée aussi
 
 Ajouté à `/admin/swap-check` : `swapTimeMinutesUtc`/`swapTimeUtc` (champ `swapTime` de `ProtoOASymbol`, minutes depuis 00:00 UTC où le prélèvement se produit — proche en général du rollover NY classique de 17h/22h UTC). Avec `swapRollover3Days` (jour qui triple, compense le week-end) et `swapPeriodHours` (fréquence), la route donne maintenant l'heure, la fréquence et le jour de triplement du swap réel, en plus du taux lui-même. Toujours pas interrogé en production (pas déployé). Suite : 1090/1090.
+
+## 2026-09-22 — ⚠️ INCIDENT DE PRODUCTION : le bot a tourné en boucle de plantage (OOM) de 03:14 à ~03:20 UTC, corrigé
+
+**Cause :** `_loadDailyAlertEngines()` (ajouté quelques heures plus tôt pour le mode alerte RSI(2)/US500) décompressait `data/real-m1-full/US500.csv.gz` avec `.split('\n')` (≈1,28 million de lignes) PUIS construisait un second tableau de ≈1,28 million d'objets bougie, les deux gardés en mémoire en même temps. Mesuré après coup : **511 Mo de RSS pour cette seule opération**, sur une instance Render à 512 Mo au total — ne laisse aucune marge pour le reste du bot. Le tas JavaScript (limité à 256 Mo ici) sature après ~34 s à chaque démarrage, `FATAL ERROR: Ineffective mark-compacts ... JavaScript heap out of memory`, et Render relance le processus en boucle (constaté 03:14, 03:15, 03:16, 03:18, puis de nouveau après le déploiement suivant à 03:20). **Le bot était injoignable pendant cette fenêtre** (aucun trading, `/healthz` ne répondait pas).
+
+**Correctif :** `_loadDailyAlertEngines()` ne construit plus aucun tableau de la taille du fichier : il balaie le texte décompressé avec `indexOf`/`slice` et alimente `DailyAlertEngine.ingest()` bougie par bougie, sans jamais garder un tableau de lignes ni un tableau de bougies. Mesuré : **132 Mo de RSS en régime stable** (pic transitoire à 252 Mo pendant la décompression, résorbé par le ramasse-miettes), au lieu de 511 Mo. Test de non-régression ajouté (`test/cTraderDataSourceDailyAlert.test.js`) qui vérifie que le code de chargement ne reconstruit pas ces tableaux. Suite : 1091/1091.
+
+**Leçon retenue :** avant d'ajouter un chargement de fichier volumineux au démarrage du bot partagé (512 Mo, voir `feedback_measure_shared_process_features`), mesurer la mémoire réelle AVANT de déployer, pas après — un fichier de 1,3 million de lignes ne doit jamais être transformé en tableau JS complet sur ce processus.
+
+**Déployé en urgence** (commit SANS `[skip render]`, pour un redéploiement automatique immédiat vu la gravité).
