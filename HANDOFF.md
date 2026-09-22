@@ -6667,3 +6667,11 @@ Face à ça, Esdras a choisi explicitement (confirmation demandée et obtenue) d
 **Limites à ne pas oublier :** `ProtoOAClosePositionReq` n'a jamais été testé contre le vrai broker ; la décision de sortie repose sur notre reconstruction de bougie journalière (M15 réel → jour 17h-17h), qui peut différer légèrement du fil de prix exact du broker ; pas de répétition à blanc avant le premier vrai signal.
 
 Suite de tests : 1103/1103. **Pas encore déployé** (commit `[skip render]`) : à déployer au calme, sans position ouverte, et Esdras doit confirmer le moment.
+
+## 2026-09-22 — FVG seul avec un risque plus élevé sur FTMO 1-Step (analyse, rien changé dans le bot)
+
+Esdras : « et si on tradait uniquement la meilleure stratégie mais en augmentant le risque sur FTMO 1-Step ? ». `scripts/runFvgOnlyFtmoRiskAnalysis.js` → `data/backtest-input/fvg-only-ftmo-risk-2026.md` (vrai moteur, M1 exact, `real-m1-full`, un `warmUp()` par variante car retirer des mécanismes change le netting ; `divergenceConfig: null` explicite, sinon le moteur l'active par défaut). Fenêtres : entraînement < 2025, test 2025, 2026. Risques 0,3 à 2 %.
+
+- R/trade : combo +0,079 / +0,171 / +0,117 ; FVG seul (US100/US500/XAUUSD) +0,172 / +0,411 / +0,167 ; **FVG sans US500** (retrait justifié par la règle GER40 : FVG US500 -20 R à l'entraînement) **+0,295 (t=2,36) / +0,399 (t=2,02) / +0,326 (t=1,48)**.
+- 2026, FTMO : combo 0,5 % = +23,8 %, baisse 15,1 %, 3 réussis/2 ratés ; **FVG sans US500 0,75 % = +32,1 %, baisse 7,8 %, 3/0** (fins : 22 jan., 20 mai, 2 juin) ; 1 % = +41,1 %, baisse 10,2 %, 4/1 ; 1,5 % = +63,4 %, baisse 15 %, 5/2. Cohérent à 0,75 % sur les 3 fenêtres (8/2, 5/1, 3/0).
+- **Limites** : biais de sélection (FVG choisi sur tout l'historique) ; 2 instruments seulement (~14 trades/mois, aucun cycle réussi depuis le 2 juin 2026 à ≤ 0,75 %) ; coûts partiels ; P&L comptabilisé dans l'ordre des entrées (dates de cycle approximatives, parfois jours négatifs). Entrée `fvg-only-higher-risk-ftmo-2026` (inconclusive). **Aucun changement de config** : décision d'Esdras requise.

@@ -821,5 +821,25 @@
       "data/backtest-input/rsi2-generalization-results-2026-09-22.md"
     ],
     "handoffSection": "2026-09-22 — RSI(2)/US500 en exécution réelle"
+  },
+  {
+    "id": "fvg-only-higher-risk-ftmo-2026",
+    "title": "FVG seul (sans US500) avec un risque plus élevé sur FTMO 1-Step : moins de baisse, plus de passes en 2026 - mais sélection biaisée",
+    "date": "2026-09-22",
+    "status": "inconclusive",
+    "summary": "Vrai moteur, M1 exact, real-m1-full, un warmUp() par variante. R/trade : combo +0,079 (entraînement <2025) / +0,171 (2025) / +0,117 (2026) ; FVG seul US100/US500/XAUUSD +0,172 / +0,411 / +0,167 ; FVG seul sans US500 (retrait justifié par la règle GER40 : FVG US500 -20 R à l'entraînement) +0,295 (t=2,36) / +0,399 (t=2,02) / +0,326 (t=1,48). Avantage principal : baisse max bien plus faible, ce qui permet un risque plus haut sous le plancher FTMO. 2026 : combo 0,5 % = +23,8 %, baisse 15,1 %, FTMO 3 réussis/2 ratés ; FVG sans US500 0,75 % = +32,1 %, baisse 7,8 %, 3/0 (22 jan., 20 mai, 2 juin) ; 1 % = +41,1 %, baisse 10,2 %, 4/1 ; 1,5 % = +63,4 %, baisse 15 %, 5/2. Cohérent sur les 3 fenêtres à 0,75 % (entraînement 8/2, 2025 5/1, 2026 3/0). FVG seul AVEC US500 fait moins bien que sans en 2026 (1 % : 5/4).",
+    "markets": [
+      "US100",
+      "XAUUSD",
+      "US500"
+    ],
+    "timeframe": "M15 (signaux) réglé en M1 exact",
+    "sample": "FVG sans US500 : 378 trades entraînement, 164 en 2025, 122 en 2026",
+    "knownWeaknesses": "Biais de sélection : FVG choisi en regardant tout l'historique (2025 et 2026 compris) - pas une validation hors échantillon. Seulement 2 instruments (US100, XAUUSD) : concentration, ~14 trades/mois, aucun cycle réussi depuis le 2 juin 2026 aux risques <= 0,75 %. Coûts partiels (pas de commission/swap/glissement). Risque réel live 0,3 %. P&L comptabilisé dans l'ordre des entrées (dates de cycle approximatives).",
+    "files": [
+      "scripts/runFvgOnlyFtmoRiskAnalysis.js",
+      "data/backtest-input/fvg-only-ftmo-risk-2026.md"
+    ],
+    "handoffSection": "2026-09-22 — FVG seul avec risque plus élevé sur FTMO 1-Step"
   }
 ]
