@@ -736,5 +736,24 @@
       "data/backtest-input/preregistration-batch3-2026-09-21.md"
     ],
     "handoffSection": "2026-09-21 — Pré-enregistrement lot 3"
+  },
+  {
+    "id": "prereg-batch3-results-2026-09-21",
+    "title": "Résultats du LOT 3 : RSI(2) journalier sur US500 est CANDIDATE (1 sur 8), t=2,23, faible corrélation avec le combo",
+    "date": "2026-09-21",
+    "status": "inconclusive",
+    "summary": "Procédure respectée (entraînement commité avant la lecture unique du test). Entraînement (2011-2019) : 1 retenue sur 8 : RSI(2) retour à la moyenne sur US500, +0,121 R/trade (73 trades, PF 2,02, deux moitiés positives). Rejetées : Donchian sur les 4 paires (toutes négatives ou nulles, PF 0,53 à 1,03) ; RSI(2) sur US100 (+0,119 mais PF 1,87 avec facteur limite, 2e moitié à -0,1 R), XAUUSD (0,000), EURUSD (-0,053). Test (2020-2025, lu une fois) de RSI(2) US500 : +0,135 R/trade sur 58 trades (+7,8 R), t = 2,23 (>= seuil), corrélation mensuelle -0,12 avec le combo intraday actuel (2023-2025), pire baisse 0,8 % à 0,3 % de risque -> RÉUSSIE, CANDIDATE (sensibilité swap doublé : t = 2,02, toujours au-dessus du seuil). Bilan des 3 lots (31 hypothèses) : 2 candidates au total, aucune adoptée : FVG XAGUSD (lot 1, t=0,81, FAIBLE) et RSI(2) US500 journalier (lot 3, t=2,23, la plus solide des deux). Prochaine étape (décision d'Esdras) : suivi en mode alerte de RSI(2) US500 jusqu'à un nombre suffisant de signaux hors échantillon ; mesurer le vrai swap US500 (supposé 0,01 %/jour) avant toute exécution réelle ; le complément forward 2026 (données M1 réelles) n'a pas encore été calculé pour cette candidate.",
+    "markets": [
+      "US500"
+    ],
+    "timeframe": "D1",
+    "knownWeaknesses": "Swap supposé, non mesuré ; seulement 58 trades au test (peu) ; entrée/sortie à l'ouverture du jour suivant, pas testée à la minute ; corrélation calculée sur 36 mois seulement ; stop réglé au M15 « stop d'abord », pénalité probablement faible vu la largeur du stop (3 ATR) mais non quantifiée séparément.",
+    "files": [
+      "scripts/runPreregBatch3.js",
+      "data/backtest-input/prereg-batch3-train.md",
+      "data/backtest-input/prereg-batch3-test.md",
+      "data/backtest-input/preregistration-batch3-2026-09-21.md"
+    ],
+    "handoffSection": "2026-09-21 — Résultats du lot 3"
   }
 ]
