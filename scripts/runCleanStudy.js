@@ -18,6 +18,7 @@
 //   node scripts/runCleanStudy.js switch                                          -> filtre « jambe active si R > 0 sur L mois »
 //   node scripts/runCleanStudy.js byregime                                        -> R/an de chaque jambe par période de marché
 //   node scripts/runCleanStudy.js year2026                                        -> 2026 en détail : FVG US100 + Or contre le combo
+//   LIVE_FILL=1 node scripts/runCleanStudy.js <legs|prune|port|year2026> ...        -> mêmes analyses avec l exécution réelle du bot (voir LIVE_FILL)
 //   node scripts/runCleanStudy.js port fvg-US100:5,fvg-XAUUSD:4                   -> un portefeuille donné, FTMO par période
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -41,7 +42,12 @@ const PERIODS = [
 const TRAIN_HALVES = [[eng(2010), eng(2017)], [eng(2017), eng(2023)]];
 const RRS = [2, 3, 4, 5, 6, 7];
 const RISKS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
-const CACHE = 'data/clean-study-cache';
+// LIVE_FILL=1 : les trades FVG sont réglés comme le bot réel les exécute (cTraderDataSource._handleAutoExecuteEntry) : l'ordre
+// LIMIT à entryPrice n'est posé qu'à la CLÔTURE de la bougie M15 « validated », expire après CONFIG.fvg.maxAgeCandles bougies,
+// ne se remplit que si le prix revient sur le niveau (achat : bid <= entrée - spread, c'est-à-dire l'ask touche) et le trade
+// est perdu si l'objectif est atteint avant. Cache séparé.
+const LIVE_FILL = process.env.LIVE_FILL === '1';
+const CACHE = LIVE_FILL ? 'data/clean-study-cache-livefill' : 'data/clean-study-cache';
 // Règle de sélection, fixée AVANT de lire le test : RRR = meilleur R net d'entraînement ; jambe gardée si, à ce RRR,
 // t >= 2 sur l'entraînement, R net positif dans chaque moitié (2010-2016 et 2017-2022) et au moins 30 trades.
 const MIN_T = 2;
@@ -141,6 +147,38 @@ function settleM1(S, tr) {
   return { exitPrice: S.c[maxI - 1], exitTime: S.t[maxI - 1], fillTime: S.t[fill] };
 }
 
+function settleLiveLimit(S, tr) {
+  const bull = tr.direction === 'bullish'; const spread = DEFAULT_SPREADS[tr.symbol] ?? 0;
+  const placed = tr.entryTime + 900000; const expiry = tr.entryTime + CONFIG.fvg.maxAgeCandles * 900000;
+  const end = lower(S.t, S.n, expiry);
+  for (let i = lower(S.t, S.n, placed); i < end; i++) {
+    const filled = bull ? S.l[i] <= tr.entryPrice - spread : S.h[i] >= tr.entryPrice;
+    if (!filled) { if (bull ? S.h[i] >= tr.targetPrice : S.l[i] <= tr.targetPrice) return null; continue; }
+    const maxI = Math.min(S.n, i + 5 * 1440);
+    for (let j = i; j < maxI; j++) {
+      if (bull ? S.l[j] <= tr.stopPrice : S.h[j] >= tr.stopPrice) return { exitPrice: tr.stopPrice, exitTime: S.t[j], fillTime: S.t[i] };
+      if (j > i && (bull ? S.h[j] >= tr.targetPrice : S.l[j] <= tr.targetPrice)) return { exitPrice: tr.targetPrice, exitTime: S.t[j], fillTime: S.t[i] };
+    }
+    return { exitPrice: S.c[maxI - 1], exitTime: S.t[maxI - 1], fillTime: S.t[i] };
+  }
+  return null; // jamais revenu sur le niveau avant expiration : pas de trade
+}
+// Autres stratégies en LIVE_FILL : ordre MARKET envoyé à la clôture de la bougie du signal (le bot ne voit la bougie qu'une
+// fois close), stop et objectif aux niveaux absolus du signal ; R rapporté à la distance du signal (la taille de position
+// est calculée sur elle). Si le prix a déjà dépassé le stop ou l'objectif à l'envoi, pas de trade.
+function settleLiveMarket(S, tr) {
+  const bull = tr.direction === 'bullish';
+  const i0 = lower(S.t, S.n, tr.entryTime + 900000); if (i0 >= S.n) return null;
+  const fill = S.o[i0];
+  if (bull ? fill <= tr.stopPrice || fill >= tr.targetPrice : fill >= tr.stopPrice || fill <= tr.targetPrice) return null;
+  const maxI = Math.min(S.n, i0 + 5 * 1440);
+  for (let i = i0; i < maxI; i++) {
+    if (bull ? S.l[i] <= tr.stopPrice : S.h[i] >= tr.stopPrice) return { exitPrice: tr.stopPrice, exitTime: S.t[i], fillTime: S.t[i0], fillPrice: fill };
+    if (bull ? S.h[i] >= tr.targetPrice : S.l[i] <= tr.targetPrice) return { exitPrice: tr.targetPrice, exitTime: S.t[i], fillTime: S.t[i0], fillPrice: fill };
+  }
+  return { exitPrice: S.c[maxI - 1], exitTime: S.t[maxI - 1], fillTime: S.t[i0], fillPrice: fill };
+}
+
 const NONE = { fvgConfig: {}, divergenceConfig: null, nwogConfig: null, judasSwingConfig: null, weeklySweepConfig: null, breakerBlockConfig: null, silverBulletConfig: null, cbdrConfig: null };
 function engineTrades(data, syms, configs) {
   const ordered = {};
@@ -153,15 +191,16 @@ function engineTrades(data, syms, configs) {
     completeDivergencePair: true,
     onEvent: (signal, candle) => {
       if (signal.type === 'validated' && !signal.blockedReason) {
-        pending.set(signal.symbol, { symbol: signal.symbol, direction: signal.direction, entryPrice: signal.entryPrice, stopPrice: signal.stopPrice, targetPrice: signal.targetPrice, distance: signal.distance, entryTime: candle.time });
+        pending.set(signal.symbol, { symbol: signal.symbol, source: signal.source, direction: signal.direction, entryPrice: signal.entryPrice, stopPrice: signal.stopPrice, targetPrice: signal.targetPrice, distance: signal.distance, entryTime: candle.time });
         return;
       }
       if (signal.type !== 'closed') return;
       const o = pending.get(signal.symbol); pending.delete(signal.symbol);
       if (!o) return;
-      const x = settleM1(data[o.symbol].m1, o);
+      const x = !LIVE_FILL ? settleM1(data[o.symbol].m1, o) : o.source === 'fvg' ? settleLiveLimit(data[o.symbol].m1, o) : settleLiveMarket(data[o.symbol].m1, o);
       if (!x) return;
-      const gross = (o.direction === 'bullish' ? x.exitPrice - o.entryPrice : o.entryPrice - x.exitPrice) / o.distance;
+      const px = x.fillPrice ?? o.entryPrice;
+      const gross = (o.direction === 'bullish' ? x.exitPrice - px : px - x.exitPrice) / o.distance;
       // Coûts en R calculés au rapport (costR) : on garde le brut, la distance, le prix et le sens.
       trades.push({ symbol: o.symbol, entryTime: o.entryTime, exitTime: x.exitTime, fillTime: x.fillTime, direction: o.direction, price: o.entryPrice, distance: o.distance, gross: Math.round(gross * 1e4) / 1e4 });
     },
@@ -413,7 +452,7 @@ function prune() {
     md.push(`| ${v.label}${v === best.v && k === best.k ? ' **(retenu)**' : ''} | ${k} % | ${per.label} | ${c.n} | ${c.winRate.toFixed(0)} % | ${sgn(c.sum)} | ${sgn(c.mean, 3)} | ${c.t.toFixed(2)} | ${s.pass} / ${s.fail} | ${s.medPassDays ?? '—'} | ${c.dd.toFixed(1)} % |`);
   }
   md.push('', '**Limites.** Celles de `clean-study-analysis.md` ; en plus, les résultats par jambe du test avaient déjà été lus (annexe de l\'étude propre) avant d\'écrire ces deux règles : elles restent des règles d\'entraînement simples, mais ne sont pas « aveugles » au sens strict.', '');
-  const out = 'data/backtest-input/clean-study-prune-analysis.md';
+  const out = LIVE_FILL ? 'data/backtest-input/clean-study-prune-livefill-analysis.md' : 'data/backtest-input/clean-study-prune-analysis.md';
   fs.writeFileSync(out, md.join('\n'));
   console.log(md.join('\n'));
   console.log(`\nRapport écrit : ${out}`);
@@ -550,7 +589,7 @@ if (mode === 'year2026') {
     md.push(`| ${l} | ${k} % | ${p + f + o} | ${p} | ${f} | ${o} | ${p + f ? Math.round(p / (p + f) * 100) : 0} % | ${d.length ? Math.round(d[d.length >> 1]) : '—'} |`);
   }
   md.push('');
-  const out = 'data/backtest-input/clean-study-2026-analysis.md';
+  const out = LIVE_FILL ? 'data/backtest-input/clean-study-2026-livefill-analysis.md' : 'data/backtest-input/clean-study-2026-analysis.md';
   fs.writeFileSync(out, md.join('\n'));
   console.log(md.join('\n'));
   process.exit(0);

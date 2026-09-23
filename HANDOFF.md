@@ -6729,3 +6729,28 @@ Esdras : « règle tout ici, la route API etc. ». Les trois trous listés pour 
 **Suite — régimes de marché (même jour, `clean-study-regimes-analysis.md`).** Les jambes tournent : les « autres jambes » du combo faisaient +39 à +127 R/an sur 2013-2021 mais ≈ +3 à +6 R/an depuis 2023 ; FVG US100 était négatif 2011-2015 et est positif chaque année depuis 2020. Lien le plus fort avec la macro : FVG US100 et le taux moyen de la Fed (Spearman 0,74 sur 15 ans ; Fed ≥ 1 % : 6 années positives sur 7, ≈ +38 R/an ; Fed ≈ 0 : ≈ +3 R/an, sauf 2020, année COVID très volatile, +67 R). Piste, pas preuve : les réglages de FVG ont été conçus sur 2019-2025, des années surtout à taux élevés. « Suivre la stratégie qui marche » (jambe active si R > 0 sur 3-24 derniers mois, choisi sur l'entraînement : 12 mois) échoue au test (7/4 contre 13/6) et au forward (2/2 contre 4/2). FVG US100 1:5 + Or 1:4 (RRR de production) à 0,5 % : 13/12 sur 2010-2022 (même rapport que le combo, baisse 30 % contre 47 %), 8/0 sur 2023-2025, 2/0 en 2026. Rien changé dans le bot.
 
 **Suite — 2026 en détail (`runCleanStudy.js year2026`, `clean-study-2026-analysis.md`).** FVG US100 1:5 + Or 1:4 contre le combo sur 2026 (→ 21/09) : R net +39,9 (122 trades, +0,327 R/trade, baisse 5,8 % à 0,5 %) contre +45,5 (407 trades, +0,112, baisse 13,4 %). Challenge démarré chaque jour de bourse à 0,5 % : FVG 106 réussis / 0 raté / 79 pas finis (médiane 79 j) ; combo 137 / 30 / 21 (82 %, médiane 42 j). Mais FVG est à plat depuis juin (+6 R de juin à septembre, challenge en cours depuis le 2 juin à −1,6 %) quand le combo fait +33 R. Rien changé dans le bot.
+
+## ⚠️ Exécution réelle : le FVG perd tel que le bot l'exécute (2026-09-23)
+
+**Découverte.** Toutes les simulations (étude propre, référence +220 R, anciennes études) entrent dans un FVG **au premier contact du prix pendant la bougie M15 « validated »**. Le bot réel ne peut pas : il ne voit la bougie qu'à sa clôture, puis pose un ordre LIMIT au bord de la zone (`cTraderDataSource._handleAutoExecuteEntry`), qui ne se remplit que si le prix **revient** sur le niveau avant `CONFIG.fvg.maxAgeCandles` bougies. Les trades qui partent directement vers l'objectif après le premier contact (les gagnants du backtest) ne sont jamais pris en réel. Les autres stratégies (MARKET) ont un écart plus petit : le backtest entre à l'ouverture de la bougie du signal, le bot au marché à sa clôture.
+
+**Mesure** (`LIVE_FILL=1 node scripts/runCleanStudy.js …`, cache `data/clean-study-cache-livefill`) : FVG = ordre posé à la clôture, rempli si le prix revient (achat : l'ask touche), perdu si l'objectif est atteint avant ; MARKET = entrée à l'ouverture de la bougie suivante, stop/objectif aux niveaux du signal, R sur la distance du signal. R brut, simulé → exécution réelle :
+
+| Jambe | 2010-2022 | 2023-2025 | 2026 |
+|---|---|---|---|
+| FVG US100 1:5 | +193 → **−449** | +186 → **−139** | +26 → **−51** |
+| FVG US500 1:5 | +107 → −146 | +23 → −38 | −9 → −30 |
+| FVG XAUUSD 1:4 | +35 → −59 | +42 → +7 | +31 → +17 |
+| Divergence 1:3 | +123 → +162 | +67 → +48 | +6 → +6 |
+| NWOG US100 1:5 | +78 → +93 | +6 → −2 | +22 → +22 |
+| Judas Swing EURUSD 1:3 | +86 → +123 | +56 → +47 | −1 → −3 |
+| Weekly Sweep US500 1:5 | +156 → +125 | +1 → +30 | +0 → −5 |
+| Silver Bullet US100 1:3 | +105 → +74 | +4 → +21 | −5 → −0 |
+| Silver Bullet US500 1:3 | +207 → +137 | −20 → +2 | +10 → +3 |
+| CBDR US100 1:3 | +55 → +33 | −1 → −4 | −3 → +9 |
+
+Décomposition FVG US100 (2023-2025) : les 204 trades jamais repris valaient +360 R simulés ; les 356 repris valaient déjà −148 R simulés (−190 R en réel). Tout le gain simulé du FVG US100 vient des trades que le bot ne peut pas prendre.
+
+**Portefeuilles en exécution réelle, avec coûts** (`clean-study-prune-livefill-analysis.md`) : combo actuel **−262 R / −79 R / −44 R** (FTMO 0,5 % : 17/42, 3/10, 0/3). Sans les jambes perdantes sur l'entraînement (retire les 3 FVG et Judas EURUSD) : +361 R (t 3,3) / +62 R (t 1,2) / +10 R, FTMO 0,5 % : 24/11, 5/5, 2/2. Choisi sur l'entraînement (NWOG US100 + Weekly Sweep US500 + Silver Bullet US500, 1 %) : +269 R / +21 R (6/8) / +19 R (3/1).
+
+**Conclusions renversées :** la référence +220 R, « FVG US100 + Or » (recommandé plus tôt le même jour), et tout résultat FVG qui entre au premier contact. **Rien changé dans le bot** (le compte démo tourne toujours avec FVG en LIMIT). Piste à tester : poser l'ordre LIMIT dès la formation de la zone (« watching »), avec les filtres évalués avant le contact, pour capter le premier contact comme le backtest.

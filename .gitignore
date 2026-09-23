@@ -11,3 +11,6 @@ data/lab-uploads/
 # HistData M1 brut (scripts/buildHistdataM1.js) et cache de l étude propre : jamais commités
 data/histdata-m1/
 data/clean-study-cache/
+
+# LIVE_FILL=1 (scripts/runCleanStudy.js) : cache avec exécution réelle, jamais commité
+data/clean-study-cache-livefill/

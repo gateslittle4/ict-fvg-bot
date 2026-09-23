@@ -886,5 +886,26 @@
       "data/backtest-input/clean-study-regimes-analysis.md"
     ],
     "handoffSection": "Étude propre : entraînement 2010-2022 / test 2023-2025 / forward 2026 (2026-09-23)"
+  },
+  {
+    "id": "fvg-live-execution-gap-2026-09-23",
+    "title": "Exécution réelle : le FVG perd tel que le bot l'exécute (ordre LIMIT posé à la clôture, rempli seulement si le prix revient)",
+    "date": "2026-09-23",
+    "status": "methodology-fix",
+    "summary": "Les backtests entrent dans le FVG au premier contact pendant la bougie validated ; le bot réel pose le LIMIT à la clôture et n'est rempli que si le prix revient. Mesuré (LIVE_FILL=1, runCleanStudy.js) : FVG US100 1:5 +193/+186/+26 R simulés -> -449/-139/-51 R réels (2010-2022/2023-2025/2026) ; FVG US500 et Or aussi négatifs ou quasi nuls. Les stratégies MARKET tiennent (Divergence +162/+48/+6, NWOG, Weekly Sweep, Silver Bullet). Combo actuel en réel avec coûts : -262/-79/-44 R, FTMO 0,5 % 3/10 au test. Sans les jambes perdantes (sans FVG ni Judas EURUSD) : +361/+62/+10 R. Renverse la référence +220 R et la recommandation FVG US100 + Or. Rien changé dans le bot.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (détection), M1 (règlement)",
+    "sample": "2010-2022 HistData M1, 2023-2026 broker M1",
+    "knownWeaknesses": "Modèle d'exécution simplifié (bid seulement, ask = bid + spread par défaut ; MARKET à l'ouverture M1 suivant la clôture, sans glissement) ; aucun trade FVG US100/Or réel pour vérifier (2 trades réels seulement en base) ; la variante « LIMIT posé dès la formation de la zone » n'est pas testée.",
+    "files": [
+      "scripts/runCleanStudy.js",
+      "data/backtest-input/clean-study-prune-livefill-analysis.md"
+    ],
+    "handoffSection": "⚠️ Exécution réelle : le FVG perd tel que le bot l'exécute (2026-09-23)"
   }
 ]
