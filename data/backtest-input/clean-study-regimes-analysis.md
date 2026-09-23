@@ -61,3 +61,41 @@ Chaque jambe du combo n'est active que si ses propres signaux ont un R net > 0 s
 | 0,75 % | 23 / 26, baisse 42 % | 13 / 2, baisse 13,5 %, ~50 j | 3 / 0 |
 
 Pour comparer, combo complet à 0,5 % : 39 / 39 (baisse 47 %), 13 / 6, 4 / 2.
+
+## Chaque jambe par période de marché (`runCleanStudy.js byregime`, R net par an, RRR de production)
+
+Périodes tracées APRÈS coup (taux de la Fed + résultats) : descriptif, ne prouve rien sur l'avenir. La période 2022-2026 contient le test et le forward.
+
+| Jambe | RRR | En prod. | 2011-2015 taux zéro, marché calme (R/an) | 2016-2021 remontée des taux puis COVID (R/an) | 2022-2026 inflation, taux élevés (R/an) |
+|---|---|---|---|---|---|
+| FVG US100 | 1:5 | oui | -13.0 | +27.2 | +43.1 |
+| FVG XAUUSD | 1:4 | oui | +8.7 | -3.6 | +14.9 |
+| Divergence US100/US500 | 1:3 | oui | -2.9 | +9.3 | +12.2 |
+| NWOG US500 | 1:5 |  | -2.5 | -0.2 | +4.6 |
+| NWOG US100 | 1:5 | oui | +1.5 | +12.1 | +3.5 |
+| FVG US500 | 1:5 | oui | +3.9 | +5.8 | +3.3 |
+| Weekly Sweep EURUSD | 1:5 |  | +3.7 | -11.2 | +3.3 |
+| Silver Bullet XAUUSD | 1:3 |  | -7.4 | +1.5 | +2.6 |
+| Judas Swing US100 | 1:3 |  | -3.4 | -2.2 | +2.5 |
+| Weekly Sweep US500 | 1:5 | oui | +9.1 | +11.8 | +2.1 |
+| RSI(2) US500 (journalier) | — |  | +0.8 | +1.2 | +1.4 |
+| Judas Swing EURUSD | 1:3 | oui | -3.7 | -15.2 | +0.6 |
+| CBDR US500 | 1:3 |  | -12.8 | -6.1 | -0.9 |
+| CBDR US100 | 1:3 | oui | +7.3 | -1.9 | -1.9 |
+| Breaker Block XAUUSD | 1:5 |  | -1.9 | -2.6 | -1.9 |
+| CBDR XAUUSD | 1:3 |  | +1.0 | -3.9 | -2.2 |
+| NWOG XAUUSD | 1:5 |  | -1.8 | -4.9 | -2.3 |
+| NWOG EURUSD | 1:5 |  | -5.4 | -7.1 | -2.9 |
+| Weekly Sweep XAUUSD | 1:5 |  | -6.6 | +4.2 | -3.4 |
+| Silver Bullet US100 | 1:3 | oui | +4.4 | +12.6 | -4.2 |
+| CBDR EURUSD | 1:3 |  | -30.5 | -18.4 | -5.0 |
+| Judas Swing US500 | 1:3 |  | -1.1 | -2.3 | -5.9 |
+| Judas Swing XAUUSD | 1:3 |  | +6.4 | -3.7 | -6.7 |
+| Breaker Block EURUSD | 1:5 |  | -18.2 | -16.0 | -9.2 |
+| Silver Bullet US500 | 1:3 | oui | +17.8 | +15.3 | -9.5 |
+| Weekly Sweep US100 | 1:5 |  | +14.2 | +8.3 | -10.1 |
+| Silver Bullet EURUSD | 1:3 |  | -19.5 | -13.0 | -12.6 |
+| Breaker Block US100 | 1:5 |  | -8.0 | -2.4 | -18.5 |
+| Breaker Block US500 | 1:5 |  | -23.5 | -7.0 | -24.7 |
+
+Ajouter la Divergence 1:3 à FVG US100 + Or à 0,5 % : 2010-2022 17 / 19 (baisse 37 %) contre 13 / 12 (30 %) ; test 10 / 0 contre 8 / 0 ; forward 2 / 0 les deux → pas de gain net, on garde les deux FVG.

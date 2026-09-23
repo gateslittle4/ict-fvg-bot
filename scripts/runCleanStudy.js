@@ -16,6 +16,7 @@
 //   node --max-old-space-size=6144 scripts/runCleanStudy.js prune                 -> élagage du combo actuel (mêmes règles de protocole)
 //   node --max-old-space-size=8000 scripts/runCleanStudy.js macro                 -> régimes de marché par année (descriptif)
 //   node scripts/runCleanStudy.js switch                                          -> filtre « jambe active si R > 0 sur L mois »
+//   node scripts/runCleanStudy.js byregime                                        -> R/an de chaque jambe par période de marché
 //   node scripts/runCleanStudy.js port fvg-US100:5,fvg-XAUUSD:4                   -> un portefeuille donné, FTMO par période
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -494,6 +495,19 @@ if (mode === 'switch') {
     const tr = L ? filtered(per, L) : merge(prodIds.map((id) => legTrades(id, LEGS[id].prodRR, per))); const s = simulate(tr, k, { ftmo: true }); const c = simulate(tr, k, { ftmo: false });
     return `${per.id} ${sgn(c.sum)} R (${c.n} tr.), ${s.pass}/${s.fail}, méd ${s.medPassDays ?? '—'} j, baisse ${c.dd.toFixed(1)} %`;
   }).join(' | '));
+  process.exit(0);
+}
+// byregime : R net par an de chaque jambe (RRR de production) dans chaque période de marché. Périodes tracées APRÈS coup
+// sur le tableau des régimes (taux de la Fed + résultats) : descriptif, ne prouve rien sur l'avenir.
+if (mode === 'byregime') {
+  const REG = [['2011-2015 taux zéro, marché calme', 2011, 2016], ['2016-2021 remontée des taux puis COVID', 2016, 2022], ['2022-2026 inflation, taux élevés', 2022, 2027]];
+  const rows = Object.keys(LEGS).map((id) => {
+    const rr = LEGS[id].rsi2 ? 0 : LEGS[id].prodRR;
+    const v = REG.map(([, a, b]) => { let r = 0, n = 0; for (let y = a; y < b; y++) { const per = { ...PERIODS.find((p) => eng(y) >= p.from && eng(y) < p.to), from: eng(y), to: eng(y + 1) }; const l = legTrades(id, rr, per); r += sumR(l); n += l.length; } return { r: r / (b - a), n }; });
+    return { id, rr, v };
+  }).sort((a, b) => b.v[2].r - a.v[2].r);
+  console.log('| Jambe | RRR | En prod. | ' + REG.map((x) => x[0] + ' (R/an)').join(' | ') + ' |');
+  for (const x of rows) console.log(`| ${LEGS[x.id].label} | ${x.rr ? '1:' + x.rr : '—'} | ${LEGS[x.id].inProd ? 'oui' : ''} | ${x.v.map((v) => sgn(v.r)).join(' | ')} |`);
   process.exit(0);
 }
 // port <id:rr,...> : un portefeuille donné, FTMO par période et par risque (outil de lecture, ne choisit rien).
