@@ -910,17 +910,19 @@
   },
   {
     "id": "prereg-esdras-fvg-2026-09-23",
-    "title": "PRÉ-ENREGISTREMENT : le FVG d'Esdras (impulsion 2×ATR + BOS, prix parti à 2× la zone, LIMIT au bord, 4R, M15 US100/or 8h-12h NY)",
+    "title": "Le FVG d'Esdras (impulsion 2×ATR + BOS, prix parti à 2× la zone, LIMIT au bord, 4R, M15 US100/or 8h-12h NY) : ÉCHEC du pré-enregistrement",
     "date": "2026-09-23",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul. Règles d'Esdras (M15, US100 et or, impulsion ≥ 2×ATR14, distance ≥ 2× hauteur de zone avant le retour, LIMIT au bord haut, stop bas de zone, 4R, 8h-12h NY) + détails fixés avant calcul (BOS sur pivot 5 bougies, heure NY réelle, annulation à 12:00, sortie à 5 jours, spread par défaut, aucun autre filtre). Candidate si entraînement 2010-2022 : ≥60 trades, t≥2, deux moitiés positives, puis test 2023-2025 : ≥30 trades, R>0. Texte : data/backtest-input/preregistration-esdras-fvg-2026-09-23.md.",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul. Règles d'Esdras (M15, US100 et or, impulsion ≥ 2×ATR14, distance ≥ 2× hauteur de zone avant le retour, LIMIT au bord haut, stop bas de zone, 4R, 8h-12h NY) + détails fixés avant calcul (BOS sur pivot 5 bougies, heure NY réelle, annulation à 12:00, sortie à 5 jours, spread par défaut, aucun autre filtre). Candidate si entraînement 2010-2022 : ≥60 trades, t≥2, deux moitiés positives, puis test 2023-2025 : ≥30 trades, R>0. Texte : data/backtest-input/preregistration-esdras-fvg-2026-09-23.md. RÉSULTAT (même jour, scripts/runEsdrasFvgStudy.js, data/backtest-input/esdras-fvg-study.md) : entraînement 2010-2022 = 485 trades, 19 % gagnants (seuil de rentabilité à 4R : 20 %), R net -25, t -0,58, 2010-2016 -26 R, 2017-2022 +1 R → ÉCHEC. US100 seul +23 R (t 0,62) mais l'or -48 R (t -2,15). Test 2023-2025 : -16 R (176 trades) ; 2026 : -23 R (43 trades). FTMO à 0,5 % : 2/5, 1/2, 0/1.",
     "markets": [
       "US100",
       "XAUUSD"
     ],
     "timeframe": "M15",
     "files": [
-      "data/backtest-input/preregistration-esdras-fvg-2026-09-23.md"
+      "data/backtest-input/preregistration-esdras-fvg-2026-09-23.md",
+      "scripts/runEsdrasFvgStudy.js",
+      "data/backtest-input/esdras-fvg-study.md"
     ]
   }
 ]
