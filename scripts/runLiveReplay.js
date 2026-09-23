@@ -32,7 +32,8 @@ const SRC = process.argv[2];
 if (SRC === 'summary') { summary(); process.exit(0); }
 if (!['hist', 'broker'].includes(SRC)) { console.error('Usage: runLiveReplay.js <hist|broker|summary> [risque %] [année début] [année fin]'); process.exit(1); }
 const RISK = Number(process.argv[3] ?? 0.5);
-const FROM = process.argv[4] ? eng(Number(process.argv[4])) : -Infinity;
+// FROM_DATE=2026-09-21T01:16:00Z : début précis (UTC) au lieu d'une année ; DEBUG_EVENTS=1 : affiche chaque signal validé, bloqué ou non.
+const FROM = process.env.FROM_DATE ? Date.parse(process.env.FROM_DATE) - OFF : process.argv[4] ? eng(Number(process.argv[4])) : -Infinity;
 const TO = process.argv[5] ? eng(Number(process.argv[5])) : Infinity;
 const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}`;
 const START_BALANCE = 10000;
@@ -60,7 +61,7 @@ const engine = new LiveStrategyEngine({
 });
 // Préchauffage comme au démarrage du live, puis nettoyage des positions « crues » sans ordre réel (_clearStaleBeliefsAgainstBroker).
 const warm = {}; for (const s of SYMS) warm[s] = data[s].m15.filter((c) => c.time < firstLive).slice(-WARMUP_BARS);
-engine.warmUp(warm, { completeDivergencePair: true });
+engine.warmUp(warm, { completeDivergencePair: process.env.BOOT_WARMUP !== '1' }); // BOOT_WARMUP=1 : exactement comme le boot live (sans compléter la paire Divergence)
 for (const s of SYMS) { const b = engine.getOpenPosition(s); if (b) engine.clearBelievedPosition(s, b.id); }
 const daily = new DailyAlertEngine({ strategy: DAILY, symbol: 'US500' });
 daily.warmUp(warm.US500);
@@ -136,6 +137,10 @@ let nBars = 0;
 for (const T of times) {
   if (++nBars > MAX_BARS) break;
   runExits(T);
+  // Balayage des positions « crues » sans position réelle (_clearStaleBeliefsAgainstBroker, toutes les 5 min en live, donc
+  // avant la bougie suivante) : un signal validé puis refusé (exclusion RSI(2), taille nulle...) ne bloque pas le symbole.
+  // Absent jusqu'au 2026-09-23 : la croyance restait coincée pour des mois (Divergence US500 bloquée « netting » dès juillet).
+  for (const s of SYMS) { const b = engine.getOpenPosition(s); if (b && !open.some((p) => p.sym === s)) engine.clearBelievedPosition(s, b.id); }
   for (const sym of SYMS) {
     const bars = data[sym].m15; const k = idx[sym];
     if (k >= bars.length || bars[k].time !== T) continue;
@@ -157,6 +162,7 @@ for (const T of times) {
     const now = T + OFF;
     const events = engine.ingestCandle(sym, stub, now, { deferCloseToRealConfirmation: true });
     for (const e of events) {
+      if (process.env.DEBUG_EVENTS && e.type === 'validated') console.log(`  [signal] ${new Date(now).toISOString().slice(0, 16)} ${e.source} ${sym} ${e.direction} ${e.blockedReason ? 'BLOQUÉ: ' + e.blockedReason : 'pris'}${sym === 'US500' && dailyHeld ? ' (RSI2 tient US500)' : ''}`);
       if (e.type === 'validated' && !e.blockedReason) {
         if (e.source === 'fvg') continue; // retiré du live
         if (sym === 'US500' && dailyHeld) continue; // exclusion mutuelle avec RSI(2), comme _handleAutoExecuteEntry
