@@ -55,7 +55,12 @@ const RESTING = process.env.LIVE_FILL === 'resting';
 // taille calculée sur stop + spread. 'strategy' = objectif sur le niveau de la stratégie (ce que fait le bot : un gain vaut
 // (RR x d - spread) / (d + spread)) ; 'exact' = objectif éloigné pour qu'un gain vaille exactement RR (le spread payé en plus).
 const RR_MODE = process.env.RR_MODE || null;
-const CACHE = RR_MODE ? `data/clean-study-cache-rr-${RR_MODE}` : RESTING ? 'data/clean-study-cache-resting' : LIVE_FILL ? 'data/clean-study-cache-livefill' : 'data/clean-study-cache';
+// FVG_AWAY=N (avec LIVE_FILL=resting) : la définition du FVG d'Esdras (2026-09-23, « le prix va loin du FVG pendant plus de
+// 30 minutes et y retourne clairement après ») - la zone ne compte que si le prix ne la touche PAS pendant les N bougies M15
+// qui suivent sa formation (2 = 30 min ; touchée avant = abandonnée) ; l'ordre LIMIT est posé ensuite, au bord de la zone,
+// et rempli au retour. Moteur multi-contacts pour les trois paires (minAwayCandles n'existe que là).
+const FVG_AWAY = process.env.FVG_AWAY ? Number(process.env.FVG_AWAY) : null;
+const CACHE = FVG_AWAY ? `data/clean-study-cache-resting-away${FVG_AWAY}` : RR_MODE ? `data/clean-study-cache-rr-${RR_MODE}` : RESTING ? 'data/clean-study-cache-resting' : LIVE_FILL ? 'data/clean-study-cache-livefill' : 'data/clean-study-cache';
 const ONLY_RRS = process.env.RRS ? process.env.RRS.split(',').map(Number) : null;
 // Règle de sélection, fixée AVANT de lire le test : RRR = meilleur R net d'entraînement ; jambe gardée si, à ce RRR,
 // t >= 2 sur l'entraînement, R net positif dans chaque moitié (2010-2016 et 2017-2022) et au moins 30 trades.
@@ -88,7 +93,7 @@ function swapR(symbol, direction, distance, fillTime, exitTime) {
 const SYMS = ['US100', 'US500', 'XAUUSD', 'EURUSD'];
 const LEGS = {};
 for (const s of ['US100', 'US500', 'XAUUSD']) {
-  LEGS[`fvg-${s}`] = { label: `FVG ${s}`, syms: [s], prodRR: CONFIG.fvg.perSymbol[s].rrMultiple, cfg: (rr) => ({ fvgConfig: { [s]: { ...CONFIG.fvg.perSymbol[s], rrMultiple: rr, ...(RESTING ? { preTouchFilters: true } : {}) } } }) };
+  LEGS[`fvg-${s}`] = { label: `FVG ${s}`, syms: [s], prodRR: CONFIG.fvg.perSymbol[s].rrMultiple, cfg: (rr) => ({ fvgConfig: { [s]: { ...CONFIG.fvg.perSymbol[s], rrMultiple: rr, ...(RESTING ? { preTouchFilters: true } : {}), ...(FVG_AWAY ? { multiTouch: true, minAwayCandles: FVG_AWAY } : {}) } } }) };
 }
 LEGS.divergence = { label: 'Divergence US100/US500', syms: ['US500', 'US100'], prodRR: CONFIG.divergence.rrMultiple, cfg: (rr) => ({ divergenceConfig: { ...CONFIG.divergence, rrMultiple: rr } }) };
 const PER_SYMBOL = [

@@ -683,7 +683,7 @@ export class LiveStrategyEngine {
   _buildFvgEngine(candles, symbol, cfg) {
     if (cfg.multiTouch) {
       const checkFilters = buildMultiTouchFilterPredicate(candles, symbol, cfg);
-      return new MultiTouchFvgEngine({ symbol, checkFilters });
+      return new MultiTouchFvgEngine({ symbol, checkFilters, minAwayCandles: cfg.minAwayCandles ?? 0 });
     }
     return buildFilteredEngine(candles, symbol, cfg).engine;
   }

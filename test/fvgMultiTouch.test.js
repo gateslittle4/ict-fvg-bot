@@ -144,3 +144,31 @@ test('preTouchFilters: the liquidity-sweep filter never reads the touching candl
   // preTouchFilters: read as of the last closed candle before the touch - no sweep yet, so no trade.
   assert.equal(buildMultiTouchFilterPredicate(candles, 'US100', { ...cfg, preTouchFilters: true })(candles[16], { direction: 'bullish' }), false);
 });
+
+test('minAwayCandles=2 (Esdras "le prix va loin plus de 30 min"): a touch in the first 2 candles drops the zone for good', () => {
+  const engine = new MultiTouchFvgEngine({ symbol: 'US100', minAwayCandles: 2 });
+  engine.processCandle(candle(0, 100, 101, 99, 100.5));
+  engine.processCandle(candle(M15, 100.5, 105, 100.4, 104.8));
+  engine.processCandle(candle(2 * M15, 104.8, 106, 103, 105.5)); // watching, zone [101,103]
+  const e1 = engine.processCandle(candle(3 * M15, 105, 105.5, 102.5, 104)); // 2nd candle... 1st after formation, dips in
+  assert.equal(e1.length, 1);
+  assert.equal(e1[0].type, 'expired');
+  assert.equal(e1[0].reason, 'touched-before-away');
+  assert.equal(engine.getActiveFvgs().length, 0);
+  assert.deepEqual(engine.processCandle(candle(4 * M15, 104, 104.5, 102, 102.4)), []); // zone gone: a later touch does nothing
+});
+
+test('minAwayCandles=2: price stays away 30 min then comes back -> validated on the return', () => {
+  const engine = new MultiTouchFvgEngine({ symbol: 'US100', minAwayCandles: 2 });
+  engine.processCandle(candle(0, 100, 101, 99, 100.5));
+  engine.processCandle(candle(M15, 100.5, 105, 100.4, 104.8));
+  engine.processCandle(candle(2 * M15, 104.8, 106, 103, 105.5)); // watching, zone [101,103]
+  assert.deepEqual(engine.processCandle(candle(3 * M15, 105.5, 108, 105, 107.5)), []); // away
+  assert.ok(!engine.processCandle(candle(4 * M15, 107.5, 109, 107, 108)).some((e) => e.type === 'validated')); // away (30 min); forms a 2nd zone
+  const back = engine.processCandle(candle(5 * M15, 108, 108.2, 102.5, 103.5)); // returns into the zone
+  // (the rally itself formed a 2nd zone [106,107] at 4*M15, touched here only 1 candle later -> dropped, not traded)
+  const validated = back.filter((e) => e.type === 'validated');
+  assert.equal(validated.length, 1);
+  assert.deepEqual(validated[0].zone, { top: 103, bottom: 101 });
+  assert.ok(back.some((e) => e.type === 'expired' && e.reason === 'touched-before-away' && e.zone.bottom === 106));
+});

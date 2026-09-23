@@ -103,12 +103,19 @@ export class MultiTouchFvgEngine {
    *   (the immediate next candle IS eligible), matching production/
    *   fvgEngine.js exactly when combined with an always-pass checkFilters.
    */
-  constructor({ symbol, maxAgeCandles = DEFAULT_MAX_AGE_CANDLES, checkFilters = () => true, minCandlesBeforeEligible = 1 } = {}) {
+  /**
+   * @param {number} [opts.minAwayCandles] - 2026-09-23, Esdras's own definition of the FVG she trades ("le prix va loin du FVG pendant
+   *   plus de 30 minutes et y retourne clairement après"): the zone only counts if price does NOT touch it during the first
+   *   `minAwayCandles` candles after formation (2 = 30 min on M15). A touch inside that window means price never really left:
+   *   the zone is dropped for good (not kept waiting like minCandlesBeforeEligible). 0 (default) = off, today's behavior.
+   */
+  constructor({ symbol, maxAgeCandles = DEFAULT_MAX_AGE_CANDLES, checkFilters = () => true, minCandlesBeforeEligible = 1, minAwayCandles = 0 } = {}) {
     if (!symbol) throw new Error('MultiTouchFvgEngine requires a symbol');
     this.symbol = symbol;
     this.maxAgeCandles = maxAgeCandles;
     this.checkFilters = checkFilters;
     this.minCandlesBeforeEligible = minCandlesBeforeEligible;
+    this.minAwayCandles = minAwayCandles;
     this.history = [];
     this.active = [];
     this._idCounter = 0;
@@ -120,6 +127,15 @@ export class MultiTouchFvgEngine {
 
     for (const fvg of this.active) {
       fvg.candlesSinceFormed += 1;
+      if (fvg.candlesSinceFormed <= this.minAwayCandles) {
+        const touched = fvg.direction === 'bullish' ? candle.low <= fvg.top : candle.high >= fvg.bottom;
+        if (touched) {
+          events.push({ type: 'expired', symbol: this.symbol, direction: fvg.direction, zone: { top: fvg.top, bottom: fvg.bottom }, id: fvg.id, touchAttempts: fvg.touchAttempts, reason: 'touched-before-away' });
+          continue;
+        }
+        stillActive.push(fvg);
+        continue;
+      }
       const eligible = fvg.candlesSinceFormed >= this.minCandlesBeforeEligible;
       const enteredZone = eligible && (fvg.direction === 'bullish' ? candle.low <= fvg.top : candle.high >= fvg.bottom);
 

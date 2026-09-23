@@ -18,3 +18,4 @@ data/clean-study-cache-livefill/
 # RR_MODE=... (scripts/runCleanStudy.js) : caches de géométrie des ordres, jamais commités
 data/clean-study-cache-rr-*/
 data/clean-study-cache-resting/
+data/clean-study-cache-resting-away*/
