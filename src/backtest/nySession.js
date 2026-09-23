@@ -29,12 +29,36 @@ const nyTimeFormatter = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
 });
 
+// 2026-09-23 (profiling runLiveReplay.js): formatToParts cost ~146 of 171 s - the detectors call this for every candle of their
+// history on every new bar, live included. US rules since 2007 (EDT from the 2nd Sunday of March 02:00 local = 07:00 UTC to the
+// 1st Sunday of November 02:00 local = 06:00 UTC) computed directly, cached per year; Intl kept for earlier years. Proven
+// identical to Intl on every 15-minute step 2007-2035 (test/nySession.test.js).
+const HOUR_MS = 3600000;
+const dstBoundsByYear = new Map();
+function dstBoundsUtc(year) {
+  let b = dstBoundsByYear.get(year);
+  if (!b) {
+    const nthSunday = (month, nth) => { const dow = new Date(Date.UTC(year, month, 1)).getUTCDay(); return 1 + ((7 - dow) % 7) + 7 * (nth - 1); };
+    b = [Date.UTC(year, 2, nthSunday(2, 2), 7), Date.UTC(year, 10, nthSunday(10, 1), 6)];
+    dstBoundsByYear.set(year, b);
+  }
+  return b;
+}
+
 export function toRealNyHourMinute(histDataTimeMs) {
   const trueUtcMs = histDataTimeMs + FIXED_EST_TO_UTC_OFFSET_MS;
-  const parts = nyTimeFormatter.formatToParts(new Date(trueUtcMs));
-  const hour = Number(parts.find((p) => p.type === 'hour').value);
-  const minute = Number(parts.find((p) => p.type === 'minute').value);
-  return { hour, minute };
+  const year = new Date(trueUtcMs).getUTCFullYear();
+  if (year < 2007 || !Number.isFinite(trueUtcMs)) {
+    const parts = nyTimeFormatter.formatToParts(new Date(trueUtcMs));
+    const hour = Number(parts.find((p) => p.type === 'hour').value);
+    const minute = Number(parts.find((p) => p.type === 'minute').value);
+    return { hour, minute };
+  }
+  const [dstStart, dstEnd] = dstBoundsUtc(year);
+  const localMs = trueUtcMs - (trueUtcMs >= dstStart && trueUtcMs < dstEnd ? 4 : 5) * HOUR_MS;
+  const minutes = Math.floor(localMs / 60000);
+  const minuteOfDay = ((minutes % 1440) + 1440) % 1440;
+  return { hour: Math.floor(minuteOfDay / 60), minute: minuteOfDay % 60 };
 }
 
 /**
