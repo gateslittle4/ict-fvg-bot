@@ -2,13 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
 import { replaySignals, compareSignals } from '../src/backtest/liveParity.js';
+import { CONFIG } from '../src/config.js';
 
 const FIXTURE = new URL('./fixtures/us500-m15-2026-08-24_to_2026-09-21.csv', import.meta.url).pathname;
 const T = (iso) => Date.parse(iso);
 
 test('the replay finds the US500 Weekly Sweep of 2026-09-21 00:15 UTC on complete candles (clean signal)', () => {
   const candles = { US500: loadCandlesFromCsv(FIXTURE).candles };
-  const sigs = replaySignals(candles, { fromMs: T('2026-09-21T00:00:00Z'), toMs: T('2026-09-21T01:00:00Z') });
+  // Weekly Sweep US500 was live on 2026-09-21 (turned off 2026-09-23): replay with the config of that day.
+  const config = { ...CONFIG, weeklySweep: { ...CONFIG.weeklySweep, symbols: ['US500'] } };
+  const sigs = replaySignals(candles, { fromMs: T('2026-09-21T00:00:00Z'), toMs: T('2026-09-21T01:00:00Z'), config });
   const ws = sigs.find((s) => s.source === 'weeklysweep');
   assert.ok(ws);
   assert.equal(ws.timeMs, T('2026-09-21T00:15:00Z'));

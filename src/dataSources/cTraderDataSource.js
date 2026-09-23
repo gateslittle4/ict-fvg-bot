@@ -1749,7 +1749,9 @@ export class CTraderDataSource {
     // with real caveats: ~58 test trades likely not independent, US100 nearly passed the same test, tested almost entirely inside one long bull
     // market, swap assumed not measured). To revert to observation-only, empty this Set - dailyAlertEngines above keeps logging to
     // bot_alert_signals either way, real orders only fire for a symbol listed here.
-    this.dailyLiveExecutionSymbols = new Set(['US500']);
+    // 2026-09-23: back to alert-only (Esdras moved to FVG US100/XAUUSD + Divergence; RSI(2) adds little and ProtoOAClosePositionReq was
+    // never tested against the broker). Put 'US500' back in this Set to re-enable real execution.
+    this.dailyLiveExecutionSymbols = new Set();
     if (!this.symbols.includes('US500')) return; // nothing to track if this account doesn't even trade US500
     const file = 'data/real-m1-full/US500.csv.gz';
     if (!fs.existsSync(file)) {

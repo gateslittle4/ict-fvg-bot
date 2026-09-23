@@ -15,7 +15,8 @@ const at = (iso) => Date.parse(iso) - OFF;
 function makeEngine(historyBefore) {
   const guard = new GuardrailEngine(CONFIG.guardrails);
   guard.setBalance(10943.88, Date.now());
-  const e = new LiveStrategyEngine({ symbols: ['US500'], fvgConfig: CONFIG.fvg.perSymbol, divergenceConfig: null, nwogConfig: null, judasSwingConfig: null, weeklySweepConfig: CONFIG.weeklySweep, breakerBlockConfig: null, silverBulletConfig: null, cbdrConfig: null, guardrail: guard, riskPctPerTrade: 0.3, spreads: DEFAULT_SPREADS });
+  // Weekly Sweep US500 was live on 2026-09-21 (turned off 2026-09-23): enabled explicitly for this engine regression.
+  const e = new LiveStrategyEngine({ symbols: ['US500'], fvgConfig: CONFIG.fvg.perSymbol, divergenceConfig: null, nwogConfig: null, judasSwingConfig: null, weeklySweepConfig: { ...CONFIG.weeklySweep, symbols: ['US500'] }, breakerBlockConfig: null, silverBulletConfig: null, cbdrConfig: null, guardrail: guard, riskPctPerTrade: 0.3, spreads: DEFAULT_SPREADS });
   e.setBalance(10943.88);
   e.warmUp({ US500: historyBefore });
   for (const [s, p] of [...e.openPositions.entries()]) e.clearBelievedPosition(s, p.id); // what the production boot does: the broker holds no such position
