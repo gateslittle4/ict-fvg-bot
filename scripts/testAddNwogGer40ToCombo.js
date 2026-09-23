@@ -37,9 +37,10 @@ import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { CONFIG } from '../src/config.js';
 import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
 import { runNwogBacktest } from '../src/backtest/nwog.js';
+import { fileURLToPath } from 'node:url';
 
 const REAL_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
-const HIST_CSV_DIR = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-input');
+const HIST_CSV_DIR = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-input');
 
 function loadHistory(dir) {
   const historyBySymbol = {};

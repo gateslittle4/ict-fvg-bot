@@ -26,9 +26,10 @@ import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
 import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { CONFIG } from '../src/config.js';
 import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
+import { fileURLToPath } from 'node:url';
 
 const REAL_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
-const CSV_DIR = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-input');
+const CSV_DIR = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-input');
 const YEARS = [2019, 2020, 2021, 2022, 2023, 2024, 2025];
 
 // Fenêtre exacte de la série perdante 2026 (voir HANDOFF.md), même mois/jour

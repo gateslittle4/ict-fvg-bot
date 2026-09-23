@@ -32,10 +32,11 @@ import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
 import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { CONFIG } from '../src/config.js';
 import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
+import { fileURLToPath } from 'node:url';
 
 const REAL_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
-const CSV_DIR = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-input');
-const OUT_PATH = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-summary.json');
+const CSV_DIR = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-input');
+const OUT_PATH = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-summary.json');
 const MONTH_NAMES = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
 function replayAll() {

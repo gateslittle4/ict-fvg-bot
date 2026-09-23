@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
 import { replaySignals, compareSignals } from '../src/backtest/liveParity.js';
+import { fileURLToPath } from 'node:url';
 
-const FIXTURE = new URL('./fixtures/us500-m15-2026-08-24_to_2026-09-21.csv', import.meta.url).pathname;
+const FIXTURE = fileURLToPath(new URL('./fixtures/us500-m15-2026-08-24_to_2026-09-21.csv', import.meta.url));
 const T = (iso) => Date.parse(iso);
 
 test('the replay finds the US500 Weekly Sweep of 2026-09-21 00:15 UTC on complete candles (clean signal)', () => {

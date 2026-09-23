@@ -31,9 +31,10 @@ import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
 import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { CONFIG } from '../src/config.js';
 import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
+import { fileURLToPath } from 'node:url';
 
 const REAL_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40', 'GBPUSD'];
-const CSV_DIR = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-input');
+const CSV_DIR = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-input');
 const MONTH_NAMES = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
 const STARTING_BALANCE = 10000;

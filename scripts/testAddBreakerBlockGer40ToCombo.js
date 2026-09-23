@@ -32,9 +32,10 @@ import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { CONFIG } from '../src/config.js';
 import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
 import { runBreakerBlockBacktest } from '../src/backtest/breakerBlock.js';
+import { fileURLToPath } from 'node:url';
 
 const REAL_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
-const HIST_CSV_DIR = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-input');
+const HIST_CSV_DIR = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-input');
 const MIN_DISTANCE_SPREAD_MULTIPLE = 3;
 
 function loadHistory(dir) {

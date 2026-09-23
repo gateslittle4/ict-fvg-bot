@@ -6,8 +6,9 @@ import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { LiveStrategyEngine } from '../src/liveStrategyEngine.js';
 import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
 import { CONFIG } from '../src/config.js';
+import { fileURLToPath } from 'node:url';
 
-const FIXTURE = new URL('./fixtures/us500-m15-2026-08-24_to_2026-09-21.csv', import.meta.url).pathname;
+const FIXTURE = fileURLToPath(new URL('./fixtures/us500-m15-2026-08-24_to_2026-09-21.csv', import.meta.url));
 const engineCandles = () => loadCandlesFromCsv(FIXTURE).candles.map((c) => ({ ...c, time: c.time - OFF }));
 const stub = (c) => ({ time: c.time, open: c.open, high: c.open, low: c.open, close: c.open }); // what the first tick of a bar looks like
 const at = (iso) => Date.parse(iso) - OFF;

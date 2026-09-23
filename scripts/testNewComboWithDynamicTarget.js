@@ -44,9 +44,10 @@ import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
 import { runBacktest } from '../src/backtest/backtestEngine.js';
 import { runBacktestDynamicTarget } from '../src/backtest/dynamicLiquidityTarget.js';
 import { MultiTouchFvgEngine, buildMultiTouchFilterPredicate } from '../src/backtest/fvgMultiTouch.js';
+import { fileURLToPath } from 'node:url';
 
 const REAL_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
-const CSV_DIR = path.join(new URL('.', import.meta.url).pathname, '..', 'data', 'backtest-input');
+const CSV_DIR = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-input');
 const US100_CFG = { ...CONFIG.fvg.perSymbol.US100 };
 
 function loadHistory() {
