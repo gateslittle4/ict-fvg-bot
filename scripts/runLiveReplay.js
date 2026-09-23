@@ -162,11 +162,12 @@ for (const T of times) {
     const now = T + OFF;
     const events = engine.ingestCandle(sym, stub, now, { deferCloseToRealConfirmation: true });
     for (const e of events) {
-      if (process.env.DEBUG_EVENTS && e.type === 'validated') console.log(`  [signal] ${new Date(now).toISOString().slice(0, 16)} ${e.source} ${sym} ${e.direction} ${e.blockedReason ? 'BLOQUÉ: ' + e.blockedReason : 'pris'}${sym === 'US500' && dailyHeld ? ' (RSI2 tient US500)' : ''}`);
+      if (process.env.DEBUG_EVENTS && e.type === 'validated') console.log(`  [signal] ${new Date(now).toISOString().slice(0, 16)} ${e.source} ${e.symbol ?? sym} ${e.direction} ${e.blockedReason ? 'BLOQUÉ: ' + e.blockedReason : 'pris'}${sym === 'US500' && dailyHeld ? ' (RSI2 tient US500)' : ''}`);
       if (e.type === 'validated' && !e.blockedReason) {
         if (e.source === 'fvg') continue; // retiré du live
-        if (sym === 'US500' && dailyHeld) continue; // exclusion mutuelle avec RSI(2), comme _handleAutoExecuteEntry
-        openPosition(sym, e.source, e.id, e.direction, e.entryPrice, e.stopPrice, e.targetPrice, T);
+        const esym = e.symbol ?? sym; // une Divergence peut concerner l'autre jambe de la paire (routée comme le live)
+        if (esym === 'US500' && dailyHeld) continue; // exclusion mutuelle avec RSI(2), comme _handleAutoExecuteEntry
+        openPosition(esym, e.source, e.id, e.direction, e.entryPrice, e.stopPrice, e.targetPrice, T);
       } else if (e.type === 'closed' && e.outcome === 'timeout') {
         const S = data[sym].m1; const i = lower(S.t, S.n, T);
         for (const p of open.filter((x) => x.sym === sym && x.source === e.source)) closePosition(p, S.o[i], S.t[i], 'timeout');

@@ -1921,7 +1921,14 @@ export class CTraderDataSource {
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
       if (actionable.length > 0) this._notify(actionable);
       if (actionable.length > 0 && store.isAutoExecuteActive()) {
-        for (const sig of actionable) this._handleAutoExecuteEntry(symbolName, symbolId, sig);
+        // A divergence signal can be for the PARTNER leg of the pair (emitted when this symbol's bar completes the pair - see
+        // liveStrategyEngine._detectDivergenceSignal, 2026-09-23): route every order to its own symbol, never to the bar's symbol.
+        for (const sig of actionable) {
+          const sigSymbol = sig.symbol ?? symbolName;
+          const sigSymbolId = sigSymbol === symbolName ? symbolId : this.symbolIdByName.get(sigSymbol);
+          if (sigSymbolId == null) { console.warn(`[auto-execute] no symbol id for ${sigSymbol} - signal ${sig.id} skipped`); continue; }
+          this._handleAutoExecuteEntry(sigSymbol, sigSymbolId, sig);
+        }
       }
       for (const e of events) {
         if (e.type === 'pyramid-order-requested') this._handlePyramidOrderRequested(symbolName, symbolId, e);

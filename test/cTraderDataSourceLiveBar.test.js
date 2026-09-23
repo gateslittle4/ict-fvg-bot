@@ -73,3 +73,13 @@ test('the bar-check statistics count real corrections (evidence of how far tick-
   await ds._reconcileRecentBars('US500', 215);
   assert.deepEqual(ds._reconcileStats, { checks: 2, mismatches: 2 });
 });
+
+test('a divergence signal for the PARTNER leg (emitted on this bar) is routed to its own symbol and id, never to the bar\'s symbol (2026-09-23)', async () => {
+  const sigs = [{ type: 'validated', id: 'div-US100-1', source: 'divergence', symbol: 'US100' }, { type: 'validated', id: 'div-US500-1', source: 'divergence', symbol: 'US500' }, { type: 'validated', id: 'div-GHOST-1', source: 'divergence', symbol: 'GHOST' }];
+  const { ds } = setup({ events: sigs });
+  ds.symbolIdByName = new Map([['US100', 213], ['US500', 215]]);
+  const routed = [];
+  ds._handleAutoExecuteEntry = (sym, id, sig) => { routed.push([sym, id, sig.id]); };
+  await ds._ingestNewLiveBar('US500', 215, candle, candle);
+  assert.deepEqual(routed, [['US100', 213, 'div-US100-1'], ['US500', 215, 'div-US500-1']]); // unknown symbol: skipped, never sent under US500
+});
