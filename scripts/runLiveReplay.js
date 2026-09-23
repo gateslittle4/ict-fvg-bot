@@ -136,6 +136,13 @@ let nBars = 0;
 for (const T of times) {
   if (++nBars > MAX_BARS) break;
   runExits(T);
+  // Balayage du live toutes les 5 min (_clearStaleBeliefsAgainstBroker / computeStaleBeliefsToClear) : une position « crue »
+  // par le moteur sans aucune position réelle sur ce symbole est effacée - par ex. un signal US500 ignoré parce que RSI(2)
+  // tient déjà US500 (exclusion mutuelle) : sans ce balayage, US500 restait bloqué pour toujours dans le rejeu.
+  for (const sym of SYMS) {
+    const believed = engine.getOpenPosition(sym);
+    if (believed && !open.some((p) => p.sym === sym)) engine.clearBelievedPosition(sym, believed.id);
+  }
   for (const sym of SYMS) {
     const bars = data[sym].m15; const k = idx[sym];
     if (k >= bars.length || bars[k].time !== T) continue;
