@@ -17,6 +17,7 @@
 //   node --max-old-space-size=8000 scripts/runCleanStudy.js macro                 -> régimes de marché par année (descriptif)
 //   node scripts/runCleanStudy.js switch                                          -> filtre « jambe active si R > 0 sur L mois »
 //   node scripts/runCleanStudy.js byregime                                        -> R/an de chaque jambe par période de marché
+//   node scripts/runCleanStudy.js year2026                                        -> 2026 en détail : FVG US100 + Or contre le combo
 //   node scripts/runCleanStudy.js port fvg-US100:5,fvg-XAUUSD:4                   -> un portefeuille donné, FTMO par période
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -508,6 +509,50 @@ if (mode === 'byregime') {
   }).sort((a, b) => b.v[2].r - a.v[2].r);
   console.log('| Jambe | RRR | En prod. | ' + REG.map((x) => x[0] + ' (R/an)').join(' | ') + ' |');
   for (const x of rows) console.log(`| ${LEGS[x.id].label} | ${x.rr ? '1:' + x.rr : '—'} | ${LEGS[x.id].inProd ? 'oui' : ''} | ${x.v.map((v) => sgn(v.r)).join(' | ')} |`);
+  process.exit(0);
+}
+// year2026 : FVG US100 + Or contre le combo actuel sur l'année en cours : R par mois, challenges enchaînés (dates) et
+// challenge démarré chaque jour de bourse de 2026 (issue et durée ; départs qui se chevauchent, pas indépendants).
+if (mode === 'year2026') {
+  const FW = PERIODS[2];
+  const prodIds = Object.keys(LEGS).filter((id) => LEGS[id].inProd);
+  const ports = [['FVG US100 1:5 + Or 1:4', [['fvg-US100', 5], ['fvg-XAUUSD', 4]]], ['Combo actuel', prodIds.map((id) => [id, LEGS[id].prodRR])]];
+  const trOf = (parts) => merge(Object.keys(LEGS).flatMap((id) => parts.filter(([p]) => p === id)).map(([id, rr]) => legTrades(id, rr, FW)));
+  const day = (t) => new Date(t + OFF).toISOString().slice(0, 10);
+  const md = ['# 2026 : FVG US100 + Or contre le combo actuel', '', `Forward 2026, M1 du broker jusqu'au ${day(FW.to > Date.now() ? Math.max(...ports.flatMap(([, p]) => trOf(p).map((t) => t.exitTime))) : FW.to)}. Même moteur, coûts et garde-fous que l'étude propre.`, ''];
+  md.push('## R net par mois (compte continu)', '', '| Mois | ' + ports.map(([l]) => l).join(' | ') + ' |', '|---|' + ports.map(() => '---|').join(''));
+  for (let m = 0; m < 12; m++) {
+    const per = { ...FW, from: eng(2026, m), to: eng(2026, m + 1) };
+    const vals = ports.map(([, parts]) => { const tr = merge(Object.keys(LEGS).flatMap((id) => parts.filter(([p]) => p === id)).map(([id, rr]) => legTrades(id, rr, per))); return tr.length ? `${sgn(simulate(tr, 0.5, { ftmo: false }).sum)} (${tr.length} tr.)` : null; });
+    if (vals.some(Boolean)) md.push(`| 2026-${String(m + 1).padStart(2, '0')} | ${vals.map((v) => v ?? '—').join(' | ')} |`);
+  }
+  md.push('', '## Résumé de l\'année', '', '| Portefeuille | Trades | Win rate | R net | R/trade | Pire série de pertes | Pire baisse à 0,5 % |', '|---|---|---|---|---|---|---|');
+  for (const [l, parts] of ports) {
+    const tr = trOf(parts); const c = simulate(tr, 0.5, { ftmo: false }); const taken = c.cycles.flatMap((x) => x.taken);
+    let run = 0, worst = 0; for (const t of taken) { run = t.r < 0 ? run + 1 : 0; worst = Math.max(worst, run); }
+    md.push(`| ${l} | ${c.n} | ${c.winRate.toFixed(0)} % | ${sgn(c.sum)} | ${sgn(c.mean, 3)} | ${worst} | ${c.dd.toFixed(1)} % |`);
+  }
+  md.push('', '## Challenges FTMO 1-Step enchaînés depuis le 1er janvier', '');
+  for (const k of [0.5, 0.75, 1.0]) for (const [l, parts] of ports) {
+    const s = simulate(trOf(parts), k, { ftmo: true });
+    md.push(`- **${l}, ${k} %** : ${s.cycles.map((c) => `${day(c.start)} → ${day(c.end)} ${c.outcome === 'pass' ? '✅ réussi' : c.outcome === 'fail' ? '❌ raté' : '⏳ en cours'} (${sgn((c.bal - START) / START * 100)} %, ${Math.round((c.end - c.start) / DAY)} j)`).join(' ; ')}`);
+  }
+  md.push('', '## Un challenge démarré chaque jour de bourse de 2026', '', 'Pour chaque jour de départ (lundi-vendredi, 1er janvier → fin des données), un seul challenge simulé jusqu\'à réussite, échec ou fin des données. Les départs proches partagent les mêmes trades : ce n\'est pas un échantillon indépendant.', '', '| Portefeuille | Risque | Départs | Réussis | Ratés | Pas encore fini | Taux de réussite (finis) | Durée médiane d\'un réussi (jours) |', '|---|---|---|---|---|---|---|---|');
+  for (const k of [0.25, 0.5, 0.75, 1.0]) for (const [l, parts] of ports) {
+    const tr = trOf(parts); const last = Math.max(...tr.map((t) => t.exitTime)); let p = 0, f = 0, o = 0; const d = [];
+    for (let t0 = FW.from; t0 < last; t0 += DAY) {
+      const dow = new Date(t0 + OFF).getUTCDay(); if (dow === 0 || dow === 6) continue;
+      const sub = tr.filter((t) => t.entryTime >= t0); if (!sub.length) continue;
+      const c = simulate(sub, k, { ftmo: true }).cycles[0];
+      if (c.outcome === 'pass') { p++; d.push((c.end - t0) / DAY); } else if (c.outcome === 'fail') f++; else o++;
+    }
+    d.sort((a, b) => a - b);
+    md.push(`| ${l} | ${k} % | ${p + f + o} | ${p} | ${f} | ${o} | ${p + f ? Math.round(p / (p + f) * 100) : 0} % | ${d.length ? Math.round(d[d.length >> 1]) : '—'} |`);
+  }
+  md.push('');
+  const out = 'data/backtest-input/clean-study-2026-analysis.md';
+  fs.writeFileSync(out, md.join('\n'));
+  console.log(md.join('\n'));
   process.exit(0);
 }
 // port <id:rr,...> : un portefeuille donné, FTMO par période et par risque (outil de lecture, ne choisit rien).
