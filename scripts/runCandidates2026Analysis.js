@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // runCandidates2026Analysis.js
 // Usage: node --max-old-space-size=4096 scripts/runCandidates2026Analysis.js [année, défaut 2026]
+// Autres modes : --histdata [--optimiste] (historique long 2011-2025), --troisieme (3e jambe à ajouter à FVG ; combinable avec --histdata)
 // Une autre année (ex. 2024) écrit candidates-<année>-analysis.md ; le RRR reste choisi sur l'entraînement (< 2025),
 // donc une année d'avant 2025 est DANS l'échantillon d'entraînement (signalé dans le rapport).
 //
@@ -431,4 +432,79 @@ function mainHist() {
   console.log(`\nRapport écrit : ${out}`);
 }
 
-if (HIST) mainHist(); else main();
+// --- Mode --troisieme : quelle 3e jambe ajouter à FVG US100 1:5 + XAUUSD 1:7 ? (Esdras, 2026-09-23)
+// Chaque jambe = une stratégie du bot sur une paire, avec sa config de production. 1) jambe seule (trades isolés),
+// 2) C + jambe dans le MÊME moteur (netting par paire réel) et le même garde-fou (3 trades/jour partagés), FTMO par année.
+// Le classement se fait sur l'entraînement (< 2025) ; 2025-2026 est lu ensuite. Avec --histdata : 2011-2018 (jamais vu).
+function mainThird() {
+  const years = HIST ? [2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018] : [2023, 2024, 2025, 2026];
+  const inY = (y) => (t) => t.entryTime >= eng(y) && t.entryTime < eng(y + 1);
+  const inAll = (t) => t.entryTime >= eng(years[0]) && t.entryTime < eng(years[years.length - 1] + 1);
+  const inTrain = (t) => t.entryTime < CUT_TEST;
+  const fvgC = { US100: { ...CONFIG.fvg.perSymbol.US100, rrMultiple: 5 }, XAUUSD: { ...CONFIG.fvg.perSymbol.XAUUSD, rrMultiple: 7 } };
+  const legs = [
+    ['FVG US500', { fvgConfig: { US500: CONFIG.fvg.perSymbol.US500 } }, { fvgConfig: { ...fvgC, US500: CONFIG.fvg.perSymbol.US500 } }],
+    ['Divergence US100/US500', { divergenceConfig: CONFIG.divergence }],
+    ['NWOG US100', { nwogConfig: { ...CONFIG.nwog, symbols: ['US100'] } }],
+    ['Judas Swing EURUSD', { judasSwingConfig: CONFIG.judasSwing }],
+    ['Weekly Sweep US500', { weeklySweepConfig: { ...CONFIG.weeklySweep, symbols: ['US500'] } }],
+    ['Silver Bullet US100', { silverBulletConfig: { ...CONFIG.silverBullet, symbols: ['US100'] } }],
+    ['Silver Bullet US500', { silverBulletConfig: { ...CONFIG.silverBullet, symbols: ['US500'] } }],
+    ['CBDR US100', { cbdrConfig: CONFIG.cbdr }],
+  ];
+  const sum = (l) => l.reduce((a, t) => a + t.r, 0);
+  console.log('C (FVG US100 1:5 + XAUUSD 1:7)...'); const C = engineTrades({ fvgConfig: fvgC });
+  console.log('RSI(2) US500...'); const rsi2 = rsi2Trades();
+  const rows = [];
+  for (const [name, alone, withC] of legs) {
+    console.log(`${name} : seule, puis avec C...`);
+    rows.push({ name, alone: engineTrades(alone), withC: engineTrades(withC ?? { fvgConfig: fvgC, ...alone }) });
+  }
+  rows.push({ name: 'RSI(2) US500', alone: rsi2, withC: [...C, ...rsi2].sort((a, b) => a.entryTime - b.entryTime) });
+  if (!HIST) rows.sort((a, b) => sum(b.alone.filter(inTrain)) - sum(a.alone.filter(inTrain)));
+  else rows.sort((a, b) => sum(b.alone.filter(inAll)) - sum(a.alone.filter(inAll)));
+
+  const md = [`# 3e jambe pour FVG US100 1:5 + XAUUSD 1:7 : ${HIST ? `HistData ${years[0]}-${years[years.length - 1]} (${OPT ? 'borne optimiste' : 'borne pessimiste'})` : 'broker M1 exact 2023-2026'}`, ''];
+  md.push(`Même moteur et même règlement que \`candidates-${HIST ? 'histdata' : '2026'}-analysis.md\` (\`--troisieme\`). Chaque jambe = une stratégie du bot sur une paire, config de production, aucun réglage refait. « Avec C » = C et la jambe dans le **même moteur** (une seule position par paire, comme en production) et le **même garde-fou** (3 trades/jour partagés, pause 30 min), donc la jambe peut prendre la place d'un trade FVG.`, '');
+  md.push(HIST ? '**2011-2018 n\'a servi à aucun choix** (ni FVG, ni les autres stratégies, mises au point sur 2019+). Règlement M15 : lire les deux bornes (`third-leg-histdata-analysis.md` / `-optimiste`), le vrai chiffre est entre les deux.' : `**Classement sur l'entraînement (< 2025)**, 2025-${years[years.length - 1]} lu ensuite : classer sur toutes les années choisirait la jambe qui a eu de la chance sur les années mêmes où on la juge. 2026 = 1er janvier → 18 septembre.`, '');
+
+  md.push('## 1. Chaque jambe seule (trades isolés, R net avec spread + swap)', '', `| Jambe | ${years.map((y) => String(y)).join(' | ')} | Total | Trades | Win rate | R/trade | t |`, `|---|${years.map(() => '---|').join('')}---|---|---|---|---|`);
+  const legRow = (name, l0) => {
+    const l = l0.filter(inAll); const s = simulate(l, 0.5, { ftmo: false });
+    return `| ${name} | ${years.map((y) => sgn(sum(l.filter(inY(y))))).join(' | ')} | **${sgn(sum(l))}** | ${l.length} | ${l.length ? (l.filter((t) => t.r > 0).length / l.length * 100).toFixed(0) : 0} % | ${l.length ? sgn(sum(l) / l.length, 3) : '—'} | ${s.t.toFixed(2)} |`;
+  };
+  md.push(legRow('*Réf. FVG US100 1:5*', C.filter((t) => t.symbol === 'US100')), legRow('*Réf. FVG XAUUSD 1:7*', C.filter((t) => t.symbol === 'XAUUSD')));
+  for (const r of rows) md.push(legRow(r.name, r.alone));
+
+  md.push('', '## 2. C + la jambe (même moteur, même garde-fou) : R net par année', '', `| Variante | ${years.map((y) => String(y)).join(' | ')} | Total | Écart avec C |`, `|---|${years.map(() => '---|').join('')}---|---|`);
+  const rC = years.map((y) => simulate(C.filter(inY(y)), 0.5, { ftmo: false }).sum); const totC = rC.reduce((a, b) => a + b, 0);
+  md.push(`| **C seul** | ${rC.map((x) => sgn(x)).join(' | ')} | **${sgn(totC)}** | — |`);
+  for (const r of rows) {
+    const rr = years.map((y) => simulate(r.withC.filter(inY(y)), 0.5, { ftmo: false }).sum); const tot = rr.reduce((a, b) => a + b, 0);
+    md.push(`| C + ${r.name} | ${rr.map((x) => sgn(x)).join(' | ')} | **${sgn(tot)}** | ${sgn(tot - totC)} |`);
+  }
+
+  md.push('', '## 3. FTMO 1-Step (+10 %) : réussis / ratés, cycles remis à zéro le 1er janvier, total des années', '', 'Pire baisse = pire baisse du compte continu sur une année (au risque indiqué).', '');
+  const risks = [0.5, 0.75, 1.0];
+  md.push(`| Variante | ${risks.map((k) => `${k} % : réussis / ratés`).join(' | ')} | ${risks.map((k) => `${k} % : pire baisse`).join(' | ')} |`, `|---|${risks.map(() => '---|').join('')}${risks.map(() => '---|').join('')}`);
+  const ftmoRow = (name, tr) => {
+    const cells = risks.map((k) => { let p = 0, f = 0; for (const y of years) { const s = simulate(tr.filter(inY(y)), k, { ftmo: true }); p += s.pass; f += s.fail; } return `${p} / ${f}`; });
+    const dds = risks.map((k) => Math.max(...years.map((y) => simulate(tr.filter(inY(y)), k, { ftmo: false }).dd)).toFixed(1) + ' %');
+    return `| ${name} | ${cells.join(' | ')} | ${dds.join(' | ')} |`;
+  };
+  md.push(ftmoRow('**C seul**', C));
+  for (const r of rows) md.push(ftmoRow(`C + ${r.name}`, r.withC));
+  if (!HIST) {
+    md.push('', '### Hors classement seulement (2025-2026)', '', `| Variante | ${risks.map((k) => `${k} %`).join(' | ')} | R net |`, `|---|${risks.map(() => '---|').join('')}---|`);
+    const oos = [2025, 2026];
+    const row = (name, tr) => `| ${name} | ${risks.map((k) => { let p = 0, f = 0; for (const y of oos) { const s = simulate(tr.filter(inY(y)), k, { ftmo: true }); p += s.pass; f += s.fail; } return `${p} / ${f}`; }).join(' | ')} | ${sgn(oos.reduce((a, y) => a + simulate(tr.filter(inY(y)), 0.5, { ftmo: false }).sum, 0))} |`;
+    md.push(row('**C seul**', C)); for (const r of rows) md.push(row(`C + ${r.name}`, r.withC));
+  }
+  md.push('');
+  const out = `data/backtest-input/third-leg${HIST ? `-histdata${OPT ? '-optimiste' : ''}` : ''}-analysis.md`;
+  fs.writeFileSync(out, md.join('\n'));
+  console.log(md.join('\n'));
+  console.log(`\nRapport écrit : ${out}`);
+}
+
+if (process.argv.includes('--troisieme')) mainThird(); else if (HIST) mainHist(); else main();

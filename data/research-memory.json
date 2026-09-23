@@ -907,5 +907,28 @@
       "data/backtest-input/candidates-histdata-optimiste-analysis.md"
     ],
     "handoffSection": "⚠️ Correction : bug dans la simulation par événements des candidates + test sur l'historique long HistData (2026-09-22)"
+  },
+  {
+    "id": "third-leg-for-fvg-us100-xau",
+    "title": "3e jambe pour FVG US100+XAUUSD : Divergence (meilleure sur le broker) brûle 2011-2018 ; seule NWOG US100 ajoute un peu partout sans augmenter le risque",
+    "date": "2026-09-23",
+    "status": "validated-research",
+    "summary": "C + jambe dans le même moteur et le même garde-fou. Broker 2023-2026 : Divergence +39 R, NWOG +28 R, RSI(2) +7 R, autres ≤ +2 R ou négatives. HistData 2011-2018 (deux bornes M15) : Divergence -174/-187 R (baisse 64 % à 1 %), NWOG +17/+15 R, Weekly Sweep +41/+60 R mais négative sur le broker. Seule NWOG US100 est positive partout, baisse quasi inchangée ; échantillon faible (~14 trades/an).",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 (détection), M1 broker / M15 HistData (règlement)",
+    "sample": "broker 2023-01 → 2026-09-18 ; HistData 2011-2018",
+    "knownWeaknesses": "NWOG : 56 trades broker (t 1,28) ; HistData M15 seulement (bornes) ; swap d'aujourd'hui ; perte quotidienne FTMO sur P&L clôturé.",
+    "files": [
+      "scripts/runCandidates2026Analysis.js",
+      "data/backtest-input/third-leg-analysis.md",
+      "data/backtest-input/third-leg-histdata-analysis.md",
+      "data/backtest-input/third-leg-histdata-optimiste-analysis.md"
+    ],
+    "handoffSection": "3e jambe à ajouter à FVG US100 1:5 + XAUUSD 1:7 ? (2026-09-23)"
   }
 ]

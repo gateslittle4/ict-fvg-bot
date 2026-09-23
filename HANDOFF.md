@@ -6740,3 +6740,22 @@ En R, C ≈ combo (un peu mieux) avec 3 fois moins de trades ; ce qui le disting
 Lecture : C fait mieux que le combo dans les DEUX bornes (combo probablement perdant en 2011-2018), mais on ne peut pas dire si C lui-même était gagnant avant 2019 (interpolation calibrée ≈ -40 R, proche de zéro à négatif). Pour trancher : il faut les fichiers **HistData M1** (NSXUSD et XAUUSD 2010-2018 - les zips d'origine avaient été convertis en M15 puis non gardés) pour régler à la minute.
 
 Recommandation révisée : si on passe à FVG seul US100 + XAUUSD, risque **0,5 à 0,75 %** plutôt que 1 % (broker 2023-2026 : 11 réussis / 0 raté à 0,5 %, 17/5 à 0,75 %, 26/12 à 1 %), vu l'incertitude d'avant 2019. RSI(2) reste en alerte seulement.
+
+## 3e jambe à ajouter à FVG US100 1:5 + XAUUSD 1:7 ? (2026-09-23)
+
+Question d'Esdras : ajouter la 3e stratégie/paire la plus rentable donne-t-il plus sans brûler le compte ? Mode `--troisieme` de `scripts/runCandidates2026Analysis.js` (combinable avec `--histdata [--optimiste]`) → `third-leg-analysis.md` (broker M1 2023-2026), `third-leg-histdata-analysis.md` / `-optimiste-analysis.md` (2011-2018, jamais vu). Chaque jambe = une stratégie du bot sur une paire, config de production ; « avec C » = même moteur (une position par paire) et même garde-fou (3 trades/jour partagés).
+
+| Ajout à C | Broker 2023-2026 : écart R | FTMO broker 0,5 % / 0,75 % / 1 % (C seul : 11/0 · 17/5 · 26/12) | Pire baisse à 1 % (C : 17,5 %) | HistData 2011-2018 écart R (bas / haut) |
+|---|---|---|---|---|
+| Divergence US100/US500 | **+39,3** | 12/1 · 20/5 · 30/13 | 21,7 % | **-173,7 / -187,1** |
+| NWOG US100 | +28,1 | 11/0 · 19/6 · 28/12 | 20,2 % | +16,7 / +15,2 |
+| RSI(2) US500 | +7,4 | 11/0 · 17/5 · 26/11 | 18,3 % | +3,8 / +3,8 |
+| Weekly Sweep US500 | -9,8 | 9/1 · 19/9 · 29/18 | 21,4 % | +41,4 / +60,3 |
+| Judas Swing EURUSD | +2,1 | 12/1 · 19/6 · 29/17 | 22,1 % | -64,4 / +12,3 |
+| Silver Bullet US100 / US500, FVG US500, CBDR US100 | -22 à -44 | plus de ratés | 24-27 % | mitigé à négatif |
+
+Lecture :
+- La « 3e plus rentable » sur le broker (Divergence, aussi 1re au classement d'entraînement < 2025) **perd lourdement en 2011-2018** (-178 R seule, dans les deux bornes : ses stops larges rendent le règlement M15 peu ambigu, donc ce résultat est solide). Ajoutée à C : -174 à -187 R, pire baisse 64,5 % à 1 % (borne basse). À ne pas ajouter.
+- **NWOG US100 (achat seulement) est la seule jambe positive partout** : broker +28 R, 2011-2018 +15 à +17 R, sans hausse notable de la baisse (0,5 % : 9,5 % contre 9,9 % ; 1 % : 20,2 % contre 17,5 %). Limite : peu de trades (56 en 2023-2026, ~14/an ; t 1,28) : gain modeste, pas prouvé statistiquement.
+- Weekly Sweep US500 : positif en 2011-2018 mais négatif sur le broker récent : non.
+- Rien n'a été changé dans le bot.
