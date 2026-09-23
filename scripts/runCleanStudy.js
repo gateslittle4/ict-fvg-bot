@@ -46,8 +46,11 @@ const RISKS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
 // LIMIT à entryPrice n'est posé qu'à la CLÔTURE de la bougie M15 « validated », expire après CONFIG.fvg.maxAgeCandles bougies,
 // ne se remplit que si le prix revient sur le niveau (achat : bid <= entrée - spread, c'est-à-dire l'ask touche) et le trade
 // est perdu si l'objectif est atteint avant. Cache séparé.
-const LIVE_FILL = process.env.LIVE_FILL === '1';
-const CACHE = LIVE_FILL ? 'data/clean-study-cache-livefill' : 'data/clean-study-cache';
+// LIVE_FILL=resting : la solution « comme un humain » - l'ordre LIMIT est posé AVANT le contact, dès que la zone est active et
+// que les filtres sont vrais à la dernière clôture connue (cfg.preTouchFilters) ; rempli au premier contact (ask pour un achat).
+const LIVE_FILL = process.env.LIVE_FILL === '1' || process.env.LIVE_FILL === 'resting';
+const RESTING = process.env.LIVE_FILL === 'resting';
+const CACHE = RESTING ? 'data/clean-study-cache-resting' : LIVE_FILL ? 'data/clean-study-cache-livefill' : 'data/clean-study-cache';
 // Règle de sélection, fixée AVANT de lire le test : RRR = meilleur R net d'entraînement ; jambe gardée si, à ce RRR,
 // t >= 2 sur l'entraînement, R net positif dans chaque moitié (2010-2016 et 2017-2022) et au moins 30 trades.
 const MIN_T = 2;
@@ -79,7 +82,7 @@ function swapR(symbol, direction, distance, fillTime, exitTime) {
 const SYMS = ['US100', 'US500', 'XAUUSD', 'EURUSD'];
 const LEGS = {};
 for (const s of ['US100', 'US500', 'XAUUSD']) {
-  LEGS[`fvg-${s}`] = { label: `FVG ${s}`, syms: [s], prodRR: CONFIG.fvg.perSymbol[s].rrMultiple, cfg: (rr) => ({ fvgConfig: { [s]: { ...CONFIG.fvg.perSymbol[s], rrMultiple: rr } } }) };
+  LEGS[`fvg-${s}`] = { label: `FVG ${s}`, syms: [s], prodRR: CONFIG.fvg.perSymbol[s].rrMultiple, cfg: (rr) => ({ fvgConfig: { [s]: { ...CONFIG.fvg.perSymbol[s], rrMultiple: rr, ...(RESTING ? { preTouchFilters: true } : {}) } } }) };
 }
 LEGS.divergence = { label: 'Divergence US100/US500', syms: ['US500', 'US100'], prodRR: CONFIG.divergence.rrMultiple, cfg: (rr) => ({ divergenceConfig: { ...CONFIG.divergence, rrMultiple: rr } }) };
 const PER_SYMBOL = [
@@ -149,7 +152,7 @@ function settleM1(S, tr) {
 
 function settleLiveLimit(S, tr) {
   const bull = tr.direction === 'bullish'; const spread = DEFAULT_SPREADS[tr.symbol] ?? 0;
-  const placed = tr.entryTime + 900000; const expiry = tr.entryTime + CONFIG.fvg.maxAgeCandles * 900000;
+  const placed = RESTING ? tr.entryTime : tr.entryTime + 900000; const expiry = tr.entryTime + CONFIG.fvg.maxAgeCandles * 900000;
   const end = lower(S.t, S.n, expiry);
   for (let i = lower(S.t, S.n, placed); i < end; i++) {
     const filled = bull ? S.l[i] <= tr.entryPrice - spread : S.h[i] >= tr.entryPrice;

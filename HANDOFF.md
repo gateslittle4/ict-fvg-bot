@@ -6754,3 +6754,32 @@ Décomposition FVG US100 (2023-2025) : les 204 trades jamais repris valaient +36
 **Portefeuilles en exécution réelle, avec coûts** (`clean-study-prune-livefill-analysis.md`) : combo actuel **−262 R / −79 R / −44 R** (FTMO 0,5 % : 17/42, 3/10, 0/3). Sans les jambes perdantes sur l'entraînement (retire les 3 FVG et Judas EURUSD) : +361 R (t 3,3) / +62 R (t 1,2) / +10 R, FTMO 0,5 % : 24/11, 5/5, 2/2. Choisi sur l'entraînement (NWOG US100 + Weekly Sweep US500 + Silver Bullet US500, 1 %) : +269 R / +21 R (6/8) / +19 R (3/1).
 
 **Conclusions renversées :** la référence +220 R, « FVG US100 + Or » (recommandé plus tôt le même jour), et tout résultat FVG qui entre au premier contact. **Rien changé dans le bot** (le compte démo tourne toujours avec FVG en LIMIT). Piste à tester : poser l'ordre LIMIT dès la formation de la zone (« watching »), avec les filtres évalués avant le contact, pour capter le premier contact comme le backtest.
+
+## FVG et Judas Swing EURUSD retirés du live ; filtres « avant contact » (2026-09-23, nuit)
+
+**Demande d'Esdras :** « trader comme un humain, rapide mais sans émotion », « fais le nécessaire… pousse dans le live code », « rends le système très fiable ».
+
+**Pourquoi le bot ne peut pas prendre les trades FVG qui filent vers l'objectif.** Il y avait deux causes :
+1. L'ordre LIMIT n'est posé qu'après la clôture de la bougie du contact.
+2. Plus grave : deux filtres FVG, `structure` et `liquiditySweep`, lisent la **clôture de la bougie du contact elle-même**. Le balayage de liquidité exige par exemple que la bougie passe sous un plus bas **et clôture au-dessus**. Le backtest ne gardait donc que les contacts dont il savait déjà qu'ils rebondiraient.
+
+**La solution humaine a été testée, sans succès.** Il s'agit de poser l'ordre LIMIT avant le contact, avec des filtres lus à la dernière clôture connue. C'est la nouvelle option `preTouchFilters` de `buildMultiTouchFilterPredicate` et `buildFilteredEngine`, désactivée par défaut, avec son test. Mode `LIVE_FILL=resting` de `runCleanStudy.js`. Résultats en R brut sur 2010-2022 / 2023-2025 / 2026 :
+
+| Stratégie | 2010-2022 | 2023-2025 | 2026 |
+|---|---|---|---|
+| FVG US100 1:5 | −229 | −13 | −25 |
+| FVG US500 1:5 | −63 | −11 | −20 |
+| FVG XAUUSD 1:4 | −21 | +54 | +21 |
+
+Pour comparer, le FVG US100 tel qu'il est exécuté aujourd'hui fait −449 / −139 / −51. **Le « profit » du FVG venait de l'information de clôture, pas d'un avantage exploitable.**
+
+**Changement live** (règle R1 fixée d'avance : retirer les jambes perdantes sur l'entraînement en exécution réelle) :
+- `CONFIG.fvg.liveSymbols = []`. `AccountRuntime` ne passe au moteur que ces symboles ; `perSymbol` reste intact pour la recherche et le labo.
+- `CONFIG.judasSwing.symbols = []`.
+- `replaySignals.js` suit `liveSymbols`.
+- Restent en live : Divergence US100/US500 1:3, NWOG US100 1:5, Weekly Sweep US500 1:5, Silver Bullet US100/US500 1:3, CBDR US100 1:3, et RSI(2)/US500 journalier (déjà en production depuis le déploiement de `812e490` à 00 h 43 UTC).
+- En exécution réelle avec coûts, ce portefeuille fait +361 R (t 3,3) sur 2010-2022, +62 R (t 1,2) sur 2023-2025 et +10 R en 2026. FTMO à 0,5 % : 24 réussis / 11 ratés, puis 5/5, puis 2/2. C'est positif mais faible depuis 2023 : pas de challenge payant avant d'avoir des résultats réels.
+
+**Déploiement.** Une position Divergence US500 était ouverte : achat le 22/09 à 20:00 UTC à 7774,7, stop 7755,2, objectif 7832,1, protection broker en place. Règle d'Esdras : pas de déploiement avec une position ouverte. Le code est donc poussé avec `[skip render]`, et un surveillant dans le codespace déclenche le déploiement quand le solde change (position fermée). Si le codespace s'est endormi, déployer à la main : commit vide sans `[skip render]`, ou Render → Manual Deploy.
+
+**Fiabilité vérifiée** : les écarts `[bar-reconcile]` des logs sont corrigés **avant** le calcul des signaux (`_ingestNewLiveBar` réconcilie avec `includeNewest`) ; ce n'est pas un bug. Le redémarrage de 00:44 avec la position ouverte a revérifié les positions auprès du broker sans rien effacer.

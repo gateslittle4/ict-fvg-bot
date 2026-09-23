@@ -71,9 +71,12 @@ export function buildFilteredEngine(
     sweepLookback = SWEEP_LOOKBACK,
     sweepWindowCandles = SWEEP_WINDOW_CANDLES,
     excludedWeekdays = [],
+    preTouchFilters = false,
   }
 ) {
   let engine = new FvgEngine({ symbol });
+  // preTouchFilters: see buildMultiTouchFilterPredicate (fvgMultiTouch.js) - structure/sweep read as of the last closed candle.
+  const at = (t) => (preTouchFilters ? t - 1 : t);
   const wrappers = []; // track wrapper instances so callers can sum up filteredCount/passedCount
 
   if (variant !== 'baseline') {
@@ -92,7 +95,8 @@ export function buildFilteredEngine(
 
   if (structureEnabled) {
     const structureSeries = buildStructureBiasSeries(candles, { lookback: structureLookback });
-    const structureLookup = makeStructureBiasLookup(structureSeries);
+    const structureLookupRaw = makeStructureBiasLookup(structureSeries);
+    const structureLookup = (t) => structureLookupRaw(at(t));
     engine = new StructureFilteredFvgEngine(engine, structureLookup);
     wrappers.push(engine);
   }
@@ -104,7 +108,8 @@ export function buildFilteredEngine(
 
   if (liquiditySweepEnabled) {
     const sweepEvents = buildLiquiditySweepEvents(candles, { lookback: sweepLookback });
-    const sweepLookup = makeSweepLookup(sweepEvents, { windowMs: sweepWindowCandles * 15 * 60 * 1000 });
+    const sweepLookupRaw = makeSweepLookup(sweepEvents, { windowMs: sweepWindowCandles * 15 * 60 * 1000 });
+    const sweepLookup = (t, direction) => sweepLookupRaw(at(t), direction);
     engine = new LiquiditySweepFilteredFvgEngine(engine, sweepLookup);
     wrappers.push(engine);
   }

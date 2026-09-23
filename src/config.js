@@ -132,6 +132,13 @@ export const CONFIG = {
   },
   fvg: {
     maxAgeCandles: 50,
+    // 2026-09-23 - FVG ARRÊTÉ EN LIVE (Esdras : « fais le nécessaire »). Les backtests entraient au premier contact pendant la bougie
+    // « validated » et leurs filtres structure / balayage lisaient la clôture de cette même bougie : impossible en réel. Mesuré avec
+    // l'exécution réelle du bot (scripts/runCleanStudy.js, LIVE_FILL=1 et LIVE_FILL=resting - ordre posé avant le contact, filtres à la
+    // dernière clôture) : FVG US100 1:5 = -449 / -139 / -51 R brut (2010-2022 / 2023-2025 / 2026) tel qu'exécuté, -229 / -13 / -25 R
+    // même avec l'ordre posé avant le contact ; US500 et XAUUSD négatifs sur 2010-2022 aussi. Voir HANDOFF.md « Exécution réelle ».
+    // `perSymbol` reste intact pour la recherche ; seul liveSymbols décide ce que le bot trade (accountRuntime.js).
+    liveSymbols: [],
     // Per-symbol filtered-FVG config, identical to FVG_CONFIG in
     // scripts/runFtmo1StepAccountImpact.js — the exact combo validated
     // train(2019-2023)/test(2024-2025). Consumed by buildFilteredEngine()
@@ -341,7 +348,9 @@ export const CONFIG = {
   // - no special-cased position tracking. Default London killzone window
   // (02:00-05:00 NY) from src/backtest/judasSwing.js is used as-is.
   judasSwing: {
-    symbols: ['EURUSD'],
+    // 2026-09-23 - retiré du live (était ['EURUSD']) : -45 R net sur 2010-2022 en exécution réelle, négatif dans les deux moitiés
+    // (scripts/runCleanStudy.js prune, LIVE_FILL=1 ; règle « retirer les jambes perdantes sur l'entraînement » fixée d'avance).
+    symbols: [],
     rrMultiple: 3, // same convention already validated in src/backtest/judasSwing.js - not re-tuned here
     maxHoldingM15Candles: 480,
   },
