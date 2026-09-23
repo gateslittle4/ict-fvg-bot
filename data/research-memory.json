@@ -991,5 +991,20 @@
       "data/live-replay/"
     ],
     "handoffSection": "Rejeu fidèle 2010-2026 complet"
+  },
+  {
+    "id": "prereg-intraday-momentum-2026-09-23",
+    "title": "Momentum intraday publié (ORB 5 min Zarattini-Aziz, noise area Zarattini-Aziz-Barbon, dernière demi-heure Gao et al.) sur US100/US500 : pré-enregistré",
+    "date": "2026-09-23",
+    "status": "preregistered",
+    "summary": "Écrit avant tout calcul. Nouvelle source d'avantage, indépendante du combo (≈ 0 depuis 2023). Trois stratégies publiées, règles des auteurs sans optimisation : A cassure du range d'ouverture 5 min (US100, stop extrême opposé, objectif 10 R, sortie en fin de séance), B noise area 14 jours, contrôles HH:00/HH:30 de 10:00 à 15:30, stop suiveur max(borne, VWAP≈TWAP) (US500), C dernière demi-heure dans le sens de la première (US500). Séance NY 9:30-16:00 réelle, bid + spread par défaut au niveau de prix, pas de swap. Critère projet : entraînement 2010-2022 ≥ 60 trades, t ≥ 2, deux moitiés positives, puis test 2023-2025 ≥ 30 trades et > 0. Autre indice = contrôle de robustesse. Texte : data/backtest-input/preregistration-intraday-momentum-2026-09-23.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M1 intraday",
+    "files": [
+      "data/backtest-input/preregistration-intraday-momentum-2026-09-23.md"
+    ]
   }
 ]
