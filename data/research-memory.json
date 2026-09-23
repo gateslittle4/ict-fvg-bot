@@ -956,5 +956,20 @@
       "scripts/runEsdrasFvgV2Study.js",
       "data/backtest-input/esdras-fvg-v2-us500-study.md"
     ]
+  },
+  {
+    "id": "prereg-esdras-fvg-v2-fixed3r-2026-09-23",
+    "title": "FVG d'Esdras v2 avec cible fixe 3R (correction d'interprétation), US100 et US500 : pré-enregistré",
+    "date": "2026-09-23",
+    "status": "preregistered",
+    "summary": "Règles v2 inchangées sauf la cible : 3R fixe au lieu de la liquidité 4h la plus proche ≥ 3R (Esdras voulait dire « cible fixe 3R »). US100 et US500 jugées séparément, même critère. 3e passage de la même famille : réserve déclarée.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15 + H4",
+    "files": [
+      "data/backtest-input/preregistration-esdras-fvg-v2-fixed3r-2026-09-23.md"
+    ]
   }
 ]
