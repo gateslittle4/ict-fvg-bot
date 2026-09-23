@@ -9,7 +9,7 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "start": "node src/server.js",
-    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
+    "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath .githooks',{stdio:'ignore'})}catch(e){}\""
   },
   "keywords": [],
   "author": "",
