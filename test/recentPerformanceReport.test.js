@@ -173,7 +173,7 @@ test('a position already open before the report window started is excluded rathe
 });
 
 // 2026-09-21: the site's "performance récente" used to replay only FVG + Divergence (-17.7 R over 90 days) while the live combo has eight mechanisms.
-test('the report mirrors the live engine: only live mechanisms, no FVG on US500, nothing on EURUSD (2026-09-23 combo)', async () => {
+test('the report includes mechanisms other than FVG and Divergence (it mirrors the live engine)', async () => {
   const historyBySymbol = {
     US100: loadCsv('data/backtest-input/US100.csv').slice(0, 6000),
     US500: loadCsv('data/backtest-input/US500.csv').slice(0, 6000),
@@ -181,7 +181,5 @@ test('the report mirrors the live engine: only live mechanisms, no FVG on US500,
   };
   const report = await buildRecentPerformanceReport(historyBySymbol, { days: 365 });
   const sources = new Set(report.trades.map((t) => t.source));
-  assert.ok([...sources].every((x) => ['fvg', 'divergence'].includes(x)), `unexpected ${[...sources].join(',')}`);
-  assert.ok(!report.trades.some((t) => t.symbol === 'EURUSD'));
-  assert.ok(!report.trades.some((t) => t.symbol === 'US500' && t.source === 'fvg'));
+  assert.ok([...sources].some((x) => !['fvg', 'divergence'].includes(x)), `only ${[...sources].join(',')}`);
 });

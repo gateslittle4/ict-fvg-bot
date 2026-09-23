@@ -102,11 +102,7 @@ export const CONFIG = {
   // and it loses even in hours where its spread is only 0.5 (06-16 h UTC), so it is a strategy problem on this pair, not a cost problem.
   // Its mechanism configs below (fvg/nwog/weeklySweep/breakerBlock/silverBullet/cbdr) still list GER40 but are inert: LiveStrategyEngine only
   // processes CONFIG.symbols. Re-add ONLY with a pre-registered criterion (>= 100 out-of-sample signals at >= +0.1 R/trade) and a train/test split.
-  // 2026-09-23, Esdras's explicit decision ("je passe a celui-ci"): combo reduced to FVG US100 + XAUUSD + Divergence (US100/US500)
-  // - see HANDOFF.md "FVG US100 + or + Divergence" and data/backtest-input/fvg-only-ftmo-risk-2026.md (variant D). EURUSD dropped
-  // (only Judas Swing used it). Mechanisms turned off below by emptying their `symbols` (LiveStrategyEngine skips a mechanism
-  // whose symbols list does not include the symbol); their blocks are kept so re-enabling is a one-line change.
-  symbols: ['US100', 'US500', 'XAUUSD'],
+  symbols: ['US100', 'US500', 'XAUUSD', 'EURUSD'],
   timeframe: 'M15',
   accountMode: ACCOUNT_MODE, // 'challenge' | 'live' - see ACCOUNT_MODE comment above
   risk: {
@@ -186,6 +182,39 @@ export const CONFIG = {
         // (jamais busté sur 7 ans, voir data/backtest-input/
         // ftmo-1step-us100-only-pyramid-account-impact.md) avant d'activer
         // ce champ. `LiveStrategyEngine._buildFvgEngine()` lit ce champ.
+        multiTouch: true,
+      },
+      US500: {
+        variant: 'H1_EMA50',
+        stopMode: 'fvg-edge',
+        // 2026-09: cible étendue à 1:5 — même logique/source que US100
+        // ci-dessus. Espérance train 0.63R→1.02R, test 0.70R→1.13R ; le
+        // saut de drawdown (7.03R→8.96R train) se produit déjà en passant
+        // à 1:4, pas entre 1:4 et 1:5 — le gain d'espérance de 1:4 à 1:5
+        // ne coûte donc rien de plus en risque.
+        rrMultiple: 5,
+        structureEnabled: true,
+        sessionEnabled: true,
+        sessionWindow: SILVER_BULLET_WINDOW,
+        liquiditySweepEnabled: true,
+        // 2026-09-16: "multi-contact" activé ici aussi (déjà en production
+        // sur US100 depuis longtemps, voir ce champ dans le bloc US100
+        // ci-dessus) - jamais testé avec la même rigueur sur US500 jusqu'à
+        // aujourd'hui (voir HANDOFF.md "FVG multi-contact sur US500/XAUUSD").
+        // Résultat sur 17 ans : contact unique 183 trades/31.8% de
+        // réussite/+147.61R → multi-contact 433 trades (+137%)/31.9% de
+        // réussite (inchangé)/+336.59R (plus du double) - le taux de gain ne
+        // bouge quasiment pas alors que le volume ET le R total augmentent
+        // fortement. Contrôles de robustesse les plus propres vus cette
+        // session : 8 blocs de 2 ans sur 8 positifs (aucun autre candidat de
+        // la session n'a fait mieux), achat/vente équilibré (58%/42%),
+        // concentration annuelle la plus faible (15%). Vérifié sur la
+        // fenêtre réelle récente (2026-02→09) aussi, mais l'échantillon y
+        // est minuscule des deux côtés (n=4 vs n=13) - pas assez pour
+        // trancher, contrairement au cas de la cible dynamique où le réel
+        // contredisait clairement l'historique. XAUUSD reste en contact
+        // unique - même test fait là-bas, robustesse correcte mais gain de R
+        // marginal (+4.7% seulement), pas activé.
         multiTouch: true,
       },
       XAUUSD: {
@@ -289,7 +318,7 @@ export const CONFIG = {
   // as the same conservative middle-ground already used for FVG rather than
   // chasing the top of the curve.
   nwog: {
-    symbols: [], // OFF 2026-09-23 (combo reduced to FVG US100/XAUUSD + Divergence) - was ['US100', 'GER40']
+    symbols: ['US100', 'GER40'],
     rrMultiple: 5,
     maxHoldingM15Candles: 480,
     longOnlySymbols: ['US100'],
@@ -312,7 +341,7 @@ export const CONFIG = {
   // - no special-cased position tracking. Default London killzone window
   // (02:00-05:00 NY) from src/backtest/judasSwing.js is used as-is.
   judasSwing: {
-    symbols: [], // OFF 2026-09-23 (combo reduced to FVG US100/XAUUSD + Divergence) - was ['EURUSD']
+    symbols: ['EURUSD'],
     rrMultiple: 3, // same convention already validated in src/backtest/judasSwing.js - not re-tuned here
     maxHoldingM15Candles: 480,
   },
@@ -364,7 +393,7 @@ export const CONFIG = {
   // moved but stayed in the same ballpark on both (GER40 ~40R->38R train,
   // US500 ~29R->39R train).
   weeklySweep: {
-    symbols: [], // OFF 2026-09-23 (combo reduced to FVG US100/XAUUSD + Divergence) - was ['GER40', 'US500']
+    symbols: ['GER40', 'US500'],
     rrMultiple: 5,
     maxHoldingM15Candles: 480,
   },
@@ -405,7 +434,7 @@ export const CONFIG = {
   // with the other two GER40 mechanisms rather than leaving this one alone
   // at 1:3.
   breakerBlock: {
-    symbols: [], // OFF 2026-09-23 (combo reduced to FVG US100/XAUUSD + Divergence) - was ['GER40']
+    symbols: ['GER40'],
     rrMultiple: 5,
     maxHoldingM15Candles: 480,
   },
@@ -442,7 +471,7 @@ export const CONFIG = {
   // on all 3 symbols in both checks above, unlike US100/NWOG's genuine
   // long-only edge.
   silverBullet: {
-    symbols: [], // OFF 2026-09-23 (combo reduced to FVG US100/XAUUSD + Divergence) - was ['US100', 'US500', 'GER40']
+    symbols: ['US100', 'US500', 'GER40'],
     rrMultiple: 3,
     maxHoldingM15Candles: 480,
   },
@@ -494,7 +523,7 @@ export const CONFIG = {
   // other live source (liveStrategyEngine.js's _processCbdrCandidate) - no
   // special-cased position tracking.
   cbdr: {
-    symbols: [], // OFF 2026-09-23 (combo reduced to FVG US100/XAUUSD + Divergence) - was ['US100']
+    symbols: ['US100'],
     rrMultiple: 3,
     maxHoldingM15Candles: 480,
   },

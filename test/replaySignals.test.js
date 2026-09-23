@@ -30,12 +30,10 @@ test('there are exactly the bot\'s 8 live mechanisms', () => {
 
 test('each mechanism applies only where CONFIG says the bot trades it', () => {
   const ids = (sym) => botMechanismsForSymbol(sym).map((m) => m.id).sort();
-  // 2026-09-23 combo: FVG US100/XAUUSD + Divergence US100/US500, every other mechanism off.
-  assert.deepEqual(ids('US100'), ['bot-divergence', 'bot-fvg']);
-  assert.deepEqual(ids('US500'), ['bot-divergence']);
-  assert.deepEqual(ids('XAUUSD'), ['bot-fvg']);
-  assert.deepEqual(ids('EURUSD'), []);
-  assert.deepEqual(ids('GER40'), []);
+  assert.ok(ids('US100').includes('bot-fvg') && ids('US100').includes('bot-cbdr') && ids('US100').includes('bot-nwog') && ids('US100').includes('bot-divergence'));
+  assert.ok(ids('EURUSD').includes('bot-judas'));
+  assert.ok(!ids('EURUSD').includes('bot-fvg'));
+  assert.ok(ids('GER40').includes('bot-breaker'));
   assert.deepEqual(ids('USDCAD'), []); // a pair the bot trades nothing on
   for (const m of BOT_MECHANISMS) for (const s of m.symbolsOf()) assert.ok(botMechanismsForSymbol(s).some((x) => x.id === m.id));
 });
@@ -106,16 +104,8 @@ test('the NWOG long-only rule of the live config is applied: US100 never shows a
   assert.ok((CONFIG.nwog.longOnlySymbols || []).includes('US100'));
   assert.ok(!(CONFIG.nwog.longOnlySymbols || []).includes('GER40'));
   const candles = weeklyGapSeries();
-  // NWOG is off live since 2026-09-23 (symbols: []): re-enable it on its former symbols for this check only.
-  const saved = CONFIG.nwog.symbols;
-  CONFIG.nwog.symbols = ['US100', 'GER40'];
-  let us100, ger40;
-  try {
-    us100 = runReplayStrategy('bot-nwog', candles, 'US100');
-    ger40 = runReplayStrategy('bot-nwog', candles, 'GER40');
-  } finally {
-    CONFIG.nwog.symbols = saved;
-  }
+  const us100 = runReplayStrategy('bot-nwog', candles, 'US100');
+  const ger40 = runReplayStrategy('bot-nwog', candles, 'GER40');
   assert.ok(ger40.length > 0 && ger40.some((t) => t.direction === 'bearish'), 'the synthetic gaps must give GER40 sells for the comparison to mean anything');
   assert.ok(us100.length > 0 && us100.every((t) => t.direction === 'bullish'));
   assert.ok(us100.length < ger40.length);
