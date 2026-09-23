@@ -14,6 +14,9 @@
 //   node --max-old-space-size=6144 scripts/runCleanStudy.js legs <id,id,...|all>  -> trades de chaque jambe x RRR, en cache
 //   node --max-old-space-size=6144 scripts/runCleanStudy.js report                -> sélection sur l'entraînement + rapport
 //   node --max-old-space-size=6144 scripts/runCleanStudy.js prune                 -> élagage du combo actuel (mêmes règles de protocole)
+//   node --max-old-space-size=8000 scripts/runCleanStudy.js macro                 -> régimes de marché par année (descriptif)
+//   node scripts/runCleanStudy.js switch                                          -> filtre « jambe active si R > 0 sur L mois »
+//   node scripts/runCleanStudy.js port fvg-US100:5,fvg-XAUUSD:4                   -> un portefeuille donné, FTMO par période
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../src/backtest/nySession.js';
@@ -414,8 +417,95 @@ function prune() {
   console.log(`\nRapport écrit : ${out}`);
 }
 
+// --- Régimes de marché (Esdras, 2026-09-23 : « y a-t-il un truc macro qui explique quand une stratégie marche ? »).
+// Par année : R net des jambes (RRR de production) et du combo, et l'état du marché mesuré sur le M1 (rendement annuel,
+// volatilité annualisée des clôtures journalières, efficacité de tendance = |variation nette| / somme des |variations
+// journalières|) + taux directeur moyen de la Fed (moyenne annuelle du taux effectif, source publique, arrondie).
+// Descriptif : 16 années, donc des corrélations fragiles ; ne sert à aucun choix.
+const FED = { 2010: 0.2, 2011: 0.1, 2012: 0.1, 2013: 0.1, 2014: 0.1, 2015: 0.1, 2016: 0.4, 2017: 1.0, 2018: 1.8, 2019: 2.2, 2020: 0.4, 2021: 0.1, 2022: 1.7, 2023: 5.0, 2024: 5.1, 2025: 4.2 };
+function macro() {
+  const years = []; for (let y = 2011; y <= 2026; y++) years.push(y);
+  const perOf = (y) => ({ ...PERIODS.find((p) => eng(y) >= p.from && eng(y) < p.to), from: eng(y), to: eng(y + 1) });
+  const mkt = {};
+  for (const sym of ['US100', 'XAUUSD']) {
+    mkt[sym] = {};
+    for (const src of ['hist', 'broker']) {
+      const S = loadM1(src, sym); const closes = new Map();
+      for (let i = 0; i < S.n; i++) closes.set(Math.floor(S.t[i] / DAY), S.c[i]);
+      const days = [...closes.entries()].sort((a, b) => a[0] - b[0]);
+      for (const y of years) {
+        const p = perOf(y); if (p.src !== src) continue;
+        const d = days.filter(([k]) => k * DAY >= p.from && k * DAY < p.to).map(([, c]) => c);
+        if (d.length < 50) continue;
+        const rets = []; for (let i = 1; i < d.length; i++) rets.push(Math.log(d[i] / d[i - 1]));
+        const m = rets.reduce((a, b) => a + b, 0) / rets.length;
+        const vol = Math.sqrt(rets.reduce((a, b) => a + (b - m) ** 2, 0) / (rets.length - 1) * 252) * 100;
+        const eff = Math.abs(Math.log(d[d.length - 1] / d[0])) / rets.reduce((a, b) => a + Math.abs(b), 0);
+        mkt[sym][y] = { ret: (d[d.length - 1] / d[0] - 1) * 100, vol, eff };
+      }
+    }
+  }
+  const legR = (id, rr, y) => sumR(legTrades(id, rr, perOf(y)));
+  const prodIds = Object.keys(LEGS).filter((id) => LEGS[id].inProd);
+  const rows = years.map((y) => ({
+    y, fvgUs: legR('fvg-US100', LEGS['fvg-US100'].prodRR, y), fvgXau: legR('fvg-XAUUSD', LEGS['fvg-XAUUSD'].prodRR, y),
+    others: prodIds.filter((id) => !id.startsWith('fvg-')).reduce((a, id) => a + legR(id, LEGS[id].prodRR, y), 0),
+    us: mkt.US100[y], xau: mkt.XAUUSD[y], fed: FED[y],
+  }));
+  const md = ['# Régimes de marché : quand chaque stratégie a marché (2011-2026)', '', 'Descriptif, ne sert à aucun choix. R net par année des jambes à leur RRR de production (trades isolés). Marché mesuré sur le M1 (HistData jusqu\'en 2022, broker ensuite). Efficacité de tendance : 1 = l\'année monte ou descend en ligne droite, 0 = aller-retour. Fed : moyenne annuelle du taux effectif (arrondie, 2026 non renseigné).', ''];
+  md.push('| Année | FVG US100 1:5 | FVG Or 1:4 | Autres jambes du combo | US100 : rendement | US100 : volatilité | US100 : tendance | Or : rendement | Or : volatilité | Or : tendance | Fed |', '|---|---|---|---|---|---|---|---|---|---|---|');
+  const f = (x, d = 0) => (x == null ? '—' : x.toFixed(d));
+  for (const r of rows) md.push(`| ${r.y}${r.y >= 2026 ? ' (fwd)' : r.y >= 2023 ? ' (test)' : ''} | ${sgn(r.fvgUs)} | ${sgn(r.fvgXau)} | ${sgn(r.others)} | ${r.us ? sgn(r.us.ret, 0) + ' %' : '—'} | ${f(r.us?.vol)} % | ${f(r.us?.eff, 2)} | ${r.xau ? sgn(r.xau.ret, 0) + ' %' : '—'} | ${f(r.xau?.vol)} % | ${f(r.xau?.eff, 2)} | ${r.fed == null ? '—' : r.fed.toFixed(1) + ' %'} |`);
+  // Corrélations de rang (Spearman) sur les années
+  const rank = (a) => { const s = a.map((v, i) => [v, i]).sort((x, y) => x[0] - y[0]); const r = new Array(a.length); s.forEach(([, i], k) => { r[i] = k; }); return r; };
+  const spearman = (a, b) => { const ok = a.map((v, i) => v != null && b[i] != null); const x = rank(a.filter((_, i) => ok[i])), y = rank(b.filter((_, i) => ok[i])); const n = x.length; const d2 = x.reduce((s, v, i) => s + (v - y[i]) ** 2, 0); return { rho: 1 - 6 * d2 / (n * (n * n - 1)), n }; };
+  md.push('', '## Corrélations de rang (Spearman) entre le R de l\'année et l\'état du marché', '', '| Stratégie | Variable | rho | années |', '|---|---|---|---|');
+  const vars = [['US100 rendement', (r) => r.us?.ret], ['US100 volatilité', (r) => r.us?.vol], ['US100 tendance', (r) => r.us?.eff], ['Or rendement', (r) => r.xau?.ret], ['Or volatilité', (r) => r.xau?.vol], ['Or tendance', (r) => r.xau?.eff], ['Fed', (r) => r.fed]];
+  for (const [lab, get] of [['FVG US100', (r) => r.fvgUs], ['FVG Or', (r) => r.fvgXau], ['Autres jambes', (r) => r.others]]) for (const [vl, gv] of vars) {
+    const { rho, n } = spearman(rows.map(get), rows.map(gv)); md.push(`| ${lab} | ${vl} | ${rho.toFixed(2)} | ${n} |`);
+  }
+  md.push('', 'Avec 15-16 années, |rho| doit dépasser ~0,5 pour être distinguable du hasard (seuil 5 %) ; plusieurs essais augmentent le risque d\'un faux positif.', '');
+  const out = 'data/backtest-input/clean-study-regimes-analysis.md';
+  fs.writeFileSync(out, md.join('\n'));
+  console.log(md.join('\n'));
+}
+
 const [mode, arg] = process.argv.slice(2);
 if (mode === 'prune') { prune(); process.exit(0); }
+if (mode === 'macro') { macro(); process.exit(0); }
+// switch : chaque jambe du combo n'est active que si ses propres signaux (tous, pris ou non) ont un R net > 0 sur les
+// L derniers mois (L choisi sur l'entraînement parmi 3/6/12/24, avec le risque) - « suivre la stratégie qui marche ».
+if (mode === 'switch') {
+  const prodIds = Object.keys(LEGS).filter((id) => LEGS[id].inProd);
+  const MONTH = 30.44 * DAY;
+  const filtered = (per, L) => merge(prodIds.map((id) => {
+    const rr = LEGS[id].prodRR; const all = load(id, rr, per.src); // historique complet de la source pour la fenêtre glissante
+    const own = all.filter(inP(per));
+    return own.filter((t) => { const past = all.filter((x) => x.exitTime <= t.entryTime && x.exitTime > t.entryTime - L * MONTH); return past.length >= 5 && sumR(past) > 0; });
+  }));
+  const res = [];
+  for (const L of [0, 3, 6, 12, 24]) {
+    const per = PERIODS[0]; const tr = L ? filtered(per, L) : merge(prodIds.map((id) => legTrades(id, LEGS[id].prodRR, per)));
+    for (const k of RISKS) { const s = simulate(tr, k, { ftmo: true }); res.push({ L, k, d: s.pass - s.fail, f: s.fail, s }); }
+  }
+  const best = res.filter((x) => x.L).sort((a, b) => b.d - a.d || a.f - b.f)[0];
+  console.log(`Choisi sur l'entraînement : fenêtre ${best.L} mois, risque ${best.k} % (${best.s.pass}/${best.s.fail})`);
+  for (const L of [0, 3, 6, 12, 24]) for (const k of [0.25, 0.5, 0.75]) console.log(`${L ? `filtre ${L} mois` : 'sans filtre'} ${k} % | ` + PERIODS.map((per) => {
+    const tr = L ? filtered(per, L) : merge(prodIds.map((id) => legTrades(id, LEGS[id].prodRR, per))); const s = simulate(tr, k, { ftmo: true }); const c = simulate(tr, k, { ftmo: false });
+    return `${per.id} ${sgn(c.sum)} R (${c.n} tr.), ${s.pass}/${s.fail}, méd ${s.medPassDays ?? '—'} j, baisse ${c.dd.toFixed(1)} %`;
+  }).join(' | '));
+  process.exit(0);
+}
+// port <id:rr,...> : un portefeuille donné, FTMO par période et par risque (outil de lecture, ne choisit rien).
+if (mode === 'port') {
+  const parts = arg.split(',').map((x) => x.split(':')).map(([id, rr]) => [id, +rr]);
+  const ordered = Object.keys(LEGS).flatMap((id) => parts.filter(([p]) => p === id));
+  for (const k of [0.25, 0.5, 0.75, 1.0]) console.log(`${k} % | ` + PERIODS.map((per) => {
+    const tr = merge(ordered.map(([id, rr]) => legTrades(id, rr, per))); const s = simulate(tr, k, { ftmo: true }); const c = simulate(tr, k, { ftmo: false });
+    return `${per.id} ${sgn(c.sum)} R, ${s.pass}/${s.fail}, méd ${s.medPassDays ?? '—'} j, baisse ${c.dd.toFixed(1)} %`;
+  }).join(' | '));
+  process.exit(0);
+}
 if (mode === 'legs') runLegs(arg === 'all' || !arg ? Object.keys(LEGS) : arg.split(','));
 else if (mode === 'report') report();
 else if (mode === 'list') console.log(Object.keys(LEGS).join('\n'));
