@@ -1,4 +1,4 @@
-# Le FVG d'Esdras v2 (contexte 4h) — résultat du pré-enregistrement
+# Le FVG d'Esdras v2 (contexte 4h) — US500 — résultat du pré-enregistrement
 
 Règles : `data/backtest-input/preregistration-esdras-fvg-v2-2026-09-23.md` appliquées telles quelles à US500 (`preregistration-esdras-fvg-v2-us500-2026-09-23.md`) (commité avant ce calcul, rien changé depuis). Script : `scripts/runEsdrasFvgV2Study.js`. M15 US500 seul, règles v1 + creux/sommet 4h pris ou FVG 4h touché dans les 5 jours avec retournement depuis cette zone, cible = liquidité 4h la plus proche (≥ 3R exigé), 8h-12h New York, réglé à la minute.
 

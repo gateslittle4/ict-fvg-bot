@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // runEsdrasFvgV2Study.js
-// Usage: [SYMBOL=US500] node --max-old-space-size=6144 scripts/runEsdrasFvgV2Study.js   (US100 par défaut)
+// Usage: [SYMBOL=US500] [FIXED_RR=3] node --max-old-space-size=6144 scripts/runEsdrasFvgV2Study.js   (US100 par défaut)
 //
 // Le FVG d'Esdras v2, exactement tel que pré-enregistré dans
 // data/backtest-input/preregistration-esdras-fvg-v2-2026-09-23.md (commité AVANT ce script) :
@@ -16,6 +16,8 @@ import { buildEffectiveConfig } from '../src/accountRegistry.js';
 import { CONFIG } from '../src/config.js';
 
 const SYMBOLS = [process.env.SYMBOL || 'US100'];
+// FIXED_RR=3 : cible fixe entrée ± 3R au lieu de la liquidité 4h (preregistration-esdras-fvg-v2-fixed3r-2026-09-23.md).
+const FIXED_RR = process.env.FIXED_RR ? Number(process.env.FIXED_RR) : null;
 const M15 = 900000; const MIN = 60000; const DAY = 86400000;
 const MIN_RR = 3, IMPULSE_ATR = 2, AWAY_MULT = 2, ATR_N = 14, PIVOT = 5, MAX_HOLD = 480 * M15;
 const START = 10000;
@@ -175,12 +177,12 @@ function findTrades(sym, S) {
     if (armedFrom === null || armedFrom >= cancelAt) continue;
     if (armedFrom < busyUntil) continue;
     stats.away++;
-    const target = nearestTarget(bull, entry, lower(ct, N, armedFrom));
+    const target = FIXED_RR ? (bull ? entry + FIXED_RR * d : entry - FIXED_RR * d) : nearestTarget(bull, entry, lower(ct, N, armedFrom));
     if (target === null) continue;
     stats.target++;
     const tR = Math.abs(target - entry) / d;
     stats.targetRs.push(tR);
-    if (tR < MIN_RR) continue;
+    if (!FIXED_RR && tR < MIN_RR) continue;
     stats.rr++;
     const a = lower(S.t, S.n, armedFrom), z = lower(S.t, S.n, cancelAt);
     let fill = -1;
@@ -261,8 +263,8 @@ function main() {
   all.sort((a, b) => a.entryTime - b.entryTime);
   const inP = (p) => (t) => t.entryTime >= p.from && t.entryTime < p.to;
 
-  const md = ['# Le FVG d\'Esdras v2 (contexte 4h) — résultat du pré-enregistrement', '',
-    `Règles : \`data/backtest-input/preregistration-esdras-fvg-v2-2026-09-23.md\`${SYMBOLS[0] === 'US100' ? '' : ' appliquées telles quelles à ' + SYMBOLS[0] + ' (\`preregistration-esdras-fvg-v2-us500-2026-09-23.md\`)'} (commité avant ce calcul, rien changé depuis). Script : \`scripts/runEsdrasFvgV2Study.js\`. M15 ${SYMBOLS[0]} seul, règles v1 + creux/sommet 4h pris ou FVG 4h touché dans les 5 jours avec retournement depuis cette zone, cible = liquidité 4h la plus proche (≥ 3R exigé), 8h-12h New York, réglé à la minute.`, '',
+  const md = ['# Le FVG d\'Esdras v2 (contexte 4h)' + (FIXED_RR ? ` — cible fixe ${FIXED_RR}R` : '') + ' — ' + SYMBOLS[0] + ' — résultat du pré-enregistrement', '',
+    `Règles : \`data/backtest-input/preregistration-esdras-fvg-v2-2026-09-23.md\`${SYMBOLS[0] === 'US100' ? '' : ' appliquées telles quelles à ' + SYMBOLS[0] + ' (\`preregistration-esdras-fvg-v2-us500-2026-09-23.md\`)'} (commité avant ce calcul, rien changé depuis). Script : \`scripts/runEsdrasFvgV2Study.js\`. M15 ${SYMBOLS[0]} seul, règles v1 + creux/sommet 4h pris ou FVG 4h touché dans les 5 jours avec retournement depuis cette zone, ${FIXED_RR ? `**cible fixe ${FIXED_RR}R** (\`preregistration-esdras-fvg-v2-fixed3r-2026-09-23.md\`)` : 'cible = liquidité 4h la plus proche (≥ 3R exigé)'}, 8h-12h New York, réglé à la minute.`, '',
     '## Entonnoir de détection', '', ...detail.map((x) => `- ${x}`), '',
     '## R par trade (tous les trades détectés, sans garde-fou)', '', '| Période | Paire | Trades | Gagnants | Cible moyenne | R net | R/trade | t |', '|---|---|---|---|---|---|---|---|'];
   for (const p of PERIODS) for (const sym of SYMBOLS) {
@@ -296,7 +298,7 @@ function main() {
     md.push(`| ${p.label} | ${v.length} | ${v.filter((x) => x[1] >= 10).length} | ${v.filter((x) => x[1] >= 25).length} | ${v.length ? `${v[0][0]} (${sgn(v[0][1])} R)` : '-'} | ${v.length ? `${v[v.length - 1][0]} (${sgn(v[v.length - 1][1])} R)` : '-'} |`);
   }
   md.push('', '## Limites', '', '- HistData (entraînement) ≠ prix du broker ; spread par défaut, pas de glissement ni de swap.', '- « Stop d\'abord » dans une même minute (prudent).', '- Détecteur écrit pour cette étude : pas encore le code du bot live.', (SYMBOLS[0] === 'US100' ? '- US100 choisi après la v1 (biais de sélection déclaré dans le pré-enregistrement).' : `- ${SYMBOLS[0]} : 2e essai de la même règle sur un indice corrélé à US100.`), '- Le M1 du broker commence le 2023-01-11 : au début du test, les niveaux 4h plus anciens sont inconnus.');
-  const out = SYMBOLS[0] === 'US100' ? 'data/backtest-input/esdras-fvg-v2-study.md' : `data/backtest-input/esdras-fvg-v2-${SYMBOLS[0].toLowerCase()}-study.md`;
+  const out = `data/backtest-input/esdras-fvg-v2${SYMBOLS[0] === 'US100' ? '' : '-' + SYMBOLS[0].toLowerCase()}${FIXED_RR ? `-fixed${FIXED_RR}r` : ''}-study.md`;
   fs.writeFileSync(out, md.join('\n'));
   console.log(md.join('\n'));
 }
