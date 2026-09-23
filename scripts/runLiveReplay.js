@@ -35,7 +35,7 @@ const RISK = Number(process.argv[3] ?? 0.5);
 // FROM_DATE=2026-09-21T01:16:00Z : début précis (UTC) au lieu d'une année ; DEBUG_EVENTS=1 : affiche chaque signal validé, bloqué ou non.
 const FROM = process.env.FROM_DATE ? Date.parse(process.env.FROM_DATE) - OFF : process.argv[4] ? eng(Number(process.argv[4])) : -Infinity;
 const TO = process.argv[5] ? eng(Number(process.argv[5])) : Infinity;
-const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}`;
+const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}${process.env.SPREAD_MULT != null ? `-spread${process.env.SPREAD_MULT}` : ''}`;
 const START_BALANCE = 10000;
 const WARMUP_BARS = 8640; // ce que le live demande au démarrage (90 jours de M15)
 const DAILY = 'rsi2-daily';
@@ -50,7 +50,9 @@ const data = {};
 for (const s of SYMS) { const m1 = loadM1(SRC, s); data[s] = { m1, m15: toM15(m1) }; }
 console.log(`${SRC} : ${SYMS.join(', ')} chargés (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
 
-const spreadAt = (s, price) => (DEFAULT_SPREADS[s] ?? 0) * (price / refPrice(s));
+// SPREAD_MULT=0 : exécution sans spread (mesure du coût du spread par stratégie ; le filtre « stop >= 3 x spread » du moteur reste inchangé).
+const SPREAD_MULT = process.env.SPREAD_MULT != null ? Number(process.env.SPREAD_MULT) : 1;
+const spreadAt = (s, price) => SPREAD_MULT * (DEFAULT_SPREADS[s] ?? 0) * (price / refPrice(s));
 const guardrail = new GuardrailEngine({ ...CONFIG.guardrails });
 const firstLive = Math.max(FROM, ...SYMS.map((s) => data[s].m15[Math.min(WARMUP_BARS, data[s].m15.length - 1)].time));
 guardrail.setBalance(START_BALANCE, firstLive + OFF);
