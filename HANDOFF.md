@@ -6804,3 +6804,8 @@ Pour comparer, le FVG US100 tel qu'il est exécuté aujourd'hui fait −449 / �
 - **Niveaux fixes : non retenu.** 5 % des pertes dépassent 2 R, la pire atteint −5,3 R.
 
 **Limite importante.** En live, le signal est calculé à la première cotation de la bougie suivante (bougie « vide » : ouverture seule, `ingestCandle`) et l'entrée se fait tout de suite. Toutes mes simulations d'exécution entrent 15 min après un signal calculé sur la bougie complète. Selon le modèle, le portefeuille va de +64 à +354 R sur 2010-2022. Prochain test à faire : un rejeu fidèle, bougie vide puis bougie complète. Rien n'a changé dans le bot.
+
+**Bug live corrigé — RSI(2) journalier (2026-09-23).** `_feedDailyAlertEngines` recevait chaque bougie M15 à sa **première cotation** seulement : l'ouverture, avec high = low = close = open. Les bougies journalières de RSI(2) étaient donc construites avec des ouvertures : plus hauts et plus bas intrabougie manquants, clôture décalée de 15 min.
+- Conséquence : ATR sous-estimé, donc stop (3 × ATR) plus serré que dans le backtest.
+- Correctif : avant chaque nouvelle bougie, la précédente dans sa version finale (recalée sur le broker) est fusionnée dans la journée en cours, via `DailyAlertEngine.updateFormingBar` et `LiveStrategyEngine.getLastCandle`.
+- Test : une journée reçue comme en live est identique à celle du backtest.

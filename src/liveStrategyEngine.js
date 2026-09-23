@@ -327,6 +327,12 @@ export class LiveStrategyEngine {
     return belief;
   }
 
+  /** Last retained candle for `symbol` (no copy of the whole history), or null. */
+  getLastCandle(symbol) {
+    const hist = this.history.get(symbol);
+    return hist && hist.length > 0 ? hist[hist.length - 1] : null;
+  }
+
   getHistoryLength(symbol) {
     return (this.history.get(symbol) || []).length;
   }

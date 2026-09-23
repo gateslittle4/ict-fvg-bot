@@ -1823,11 +1823,13 @@ export class CTraderDataSource {
    * symbol can never happen. A failure anywhere in this path is caught and logged, never thrown - the live intraday combo must never be affected
    * by this strategy's own trouble.
    */
-  _feedDailyAlertEngines(symbolName, engineCandle) {
+  _feedDailyAlertEngines(symbolName, engineCandle, previousFinalBar = null) {
     const engine = this.dailyAlertEngines?.get(symbolName);
     if (!engine) return;
     let events;
     try {
+      // 2026-09-23: complete the previous bar first (see DailyAlertEngine.updateFormingBar) - engineCandle is only the new bar's first tick.
+      if (previousFinalBar) engine.updateFormingBar?.(previousFinalBar);
       events = engine.ingest(engineCandle);
     } catch (err) {
       console.warn(`[cTrader] mode-alerte (${symbolName}) ingest failed (non-fatal): ${err.message}`);
@@ -1907,13 +1909,15 @@ export class CTraderDataSource {
         console.warn(`[bar-reconcile] ${symbolName}: broker refresh failed (tick-tracked bars kept): ${err.message}`);
       }
       if (!store.strategyEngine.isNewBar(symbolName, engineCandle.time)) return;
+      // The previous bar, now final (reconciled just above) - the daily strategy must see it complete, not the first-tick stub it got.
+      const previousFinalBar = store.strategyEngine.getLastCandle?.(symbolName) ?? null;
       // Date.now() explicitly (2026-09-14) - see liveStrategyEngine.js's ingestCandle() comment: _toEngineCandle's -5h shift is
       // correct for signal/session logic but must NOT reach GuardrailEngine's real-calendar-day bookkeeping.
       // deferCloseToRealConfirmation: true (2026-09-14) - only this live call site gets it (real-close confirmation loop).
       const events = store.strategyEngine.ingestCandle(symbolName, engineCandle, Date.now(), { deferCloseToRealConfirmation: true });
       store.pushSignalEvents(events);
       store.lastCandleBySymbol.set(symbolName, candle);
-      this._feedDailyAlertEngines(symbolName, engineCandle);
+      this._feedDailyAlertEngines(symbolName, engineCandle, previousFinalBar);
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
       if (actionable.length > 0) this._notify(actionable);
       if (actionable.length > 0 && store.isAutoExecuteActive()) {
