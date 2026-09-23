@@ -13,6 +13,7 @@
 // Usage :
 //   node --max-old-space-size=6144 scripts/runCleanStudy.js legs <id,id,...|all>  -> trades de chaque jambe x RRR, en cache
 //   node --max-old-space-size=6144 scripts/runCleanStudy.js report                -> sélection sur l'entraînement + rapport
+//   node --max-old-space-size=6144 scripts/runCleanStudy.js prune                 -> élagage du combo actuel (mêmes règles de protocole)
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../src/backtest/nySession.js';
@@ -371,7 +372,50 @@ function report() {
   console.log(`\nRapport écrit : ${out}`);
 }
 
+// --- Élagage du combo actuel (Esdras, 2026-09-23 : « passer un challenge et augmenter la qualité des trades »).
+// Même protocole : chaque jambe de production à son RRR de production ; deux règles d'élagage fixées d'avance
+// (R1 : retirer les jambes à R net < 0 sur l'entraînement ; R2 : ne garder que celles positives dans CHAQUE moitié) ;
+// la version (A, A-R1, A-R2) et le risque sont choisis sur l'entraînement (réussis - ratés FTMO), puis test et forward lus.
+function prune() {
+  const [TR] = PERIODS;
+  const prodIds = Object.keys(LEGS).filter((id) => LEGS[id].inProd);
+  const md = ['# Élagage du combo actuel : entraînement 2010-2022, test 2023-2025, forward 2026', ''];
+  md.push('Même protocole que `clean-study-analysis.md`. Chaque jambe de production à son RRR de production. Règles fixées d\'avance : **R1** retire les jambes à R net < 0 sur l\'entraînement ; **R2** ne garde que les jambes positives en 2010-2016 ET en 2017-2022. La version et le risque sont choisis sur l\'entraînement (FTMO réussis − ratés, à égalité le moins de ratés).', '');
+  md.push('## 1. Jambes de production sur l\'entraînement', '', '| Jambe | RRR | Trades | R net | R/trade | t | 2010-2016 | 2017-2022 | R1 | R2 | Test 2023-2025 (info) | Forward 2026 (info) |', '|---|---|---|---|---|---|---|---|---|---|---|---|');
+  const legs = prodIds.map((id) => {
+    const rr = LEGS[id].prodRR; const l = legTrades(id, rr, TR);
+    const halves = TRAIN_HALVES.map(([a, b]) => sumR(l.filter((t) => t.entryTime >= a && t.entryTime < b)));
+    return { id, rr, l, r: sumR(l), t: tStat(l), halves, r1: sumR(l) > 0, r2: halves.every((h) => h > 0) };
+  }); // ordre canonique des jambes (celui de LEGS, comme le rapport) : il décide quel signal simultané sur une paire est pris
+  for (const x of [...legs].sort((a, b) => b.t - a.t)) md.push(`| ${LEGS[x.id].label} | 1:${x.rr} | ${x.l.length} | ${sgn(x.r)} | ${sgn(x.r / x.l.length, 3)} | ${x.t.toFixed(2)} | ${sgn(x.halves[0])} | ${sgn(x.halves[1])} | ${x.r1 ? 'garde' : 'retire'} | ${x.r2 ? 'garde' : 'retire'} | ${sgn(sumR(legTrades(x.id, x.rr, PERIODS[1])))} | ${sgn(sumR(legTrades(x.id, x.rr, PERIODS[2])))} |`);
+  const versions = [
+    { label: 'A. Combo actuel', legs },
+    { label: 'A-R1. Sans les jambes perdantes', legs: legs.filter((x) => x.r1) },
+    { label: 'A-R2. Seulement les jambes positives dans chaque moitié', legs: legs.filter((x) => x.r2) },
+  ];
+  const tradesOf = (v, per) => merge(v.legs.map((x) => legTrades(x.id, x.rr, per)));
+  md.push('', '## 2. Choix de la version et du risque sur l\'entraînement', '', '| Version | Jambes | Risque | Réussis | Ratés | Réussis − ratés | Durée médiane d\'un réussi (jours) |', '|---|---|---|---|---|---|---|');
+  let best = null;
+  for (const v of versions) for (const k of RISKS) {
+    const s = simulate(tradesOf(v, TR), k, { ftmo: true });
+    md.push(`| ${v.label} | ${v.legs.length} | ${k} % | ${s.pass} | ${s.fail} | ${s.pass - s.fail} | ${s.medPassDays ?? '—'} |`);
+    if (!best || s.pass - s.fail > best.d || (s.pass - s.fail === best.d && s.fail < best.f)) best = { v, k, d: s.pass - s.fail, f: s.fail };
+  }
+  md.push('', `**Retenu sur l'entraînement : ${best.v.label}, risque ${best.k} %** (${best.v.legs.map((x) => `${LEGS[x.id].label} 1:${x.rr}`).join(', ')}).`, '');
+  md.push('## 3. Entraînement, test, forward', '', '| Version | Risque | Période | Trades | Win rate | R net | R/trade | t | FTMO réussis / ratés | Durée médiane d\'un réussi (jours) | Pire baisse |', '|---|---|---|---|---|---|---|---|---|---|---|');
+  for (const v of versions) for (const k of [0.25, 0.5, 0.75, 1.0]) for (const per of PERIODS) {
+    const tr = tradesOf(v, per); const s = simulate(tr, k, { ftmo: true }); const c = simulate(tr, k, { ftmo: false });
+    md.push(`| ${v.label}${v === best.v && k === best.k ? ' **(retenu)**' : ''} | ${k} % | ${per.label} | ${c.n} | ${c.winRate.toFixed(0)} % | ${sgn(c.sum)} | ${sgn(c.mean, 3)} | ${c.t.toFixed(2)} | ${s.pass} / ${s.fail} | ${s.medPassDays ?? '—'} | ${c.dd.toFixed(1)} % |`);
+  }
+  md.push('', '**Limites.** Celles de `clean-study-analysis.md` ; en plus, les résultats par jambe du test avaient déjà été lus (annexe de l\'étude propre) avant d\'écrire ces deux règles : elles restent des règles d\'entraînement simples, mais ne sont pas « aveugles » au sens strict.', '');
+  const out = 'data/backtest-input/clean-study-prune-analysis.md';
+  fs.writeFileSync(out, md.join('\n'));
+  console.log(md.join('\n'));
+  console.log(`\nRapport écrit : ${out}`);
+}
+
 const [mode, arg] = process.argv.slice(2);
+if (mode === 'prune') { prune(); process.exit(0); }
 if (mode === 'legs') runLegs(arg === 'all' || !arg ? Object.keys(LEGS) : arg.split(','));
 else if (mode === 'report') report();
 else if (mode === 'list') console.log(Object.keys(LEGS).join('\n'));

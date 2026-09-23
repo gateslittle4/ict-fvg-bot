@@ -868,7 +868,7 @@
     "title": "Étude propre : entraînement 2010-2022, test 2023-2025, forward 2026 (29 jambes stratégie x paire)",
     "date": "2026-09-23",
     "status": "validated-research",
-    "summary": "Protocole d'Esdras (tous les choix sur l'entraînement seul). 29 jambes x RRR 1:2-1:7, vrai LiveStrategyEngine, règlement M1, coûts du broker en % du prix. La règle (meilleur RRR, t >= 2, positif dans les deux moitiés, >= 30 trades) garde Silver Bullet US100 1:7, NWOG US100 1:7, Silver Bullet US500 1:6, Weekly Sweep US500 1:5, Weekly Sweep US100 1:5, RSI(2) US500 ; risque choisi 0,5 %. Ce portefeuille ÉCHOUE au test : entraînement +658 R (t 4,6), test 2023-2025 -61 R (FTMO 3 réussis / 10 ratés), forward 2026 +29 R. Le combo actuel (RRR de production, GER40 retiré) est le seul positif partout : +318 R (t 2,0), +233 R, +46 R ; risque choisi sur l'entraînement 0,25 % (13/8 ; à 0,5 % : 39/39 sur 2010-2022). FVG US100 1:5 + XAU 1:7 : +109 R (t 1,1, 2010-2014 négatif), +199 R, +50 R : ne bat pas le combo sur 13 ans, l'ancienne conclusion « bat le combo partout » est renversée. Découverte : HistData est à l'heure de New York AVEC heure d'été (pas EST fixe) : décalage d'1 h en été corrigé ; les anciens backtests sur CSV HistData avaient ce décalage. Rien changé dans le bot.",
+    "summary": "Protocole d'Esdras (tous les choix sur l'entraînement seul). 29 jambes x RRR 1:2-1:7, vrai LiveStrategyEngine, règlement M1, coûts du broker en % du prix. La règle (meilleur RRR, t >= 2, positif dans les deux moitiés, >= 30 trades) garde Silver Bullet US100 1:7, NWOG US100 1:7, Silver Bullet US500 1:6, Weekly Sweep US500 1:5, Weekly Sweep US100 1:5, RSI(2) US500 ; risque choisi 0,5 %. Ce portefeuille ÉCHOUE au test : entraînement +658 R (t 4,6), test 2023-2025 -61 R (FTMO 3 réussis / 10 ratés), forward 2026 +29 R. Le combo actuel (RRR de production, GER40 retiré) est le seul positif partout : +318 R (t 2,0), +233 R, +46 R ; risque choisi sur l'entraînement 0,25 % (13/8 ; à 0,5 % : 39/39 sur 2010-2022). FVG US100 1:5 + XAU 1:7 : +109 R (t 1,1, 2010-2014 négatif), +199 R, +50 R : ne bat pas le combo sur 13 ans, l'ancienne conclusion « bat le combo partout » est renversée. Découverte : HistData est à l'heure de New York AVEC heure d'été (pas EST fixe) : décalage d'1 h en été corrigé ; les anciens backtests sur CSV HistData avaient ce décalage. Rien changé dans le bot. Suite (élagage, clean-study-prune-analysis.md) : ne garder que les jambes positives dans chaque moitié de l'entraînement (choisi à 1 %) échoue au test (+19 R, FTMO 7/16) ; retirer seulement Judas Swing EURUSD (−114 R sur 2010-2022) est neutre hors échantillon. Levier challenge = risque : 0,25 % (≈ 170 j par réussite, 13/8 sur 13 ans) ou 0,5 % (≈ 50 j, ≈ 1 raté par réussi sur 13 ans).",
     "markets": [
       "US100",
       "US500",
@@ -881,7 +881,8 @@
     "files": [
       "scripts/runCleanStudy.js",
       "scripts/buildHistdataM1.js",
-      "data/backtest-input/clean-study-analysis.md"
+      "data/backtest-input/clean-study-analysis.md",
+      "data/backtest-input/clean-study-prune-analysis.md"
     ],
     "handoffSection": "Étude propre : entraînement 2010-2022 / test 2023-2025 / forward 2026 (2026-09-23)"
   }
