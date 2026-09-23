@@ -927,16 +927,18 @@
   },
   {
     "id": "prereg-esdras-fvg-v2-2026-09-23",
-    "title": "Le FVG d'Esdras v2 (contexte 4h : liquidité 4h prise ou FVG 4h touché, retournement depuis cette zone, cible liquidité 4h la plus proche ≥ 3R, US100 seul) : pré-enregistré",
+    "title": "Le FVG d'Esdras v2 (contexte 4h, retournement depuis la liquidité 4h prise, cible liquidité 4h la plus proche ≥ 3R, US100 seul) : ÉCHEC du pré-enregistrement",
     "date": "2026-09-23",
-    "status": "preregistered",
-    "summary": "Écrit avant tout calcul, dernière retouche autorisée après l'échec de la v1. Règles v1 (M15, impulsion ≥ 2×ATR14 + BMS pivot 5/5, distance ≥ 2× zone, LIMIT au bord, stop bord opposé, 8h-12h NY) + contexte 4h (bougies 4h alignées NY+7, pivots 2/2) : dans les 5 jours avant c2, prise d'un creux 4h non pris ou premier contact d'un FVG 4h haussier (miroir en vente), ET plus bas des 16 bougies M15 finissant à c1 ≤ niveau de l'événement (le retournement part de la liquidité). Cible = liquidité 4h la plus proche (sommet 4h non pris ou bas de FVG 4h baissier non touché), trade seulement si ≥ 3R. US100 seul (biais de sélection déclaré). Critère identique v1 ; <60 trades à l'entraînement = non concluant.",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul, dernière retouche autorisée après l'échec de la v1. Règles v1 (M15, impulsion ≥ 2×ATR14 + BMS pivot 5/5, distance ≥ 2× zone, LIMIT au bord, stop bord opposé, 8h-12h NY) + contexte 4h (bougies 4h alignées NY+7, pivots 2/2) : dans les 5 jours avant c2, prise d'un creux 4h non pris ou premier contact d'un FVG 4h haussier (miroir en vente), ET plus bas des 16 bougies M15 finissant à c1 ≤ niveau de l'événement (le retournement part de la liquidité). Cible = liquidité 4h la plus proche (sommet 4h non pris ou bas de FVG 4h baissier non touché), trade seulement si ≥ 3R. US100 seul (biais de sélection déclaré). Critère identique v1 ; <60 trades à l'entraînement = non concluant. RÉSULTAT (même jour, scripts/runEsdrasFvgV2Study.js, data/backtest-input/esdras-fvg-v2-study.md) : entraînement 241 trades, 12 % gagnants, cible moyenne 10,9 R, R net +6,2, t 0,12, 2010-2016 -65 R, 2017-2022 +71 R → ÉCHEC. Test 2023-2025 : 96 trades, -46,6 R (t -2,48) ; 2026 : 13 trades, 13 pertes. Le contexte 4h dans 5 jours ne filtre presque rien (1848 → 1829). Dernière retouche : on ne rajoute plus de filtres.",
     "markets": [
       "US100"
     ],
     "timeframe": "M15 + H4",
     "files": [
-      "data/backtest-input/preregistration-esdras-fvg-v2-2026-09-23.md"
+      "data/backtest-input/preregistration-esdras-fvg-v2-2026-09-23.md",
+      "scripts/runEsdrasFvgV2Study.js",
+      "data/backtest-input/esdras-fvg-v2-study.md"
     ]
   }
 ]
