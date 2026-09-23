@@ -974,5 +974,22 @@
       "data/backtest-input/esdras-fvg-v2-fixed3r-study.md",
       "data/backtest-input/esdras-fvg-v2-us500-fixed3r-study.md"
     ]
+  },
+  {
+    "id": "live-replay-full-2010-2026",
+    "title": "Config live actuelle au rejeu fidèle 2010-2026 : +326 R à l'entraînement (t 2,86), ≈ 0 depuis 2023",
+    "date": "2026-09-23",
+    "status": "validated",
+    "summary": "runLiveReplay.js (moteur live réel, signaux à la première cotation, MARKET, garde-fou réel, correctif Divergence US100), 0,3 %, par tranches. Entraînement 2010-2022 : 3 748 trades, +326 R, t 2,86 (2010-16 +30 R, 2017-22 +296 R). Test 2023-2025 : +21,6 R (t 0,38) ; 2026 : −13,3 R (270 trades). Résultat 2023-2026 sensible au découpage (±15-20 R ; exécution continue d'une autre session : −2,6 / +4,7 R). Jambes positives à l'entraînement : Silver Bullet US100 +105, US500 +90, Divergence US500 +56, NWOG +48, Weekly Sweep +35, CBDR +27 ; négatives : Divergence US100 −26, RSI(2) −7. Retirer les jambes négatives (R1) améliore l'entraînement mais dégrade test et 2026 : non retenu.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15",
+    "files": [
+      "scripts/runLiveReplay.js",
+      "data/live-replay/"
+    ],
+    "handoffSection": "Rejeu fidèle 2010-2026 complet"
   }
 ]
