@@ -230,6 +230,7 @@ export class LiveStrategyEngine {
     this.formationIndexBySymbol = new Map(symbols.map((s) => [s, new Map()])); // fvg id -> index (in that symbol's history) where it was first seen "watching"
     this.openPositions = new Map(); // symbol -> { source, id, direction, entryIndex, entryTime, entryPrice, stopPrice, targetPrice, distance, rrMultiple, riskAmount, maxHoldingCandles } - shared by FVG, Divergence, NWOG, AND Judas Swing (each auto-execute source, at the user's explicit request - see HANDOFF.md - participates in the same real netting, no per-source tracking)
     this.pyramidPositions = new Map(symbols.map((s) => [s, null])); // symbol -> null | { status: 'requested'|'placed', direction, entryPrice, stopPrice, targetPrice, distance, riskAmount, brokerOrderId? } - see lifecycle note above
+    this._emittedDivergenceIds = new Set(); // per-tick path only: a partner-leg divergence signal fires at most once (see _detectDivergenceSignal)
   }
 
   setBalance(balance) {
@@ -772,10 +773,25 @@ export class LiveStrategyEngine {
     if (!histA || !histB || histA.length === 0 || histB.length === 0) return [];
 
     const candidates = this._computeDivergenceCandidates(histA, histB, symA, symB);
+    const out = [];
     const candidate = candidates.find((cd) => cd.entryTime === candle.time && cd.symbol === symbol);
-    if (!candidate) return [];
-
-    return [this._processDivergenceCandidate(symbol, candle, candidate, guardrailNow)];
+    if (candidate && !this._emittedDivergenceIds.has(`div-${symbol}-${candle.time}`)) out.push(this._processDivergenceCandidate(symbol, candle, candidate, guardrailNow));
+    // FIX 2026-09-23 (Esdras : « regarde le code du bot s'il n'y a pas de bug ») : live, each symbol's new bar is ingested on its
+    // OWN first tick, one after the other. The pair's H1 series are aligned on common times, so the leg ingested FIRST never sees
+    // the new H1 bucket (its partner does not have it yet) and can never find its candidate; when the partner arrives a moment
+    // later the candidate appears, but for the other symbol - and was filtered out above. Result: only the leg that happened to
+    // be ingested second could ever trade (never US100 in the 2026 live-faithful replay, 0 of 269 trades). The partner's
+    // candidate for this same bar time is now emitted here, on its own last candle (entry = its open, like every divergence
+    // entry). The id guard makes it fire at most once.
+    const partner = symbol === symA ? symB : symA;
+    const partnerHist = symbol === symA ? histB : histA;
+    const partnerLast = partnerHist[partnerHist.length - 1];
+    if (partnerLast.time === candle.time) {
+      const pc = candidates.find((cd) => cd.entryTime === candle.time && cd.symbol === partner);
+      if (pc && !this._emittedDivergenceIds.has(`div-${partner}-${candle.time}`)) out.push(this._processDivergenceCandidate(partner, partnerLast, pc, guardrailNow));
+    }
+    for (const s of out) this._emittedDivergenceIds.add(s.id);
+    return out;
   }
 
   /**

@@ -31,6 +31,22 @@ export const lower = (a, n, x) => { let lo = 0, hi = n; while (hi > lo) { const 
 
 /** 'hist' = HistData jusqu'à fin 2022 ; 'broker' = HistData 2022 (préchauffage) puis M1 du broker. */
 export function loadM1(src, sym) {
+  const base = loadM1Base(src, sym);
+  // LIVE_M15_DIR=<dossier> : prolonge 'broker' avec les bougies M15 du bot live (<dossier>/live-<SYM>.json, réponse de
+  // GET /api/candles?symbol=SYM&limit=5000, heures UTC) après la fin du M1. Chaque M15 devient UNE ligne : l'entrée à
+  // l'ouverture reste exacte, les sorties sont vues à la bougie M15 (stop d'abord si stop et objectif dans la même bougie).
+  const dir = process.env.LIVE_M15_DIR;
+  if (src !== 'broker' || !dir || !fs.existsSync(`${dir}/live-${sym}.json`)) return base;
+  const lastT = base.t[base.n - 1];
+  const extra = JSON.parse(fs.readFileSync(`${dir}/live-${sym}.json`, 'utf8')).candles
+    .map((c) => ({ ...c, time: c.time - OFF })).filter((c) => c.time >= Math.floor(lastT / 900000) * 900000 + 900000);
+  const col = (k) => Float64Array.from(extra, (c) => c[k]);
+  return concat(base, { t: col('time'), o: col('open'), h: col('high'), l: col('low'), c: col('close'), n: extra.length });
+}
+function loadM1Base(src, sym) {
+  // Sans HistData (jamais commité, ex. un poste Windows fraîchement cloné), 'broker' se contente du M1 du broker (2023+) :
+  // suffisant pour toute tranche qui commence au moins 90 jours après son début.
+  if (src === 'broker' && !fs.existsSync(`data/histdata-m1/${sym}.csv.gz`)) return readCsvGz(`data/real-m1-full/${sym}.csv.gz`);
   const hist = readCsvGz(`data/histdata-m1/${sym}.csv.gz`);
   if (src === 'hist') return slice(hist, 0, lower(hist.t, hist.n, eng(2023)));
   const broker = readCsvGz(`data/real-m1-full/${sym}.csv.gz`);

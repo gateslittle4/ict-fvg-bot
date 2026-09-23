@@ -397,7 +397,7 @@ export class MatchTraderDataSource {
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
       if (actionable.length > 0) this._notify(actionable);
       if (actionable.length > 0 && store.isAutoExecuteActive()) {
-        for (const sig of actionable) await this._handleAutoExecuteEntry(symbol, sig);
+        for (const sig of actionable) await this._handleAutoExecuteEntry(sig.symbol ?? symbol, sig); // partner-leg divergence signals carry their own symbol (see cTraderDataSource)
       }
       for (const e of events) {
         if (e.type === 'pyramid-order-requested') await this._handlePyramidOrderRequested(symbol, e);

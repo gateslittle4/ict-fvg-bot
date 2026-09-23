@@ -495,6 +495,31 @@ test('LiveStrategyEngine (Divergence): a large z-score deviation triggers a "val
   assert.equal(engine.getOpenPosition('B').source, 'divergence');
 });
 
+test('LiveStrategyEngine (Divergence): fed bar by bar like the live feed (A then B each hour), the FIRST-ingested leg still trades when it is the laggard (2026-09-23 fix)', () => {
+  // Live, each symbol's new bar is ingested on its own first tick, one after the other. Before the fix, the leg ingested first
+  // (here A) could never trade: its partner did not have the new H1 bucket yet, and when B arrived the candidate (for A) was
+  // filtered out. The 2026 live-faithful replay had 0 Divergence US100 trades out of 269 because of it.
+  const divCfg = { pair: ['A', 'B'], lookback: 5, zThreshold: 2, atrPeriod: 3, stopAtrMultiple: 1.5, rrMultiple: 3, maxHoldingM15Candles: 480 };
+  const engine = new LiveStrategyEngine({ symbols: ['A', 'B'], fvgConfig: {}, divergenceConfig: divCfg, guardrail: permissiveGuardrail(), riskPctPerTrade: 1 });
+  const closesA = [100, 100, 100, 100, 100, 100, 100, 101];
+  const closesB = [100, 101, 100, 101, 100, 100, 150, 150]; // B runs away: A is the laggard
+  const mk = (t, v) => c(t, v, v + 0.5, v - 0.5, v);
+  const fired = [];
+  for (let i = 0; i < closesA.length; i++) {
+    fired.push(...engine.ingestCandle('A', mk(i * HOUR, closesA[i])).filter((e) => e.type === 'validated'));
+    fired.push(...engine.ingestCandle('B', mk(i * HOUR, closesB[i])).filter((e) => e.type === 'validated'));
+  }
+  assert.equal(fired.length, 1, 'exactly one signal, emitted when B completes the pair for that hour');
+  const sig = fired[0];
+  assert.equal(sig.source, 'divergence');
+  assert.equal(sig.symbol, 'A');
+  assert.equal(sig.id, `div-A-${7 * HOUR}`);
+  assert.equal(sig.entryPrice, 101); // A's own open for that hour, not B's
+  assert.equal(sig.blockedReason, null);
+  assert.equal(engine.getOpenPosition('A').source, 'divergence');
+  assert.equal(engine.getOpenPosition('B'), null);
+});
+
 test('LiveStrategyEngine: netting blocks a Divergence signal on a symbol that already has an open FVG position', () => {
   const guardrail = permissiveGuardrail();
   const divCfg = { pair: ['A', 'B'], lookback: 5, zThreshold: 2, atrPeriod: 3, stopAtrMultiple: 1.5, rrMultiple: 3, maxHoldingM15Candles: 480 };
