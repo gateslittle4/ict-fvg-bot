@@ -826,8 +826,8 @@
     "id": "fvg-only-higher-risk-ftmo-2026",
     "title": "FVG seul (sans US500) avec un risque plus élevé sur FTMO 1-Step : moins de baisse, plus de passes en 2026 - mais sélection biaisée",
     "date": "2026-09-22",
-    "status": "inconclusive",
-    "summary": "Vrai moteur, M1 exact, real-m1-full, un warmUp() par variante. R/trade : combo +0,079 (entraînement <2025) / +0,171 (2025) / +0,117 (2026) ; FVG seul US100/US500/XAUUSD +0,172 / +0,411 / +0,167 ; FVG seul sans US500 (retrait justifié par la règle GER40 : FVG US500 -20 R à l'entraînement) +0,295 (t=2,36) / +0,399 (t=2,02) / +0,326 (t=1,48). Avantage principal : baisse max bien plus faible, ce qui permet un risque plus haut sous le plancher FTMO. 2026 : combo 0,5 % = +23,8 %, baisse 15,1 %, FTMO 3 réussis/2 ratés ; FVG sans US500 0,75 % = +32,1 %, baisse 7,8 %, 3/0 (22 jan., 20 mai, 2 juin) ; 1 % = +41,1 %, baisse 10,2 %, 4/1 ; 1,5 % = +63,4 %, baisse 15 %, 5/2. Cohérent sur les 3 fenêtres à 0,75 % (entraînement 8/2, 2025 5/1, 2026 3/0). FVG seul AVEC US500 fait moins bien que sans en 2026 (1 % : 5/4).",
+    "status": "rejected",
+    "summary": "REMPLACÉ (2026-09-23) par l'étude propre entraînement 2010-2022 / test 2023-2025 / forward 2026 (clean-study-analysis.md) pour les choix de stratégie ; les mesures de coûts restent valables. Vrai moteur, M1 exact, real-m1-full, un warmUp() par variante. R/trade : combo +0,079 (entraînement <2025) / +0,171 (2025) / +0,117 (2026) ; FVG seul US100/US500/XAUUSD +0,172 / +0,411 / +0,167 ; FVG seul sans US500 (retrait justifié par la règle GER40 : FVG US500 -20 R à l'entraînement) +0,295 (t=2,36) / +0,399 (t=2,02) / +0,326 (t=1,48). Avantage principal : baisse max bien plus faible, ce qui permet un risque plus haut sous le plancher FTMO. 2026 : combo 0,5 % = +23,8 %, baisse 15,1 %, FTMO 3 réussis/2 ratés ; FVG sans US500 0,75 % = +32,1 %, baisse 7,8 %, 3/0 (22 jan., 20 mai, 2 juin) ; 1 % = +41,1 %, baisse 10,2 %, 4/1 ; 1,5 % = +63,4 %, baisse 15 %, 5/2. Cohérent sur les 3 fenêtres à 0,75 % (entraînement 8/2, 2025 5/1, 2026 3/0). FVG seul AVEC US500 fait moins bien que sans en 2026 (1 % : 5/4).",
     "markets": [
       "US100",
       "XAUUSD",
@@ -846,8 +846,8 @@
     "id": "fvg-only-real-costs-selection-check",
     "title": "FVG seul (US100 + XAUUSD) : swap réel mesuré et biais de sélection contrôlé",
     "date": "2026-09-22",
-    "status": "validated-research",
-    "summary": "Swap réel du broker (~-5,2 %/an à l'achat sur US100/US500/or) ajouté nuit par nuit : effet faible (variante C : entraînement +0,266, test 2025 +0,383, 2026 +0,324 R/trade). Contrôle de sélection : sur l'entraînement seul, FVG est premier en R total (+69,2 R, 474 trades) parmi les mécanismes seuls ; le retrait de FVG US500 venait déjà de l'entraînement. 2025+2026 sont donc un vrai hors échantillon : 286 trades, +0,358 R/trade, t = 2,45 avec swap ; FTMO 1-Step 0,5 % 5/0 (baisse 7,6 %), 0,75 % 8/1 (11,3 %), 1 % 12/5 (14,1 %). Commission ≈ 0 sur 2 trades réels. Rien changé dans le bot : décision d'Esdras.",
+    "status": "rejected",
+    "summary": "REMPLACÉ (2026-09-23) par l'étude propre entraînement 2010-2022 / test 2023-2025 / forward 2026 (clean-study-analysis.md) pour les choix de stratégie ; les mesures de coûts restent valables. Swap réel du broker (~-5,2 %/an à l'achat sur US100/US500/or) ajouté nuit par nuit : effet faible (variante C : entraînement +0,266, test 2025 +0,383, 2026 +0,324 R/trade). Contrôle de sélection : sur l'entraînement seul, FVG est premier en R total (+69,2 R, 474 trades) parmi les mécanismes seuls ; le retrait de FVG US500 venait déjà de l'entraînement. 2025+2026 sont donc un vrai hors échantillon : 286 trades, +0,358 R/trade, t = 2,45 avec swap ; FTMO 1-Step 0,5 % 5/0 (baisse 7,6 %), 0,75 % 8/1 (11,3 %), 1 % 12/5 (14,1 %). Commission ≈ 0 sur 2 trades réels. Rien changé dans le bot : décision d'Esdras.",
     "markets": [
       "US100",
       "XAUUSD"
@@ -864,71 +864,25 @@
     "handoffSection": "FVG seul : les trous de l'analyse comblés — 2026-09-22"
   },
   {
-    "id": "candidates-2026-fvg-us100-xau-vs-combo",
-    "title": "BUG CORRIGÉ : les chiffres 2026 des candidates étaient gonflés (trades stoppés dans la minute d'entrée jamais comptés) - voir candidates-corrected-and-histdata-2011-2018",
-    "date": "2026-09-22",
-    "status": "methodology-fix",
-    "summary": "REMPLACÉ (bug de simulation, voir candidates-corrected-and-histdata-2011-2018). 2026 (événements, M1 exact, spread + swap réel) : FVG US100 1:5 + XAUUSD 1:7 = 102 trades, +64,2 R, +0,630 R/trade, t = 2,18 contre combo 373 trades, +39,8 R, t = 0,99. FTMO 1-Step à 1 % : FVG 6 réussis / 1 raté contre combo 8/8 ; à 0,75 % 5/1 contre 3/2. Meilleur risque (réussis - ratés) 1,25 % en 2026 et 2025, recommandé 1 % par marge de sécurité. RRR choisi sur l'entraînement : US100 1:5, XAUUSD 1:7 (confirmé 2025 et 2026). RSI(2) US500 : 11 trades gagnants en 2026 mais +2,9 R seulement, n'atteint jamais +10 % seul.",
-    "markets": [
-      "US100",
-      "XAUUSD",
-      "US500"
-    ],
-    "timeframe": "M15 (détection), M1 (règlement), D1 (RSI(2))",
-    "sample": "2026-01-01 → 2026-09-18",
-    "knownWeaknesses": "XAUUSD porte 2026 (+40 R sur 28 trades, forte tendance de l'or) ; XAUUSD 1:7 choisi de justesse à l'entraînement et baisses plus profondes ; ~10 trades/mois ; perte quotidienne FTMO sur P&L clôturé ; glissement réel non mesuré.",
-    "files": [
-      "scripts/runCandidates2026Analysis.js",
-      "data/backtest-input/candidates-2026-analysis.md"
-    ],
-    "handoffSection": "Candidates 2026 : FVG US100+XAUUSD, RSI(2) US500, les deux, contre le combo actuel — 2026-09-22"
-  },
-  {
-    "id": "candidates-corrected-and-histdata-2011-2018",
-    "title": "Candidates corrigées (bug d'ordre des événements) + historique HistData 2011-2018 : FVG US100+XAU mieux que le combo surtout en challenges ratés, rentabilité avant 2019 non tranchée",
-    "date": "2026-09-22",
-    "status": "validated-research",
-    "summary": "Broker M1 exact 2023-2026 (corrigé) : FVG US100 1:5 + XAUUSD 1:7 +226,8 R contre combo +184,7 R ; FTMO réussis/ratés 0,5 % 11/0 contre 15/12, 0,75 % 17/5 contre 28/26, 1 % 26/12 contre 40/40 ; baisse ~2x plus petite. HistData M15 2011-2018 (jamais vu) : bornes C -200 à +208 R, combo -550 à +96 R ; C devant le combo dans les deux bornes, rentabilité propre de C avant 2019 non tranchée. Recommandation : 0,5 à 0,75 % si passage à FVG seul.",
-    "markets": [
-      "US100",
-      "XAUUSD",
-      "US500"
-    ],
-    "timeframe": "M15 (détection), M1 broker / M15 HistData (règlement)",
-    "sample": "broker 2023-01 → 2026-09-18 ; HistData 2011-2018",
-    "knownWeaknesses": "HistData M15 seulement (bougie d'entrée ambiguë, calibration sur 3 ans et source de prix différente) ; swap d'aujourd'hui appliqué au passé ; perte quotidienne FTMO sur P&L clôturé ; cycles remis à zéro chaque année.",
-    "files": [
-      "scripts/runCandidates2026Analysis.js",
-      "data/backtest-input/candidates-2023-analysis.md",
-      "data/backtest-input/candidates-2024-analysis.md",
-      "data/backtest-input/candidates-2025-analysis.md",
-      "data/backtest-input/candidates-2026-analysis.md",
-      "data/backtest-input/candidates-histdata-analysis.md",
-      "data/backtest-input/candidates-histdata-optimiste-analysis.md"
-    ],
-    "handoffSection": "⚠️ Correction : bug dans la simulation par événements des candidates + test sur l'historique long HistData (2026-09-22)"
-  },
-  {
-    "id": "third-leg-for-fvg-us100-xau",
-    "title": "3e jambe pour FVG US100+XAUUSD : Divergence (meilleure sur le broker) brûle 2011-2018 ; seule NWOG US100 ajoute un peu partout sans augmenter le risque",
+    "id": "clean-study-train-2010-2022-test-2023-2025-fwd-2026",
+    "title": "Étude propre : entraînement 2010-2022, test 2023-2025, forward 2026 (29 jambes stratégie x paire)",
     "date": "2026-09-23",
     "status": "validated-research",
-    "summary": "C + jambe dans le même moteur et le même garde-fou. Broker 2023-2026 : Divergence +39 R, NWOG +28 R, RSI(2) +7 R, autres ≤ +2 R ou négatives. HistData 2011-2018 (deux bornes M15) : Divergence -174/-187 R (baisse 64 % à 1 %), NWOG +17/+15 R, Weekly Sweep +41/+60 R mais négative sur le broker. Seule NWOG US100 est positive partout, baisse quasi inchangée ; échantillon faible (~14 trades/an).",
+    "summary": "Protocole d'Esdras (tous les choix sur l'entraînement seul). 29 jambes x RRR 1:2-1:7, vrai LiveStrategyEngine, règlement M1, coûts du broker en % du prix. La règle (meilleur RRR, t >= 2, positif dans les deux moitiés, >= 30 trades) garde Silver Bullet US100 1:7, NWOG US100 1:7, Silver Bullet US500 1:6, Weekly Sweep US500 1:5, Weekly Sweep US100 1:5, RSI(2) US500 ; risque choisi 0,5 %. Ce portefeuille ÉCHOUE au test : entraînement +658 R (t 4,6), test 2023-2025 -61 R (FTMO 3 réussis / 10 ratés), forward 2026 +29 R. Le combo actuel (RRR de production, GER40 retiré) est le seul positif partout : +318 R (t 2,0), +233 R, +46 R ; risque choisi sur l'entraînement 0,25 % (13/8 ; à 0,5 % : 39/39 sur 2010-2022). FVG US100 1:5 + XAU 1:7 : +109 R (t 1,1, 2010-2014 négatif), +199 R, +50 R : ne bat pas le combo sur 13 ans, l'ancienne conclusion « bat le combo partout » est renversée. Découverte : HistData est à l'heure de New York AVEC heure d'été (pas EST fixe) : décalage d'1 h en été corrigé ; les anciens backtests sur CSV HistData avaient ce décalage. Rien changé dans le bot.",
     "markets": [
       "US100",
       "US500",
       "XAUUSD",
       "EURUSD"
     ],
-    "timeframe": "M15 (détection), M1 broker / M15 HistData (règlement)",
-    "sample": "broker 2023-01 → 2026-09-18 ; HistData 2011-2018",
-    "knownWeaknesses": "NWOG : 56 trades broker (t 1,28) ; HistData M15 seulement (bornes) ; swap d'aujourd'hui ; perte quotidienne FTMO sur P&L clôturé.",
+    "timeframe": "M15 (détection), M1 (règlement)",
+    "sample": "Entraînement HistData M1 2010-2022 ; test/forward M1 broker 2023-01 → 2026-09-18",
+    "knownWeaknesses": "Filtres de production conçus sur 2019-2025 : le test a été vu pendant la conception (2010-2018 est vraiment neuf pour le combo actuel : ~+115 R) ; prix HistData ≠ broker ; coûts d'aujourd'hui mis à l'échelle du prix (en points fixes, les vieilles années sont nettement pires) ; perte quotidienne FTMO sur P&L clôturé ; netting simulé (une position par paire) hors moteur combiné.",
     "files": [
-      "scripts/runCandidates2026Analysis.js",
-      "data/backtest-input/third-leg-analysis.md",
-      "data/backtest-input/third-leg-histdata-analysis.md",
-      "data/backtest-input/third-leg-histdata-optimiste-analysis.md"
+      "scripts/runCleanStudy.js",
+      "scripts/buildHistdataM1.js",
+      "data/backtest-input/clean-study-analysis.md"
     ],
-    "handoffSection": "3e jambe à ajouter à FVG US100 1:5 + XAUUSD 1:7 ? (2026-09-23)"
+    "handoffSection": "Étude propre : entraînement 2010-2022 / test 2023-2025 / forward 2026 (2026-09-23)"
   }
 ]
