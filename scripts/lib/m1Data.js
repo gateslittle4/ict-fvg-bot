@@ -31,6 +31,9 @@ export const lower = (a, n, x) => { let lo = 0, hi = n; while (hi > lo) { const 
 
 /** 'hist' = HistData jusqu'à fin 2022 ; 'broker' = HistData 2022 (préchauffage) puis M1 du broker. */
 export function loadM1(src, sym) {
+  // Sans HistData (jamais commité, ex. un poste Windows fraîchement cloné), 'broker' se contente du M1 du broker (2023+) :
+  // suffisant pour toute tranche qui commence au moins 90 jours après son début.
+  if (src === 'broker' && !fs.existsSync(`data/histdata-m1/${sym}.csv.gz`)) return readCsvGz(`data/real-m1-full/${sym}.csv.gz`);
   const hist = readCsvGz(`data/histdata-m1/${sym}.csv.gz`);
   if (src === 'hist') return slice(hist, 0, lower(hist.t, hist.n, eng(2023)));
   const broker = readCsvGz(`data/real-m1-full/${sym}.csv.gz`);
