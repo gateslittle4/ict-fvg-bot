@@ -19,3 +19,6 @@ data/clean-study-cache-livefill/
 data/clean-study-cache-rr-*/
 data/clean-study-cache-resting/
 data/clean-study-cache-resting-away*/
+
+# scripts/runLiveReplay.js : trades du rejeu fidèle au live (régénérables), jamais commités
+data/live-replay/

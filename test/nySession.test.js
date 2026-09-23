@@ -64,3 +64,23 @@ test('SessionFilteredFvgEngine drops validated events outside the session window
   assert.equal(engine.passedCount, 1);
   assert.equal(engine.filteredCount, 1);
 });
+
+test('toRealNyHourMinute (direct US DST rules) is identical to Intl America/New_York on every 15-minute step 2007-2035', () => {
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
+  const OFF = 5 * 3600000;
+  let checked = 0;
+  for (let utc = Date.UTC(2007, 0, 1); utc < Date.UTC(2036, 0, 1); utc += 15 * 60000) {
+    const parts = fmt.formatToParts(new Date(utc));
+    const want = { hour: Number(parts.find((p) => p.type === 'hour').value), minute: Number(parts.find((p) => p.type === 'minute').value) };
+    const got = toRealNyHourMinute(utc - OFF);
+    if (got.hour !== want.hour || got.minute !== want.minute) assert.fail(`${new Date(utc).toISOString()}: got ${got.hour}:${got.minute}, Intl ${want.hour}:${want.minute}`);
+    checked++;
+  }
+  assert.ok(checked > 1_000_000);
+  // odd minutes and seconds around a DST switch too
+  for (const iso of ['2026-03-08T06:59:59Z', '2026-03-08T07:00:00Z', '2026-11-01T05:59:30Z', '2026-11-01T06:00:00Z', '2026-11-01T06:07:45Z']) {
+    const utc = Date.parse(iso);
+    const parts = fmt.formatToParts(new Date(utc));
+    assert.deepEqual(toRealNyHourMinute(utc - OFF), { hour: Number(parts.find((p) => p.type === 'hour').value), minute: Number(parts.find((p) => p.type === 'minute').value) });
+  }
+});
