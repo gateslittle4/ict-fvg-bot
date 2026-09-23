@@ -86,6 +86,20 @@ export class DailyAlertEngine {
     return [];
   }
 
+  /**
+   * 2026-09-23 - live feeds each M15 bar on its FIRST tick (open only: high = low = close = open), so without this the forming day
+   * was built from bar opens only: daily high/low missed every intrabar extreme and the close lagged 15 min - ATR (hence the 3xATR
+   * stop) came out tighter than the backtest's. Called with the previous bar's FINAL values (broker-reconciled) before the next
+   * bar's first tick is ingested: merges them into the forming day only when it is the same day, never opens or closes a day.
+   */
+  updateFormingBar(candle) {
+    if (!this._cur || !candle) return;
+    if (Math.floor((candle.time - H17) / DAY_MS) !== this._cur.key) return;
+    this._cur.high = Math.max(this._cur.high, candle.high);
+    this._cur.low = Math.min(this._cur.low, candle.low);
+    this._cur.close = candle.close;
+  }
+
   /** Bulk warm-up from the engine's already-retained M15 history: establishes bars/position state with NO logged events. */
   warmUp(m15Candles) {
     for (const c of m15Candles) this.ingest(c, { silent: true });

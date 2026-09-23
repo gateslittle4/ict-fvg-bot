@@ -53,9 +53,12 @@ const DIRECTION_MATCH = { bullish: 'bullish', bearish: 'bearish' };
 export function buildMultiTouchFilterPredicate(
   candles,
   symbol,
-  { variant, structureEnabled = false, sessionEnabled = false, sessionWindow = NY_AM_SESSION, liquiditySweepEnabled = false, structureLookback = STRUCTURE_LOOKBACK, sweepLookback = SWEEP_LOOKBACK, sweepWindowCandles = SWEEP_WINDOW_CANDLES }
+  { variant, structureEnabled = false, sessionEnabled = false, sessionWindow = NY_AM_SESSION, liquiditySweepEnabled = false, structureLookback = STRUCTURE_LOOKBACK, sweepLookback = SWEEP_LOOKBACK, sweepWindowCandles = SWEEP_WINDOW_CANDLES, preTouchFilters = false }
 ) {
   const checks = [];
+  // preTouchFilters (2026-09-23): structure and sweep are read as of the last CLOSED candle before the touching one (t - 1 ms),
+  // never from the touching candle's own close - the only way a resting LIMIT order placed before the touch can use them.
+  const at = (t) => (preTouchFilters ? t - 1 : t);
 
   if (variant && variant !== 'baseline') {
     const [tfKey, emaLabel] = variant.split('_');
@@ -67,7 +70,7 @@ export function buildMultiTouchFilterPredicate(
 
   if (structureEnabled) {
     const structureLookup = makeStructureBiasLookup(buildStructureBiasSeries(candles, { lookback: structureLookback }));
-    checks.push((candle, zone) => structureLookup(candle.time) === DIRECTION_MATCH[zone.direction]);
+    checks.push((candle, zone) => structureLookup(at(candle.time)) === DIRECTION_MATCH[zone.direction]);
   }
 
   if (sessionEnabled) {
@@ -76,7 +79,7 @@ export function buildMultiTouchFilterPredicate(
 
   if (liquiditySweepEnabled) {
     const sweepLookup = makeSweepLookup(buildLiquiditySweepEvents(candles, { lookback: sweepLookback }), { windowMs: sweepWindowCandles * 15 * 60 * 1000 });
-    checks.push((candle, zone) => sweepLookup(candle.time, zone.direction));
+    checks.push((candle, zone) => sweepLookup(at(candle.time), zone.direction));
   }
 
   return (candle, zone) => checks.every((check) => check(candle, zone));

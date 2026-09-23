@@ -30,8 +30,10 @@ test('there are exactly the bot\'s 8 live mechanisms', () => {
 
 test('each mechanism applies only where CONFIG says the bot trades it', () => {
   const ids = (sym) => botMechanismsForSymbol(sym).map((m) => m.id).sort();
-  assert.ok(ids('US100').includes('bot-fvg') && ids('US100').includes('bot-cbdr') && ids('US100').includes('bot-nwog') && ids('US100').includes('bot-divergence'));
-  assert.ok(ids('EURUSD').includes('bot-judas'));
+  // Driven by CONFIG (2026-09-23: FVG and Judas Swing were taken out of live - config.js fvg.liveSymbols / judasSwing.symbols).
+  assert.equal(ids('US100').includes('bot-fvg'), (CONFIG.fvg.liveSymbols ?? ['US100']).includes('US100'));
+  assert.ok(ids('US100').includes('bot-cbdr') && ids('US100').includes('bot-nwog') && ids('US100').includes('bot-divergence'));
+  assert.equal(ids('EURUSD').includes('bot-judas'), CONFIG.judasSwing.symbols.includes('EURUSD'));
   assert.ok(!ids('EURUSD').includes('bot-fvg'));
   assert.ok(ids('GER40').includes('bot-breaker'));
   assert.deepEqual(ids('USDCAD'), []); // a pair the bot trades nothing on

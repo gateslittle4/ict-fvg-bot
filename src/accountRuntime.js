@@ -71,7 +71,8 @@ export class AccountRuntime {
     this.guardrail = new GuardrailEngine(config.guardrails);
     this.strategyEngine = new LiveStrategyEngine({
       symbols: config.symbols,
-      fvgConfig: config.fvg.perSymbol,
+      // Only the symbols listed in config.fvg.liveSymbols trade FVG live (2026-09-23: none - see config.js); perSymbol stays for research.
+      fvgConfig: Object.fromEntries(Object.entries(config.fvg.perSymbol).filter(([s]) => (config.fvg.liveSymbols ?? Object.keys(config.fvg.perSymbol)).includes(s))),
       divergenceConfig: config.divergence,
       // LIVE, auto-executed - see config.js's `nwog` comment and HANDOFF.md.
       // Explicitly opted in ONLY here (the one real live-tracking engine) -

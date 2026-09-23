@@ -37,7 +37,7 @@ import { calculateLotSize, getDefaultSpec, buildSpecFromBrokerSymbol } from '../
 import { describeBrokerPayload, extractBrokerError } from './brokerPayload.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
-import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes } from './accountReconciliation.js';
+import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes, computeUntrackedPositionInfos, findBotPositionsToClose } from './accountReconciliation.js';
 import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields, logAlertSignal } from './demoTrackingLog.js';
 import { DailyAlertEngine } from '../dailyAlertEngine.js';
 
@@ -1423,6 +1423,35 @@ export class CTraderDataSource {
       );
     }
 
+    // 2026-09-23 - journal self-heal (see computeUntrackedPositionInfos): after a restart the in-memory position -> trade info map
+    // is empty, so a still-open position's eventual close was never journaled. Rebuilt here from the broker's own data, on every
+    // boot and sweep tick; signalId taken from the engine's current belief on that symbol so the real close still releases it.
+    const toRestore = computeUntrackedPositionInfos({
+      realPositions: res.position || [],
+      pendingOrders: res.order || [],
+      symbolNameById: this.symbolNameById,
+      symbols: this.symbols,
+      getTrackedInfo: (positionId) => this.openPositionInfoByPositionId.get(positionId) ?? null,
+    });
+    for (const info of toRestore) {
+      const existing = this.openPositionInfoByPositionId.get(info.positionId);
+      const believed = store.strategyEngine.getOpenPosition(info.symbolName);
+      this.openPositionInfoByPositionId.set(info.positionId, {
+        ...existing,
+        symbolName: info.symbolName,
+        source: info.source,
+        signalId: existing?.signalId ?? believed?.id ?? null,
+        direction: info.direction,
+        entryPrice: info.entryPrice,
+        riskAmount: info.riskAmount,
+        // never replace a known level with a missing one (the missing-stop resubmit below reads stopPrice)
+        stopPrice: info.stopPrice ?? existing?.stopPrice ?? null,
+        targetPrice: info.targetPrice ?? existing?.targetPrice ?? null,
+        entryTime: existing?.entryTime ?? info.entryTime,
+      });
+      console.log(`[cTrader] journal: restored tracking of real position ${info.symbolName} positionId=${info.positionId} source=${info.source} stop=${info.stopPrice} riskAmount=${info.riskAmount == null ? 'unknown' : info.riskAmount.toFixed(2)} - its close will be journaled.`);
+    }
+
     // 2026-09-14 (found live: a real BTCUSD position came back with
     // stopLoss:null and NO working pending order behind it either - see
     // accountReconciliation.js's computeMissingStopFixes for the full story
@@ -1794,11 +1823,13 @@ export class CTraderDataSource {
    * symbol can never happen. A failure anywhere in this path is caught and logged, never thrown - the live intraday combo must never be affected
    * by this strategy's own trouble.
    */
-  _feedDailyAlertEngines(symbolName, engineCandle) {
+  _feedDailyAlertEngines(symbolName, engineCandle, previousFinalBar = null) {
     const engine = this.dailyAlertEngines?.get(symbolName);
     if (!engine) return;
     let events;
     try {
+      // 2026-09-23: complete the previous bar first (see DailyAlertEngine.updateFormingBar) - engineCandle is only the new bar's first tick.
+      if (previousFinalBar) engine.updateFormingBar?.(previousFinalBar);
       events = engine.ingest(engineCandle);
     } catch (err) {
       console.warn(`[cTrader] mode-alerte (${symbolName}) ingest failed (non-fatal): ${err.message}`);
@@ -1878,13 +1909,15 @@ export class CTraderDataSource {
         console.warn(`[bar-reconcile] ${symbolName}: broker refresh failed (tick-tracked bars kept): ${err.message}`);
       }
       if (!store.strategyEngine.isNewBar(symbolName, engineCandle.time)) return;
+      // The previous bar, now final (reconciled just above) - the daily strategy must see it complete, not the first-tick stub it got.
+      const previousFinalBar = store.strategyEngine.getLastCandle?.(symbolName) ?? null;
       // Date.now() explicitly (2026-09-14) - see liveStrategyEngine.js's ingestCandle() comment: _toEngineCandle's -5h shift is
       // correct for signal/session logic but must NOT reach GuardrailEngine's real-calendar-day bookkeeping.
       // deferCloseToRealConfirmation: true (2026-09-14) - only this live call site gets it (real-close confirmation loop).
       const events = store.strategyEngine.ingestCandle(symbolName, engineCandle, Date.now(), { deferCloseToRealConfirmation: true });
       store.pushSignalEvents(events);
       store.lastCandleBySymbol.set(symbolName, candle);
-      this._feedDailyAlertEngines(symbolName, engineCandle);
+      this._feedDailyAlertEngines(symbolName, engineCandle, previousFinalBar);
       const actionable = events.filter((e) => e.type === 'validated' && !e.blockedReason);
       if (actionable.length > 0) this._notify(actionable);
       if (actionable.length > 0 && store.isAutoExecuteActive()) {
@@ -1893,11 +1926,37 @@ export class CTraderDataSource {
       for (const e of events) {
         if (e.type === 'pyramid-order-requested') this._handlePyramidOrderRequested(symbolName, symbolId, e);
         if (e.type === 'pyramid-order-cancel-requested') this._handlePyramidOrderCancelRequested(symbolName, e);
+        if (e.type === 'closed' && e.outcome === 'timeout' && store.isAutoExecuteActive()) this._closeRealPositionsAfterTimeout(symbolName, symbolId, e);
       }
     } catch (err) {
       console.error(`[live-bar] ${symbolName}: new-bar handling failed: ${err.stack || err.message}`);
     } finally {
       this._newBarInFlight.delete(key);
+    }
+  }
+
+  /**
+   * 2026-09-23 - the engine timed a position out (maxHoldingCandles, where every backtest closes it) but live nothing closed the
+   * REAL position: it stayed open until its broker stop/target, netting blocked on the symbol the whole time. Closes the bot's own
+   * position(s) for that strategy on that symbol at market (see findBotPositionsToClose - never a manual/unknown one). The belief
+   * is released by _handleExecutionEvent when the broker confirms the close, like any other real close. Never throws.
+   */
+  async _closeRealPositionsAfterTimeout(symbolName, symbolId, event) {
+    try {
+      const res = await sendCommandWithTimeout(this.connection, 'ProtoOAReconcileReq', { ctidTraderAccountId: Number(this.accountId) });
+      const targets = findBotPositionsToClose({ realPositions: res.position || [], symbolId, symbol: symbolName, source: event.source });
+      if (targets.length === 0) {
+        console.log(`[time-exit] ${symbolName} source=${event.source}: engine timed out, no matching real position (already closed by stop/target?) - nothing to close.`);
+        return;
+      }
+      for (const t of targets) {
+        await sendCommandWithTimeout(this.connection, 'ProtoOAClosePositionReq', { ctidTraderAccountId: Number(this.accountId), positionId: Number(t.positionId), volume: t.volume });
+        console.log(`[time-exit] ${symbolName} source=${event.source}: max holding reached - close sent for positionId=${t.positionId} (volume ${t.volume}).`);
+        logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: event.source, event: 'close_sent', side: event.direction === 'bullish' ? 'sell' : 'buy', price: null, detail: `positionId=${t.positionId} reason=timeout` });
+        this._notifyText(`⏱️ [${String(event.source).toUpperCase()}] ${symbolName} : durée maximale atteinte - position réelle fermée au marché (comme dans les backtests).`);
+      }
+    } catch (err) {
+      console.error(`[time-exit] ${symbolName} source=${event.source}: close after timeout failed (the broker stop/target still protects it): ${err.message}`);
     }
   }
 

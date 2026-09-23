@@ -7,3 +7,14 @@ rust_core/Cargo.lock
 
 # Imported Labo datasets: user data, ephemeral on Render, never committed
 data/lab-uploads/
+
+# HistData M1 brut (scripts/buildHistdataM1.js) et cache de l étude propre : jamais commités
+data/histdata-m1/
+data/clean-study-cache/
+
+# LIVE_FILL=1 (scripts/runCleanStudy.js) : cache avec exécution réelle, jamais commité
+data/clean-study-cache-livefill/
+
+# RR_MODE=... (scripts/runCleanStudy.js) : caches de géométrie des ordres, jamais commités
+data/clean-study-cache-rr-*/
+data/clean-study-cache-resting/

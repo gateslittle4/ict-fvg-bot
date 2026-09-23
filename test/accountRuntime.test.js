@@ -210,3 +210,11 @@ test('AccountRuntime: two independent instances never share state', () => {
   assert.notEqual(a.guardrail, b.guardrail);
   assert.notEqual(a.strategyEngine, b.strategyEngine);
 });
+
+test('FVG trades live only on CONFIG.fvg.liveSymbols (2026-09-23: none), perSymbol stays for research', () => {
+  const live = new AccountRuntime({ id: 'test-fvg-live', config: CONFIG });
+  assert.deepEqual(Object.keys(live.strategyEngine.fvgConfig).sort(), [...CONFIG.fvg.liveSymbols].sort());
+  assert.ok(Object.keys(CONFIG.fvg.perSymbol).length > 0);
+  const withUs100 = new AccountRuntime({ id: 'test-fvg-us100', config: { ...CONFIG, fvg: { ...CONFIG.fvg, liveSymbols: ['US100'] } } });
+  assert.deepEqual(Object.keys(withUs100.strategyEngine.fvgConfig), ['US100']);
+});

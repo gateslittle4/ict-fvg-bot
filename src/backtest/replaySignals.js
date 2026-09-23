@@ -73,7 +73,7 @@ const simple = (run, key) => ({ symbolsOf: () => CONFIG[key].symbols, run: (cand
 
 /** The 8 live mechanisms, each with where it really trades (from CONFIG, so this follows the bot). */
 export const BOT_MECHANISMS = [
-  { id: 'bot-fvg', label: 'FVG filtré', symbolsOf: () => liveFvgSymbols(), run: (candles, symbol) => runLiveFvgRawTrades(candles, symbol) },
+  { id: 'bot-fvg', label: 'FVG filtré', symbolsOf: () => liveFvgSymbols().filter((s) => (CONFIG.fvg.liveSymbols ?? [s]).includes(s)), run: (candles, symbol) => runLiveFvgRawTrades(candles, symbol) },
   {
     id: 'bot-divergence', label: 'Divergence US100/US500', needsPartner: true,
     symbolsOf: () => CONFIG.divergence.pair,

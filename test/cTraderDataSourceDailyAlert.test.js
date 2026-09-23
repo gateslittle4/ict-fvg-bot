@@ -81,3 +81,35 @@ test('_loadDailyAlertEngines warms up from the real US500 file WITHOUT materiali
   assert.ok(!loader.includes('const candles = []'), 'must not build a second full-size candle array (the 2026-09-22 OOM cause)');
   assert.ok(!loader.includes('lines.length'), 'must not iterate a materialized .split(\'\\n\') line array');
 });
+
+test('2026-09-23: fed like live (first-tick stub, then the final bar before the next one), a day is identical to the backtest\'s', () => {
+  const H17 = 17 * 3600000, DAY = 86400000, M15 = 900000;
+  const bars = [];
+  for (let d = 0; d < 3; d++) for (let k = 0; k < 96; k++) {
+    const o = 100 + d + Math.sin(k / 5);
+    bars.push({ time: d * DAY + H17 + k * M15, open: o, high: o + 0.7 + (k % 7) * 0.1, low: o - 0.6 - (k % 5) * 0.1, close: o + 0.2 });
+  }
+  const backtest = new DailyAlertEngine({ strategy: 'rsi2-daily', symbol: 'US500' });
+  for (const b of bars) backtest.ingest(b, { silent: true });
+  const live = new DailyAlertEngine({ strategy: 'rsi2-daily', symbol: 'US500' });
+  let previous = null;
+  for (const b of bars) {
+    if (previous) live.updateFormingBar(previous); // the previous bar, now final
+    live.ingest({ time: b.time, open: b.open, high: b.open, low: b.open, close: b.open }, { silent: true }); // first tick only
+    previous = b;
+  }
+  assert.deepEqual(live.bars, backtest.bars);
+  // the stub-only feed (the bug) would have missed every intrabar extreme
+  const buggy = new DailyAlertEngine({ strategy: 'rsi2-daily', symbol: 'US500' });
+  for (const b of bars) buggy.ingest({ time: b.time, open: b.open, high: b.open, low: b.open, close: b.open }, { silent: true });
+  assert.notDeepEqual(buggy.bars, backtest.bars);
+});
+
+test('updateFormingBar never opens or closes a day (a bar from another day is ignored)', () => {
+  const H17 = 17 * 3600000, DAY = 86400000;
+  const e = new DailyAlertEngine({ strategy: 'rsi2-daily', symbol: 'US500' });
+  e.ingest({ time: 5 * DAY + H17, open: 10, high: 10, low: 10, close: 10 }, { silent: true });
+  e.updateFormingBar({ time: 4 * DAY + H17, open: 1, high: 99, low: 0, close: 50 });
+  assert.equal(e._cur.high, 10);
+  assert.equal(e.bars.length, 0);
+});

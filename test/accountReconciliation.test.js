@@ -410,3 +410,70 @@ test('computeRealOnlyPositionsToAdopt: a broker-serialized STRING price/stopLoss
   assert.equal(toAdopt[0].stopPrice, 19800);
   assert.equal(toAdopt[0].targetPrice, 20600);
 });
+
+// --- 2026-09-23: journal self-heal and time-exit close ---
+import { computeUntrackedPositionInfos, findBotPositionsToClose, sourceFromOrderLabel } from '../src/dataSources/accountReconciliation.js';
+
+const US500_ID = '215';
+const names = new Map([[US500_ID, 'US500']]);
+// Shape observed live 2026-09-22 20:00 UTC (Divergence US500): stopLoss null on the position itself, protection on a linked order.
+const livePosition = {
+  positionId: '41759162',
+  positionStatus: 'POSITION_STATUS_OPEN',
+  price: 7774.7,
+  stopLoss: null,
+  takeProfit: null,
+  tradeData: { symbolId: US500_ID, volume: '169', tradeSide: 'BUY', openTimestamp: '1790107202446', label: 'auto-divergence-US500' },
+};
+const protection = { orderId: '50615147', positionId: '41759162', stopLoss: 7755.21, takeProfit: 7832.15 };
+
+test('sourceFromOrderLabel: reads the strategy from the bot label, null for anything else', () => {
+  assert.equal(sourceFromOrderLabel('auto-divergence-US500', 'US500'), 'divergence');
+  assert.equal(sourceFromOrderLabel('auto-rsi2-daily-US500', 'US500'), 'rsi2-daily');
+  assert.equal(sourceFromOrderLabel('auto-divergence-US100', 'US500'), null);
+  assert.equal(sourceFromOrderLabel('my manual trade', 'US500'), null);
+  assert.equal(sourceFromOrderLabel(undefined, 'US500'), null);
+});
+
+test('computeUntrackedPositionInfos: after a restart, rebuilds an open position from broker data so its close is journaled with its R', () => {
+  const [info] = computeUntrackedPositionInfos({ realPositions: [livePosition], pendingOrders: [protection], symbolNameById: names, symbols: ['US500'], getTrackedInfo: () => null });
+  assert.equal(info.positionId, '41759162');
+  assert.equal(info.source, 'divergence');
+  assert.equal(info.direction, 'bullish');
+  assert.equal(info.stopPrice, 7755.21);
+  assert.equal(info.targetPrice, 7832.15);
+  assert.ok(Math.abs(info.riskAmount - (7774.7 - 7755.21) * 1.69) < 1e-9); // units = volume / 100
+  assert.equal(info.entryTime, 1790107202446);
+});
+
+test('computeUntrackedPositionInfos: skips positions already fully tracked, upgrades an adoption stub without its money-at-risk', () => {
+  const args = { realPositions: [livePosition], pendingOrders: [protection], symbolNameById: names, symbols: ['US500'] };
+  assert.deepEqual(computeUntrackedPositionInfos({ ...args, getTrackedInfo: () => ({ riskAmount: 33 }) }), []);
+  const [upgraded] = computeUntrackedPositionInfos({ ...args, getTrackedInfo: () => ({ source: 'adopted', riskAmount: null }) });
+  assert.equal(upgraded.source, 'divergence');
+  assert.ok(upgraded.riskAmount > 0);
+});
+
+test('computeUntrackedPositionInfos: unknown stop or untracked symbol -> R unknown / skipped, never invented', () => {
+  const [noStop] = computeUntrackedPositionInfos({ realPositions: [livePosition], pendingOrders: [], symbolNameById: names, symbols: ['US500'], getTrackedInfo: () => null });
+  assert.equal(noStop.stopPrice, null);
+  assert.equal(noStop.riskAmount, null);
+  assert.deepEqual(computeUntrackedPositionInfos({ realPositions: [livePosition], pendingOrders: [], symbolNameById: names, symbols: ['US100'], getTrackedInfo: () => null }), []);
+  const closed = { ...livePosition, positionStatus: 'POSITION_STATUS_CLOSED' };
+  assert.deepEqual(computeUntrackedPositionInfos({ realPositions: [closed], pendingOrders: [], symbolNameById: names, symbols: ['US500'], getTrackedInfo: () => null }), []);
+});
+
+test("findBotPositionsToClose: only the bot's own position for that strategy and symbol, never a manual or adopted one", () => {
+  const manual = { ...livePosition, positionId: '1', tradeData: { ...livePosition.tradeData, label: 'manual' } };
+  const other = { ...livePosition, positionId: '2', tradeData: { ...livePosition.tradeData, label: 'auto-silverBullet-US500' } };
+  assert.deepEqual(findBotPositionsToClose({ realPositions: [livePosition, manual, other], symbolId: 215, symbol: 'US500', source: 'divergence' }), [{ positionId: '41759162', volume: 169 }]);
+  assert.deepEqual(findBotPositionsToClose({ realPositions: [livePosition], symbolId: 215, symbol: 'US500', source: 'adopted' }), []);
+  assert.deepEqual(findBotPositionsToClose({ realPositions: [livePosition], symbolId: 999, symbol: 'US500', source: 'divergence' }), []);
+});
+
+test('computeUntrackedPositionInfos: a position this process tracks from its own fill, or one without the bot label, is never rebuilt', () => {
+  const args = { realPositions: [livePosition], pendingOrders: [protection], symbolNameById: names, symbols: ['US500'] };
+  assert.deepEqual(computeUntrackedPositionInfos({ ...args, getTrackedInfo: () => ({ source: 'divergence', stopPrice: 7755.21 }) }), []);
+  const manual = { ...livePosition, tradeData: { ...livePosition.tradeData, label: 'manual' } };
+  assert.deepEqual(computeUntrackedPositionInfos({ ...args, realPositions: [manual], getTrackedInfo: () => null }), []);
+});

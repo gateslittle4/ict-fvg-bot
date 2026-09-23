@@ -126,3 +126,21 @@ test('minCandlesBeforeEligible=1 (default) matches the original always-eligible 
   assert.equal(events.length, 1);
   assert.equal(events[0].type, 'validated');
 });
+
+test('preTouchFilters: the liquidity-sweep filter never reads the touching candle itself (only what a resting order could know)', () => {
+  // A clear swing low (90) at index 5, then candle 16 dips under it and CLOSES back above: a bullish sweep made BY the touching candle.
+  const M15 = 900000;
+  const T0 = Date.parse('2026-01-07T00:00:00Z');
+  const bar = (i, o, h, l, cl) => ({ time: T0 + i * M15, open: o, high: h, low: l, close: cl });
+  const candles = [];
+  for (let i = 0; i < 16; i++) {
+    const low = i === 5 ? 90 : 95 + Math.abs(i - 5) * 0.1;
+    candles.push(bar(i, low + 2, low + 4, low, low + 3));
+  }
+  candles.push(bar(16, 96, 97, 89, 96));
+  const cfg = { variant: 'baseline', liquiditySweepEnabled: true };
+  // Default (backtest behaviour): the touching candle's own close counts - only knowable once it has closed.
+  assert.equal(buildMultiTouchFilterPredicate(candles, 'US100', cfg)(candles[16], { direction: 'bullish' }), true);
+  // preTouchFilters: read as of the last closed candle before the touch - no sweep yet, so no trade.
+  assert.equal(buildMultiTouchFilterPredicate(candles, 'US100', { ...cfg, preTouchFilters: true })(candles[16], { direction: 'bullish' }), false);
+});

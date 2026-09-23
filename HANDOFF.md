@@ -6670,6 +6670,8 @@ Suite de tests : 1103/1103. **Pas encore déployé** (commit `[skip render]`) : 
 
 ## 2026-09-22 — FVG seul avec un risque plus élevé sur FTMO 1-Step (analyse, rien changé dans le bot)
 
+> **2026-09-23 : conclusions de stratégie (quoi trader, RRR, risque) REMPLACÉES par l'étude propre entraînement 2010-2022 / test 2023-2025 / forward 2026** (section « Étude propre » plus bas). Les mesures de coûts (swap réel, commission ≈ 0) restent valables.
+
 Esdras : « et si on tradait uniquement la meilleure stratégie mais en augmentant le risque sur FTMO 1-Step ? ». `scripts/runFvgOnlyFtmoRiskAnalysis.js` → `data/backtest-input/fvg-only-ftmo-risk-2026.md` (vrai moteur, M1 exact, `real-m1-full`, un `warmUp()` par variante car retirer des mécanismes change le netting ; `divergenceConfig: null` explicite, sinon le moteur l'active par défaut). Fenêtres : entraînement < 2025, test 2025, 2026. Risques 0,3 à 2 %.
 
 - R/trade : combo +0,079 / +0,171 / +0,117 ; FVG seul (US100/US500/XAUUSD) +0,172 / +0,411 / +0,167 ; **FVG sans US500** (retrait justifié par la règle GER40 : FVG US500 -20 R à l'entraînement) **+0,295 (t=2,36) / +0,399 (t=2,02) / +0,326 (t=1,48)**.
@@ -6677,6 +6679,8 @@ Esdras : « et si on tradait uniquement la meilleure stratégie mais en augmenta
 - **Limites** : biais de sélection (FVG choisi sur tout l'historique) ; 2 instruments seulement (~14 trades/mois, aucun cycle réussi depuis le 2 juin 2026 à ≤ 0,75 %) ; coûts partiels ; P&L comptabilisé dans l'ordre des entrées (dates de cycle approximatives, parfois jours négatifs). Entrée `fvg-only-higher-risk-ftmo-2026` (inconclusive). **Aucun changement de config** : décision d'Esdras requise.
 
 ## 2026-09-22 — FVG seul : les trous de l'analyse comblés (swap réel mesuré, biais de sélection contrôlé, commission) + route swap-check corrigée
+
+> **2026-09-23 : conclusions de stratégie (quoi trader, RRR, risque) REMPLACÉES par l'étude propre entraînement 2010-2022 / test 2023-2025 / forward 2026** (section « Étude propre » plus bas). Les mesures de coûts (swap réel, commission ≈ 0) restent valables.
 
 Esdras : « règle tout ici, la route API etc. ». Les trois trous listés pour `fvg-only-ftmo-risk-2026.md` :
 
@@ -6694,49 +6698,114 @@ Esdras : « règle tout ici, la route API etc. ». Les trois trous listés pour 
 
 **Rien de changé dans la config du bot.** Commit `[skip render]` exprès : le prochain déploiement mettra aussi en ligne l'exécution RÉELLE de RSI(2)/US500 (`6207ee8`, pas encore déployée, Esdras doit choisir le moment, sans position ouverte). Suite de tests : 1104/1104.
 
-## 2026-09-22 — Candidates 2026 : FVG US100+XAUUSD, RSI(2) US500, les deux, contre le combo actuel (analyse, rien changé)
+## Étude propre : entraînement 2010-2022 / test 2023-2025 / forward 2026 (2026-09-23)
 
-Demande d'Esdras : pour 2026 et seulement les candidates les plus prometteuses — cycles +10 %, challenges gagnés/perdus, win rate, meilleur RRR, dates, meilleur % par trade, comparaison au combo, recommandation. `scripts/runCandidates2026Analysis.js` → `data/backtest-input/candidates-2026-analysis.md` (vrai moteur + vraie classe `DailyAlertEngine`, M1 exact, spread + swap réel, FTMO 1-Step simulé PAR ÉVÉNEMENTS — P&L à la sortie, dates exactes, contrairement aux scripts précédents qui comptaient à l'entrée).
+**Demande d'Esdras :** les analyses « candidates » et « 3e jambe » étaient trop dispersées (choix faits sur les années ensuite jugées). Tout effacer et refaire selon le protocole qui vaut désormais pour **toute** analyse : **entraînement 2010-2022, test 2023-2025, forward 2026 ; tous les choix sur l'entraînement seul**.
 
-- **RRR FVG, choisi sur l'entraînement seul** : US100 reste 1:5 (+81,7 R à l'entraînement, loin devant ; 1:6-1:7 font mieux en 2025/2026 mais mal à l'entraînement) ; XAUUSD 1:7 (entraînement très plat, 1:7 devant de peu : +17,1 contre +11,3 R à 1:4 — mais 1:7 est aussi le meilleur en 2025 ET en 2026).
-- **2026 (1er jan. → 18 sept.)** : combo 373 trades, 25 % gagnants, +39,8 R, +0,107 R/trade, t = 0,99 ; **FVG US100 1:5 + XAUUSD 1:7 : 102 trades, 25 %, RRR réalisé 5,3, +64,2 R, +0,630 R/trade, t = 2,18** (avec les RRR actuels : +50,5 R, +0,495, t = 1,98) ; RSI(2) US500 : 11 trades, 11 gagnants, +2,9 R ; FVG + RSI(2) : +67,1 R.
-- **FTMO 1-Step 2026 (réussis/ratés)** : à 1 % → combo 8/8, FVG (1:7) 6/1, FVG (RRR actuels) 5/1 ; à 0,75 % → 3/2, 5/1, 4/0 ; à 0,5 % → 2/1, 3/0, 2/0. Meilleur risque (réussis − ratés) : FVG 1:7 = 1,25 % en 2026 ET en 2025 (7/1 et 11/2), mais son cycle en cours est à -9,9 % (au bord de l'échec) et le taux d'échec monte net à 1,5 % (9/3, 12/4). RSI(2) seul n'atteint jamais +10 % (trop peu de trades) et n'ajoute presque rien à FVG.
-- **Limites** : 2026 = XAUUSD porte FVG (+40,1 R sur 28 trades contre US100 +19,5 R sur 106, année de forte tendance de l'or) ; ~10 trades/mois → cycles lents quand le marché ne coopère pas (cycle raté du 24 juin au 2 sept. à 1 %) ; perte quotidienne FTMO sur P&L clôturé ; pas de glissement réel.
-- **Recommandation donnée à Esdras** : remplacer le combo par FVG seul sur US100 + XAUUSD pour le challenge, à 1 % (un cran sous l'optimum sur papier, 1,25 %, par marge de sécurité : coûts partiels, résultats réels en général moins bons que le backtest) ; XAUUSD à 1:7 plutôt que 1:4 (choisi sur l'entraînement, confirmé 2025 et 2026, mais baisses plus profondes : 15,5 % contre 10,3 % en compte continu à 1 %) ; RSI(2) en mode alerte seulement pour l'instant (apport marginal, fermeture réelle `ProtoOAClosePositionReq` jamais testée). **Aucun changement fait dans le bot : décision d'Esdras.** Attention : le prochain déploiement mettra aussi en ligne l'exécution réelle RSI(2) (`6207ee8`) sauf si on la désactive (vider `dailyLiveExecutionSymbols`).
+**Effacé :** `scripts/runCandidates2026Analysis.js`, `data/backtest-input/candidates-*.md`, `third-leg-*.md`, les sections HANDOFF correspondantes et leurs entrées de `research-memory.json` (les deux entrées « FVG seul » sont marquées `rejected` (résumé préfixé « REMPLACÉ ») : leurs conclusions de stratégie sont remplacées, leurs mesures de coûts restent valables).
 
-## Candidates rejouées sur 2024 (2026-09-22)
+**Données.** Entraînement : HistData.com M1 2010-2022 (US100 = NSXUSD, US500 = SPXUSD, XAUUSD, EURUSD ; indices à partir du 2010-11-14), téléchargé directement (`histdata.com/get.php`) et converti par `scripts/buildHistdataM1.js` dans `data/histdata-m1/` (jamais commité). Test / forward : M1 du broker (`data/real-m1-full`), préchauffé avec HistData 2022.
 
-`node --max-old-space-size=4096 scripts/runCandidates2026Analysis.js 2024` → `data/backtest-input/candidates-2024-analysis.md` (même script, l'année est maintenant un argument ; le rapport 2026 ressort à l'identique). **2024 est DANS l'entraînement** où FVG seul, le retrait de US500 et les RRR ont été choisis : ce n'est pas une preuve indépendante, seulement « l'idée tenait-elle déjà ».
+**⚠️ Découverte — heure HistData.** HistData annonce « EST sans heure d'été » mais ses horodatages sont **à l'heure de New York AVEC heure d'été** : vérifié sur le recouvrement or / EUR avec le broker (mai-déc. 2022, écart 0,10 $ aligné vs 2,2 $ décalé d'1 h en juillet) et sur les pics CPI / NFP (13/07/2022 : 13:30 au lieu de 12:30 UTC ; 02/12/2022 aligné ; US100/US500 alignés après correction, y compris 2015). Corrigé dans `buildHistdataM1.js` (UTC = +4 h en heure d'été, +5 h sinon). **Conséquence hors de cette étude :** `scripts/convertHistData.js`, l'import M1 de l'appli (`src/backtest/m1Import.js`, `tz: 'est'`) et le commentaire de `src/backtest/nySession.js` supposent encore l'EST fixe → les anciens backtests sur CSV HistData (`data/backtest-input`) avaient leurs fenêtres de session décalées d'1 h pendant ~8 mois/an par rapport au bot en live (UTC-5 fixe depuis le broker). La référence actuelle (+220 R, M1 du broker) n'est pas touchée. Pas encore corrigé : à décider.
 
-- Trades 2024 : combo 482 trades, 26 %, +44,5 R (+0,092/trade, t 1,01) ; FVG US100 1:5 + XAU 1:7 155 trades, 25 %, +67,7 R (+0,437, t 2,01) ; RSI(2) US500 14 trades, 86 %, +3,2 R.
-- RRR 2024 : US100 1:5 est le meilleur (1:6 et 1:7 négatifs en 2024, alors que 1:7 gagnait en 2025/2026) ; XAU 1:7 le meilleur (+17,9 R) : XAU 1:7 est premier en entraînement, 2024, 2025 et 2026.
-- FTMO 2024 à 1 % : combo 11 réussis / 10 ratés (baisse continue 25,1 %) ; FVG C 7 / 2 (13,6 %). Meilleur % de C en 2024 : 1 % (1,25 % en 2025 et 2026).
-- Dates C à 1 % : raté 9 jan → 12 avr (94 jours), réussi 13 mai, raté 13 juin, puis 6 réussis d'affilée (25 juin, 9 juil, 18 juil, 16 août, 17 sept, 11 nov), en cours -7,2 % au 31 déc.
-- À noter : en 2024 le garde-fou pèse lourd sur C (trades isolés US100+XAU : +35,4 R sur 206 ; avec le garde-fou du bot : +67,7 R sur 155). En 2026 l'écart était faible (+59,6 vs +64,2). Le résultat 2024 dépend donc en partie du plafond de 3 trades/jour et de la pause.
+**Méthode** (`scripts/runCleanStudy.js`, rapport `data/backtest-input/clean-study-analysis.md`). 29 jambes = chaque stratégie du bot sur chaque paire possible (config de production, seul le RRR varie 1:2 → 1:7) + RSI(2) US500. Vrai `LiveStrategyEngine` sur M15 reconstruites du M1, chaque trade réglé à la minute. Coûts : spread par défaut + swap du broker **en % du prix** (les montants en points d'aujourd'hui sont mis à l'échelle du prix d'entrée ; sinon le swap d'un Nasdaq à 20 000 appliqué au Nasdaq de 2011 coûte ~8× trop ; contrôle « points fixes » en colonne). Compte : garde-fou du bot, une position par paire, FTMO 1-Step réel enchaîné. Règle fixée avant le test : RRR = meilleur R net d'entraînement ; jambe gardée si t ≥ 2, positive en 2010-2016 ET 2017-2022, ≥ 30 trades ; risque = max(réussis − ratés) sur l'entraînement.
 
-## ⚠️ Correction : bug dans la simulation par événements des candidates + test sur l'historique long HistData (2026-09-22)
+**Résultats (risque choisi sur l'entraînement) :**
 
-**Les chiffres des deux sections ci-dessus (« Candidates 2026… » et « Candidates rejouées sur 2024 ») étaient GONFLÉS et sont remplacés par ceux-ci.** Dans `simulate()` de `scripts/runCandidates2026Analysis.js`, un trade stoppé dans la minute même de son entrée (sortie à la même heure que l'entrée) voyait sa sortie traitée AVANT son entrée : il n'était jamais compté. Ce sont presque toujours des pertes, surtout FVG (stops serrés). Démasqué parce que les trades isolés et les trades au garde-fou ne collaient pas (2024 : +35,4 R isolés contre +67,7 R au garde-fou). Corrigé (rang d'ordre propre à ces sorties) ; aucun autre script n'utilise cette simulation. Les rapports 2026/2024 sont régénérés, et 2023/2025 ajoutés.
+| Portefeuille | Risque | Entraînement 2010-2022 | Test 2023-2025 | Forward 2026 (→ 18/09) |
+|---|---|---|---|---|
+| P. choisi par la règle : Silver Bullet US100 1:7, NWOG US100 1:7, Silver Bullet US500 1:6, Weekly Sweep US500 1:5, Weekly Sweep US100 1:5, RSI(2) US500 | 0,5 % | +658 R, t 4,6, FTMO 44/22 | **−61 R**, FTMO 3/10 | +29 R, 2/1 |
+| A. Combo actuel (RRR de production, GER40 retiré) | 0,25 % | +318 R, t 2,0, FTMO 13/8 | +233 R, 5/0 | +46 R, 1/0 |
+| C. FVG US100 1:5 + XAUUSD 1:7 | 0,25 % | +109 R, t 1,1, FTMO 4/2 | +199 R, 5/0 | +50 R, 1/0 |
 
-**Broker M1 exact, corrigé, FVG US100 1:5 + XAUUSD 1:7 (C) contre combo (A), FTMO 1-Step (cycles remis à zéro chaque 1er janvier), réussis / ratés :**
+**Conclusions.** (1) Choisir les meilleures jambes du passé ne marche pas ici : le portefeuille P, excellent sur 13 ans, perd sur 2023-2025 (Silver Bullet et Weekly Sweep ont cessé de marcher). (2) Le combo actuel est le seul positif sur les trois périodes → on le garde, rien à changer. (3) C (FVG US100 + or) n'est bon que depuis 2023 (négatif 2010-2014, t 1,1 sur l'entraînement) : l'ancienne conclusion « bat le combo partout » est renversée. (4) Risque : l'entraînement choisit 0,25 % pour le combo ; à 0,5 % il fait autant de ratés que de réussis sur 2010-2022 (39/39, pire baisse 47 %) même si 2023-2026 était bon (13/6, 4/2).
 
-| Année | R net A / C | 0,5 % A / C | 0,75 % A / C | 1 % A / C | 1,25 % A / C |
-|---|---|---|---|---|---|
-| 2023 | +72,6 / +67,4 | 6/4 · 3/0 | 7/6 · 4/0 | 11/9 · 7/2 | 18/16 · 9/3 |
-| 2024 | +3,9 / +35,5 | 3/4 · 2/0 | 6/9 · 4/3 | 9/13 · 6/5 | 12/18 · 8/7 |
-| 2025 | +79,5 / +71,7 | 4/2 · 3/0 | 10/7 · 5/1 | 12/10 · 8/4 | 15/14 · 11/5 |
-| 2026 (→ 18 sept.) | +28,7 / +52,2 | 2/2 · 3/0 | 5/4 · 4/1 | 8/8 · 5/1 | 12/13 · 7/3 |
-| **Total** | **+184,7 / +226,8** | **15/12 · 11/0** | **28/26 · 17/5** | **40/40 · 26/12** | **57/61 · 35/18** |
+**Limites.** Les filtres de production ont été conçus sur 2019-2025 : le test a été vu pendant la conception ; pour le combo actuel, 2010-2018 est la seule période vraiment neuve (≈ +115 R sur 9 ans). Prix HistData ≠ broker. Coûts d'aujourd'hui mis à l'échelle (en points fixes, les vieilles années sont bien pires). Perte quotidienne FTMO sur le P&L clôturé. Netting simulé (une position par paire), pas un seul moteur combiné.
 
-En R, C ≈ combo (un peu mieux) avec 3 fois moins de trades ; ce qui le distingue vraiment : bien moins de challenges ratés et une baisse environ deux fois plus petite. « Bat à plate couture » est exagéré.
+**Rien de changé dans le bot.** Commit `[skip render]`.
 
-**Historique long HistData 2011-2018** (`--histdata`, jamais utilisé pour mettre au point FVG ni les RRR) → `candidates-histdata-analysis.md` (borne basse) et `candidates-histdata-optimiste-analysis.md` (borne haute). HistData n'a que des bougies M15 : la bougie d'entrée est ambiguë (stop d'abord = borne basse ; ignorée = borne haute). Calibration 2023-2025 contre broker M1 : le vrai chiffre est environ 20 % du chemin de la borne basse à la haute pour le combo, 40 % pour FVG (fragile : source de prix différente).
+**Suite — élagage du combo (même jour, `runCleanStudy.js prune`, rapport `clean-study-prune-analysis.md`).** Question d'Esdras : passer un challenge avec des trades de meilleure qualité. Deux règles d'élagage fixées sur l'entraînement : R1 retire les jambes perdantes sur 2010-2022 (seule Judas Swing EURUSD : −114 R, négative dans les deux moitiés) ; R2 ne garde que les jambes positives dans chaque moitié (FVG US500, FVG XAUUSD, NWOG US100, Weekly Sweep US500, Silver Bullet US500). L'entraînement choisit R2 à 1 % (64/48) → **échec au test** : +19 R, FTMO 7/16 (forward 5/2). R1 ≈ neutre hors échantillon (0,25 % : test +212 R 4/0 contre +233 R 5/0 pour le combo, forward +47 contre +46 ; 0,5 % : test 11/5 contre 13/6, forward 4/2 les deux). Conclusion : garder les jambes les plus « propres » du passé échoue une deuxième fois ; c'est la diversité du combo qui tient. Le seul levier pour un challenge est le risque : 0,25 % (≈ 13 réussis / 8 ratés sur 13 ans, ≈ 170 jours par réussite) ou 0,5 % (≈ 1 raté par réussi sur 13 ans, 13/6 sur 2023-2025, ≈ 50 jours) ; au-dessus, plus de ratés que de réussis sur 2010-2022. Au passage : l'ordre des jambes décide quel signal simultané sur une même paire est pris (netting) ; il est fixé (ordre de `LEGS`) — un autre ordre déplaçait le combo de ~20 R sur le test. Rien changé dans le bot.
 
-| 2011-2018 | Borne basse R net | Borne haute R net | FTMO 1 % bas / haut |
+**Suite — régimes de marché (même jour, `clean-study-regimes-analysis.md`).** Les jambes tournent : les « autres jambes » du combo faisaient +39 à +127 R/an sur 2013-2021 mais ≈ +3 à +6 R/an depuis 2023 ; FVG US100 était négatif 2011-2015 et est positif chaque année depuis 2020. Lien le plus fort avec la macro : FVG US100 et le taux moyen de la Fed (Spearman 0,74 sur 15 ans ; Fed ≥ 1 % : 6 années positives sur 7, ≈ +38 R/an ; Fed ≈ 0 : ≈ +3 R/an, sauf 2020, année COVID très volatile, +67 R). Piste, pas preuve : les réglages de FVG ont été conçus sur 2019-2025, des années surtout à taux élevés. « Suivre la stratégie qui marche » (jambe active si R > 0 sur 3-24 derniers mois, choisi sur l'entraînement : 12 mois) échoue au test (7/4 contre 13/6) et au forward (2/2 contre 4/2). FVG US100 1:5 + Or 1:4 (RRR de production) à 0,5 % : 13/12 sur 2010-2022 (même rapport que le combo, baisse 30 % contre 47 %), 8/0 sur 2023-2025, 2/0 en 2026. Rien changé dans le bot.
+
+**Suite — 2026 en détail (`runCleanStudy.js year2026`, `clean-study-2026-analysis.md`).** FVG US100 1:5 + Or 1:4 contre le combo sur 2026 (→ 21/09) : R net +39,9 (122 trades, +0,327 R/trade, baisse 5,8 % à 0,5 %) contre +45,5 (407 trades, +0,112, baisse 13,4 %). Challenge démarré chaque jour de bourse à 0,5 % : FVG 106 réussis / 0 raté / 79 pas finis (médiane 79 j) ; combo 137 / 30 / 21 (82 %, médiane 42 j). Mais FVG est à plat depuis juin (+6 R de juin à septembre, challenge en cours depuis le 2 juin à −1,6 %) quand le combo fait +33 R. Rien changé dans le bot.
+
+## ⚠️ Exécution réelle : le FVG perd tel que le bot l'exécute (2026-09-23)
+
+**Découverte.** Toutes les simulations (étude propre, référence +220 R, anciennes études) entrent dans un FVG **au premier contact du prix pendant la bougie M15 « validated »**. Le bot réel ne peut pas : il ne voit la bougie qu'à sa clôture, puis pose un ordre LIMIT au bord de la zone (`cTraderDataSource._handleAutoExecuteEntry`), qui ne se remplit que si le prix **revient** sur le niveau avant `CONFIG.fvg.maxAgeCandles` bougies. Les trades qui partent directement vers l'objectif après le premier contact (les gagnants du backtest) ne sont jamais pris en réel. Les autres stratégies (MARKET) ont un écart plus petit : le backtest entre à l'ouverture de la bougie du signal, le bot au marché à sa clôture.
+
+**Mesure** (`LIVE_FILL=1 node scripts/runCleanStudy.js …`, cache `data/clean-study-cache-livefill`) : FVG = ordre posé à la clôture, rempli si le prix revient (achat : l'ask touche), perdu si l'objectif est atteint avant ; MARKET = entrée à l'ouverture de la bougie suivante, stop/objectif aux niveaux du signal, R sur la distance du signal. R brut, simulé → exécution réelle :
+
+| Jambe | 2010-2022 | 2023-2025 | 2026 |
 |---|---|---|---|
-| A. Combo | -550,1 (t -4,75) | +95,8 (t 0,78) | 40/119 · 67/89 |
-| C. FVG US100 1:5 + XAU 1:7 | -200,1 (t -2,90) | +207,6 (t 2,64) | 11/42 · 32/24 |
+| FVG US100 1:5 | +193 → **−449** | +186 → **−139** | +26 → **−51** |
+| FVG US500 1:5 | +107 → −146 | +23 → −38 | −9 → −30 |
+| FVG XAUUSD 1:4 | +35 → −59 | +42 → +7 | +31 → +17 |
+| Divergence 1:3 | +123 → +162 | +67 → +48 | +6 → +6 |
+| NWOG US100 1:5 | +78 → +93 | +6 → −2 | +22 → +22 |
+| Judas Swing EURUSD 1:3 | +86 → +123 | +56 → +47 | −1 → −3 |
+| Weekly Sweep US500 1:5 | +156 → +125 | +1 → +30 | +0 → −5 |
+| Silver Bullet US100 1:3 | +105 → +74 | +4 → +21 | −5 → −0 |
+| Silver Bullet US500 1:3 | +207 → +137 | −20 → +2 | +10 → +3 |
+| CBDR US100 1:3 | +55 → +33 | −1 → −4 | −3 → +9 |
 
-Lecture : C fait mieux que le combo dans les DEUX bornes (combo probablement perdant en 2011-2018), mais on ne peut pas dire si C lui-même était gagnant avant 2019 (interpolation calibrée ≈ -40 R, proche de zéro à négatif). Pour trancher : il faut les fichiers **HistData M1** (NSXUSD et XAUUSD 2010-2018 - les zips d'origine avaient été convertis en M15 puis non gardés) pour régler à la minute.
+Décomposition FVG US100 (2023-2025) : les 204 trades jamais repris valaient +360 R simulés ; les 356 repris valaient déjà −148 R simulés (−190 R en réel). Tout le gain simulé du FVG US100 vient des trades que le bot ne peut pas prendre.
 
-Recommandation révisée : si on passe à FVG seul US100 + XAUUSD, risque **0,5 à 0,75 %** plutôt que 1 % (broker 2023-2026 : 11 réussis / 0 raté à 0,5 %, 17/5 à 0,75 %, 26/12 à 1 %), vu l'incertitude d'avant 2019. RSI(2) reste en alerte seulement.
+**Portefeuilles en exécution réelle, avec coûts** (`clean-study-prune-livefill-analysis.md`) : combo actuel **−262 R / −79 R / −44 R** (FTMO 0,5 % : 17/42, 3/10, 0/3). Sans les jambes perdantes sur l'entraînement (retire les 3 FVG et Judas EURUSD) : +361 R (t 3,3) / +62 R (t 1,2) / +10 R, FTMO 0,5 % : 24/11, 5/5, 2/2. Choisi sur l'entraînement (NWOG US100 + Weekly Sweep US500 + Silver Bullet US500, 1 %) : +269 R / +21 R (6/8) / +19 R (3/1).
+
+**Conclusions renversées :** la référence +220 R, « FVG US100 + Or » (recommandé plus tôt le même jour), et tout résultat FVG qui entre au premier contact. **Rien changé dans le bot** (le compte démo tourne toujours avec FVG en LIMIT). Piste à tester : poser l'ordre LIMIT dès la formation de la zone (« watching »), avec les filtres évalués avant le contact, pour capter le premier contact comme le backtest.
+
+## FVG et Judas Swing EURUSD retirés du live ; filtres « avant contact » (2026-09-23, nuit)
+
+**Demande d'Esdras :** « trader comme un humain, rapide mais sans émotion », « fais le nécessaire… pousse dans le live code », « rends le système très fiable ».
+
+**Pourquoi le bot ne peut pas prendre les trades FVG qui filent vers l'objectif.** Il y avait deux causes :
+1. L'ordre LIMIT n'est posé qu'après la clôture de la bougie du contact.
+2. Plus grave : deux filtres FVG, `structure` et `liquiditySweep`, lisent la **clôture de la bougie du contact elle-même**. Le balayage de liquidité exige par exemple que la bougie passe sous un plus bas **et clôture au-dessus**. Le backtest ne gardait donc que les contacts dont il savait déjà qu'ils rebondiraient.
+
+**La solution humaine a été testée, sans succès.** Il s'agit de poser l'ordre LIMIT avant le contact, avec des filtres lus à la dernière clôture connue. C'est la nouvelle option `preTouchFilters` de `buildMultiTouchFilterPredicate` et `buildFilteredEngine`, désactivée par défaut, avec son test. Mode `LIVE_FILL=resting` de `runCleanStudy.js`. Résultats en R brut sur 2010-2022 / 2023-2025 / 2026 :
+
+| Stratégie | 2010-2022 | 2023-2025 | 2026 |
+|---|---|---|---|
+| FVG US100 1:5 | −229 | −13 | −25 |
+| FVG US500 1:5 | −63 | −11 | −20 |
+| FVG XAUUSD 1:4 | −21 | +54 | +21 |
+
+Pour comparer, le FVG US100 tel qu'il est exécuté aujourd'hui fait −449 / −139 / −51. **Le « profit » du FVG venait de l'information de clôture, pas d'un avantage exploitable.**
+
+**Changement live** (règle R1 fixée d'avance : retirer les jambes perdantes sur l'entraînement en exécution réelle) :
+- `CONFIG.fvg.liveSymbols = []`. `AccountRuntime` ne passe au moteur que ces symboles ; `perSymbol` reste intact pour la recherche et le labo.
+- `CONFIG.judasSwing.symbols = []`.
+- `replaySignals.js` suit `liveSymbols`.
+- Restent en live : Divergence US100/US500 1:3, NWOG US100 1:5, Weekly Sweep US500 1:5, Silver Bullet US100/US500 1:3, CBDR US100 1:3, et RSI(2)/US500 journalier (déjà en production depuis le déploiement de `812e490` à 00 h 43 UTC).
+- En exécution réelle avec coûts, ce portefeuille fait +361 R (t 3,3) sur 2010-2022, +62 R (t 1,2) sur 2023-2025 et +10 R en 2026. FTMO à 0,5 % : 24 réussis / 11 ratés, puis 5/5, puis 2/2. C'est positif mais faible depuis 2023 : pas de challenge payant avant d'avoir des résultats réels.
+
+**Déploiement.** Une position Divergence US500 était ouverte : achat le 22/09 à 20:00 UTC à 7774,7, stop 7755,2, objectif 7832,1, protection broker en place. Règle d'Esdras : pas de déploiement avec une position ouverte. Le code est donc poussé avec `[skip render]` (`413d546`) et **n'est pas encore déployé** : le déploiement automatique sans surveillance a été refusé par l'environnement. Pour déployer, une fois la position fermée : Render → Manual Deploy, ou un commit vide sans `[skip render]`.
+
+**Fiabilité vérifiée** : les écarts `[bar-reconcile]` des logs sont corrigés **avant** le calcul des signaux (`_ingestNewLiveBar` réconcilie avec `includeNewest`) ; ce n'est pas un bug. Le redémarrage de 00:44 avec la position ouverte a revérifié les positions auprès du broker sans rien effacer.
+
+**Fiabilité — deux trous corrigés** (même nuit, dans `413d546` +1, testés, pas encore déployés) :
+1. **Journal perdu au redémarrage.** `openPositionInfoByPositionId` était gardé en mémoire seulement. Un trade encore ouvert au moment d'un redémarrage n'était donc jamais écrit dans `bot_trade_events` à sa clôture. C'est arrivé à la Divergence US500 du 22/09, ouverte pendant le redémarrage de 00:44.
+   - Correctif : `computeUntrackedPositionInfos` (dans `accountReconciliation.js`, fonction pure testée). Au boot puis toutes les 5 min, il reconstruit les infos de chaque position réelle **portant le label du bot**.
+   - Stop et objectif sont pris sur la position ou sur son ordre de protection lié. Le risque en $ vaut |entrée − stop| × unités (symboles cotés en USD uniquement ; ailleurs, le R reste inconnu, jamais inventé).
+   - Il ne touche jamais une position déjà suivie, et n'efface jamais un stop connu : la re-pose d'un stop manquant en dépend.
+2. **Sortie à durée max jamais envoyée.** Le moteur met fin à une position après `maxHoldingCandles` (480 bougies M15 pour la Divergence), exactement comme les backtests. Mais en live, rien ne fermait la vraie position : elle restait ouverte jusqu'au stop ou à l'objectif, et bloquait la paire tout ce temps.
+   - Correctif : `_closeRealPositionsAfterTimeout` + `findBotPositionsToClose`. Le bot ferme au marché **sa propre** position pour cette stratégie (label exact), seulement si l'auto-exécution est active, sans jamais lever d'erreur.
+
+**Spread dans le RRR (question d'Esdras, 2026-09-23).** Faut-il éloigner l'objectif pour qu'un gain vaille exactement le RRR, spread compris ? Test fait avec `LIVE_FILL=1 RR_MODE=strategy|exact|absolute` (`runCleanStudy.js`), en géométrie réelle des ordres MARKET : achat à l'ask, sorties sur le bid, taille calculée sur stop + spread, spread en % du prix.
+
+| 6 stratégies live | 2010-2022 | 2023-2025 | 2026 | FTMO 0,5 % (train / test / 2026) |
+|---|---|---|---|---|
+| Actuel : objectif sur le niveau de la stratégie | +303 R | +38 R | +14 R | 21/15, 4/4, 1/1 |
+| « RRR exact » : objectif éloigné du spread | +321 R | +37 R | +14 R | 24/17, 5/5, 1/1 |
+| Niveaux fixes replacés après exécution | +354 R | +64 R | +10 R | 23/9, 4/3, 2/2 |
+
+- **« RRR exact » : aucun gain.** Le spread se paie soit sur le gain, soit sur la probabilité d'atteindre l'objectif.
+- **Niveaux fixes : non retenu.** 5 % des pertes dépassent 2 R, la pire atteint −5,3 R.
+
+**Limite importante.** En live, le signal est calculé à la première cotation de la bougie suivante (bougie « vide » : ouverture seule, `ingestCandle`) et l'entrée se fait tout de suite. Toutes mes simulations d'exécution entrent 15 min après un signal calculé sur la bougie complète. Selon le modèle, le portefeuille va de +64 à +354 R sur 2010-2022. Prochain test à faire : un rejeu fidèle, bougie vide puis bougie complète. Rien n'a changé dans le bot.
+
+**Bug live corrigé — RSI(2) journalier (2026-09-23).** `_feedDailyAlertEngines` recevait chaque bougie M15 à sa **première cotation** seulement : l'ouverture, avec high = low = close = open. Les bougies journalières de RSI(2) étaient donc construites avec des ouvertures : plus hauts et plus bas intrabougie manquants, clôture décalée de 15 min.
+- Conséquence : ATR sous-estimé, donc stop (3 × ATR) plus serré que dans le backtest.
+- Correctif : avant chaque nouvelle bougie, la précédente dans sa version finale (recalée sur le broker) est fusionnée dans la journée en cours, via `DailyAlertEngine.updateFormingBar` et `LiveStrategyEngine.getLastCandle`.
+- Test : une journée reçue comme en live est identique à celle du backtest.
