@@ -229,3 +229,34 @@ test('_clearStaleBeliefsAgainstBroker: adoptExternalPosition returning null (e.g
   assert.equal(account._adoptExternalPositionCalls.length, 1, 'adoption was attempted');
   assert.equal(ds.openPositionInfoByPositionId.size, 0, 'nothing to register - the engine declined the adoption');
 });
+
+test('_closeRealPositionsAfterTimeout: the engine timing a position out closes the bot\'s own real position at market, nothing else', async () => {
+  const sent = [];
+  const connection = createMockConnection({
+    sendCommand: async (name, data) => {
+      sent.push({ name, data });
+      if (name === 'ProtoOAReconcileReq') {
+        return {
+          position: [
+            { positionId: '7', positionStatus: 'POSITION_STATUS_OPEN', tradeData: { symbolId: 213, volume: '169', label: 'auto-divergence-US100' } },
+            { positionId: '8', positionStatus: 'POSITION_STATUS_OPEN', tradeData: { symbolId: 213, volume: '50', label: 'manual' } },
+          ],
+          order: [],
+        };
+      }
+      return {};
+    },
+  });
+  const ds = makeDataSource(connection, createFakeAccount());
+  await ds._closeRealPositionsAfterTimeout('US100', 213, { type: 'closed', outcome: 'timeout', source: 'divergence', direction: 'bullish' });
+  const closes = sent.filter((c) => c.name === 'ProtoOAClosePositionReq');
+  assert.equal(closes.length, 1);
+  assert.equal(closes[0].data.positionId, 7);
+  assert.equal(closes[0].data.volume, 169);
+});
+
+test('_closeRealPositionsAfterTimeout: a broker failure is logged, never thrown (the broker stop/target still protects the position)', async () => {
+  const connection = createMockConnection({ sendCommand: async () => { throw new Error('socket down'); } });
+  const ds = makeDataSource(connection, createFakeAccount());
+  await ds._closeRealPositionsAfterTimeout('US100', 213, { type: 'closed', outcome: 'timeout', source: 'divergence', direction: 'bullish' });
+});

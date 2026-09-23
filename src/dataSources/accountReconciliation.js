@@ -332,3 +332,83 @@ export function computeMissingStopFixes({ realPositions, pendingOrders, getTrack
   }
   return toFix;
 }
+
+// Symbols whose P&L is in USD per unit of price move (units = volume / 100, see enrichRealPosition) - the only ones where a real
+// position's money-at-risk can be rebuilt from the broker's own numbers without a currency conversion.
+const isUsdQuoted = (symbol) => symbol === 'US100' || symbol === 'US500' || /USD$/.test(symbol);
+
+/**
+ * Strategy source encoded in the bot's own order label (`auto-<source>-<symbol>`, see cTraderDataSource._handleAutoExecuteEntry),
+ * or null for anything else (a manual trade, another tool).
+ */
+export function sourceFromOrderLabel(label, symbol) {
+  const m = typeof label === 'string' ? /^auto-(.+)-([^-]+)$/.exec(label) : null;
+  return m && m[2] === symbol ? m[1] : null;
+}
+
+/**
+ * 2026-09-23 (Esdras: « rends le système très fiable ») - pure logic behind the journal self-heal. openPositionInfoByPositionId
+ * (what lets a real close write its row, with its R, to bot_trade_events) lives in memory only: every restart while a position is
+ * open used to lose it, so that trade's close was never journaled (found live: a Divergence US500 position open across the
+ * 2026-09-23 00:44 UTC restart). Rebuilds it from the broker's own data for every open real position on a tracked symbol that
+ * has no entry yet (bot-labelled positions only), or only an adoption stub without its money-at-risk: source from the bot's label, stop/target from the
+ * position itself or its linked protection order, riskAmount = |entry - stop| x units (USD-quoted symbols only, else null so
+ * the R reads as unknown rather than invented).
+ *
+ * @param {object[]} realPositions - raw ProtoOAReconcileRes.position
+ * @param {object[]} pendingOrders - raw ProtoOAReconcileRes.order (a stop can live on a separate order linked by positionId)
+ * @param {Map<string,string>} symbolNameById - String(symbolId) -> symbol name
+ * @param {string[]} symbols - symbols this engine tracks
+ * @param {(positionId: string) => object|null} getTrackedInfo - current openPositionInfoByPositionId entry, if any
+ * @returns {{positionId: string, symbolName: string, source: string, direction: string, entryPrice: number|null, stopPrice: number|null, targetPrice: number|null, riskAmount: number|null, entryTime: number}[]}
+ */
+export function computeUntrackedPositionInfos({ realPositions, pendingOrders, symbolNameById, symbols, getTrackedInfo }) {
+  const tracked = new Set(symbols || []);
+  const out = [];
+  for (const pos of realPositions || []) {
+    if (pos.positionStatus && pos.positionStatus !== 'POSITION_STATUS_OPEN') continue;
+    const symbolName = symbolNameById.get(String(pos.tradeData?.symbolId));
+    if (!symbolName || !tracked.has(symbolName) || pos.positionId == null) continue;
+    const positionId = String(pos.positionId);
+    const existing = getTrackedInfo(positionId);
+    // Already tracked from this process's own fill (it knows its risk and stop better than anything rebuilt): leave it alone.
+    if (existing && (existing.riskAmount != null || existing.source !== 'adopted')) continue;
+    const labelSource = sourceFromOrderLabel(pos.tradeData?.label, symbolName);
+    if (!labelSource && !existing) continue; // not one of the bot's own positions (manual/unknown) - never journaled as ours
+    const e = enrichRealPosition(pos, null);
+    const linked = (pendingOrders || []).filter((o) => String(o?.positionId ?? o?.tradeData?.positionId) === positionId);
+    const stopPrice = e.stopLoss ?? toNumberOrNull(linked.find((o) => o.stopLoss != null)?.stopLoss) ?? toNumberOrNull(linked.find((o) => o.stopPrice != null)?.stopPrice);
+    const targetPrice = e.takeProfit ?? toNumberOrNull(linked.find((o) => o.takeProfit != null)?.takeProfit);
+    const riskAmount = isUsdQuoted(symbolName) && e.entryPrice != null && stopPrice != null && e.units > 0 ? Math.abs(e.entryPrice - stopPrice) * e.units : null;
+    const openedAt = Number(e.openTimestamp);
+    out.push({
+      positionId,
+      symbolName,
+      source: labelSource ?? existing?.source ?? 'adopted',
+      direction: e.direction,
+      entryPrice: e.entryPrice,
+      stopPrice,
+      targetPrice,
+      riskAmount: riskAmount > 0 ? riskAmount : null,
+      entryTime: Number.isFinite(openedAt) && openedAt > 0 ? openedAt : Date.now(),
+    });
+  }
+  return out;
+}
+
+/**
+ * 2026-09-23 - pure logic behind the time-exit close. LiveStrategyEngine times a position out after its maxHoldingCandles (the
+ * backtests close it there), but live nothing ever closed the REAL position: it stayed open until its broker stop/target and kept
+ * netting blocked on its symbol. Returns the bot's own open positions for that strategy on that symbol (matched by the exact
+ * `auto-<source>-<symbol>` label and symbolId, so a manual or unknown-origin position is never touched).
+ *
+ * @returns {{positionId: string, volume: number}[]}
+ */
+export function findBotPositionsToClose({ realPositions, symbolId, symbol, source }) {
+  if (!source || source === 'adopted') return [];
+  const label = `auto-${source}-${symbol}`;
+  return (realPositions || [])
+    .filter((p) => (!p.positionStatus || p.positionStatus === 'POSITION_STATUS_OPEN') && p.tradeData?.label === label && Number(p.tradeData?.symbolId) === Number(symbolId) && p.positionId != null)
+    .map((p) => ({ positionId: String(p.positionId), volume: Number(p.tradeData?.volume) }))
+    .filter((p) => Number.isFinite(p.volume) && p.volume > 0);
+}
