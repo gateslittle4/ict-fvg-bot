@@ -29,6 +29,9 @@ Règle (même que pour le retrait de GER40) : retirer une paire seulement si son
 | C. FVG seul sans US500 | Entraînement (< 2025) | 378 | 25 % | +111.7 | +0.295 | 2.36 |
 | C. FVG seul sans US500 | Test (2025) | 164 | 26 % | +65.4 | +0.399 | 2.02 |
 | C. FVG seul sans US500 | 2026 (1er jan. → fin des données) | 122 | 25 % | +39.8 | +0.326 | 1.48 |
+| D. FVG sans US500 + Divergence | Entraînement (< 2025) | 541 | 28 % | +148.0 | +0.274 | 2.85 |
+| D. FVG sans US500 + Divergence | Test (2025) | 242 | 30 % | +101.9 | +0.421 | 2.82 |
+| D. FVG sans US500 + Divergence | 2026 (1er jan. → fin des données) | 175 | 26 % | +42.4 | +0.242 | 1.44 |
 
 ## Risque 0.3 % par trade
 
@@ -43,6 +46,9 @@ Règle (même que pour le retrait de GER40) : retirer une paire seulement si son
 | C. FVG seul sans US500 | Entraînement (< 2025) | +38.4 % | 6.0 % | 3 / 0 / 1 |
 | C. FVG seul sans US500 | Test (2025) | +21.1 % | 4.4 % | 2 / 0 / 1 |
 | C. FVG seul sans US500 | 2026 (1er jan. → fin des données) | +12.3 % | 3.2 % | 1 / 0 / 1 |
+| D. FVG sans US500 + Divergence | Entraînement (< 2025) | +54.0 % | 6.7 % | 5 / 0 / 1 |
+| D. FVG sans US500 + Divergence | Test (2025) | +34.9 % | 4.4 % | 3 / 0 / 1 |
+| D. FVG sans US500 + Divergence | 2026 (1er jan. → fin des données) | +13.1 % | 4.6 % | 1 / 0 / 1 |
 
 ## Risque 0.5 % par trade
 
@@ -57,6 +63,9 @@ Règle (même que pour le retrait de GER40) : retirer une paire seulement si son
 | C. FVG seul sans US500 | Entraînement (< 2025) | +70.0 % | 9.9 % | 5 / 0 / 1 |
 | C. FVG seul sans US500 | Test (2025) | +36.9 % | 7.3 % | 3 / 0 / 1 |
 | C. FVG seul sans US500 | 2026 (1er jan. → fin des données) | +20.9 % | 5.2 % | 2 / 0 / 1 |
+| D. FVG sans US500 + Divergence | Entraînement (< 2025) | +102.6 % | 11.0 % | 7 / 1 / 1 |
+| D. FVG sans US500 + Divergence | Test (2025) | +63.7 % | 7.2 % | 4 / 0 / 1 |
+| D. FVG sans US500 + Divergence | 2026 (1er jan. → fin des données) | +22.3 % | 7.5 % | 2 / 0 / 1 |
 
 ## Risque 0.75 % par trade
 
@@ -71,6 +80,9 @@ Règle (même que pour le retrait de GER40) : retirer une paire seulement si son
 | C. FVG seul sans US500 | Entraînement (< 2025) | +117.1 % | 14.6 % | 8 / 2 / 0 |
 | C. FVG seul sans US500 | Test (2025) | +58.6 % | 10.9 % | 5 / 1 / 1 |
 | C. FVG seul sans US500 | 2026 (1er jan. → fin des données) | +32.1 % | 7.8 % | 3 / 0 / 1 |
+| D. FVG sans US500 + Divergence | Entraînement (< 2025) | +181.3 % | 16.1 % | 13 / 4 / 1 |
+| D. FVG sans US500 + Divergence | Test (2025) | +106.9 % | 10.6 % | 7 / 1 / 1 |
+| D. FVG sans US500 + Divergence | 2026 (1er jan. → fin des données) | +34.1 % | 11.2 % | 3 / 1 / 1 |
 
 ## Risque 1 % par trade
 
@@ -85,6 +97,9 @@ Règle (même que pour le retrait de GER40) : retirer une paire seulement si son
 | C. FVG seul sans US500 | Entraînement (< 2025) | +161.6 % | 18.2 % | 12 / 6 / 1 |
 | C. FVG seul sans US500 | Test (2025) | +70.7 % | 13.5 % | 9 / 4 / 1 |
 | C. FVG seul sans US500 | 2026 (1er jan. → fin des données) | +41.1 % | 10.2 % | 4 / 1 / 1 |
+| D. FVG sans US500 + Divergence | Entraînement (< 2025) | +260.1 % | 20.1 % | 18 / 9 / 1 |
+| D. FVG sans US500 + Divergence | Test (2025) | +118.1 % | 15.8 % | 10 / 2 / 1 |
+| D. FVG sans US500 + Divergence | 2026 (1er jan. → fin des données) | +52.8 % | 13.8 % | 5 / 1 / 1 |
 
 ## Risque 1.5 % par trade
 
@@ -99,6 +114,9 @@ Règle (même que pour le retrait de GER40) : retirer une paire seulement si son
 | C. FVG seul sans US500 | Entraînement (< 2025) | +291.3 % | 26.5 % | 26 / 16 / 1 |
 | C. FVG seul sans US500 | Test (2025) | +115.2 % | 20.0 % | 12 / 7 / 1 |
 | C. FVG seul sans US500 | 2026 (1er jan. → fin des données) | +63.4 % | 15.0 % | 5 / 2 / 1 |
+| D. FVG sans US500 + Divergence | Entraînement (< 2025) | +523.2 % | 28.8 % | 30 / 22 / 1 |
+| D. FVG sans US500 + Divergence | Test (2025) | +208.3 % | 22.8 % | 15 / 6 / 1 |
+| D. FVG sans US500 + Divergence | 2026 (1er jan. → fin des données) | +83.3 % | 20.3 % | 7 / 4 / 1 |
 
 ## Risque 2 % par trade
 
@@ -113,6 +131,9 @@ Règle (même que pour le retrait de GER40) : retirer une paire seulement si son
 | C. FVG seul sans US500 | Entraînement (< 2025) | +209.8 % | 53.3 % | 31 / 27 / 1 |
 | C. FVG seul sans US500 | Test (2025) | +53.0 % | 38.0 % | 11 / 10 / 1 |
 | C. FVG seul sans US500 | 2026 (1er jan. → fin des données) | +50.7 % | 23.4 % | 8 / 6 / 1 |
+| D. FVG sans US500 + Divergence | Entraînement (< 2025) | +664.1 % | 46.7 % | 43 / 40 / 1 |
+| D. FVG sans US500 + Divergence | Test (2025) | +122.3 % | 21.2 % | 19 / 14 / 1 |
+| D. FVG sans US500 + Divergence | 2026 (1er jan. → fin des données) | +49.4 % | 29.8 % | 11 / 7 / 1 |
 
 ## Détail des cycles FTMO 1-Step en 2026
 
@@ -416,3 +437,81 @@ Règle (même que pour le retrait de GER40) : retirer une paire seulement si son
 | 13 | 2026-07-29 | 2026-08-12 | 14 | 9 | RÉUSSI |
 | 14 | 2026-08-12 | 2026-08-25 | 13 | 10 | RATÉ |
 | 15 | 2026-08-25 | 2026-09-16 | 22 | 12 | en cours (-6.3 %) |
+
+### D. FVG sans US500 + Divergence — risque 0.3 %
+
+| Cycle | Début | Fin | Jours | Trades | Résultat |
+|---|---|---|---|---|---|
+| 1 | 2026-01-01 | 2026-06-11 | 161 | 101 | RÉUSSI |
+| 2 | 2026-06-11 | 2026-09-16 | 97 | 74 | en cours (+2.6 %) |
+
+### D. FVG sans US500 + Divergence — risque 0.5 %
+
+| Cycle | Début | Fin | Jours | Trades | Résultat |
+|---|---|---|---|---|---|
+| 1 | 2026-01-01 | 2026-05-06 | 124 | 71 | RÉUSSI |
+| 2 | 2026-05-06 | 2026-08-12 | 98 | 76 | RÉUSSI |
+| 3 | 2026-08-12 | 2026-09-16 | 35 | 30 | en cours (-1.6 %) |
+
+### D. FVG sans US500 + Divergence — risque 0.75 %
+
+| Cycle | Début | Fin | Jours | Trades | Résultat |
+|---|---|---|---|---|---|
+| 1 | 2026-01-01 | 2026-03-20 | 78 | 52 | RATÉ |
+| 2 | 2026-03-20 | 2026-04-15 | 26 | 7 | RÉUSSI |
+| 3 | 2026-04-15 | 2026-06-02 | 48 | 32 | RÉUSSI |
+| 4 | 2026-06-02 | 2026-08-12 | 71 | 57 | RÉUSSI |
+| 5 | 2026-08-12 | 2026-09-16 | 35 | 30 | en cours (-2.5 %) |
+
+### D. FVG sans US500 + Divergence — risque 1 %
+
+| Cycle | Début | Fin | Jours | Trades | Résultat |
+|---|---|---|---|---|---|
+| 1 | 2026-01-01 | 2026-01-22 | 21 | 14 | RÉUSSI |
+| 2 | 2026-01-22 | 2026-03-02 | 39 | 28 | RATÉ |
+| 3 | 2026-03-02 | 2026-04-15 | 44 | 17 | RÉUSSI |
+| 4 | 2026-04-15 | 2026-05-06 | 21 | 12 | RÉUSSI |
+| 5 | 2026-05-06 | 2026-06-11 | 36 | 30 | RÉUSSI |
+| 6 | 2026-06-11 | 2026-08-12 | 62 | 46 | RÉUSSI |
+| 7 | 2026-08-12 | 2026-09-16 | 35 | 30 | en cours (-3.5 %) |
+
+### D. FVG sans US500 + Divergence — risque 1.5 %
+
+| Cycle | Début | Fin | Jours | Trades | Résultat |
+|---|---|---|---|---|---|
+| 1 | 2026-01-01 | 2026-01-09 | 8 | 6 | RÉUSSI |
+| 2 | 2026-01-09 | 2026-02-05 | 27 | 15 | RATÉ |
+| 3 | 2026-02-05 | 2026-03-12 | 35 | 27 | RATÉ |
+| 4 | 2026-03-12 | 2026-04-09 | 28 | 9 | RÉUSSI |
+| 5 | 2026-04-09 | 2026-05-01 | 22 | 6 | RÉUSSI |
+| 6 | 2026-05-01 | 2026-05-29 | 28 | 25 | RÉUSSI |
+| 7 | 2026-05-29 | 2026-06-02 | 4 | 4 | RÉUSSI |
+| 8 | 2026-06-02 | 2026-07-09 | 37 | 29 | RÉUSSI |
+| 9 | 2026-07-09 | 2026-07-29 | 20 | 10 | RATÉ |
+| 10 | 2026-07-29 | 2026-08-05 | 6 | 6 | RÉUSSI |
+| 11 | 2026-08-05 | 2026-08-28 | 23 | 19 | RATÉ |
+| 12 | 2026-08-28 | 2026-09-16 | 19 | 13 | en cours (+0.4 %) |
+
+### D. FVG sans US500 + Divergence — risque 2 %
+
+| Cycle | Début | Fin | Jours | Trades | Résultat |
+|---|---|---|---|---|---|
+| 1 | 2026-01-01 | 2026-01-12 | 11 | 3 | RÉUSSI |
+| 2 | 2026-01-12 | 2026-02-04 | 23 | 17 | RATÉ |
+| 3 | 2026-02-04 | 2026-03-02 | 26 | 21 | RATÉ |
+| 4 | 2026-03-02 | 2026-03-17 | 15 | 8 | RATÉ |
+| 5 | 2026-03-17 | 2026-04-14 | 28 | 7 | RÉUSSI |
+| 6 | 2026-04-14 | 2026-04-15 | 1 | 2 | RÉUSSI |
+| 7 | 2026-04-15 | 2026-05-01 | 16 | 9 | RÉUSSI |
+| 8 | 2026-05-01 | 2026-05-06 | 5 | 3 | RÉUSSI |
+| 9 | 2026-05-06 | 2026-05-13 | 7 | 6 | RATÉ |
+| 10 | 2026-05-13 | 2026-05-29 | 16 | 12 | RÉUSSI |
+| 11 | 2026-05-29 | 2026-06-02 | 4 | 4 | RÉUSSI |
+| 12 | 2026-06-02 | 2026-06-18 | 16 | 15 | RATÉ |
+| 13 | 2026-06-18 | 2026-06-25 | 7 | 4 | RÉUSSI |
+| 14 | 2026-06-25 | 2026-07-15 | 20 | 12 | RÉUSSI |
+| 15 | 2026-07-15 | 2026-07-27 | 12 | 7 | RATÉ |
+| 16 | 2026-07-27 | 2026-08-05 | 9 | 7 | RÉUSSI |
+| 17 | 2026-08-05 | 2026-08-12 | 7 | 6 | RÉUSSI |
+| 18 | 2026-08-12 | 2026-08-27 | 15 | 12 | RATÉ |
+| 19 | 2026-08-27 | 2026-09-16 | 20 | 13 | en cours (+0.2 %) |

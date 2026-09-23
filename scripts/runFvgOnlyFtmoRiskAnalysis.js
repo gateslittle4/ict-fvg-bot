@@ -89,7 +89,7 @@ function settleM1(tr) {
   return { exitPrice: S.c[maxI - 1], exitTime: S.t[maxI - 1], outcome: 'timeout' };
 }
 
-function buildTrades({ fvgSymbols, fvgOnly }) {
+function buildTrades({ fvgSymbols, fvgOnly, withDivergence = false }) {
   const orderedSymbols = ['US500', 'US100', ...SYMBOLS.filter((s) => s !== 'US500' && s !== 'US100')];
   const ordered = {};
   for (const s of orderedSymbols) ordered[s] = m15[s];
@@ -100,7 +100,7 @@ function buildTrades({ fvgSymbols, fvgOnly }) {
     symbols: orderedSymbols,
     fvgConfig,
     // divergenceConfig DEFAULTS to CONFIG.divergence when undefined - must be null explicitly for "FVG only".
-    divergenceConfig: fvgOnly ? null : CONFIG.divergence,
+    divergenceConfig: fvgOnly && !withDivergence ? null : CONFIG.divergence,
     nwogConfig: fvgOnly ? null : CONFIG.nwog,
     judasSwingConfig: fvgOnly ? null : CONFIG.judasSwing,
     weeklySweepConfig: fvgOnly ? null : CONFIG.weeklySweep,
@@ -186,10 +186,13 @@ function main() {
   const fvgNoUs500 = buildTrades({ fvgSymbols: fvgNoUs500Symbols, fvgOnly: true });
   console.log(`  C FVG seul sans US500 : ${fvgNoUs500.length} trades (FVG US500 à l'entraînement : ${sgn(us500TrainR)} R -> ${cQualifies ? 'retenue par la règle' : 'NON retenue par la règle, affichée comme biaisée'})\n`);
 
+  const fvgPlusDiv = buildTrades({ fvgSymbols: fvgNoUs500Symbols, fvgOnly: true, withDivergence: true });
+  console.log(`  D FVG sans US500 + Divergence : ${fvgPlusDiv.length} trades`);
   const variants = [
     ['A. Combo actuel (référence)', combo],
     ['B. FVG seul (US100/US500/XAUUSD)', fvgAll],
     [`C. FVG seul sans US500${cQualifies ? '' : ' ⚠️ biaisée'}`, fvgNoUs500],
+    ['D. FVG sans US500 + Divergence', fvgPlusDiv],
   ];
   const windows = [
     ['Entraînement (< 2025)', (t) => t.entryTime < CUT_TEST],
