@@ -1,3 +1,5 @@
+> **⚠️ INVALIDÉ (2026-09-23)** : ces simulations entrent dans le FVG au premier contact du prix pendant la bougie M15, ce que le bot réel ne peut pas faire (ordre LIMIT posé à la clôture). En exécution réelle, FVG perd (voir HANDOFF « Exécution réelle : le FVG perd tel que le bot l'exécute »). Les variantes C et D (FVG US100 + or, + Divergence) ne doivent pas être utilisées.
+
 # FVG seul vs combo, avec un risque plus élevé sur FTMO 1-Step — entraînement / test / 2026
 
 Vrai `LiveStrategyEngine`, tout `data/real-m1-full` (EURUSD/XAUUSD dès 2022-05, indices dès 2023-01) reconstruit en M15, règlement **M1 exact**, rejeu dans le vrai `GuardrailEngine` (3 trades/jour, pause 30 min, -2 %/jour) ; cycles FTMO 1-Step réels via `buildEffectiveConfig` (+10 %, perte max 10 % trailing fin de journée, perte quotidienne FTMO). Un `warmUp()` par variante (retirer des mécanismes change le netting). Coûts : spread seulement (pas de commission/swap/glissement réel) → niveau absolu surestimé par rapport à la démo.

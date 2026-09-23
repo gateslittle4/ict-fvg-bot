@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // runFvgOnlyFtmoRiskAnalysis.js
+// ⚠️ INVALIDÉ 2026-09-23 : entre dans le FVG au premier contact (impossible en live) - voir HANDOFF "Exécution réelle".
 // Usage: node --max-old-space-size=4096 scripts/runFvgOnlyFtmoRiskAnalysis.js
 //
 // Esdras (2026-09-22) : "et si on tradait uniquement la meilleure strategie, mais on augmentait le risque sur
