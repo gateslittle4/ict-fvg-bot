@@ -67,6 +67,16 @@ Risque choisi sur l'entraînement (max réussis − ratés) : **0.25 %**.
 | 2025 | 36 | -1.8 |
 | 2026 | 13 | -13.0 |
 
+## Mois (descriptif, pas un critère) : combien de mois à +25 R ou plus ?
+
+À 1 % de risque par trade, +25 R dans un mois ≈ +25 % du compte.
+
+| Période | Mois avec trades | Mois ≥ +10 R | Mois ≥ +25 R | Meilleur mois | Pire mois |
+|---|---|---|---|---|---|
+| Entraînement 2010-2022 | 111 | 6 | 1 | 2020-05 (+27.8 R) | 2017-06 (-5.0 R) |
+| Test 2023-2025 | 34 | 1 | 0 | 2025-02 (+13.3 R) | 2023-12 (-5.0 R) |
+| 2026 (→ fin des données) | 5 | 0 | 0 | 2026-01 (-1.0 R) | 2026-03 (-4.0 R) |
+
 ## Limites
 
 - HistData (entraînement) ≠ prix du broker ; spread par défaut, pas de glissement ni de swap.
