@@ -14,3 +14,7 @@ data/clean-study-cache/
 
 # LIVE_FILL=1 (scripts/runCleanStudy.js) : cache avec exécution réelle, jamais commité
 data/clean-study-cache-livefill/
+
+# RR_MODE=... (scripts/runCleanStudy.js) : caches de géométrie des ordres, jamais commités
+data/clean-study-cache-rr-*/
+data/clean-study-cache-resting/

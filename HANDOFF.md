@@ -6791,3 +6791,16 @@ Pour comparer, le FVG US100 tel qu'il est exécuté aujourd'hui fait −449 / �
    - Il ne touche jamais une position déjà suivie, et n'efface jamais un stop connu : la re-pose d'un stop manquant en dépend.
 2. **Sortie à durée max jamais envoyée.** Le moteur met fin à une position après `maxHoldingCandles` (480 bougies M15 pour la Divergence), exactement comme les backtests. Mais en live, rien ne fermait la vraie position : elle restait ouverte jusqu'au stop ou à l'objectif, et bloquait la paire tout ce temps.
    - Correctif : `_closeRealPositionsAfterTimeout` + `findBotPositionsToClose`. Le bot ferme au marché **sa propre** position pour cette stratégie (label exact), seulement si l'auto-exécution est active, sans jamais lever d'erreur.
+
+**Spread dans le RRR (question d'Esdras, 2026-09-23).** Faut-il éloigner l'objectif pour qu'un gain vaille exactement le RRR, spread compris ? Test fait avec `LIVE_FILL=1 RR_MODE=strategy|exact|absolute` (`runCleanStudy.js`), en géométrie réelle des ordres MARKET : achat à l'ask, sorties sur le bid, taille calculée sur stop + spread, spread en % du prix.
+
+| 6 stratégies live | 2010-2022 | 2023-2025 | 2026 | FTMO 0,5 % (train / test / 2026) |
+|---|---|---|---|---|
+| Actuel : objectif sur le niveau de la stratégie | +303 R | +38 R | +14 R | 21/15, 4/4, 1/1 |
+| « RRR exact » : objectif éloigné du spread | +321 R | +37 R | +14 R | 24/17, 5/5, 1/1 |
+| Niveaux fixes replacés après exécution | +354 R | +64 R | +10 R | 23/9, 4/3, 2/2 |
+
+- **« RRR exact » : aucun gain.** Le spread se paie soit sur le gain, soit sur la probabilité d'atteindre l'objectif.
+- **Niveaux fixes : non retenu.** 5 % des pertes dépassent 2 R, la pire atteint −5,3 R.
+
+**Limite importante.** En live, le signal est calculé à la première cotation de la bougie suivante (bougie « vide » : ouverture seule, `ingestCandle`) et l'entrée se fait tout de suite. Toutes mes simulations d'exécution entrent 15 min après un signal calculé sur la bougie complète. Selon le modèle, le portefeuille va de +64 à +354 R sur 2010-2022. Prochain test à faire : un rejeu fidèle, bougie vide puis bougie complète. Rien n'a changé dans le bot.

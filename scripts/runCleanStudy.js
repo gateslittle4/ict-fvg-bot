@@ -50,7 +50,13 @@ const RISKS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5];
 // que les filtres sont vrais à la dernière clôture connue (cfg.preTouchFilters) ; rempli au premier contact (ask pour un achat).
 const LIVE_FILL = process.env.LIVE_FILL === '1' || process.env.LIVE_FILL === 'resting';
 const RESTING = process.env.LIVE_FILL === 'resting';
-const CACHE = RESTING ? 'data/clean-study-cache-resting' : LIVE_FILL ? 'data/clean-study-cache-livefill' : 'data/clean-study-cache';
+// RR_MODE (avec LIVE_FILL=1) : géométrie exacte des ordres MARKET du bot (adjustMarketProtectionForSpread) - achat à l'ask
+// (bid + spread), stop et objectif en distances relatives au prix réel d'exécution, sorties sur le bid (achat) / l'ask (vente),
+// taille calculée sur stop + spread. 'strategy' = objectif sur le niveau de la stratégie (ce que fait le bot : un gain vaut
+// (RR x d - spread) / (d + spread)) ; 'exact' = objectif éloigné pour qu'un gain vaille exactement RR (le spread payé en plus).
+const RR_MODE = process.env.RR_MODE || null;
+const CACHE = RR_MODE ? `data/clean-study-cache-rr-${RR_MODE}` : RESTING ? 'data/clean-study-cache-resting' : LIVE_FILL ? 'data/clean-study-cache-livefill' : 'data/clean-study-cache';
+const ONLY_RRS = process.env.RRS ? process.env.RRS.split(',').map(Number) : null;
 // Règle de sélection, fixée AVANT de lire le test : RRR = meilleur R net d'entraînement ; jambe gardée si, à ce RRR,
 // t >= 2 sur l'entraînement, R net positif dans chaque moitié (2010-2016 et 2017-2022) et au moins 30 trades.
 const MIN_T = 2;
@@ -169,6 +175,38 @@ function settleLiveLimit(S, tr) {
 // Autres stratégies en LIVE_FILL : ordre MARKET envoyé à la clôture de la bougie du signal (le bot ne voit la bougie qu'une
 // fois close), stop et objectif aux niveaux absolus du signal ; R rapporté à la distance du signal (la taille de position
 // est calculée sur elle). Si le prix a déjà dépassé le stop ou l'objectif à l'envoi, pas de trade.
+function settleLiveMarketGeometry(S, tr) {
+  const bull = tr.direction === 'bullish'; const d = tr.distance;
+  const rr = Math.abs(tr.targetPrice - tr.entryPrice) / d;
+  const i0 = lower(S.t, S.n, tr.entryTime + 900000); if (i0 >= S.n) return null;
+  const s = (DEFAULT_SPREADS[tr.symbol] ?? 0) * (S.o[i0] / refPrice(tr.symbol)); // spread d'aujourd'hui en % du prix, comme costR
+  const F = S.o[i0]; // bid à l'exécution ; un achat paie l'ask F + s, une vente reçoit F
+  const risk = d + s; // distance du stop depuis le prix d'exécution (taille calculée dessus)
+  // niveaux en bid : achat - stop F - d, objectif F + RR d (stratégie) ou F + s + RR (d + s) (exact) ;
+  // vente (sorties à l'ask = bid + s) - stop si bid >= F + d, objectif si bid <= F - RR d (stratégie) ou F - RR (d + s) - s (exact)
+  if (RR_MODE === 'absolute') {
+    // stop et objectif replacés APRÈS l'exécution sur les niveaux de la stratégie (bid), taille toujours calculée sur d + spread
+    if (bull ? F <= tr.stopPrice || F >= tr.targetPrice : F >= tr.stopPrice || F <= tr.targetPrice) return null;
+    const pnl = (exitBid) => (bull ? exitBid - (F + s) : F - (exitBid + s));
+    const maxJ = Math.min(S.n, i0 + 5 * 1440);
+    for (let i = i0; i < maxJ; i++) {
+      if (bull ? S.l[i] <= tr.stopPrice : S.h[i] >= tr.stopPrice) return { r: pnl(tr.stopPrice) / risk, exitTime: S.t[i], fillTime: S.t[i0], risk };
+      if (bull ? S.h[i] >= tr.targetPrice : S.l[i] <= tr.targetPrice) return { r: pnl(tr.targetPrice) / risk, exitTime: S.t[i], fillTime: S.t[i0], risk };
+    }
+    return { r: pnl(S.c[maxJ - 1]) / risk, exitTime: S.t[maxJ - 1], fillTime: S.t[i0], risk };
+  }
+  const stopB = bull ? F - d : F + d;
+  const tgtB = RR_MODE === 'exact' ? (bull ? F + s + rr * risk : F - rr * risk - s) : (bull ? F + rr * d : F - rr * d);
+  const winR = RR_MODE === 'exact' ? rr : (rr * d - s) / risk;
+  const maxI = Math.min(S.n, i0 + 5 * 1440);
+  for (let i = i0; i < maxI; i++) {
+    if (bull ? S.l[i] <= stopB : S.h[i] >= stopB) return { r: -1, exitTime: S.t[i], fillTime: S.t[i0], risk };
+    if (bull ? S.h[i] >= tgtB : S.l[i] <= tgtB) return { r: winR, exitTime: S.t[i], fillTime: S.t[i0], risk };
+  }
+  const c = S.c[maxI - 1];
+  return { r: bull ? (c - (F + s)) / risk : (F - (c + s)) / risk, exitTime: S.t[maxI - 1], fillTime: S.t[i0], risk };
+}
+
 function settleLiveMarket(S, tr) {
   const bull = tr.direction === 'bullish';
   const i0 = lower(S.t, S.n, tr.entryTime + 900000); if (i0 >= S.n) return null;
@@ -200,6 +238,13 @@ function engineTrades(data, syms, configs) {
       if (signal.type !== 'closed') return;
       const o = pending.get(signal.symbol); pending.delete(signal.symbol);
       if (!o) return;
+      if (RR_MODE && o.source !== 'fvg') {
+        const g = settleLiveMarketGeometry(data[o.symbol].m1, o);
+        if (!g) return;
+        // spread déjà dans le R (spreadIncluded) ; le swap reste ajouté par costR, rapporté à la distance risquée d + spread
+        trades.push({ symbol: o.symbol, entryTime: o.entryTime, exitTime: g.exitTime, fillTime: g.fillTime, direction: o.direction, price: o.entryPrice, distance: g.risk, gross: Math.round(g.r * 1e4) / 1e4, spreadIncluded: true });
+        return;
+      }
       const x = !LIVE_FILL ? settleM1(data[o.symbol].m1, o) : o.source === 'fvg' ? settleLiveLimit(data[o.symbol].m1, o) : settleLiveMarket(data[o.symbol].m1, o);
       if (!x) return;
       const px = x.fillPrice ?? o.entryPrice;
@@ -240,7 +285,7 @@ function runLegs(ids) {
     for (const s of need) { const m1 = loadM1(src, s); data[s] = { m1, m15: toM15(m1) }; }
     for (const id of ids) {
       const leg = LEGS[id];
-      for (const rr of leg.rsi2 ? [0] : RRS) {
+      for (const rr of leg.rsi2 ? [0] : (ONLY_RRS ?? RRS)) {
         const f = `${CACHE}/${id}-rr${rr}-${src}.json`;
         if (fs.existsSync(f)) continue;
         const t0 = Date.now();
@@ -313,7 +358,7 @@ function refPrice(sym) {
 }
 function costR(t) {
   const k = COST_MODE === 'price' ? t.price / refPrice(t.symbol) : 1;
-  const spread = (DEFAULT_SPREADS[t.symbol] ?? 0) * (t.spreadMult ?? 1) * k;
+  const spread = t.spreadIncluded ? 0 : (DEFAULT_SPREADS[t.symbol] ?? 0) * (t.spreadMult ?? 1) * k;
   return -spread / t.distance + swapR(t.symbol, t.direction, t.distance / k, t.fillTime, t.exitTime);
 }
 const RAW = new Map(); const LOADED = new Map();
