@@ -54,8 +54,12 @@ export function classifyExit(info, exitPrice, tolerance = 0.15) {
   const { stopPrice, targetPrice, entryPrice } = info;
   const dist = Number.isFinite(stopPrice) && Number.isFinite(entryPrice) ? Math.abs(entryPrice - stopPrice) : null;
   const tol = dist ? dist * tolerance : 0;
-  if (Number.isFinite(stopPrice) && Math.abs(exitPrice - stopPrice) <= tol) return 'stop';
-  if (Number.isFinite(targetPrice) && Math.abs(exitPrice - targetPrice) <= tol) return 'target';
+  // A MARKET order carries its stop/target as a DISTANCE from the fill (relativeStopLoss), so the broker's real levels sit shifted by
+  // (fill - signal). 2026-09-24: a US100 CBDR stop filled 2.2 points from the signal stop (fill 2.6 above the signal) was logged 'other'.
+  const shift = Number.isFinite(info.fillPrice) && Number.isFinite(info.signalPrice ?? entryPrice) ? info.fillPrice - (info.signalPrice ?? entryPrice) : 0;
+  const near = (level) => Number.isFinite(level) && (Math.abs(exitPrice - level) <= tol || Math.abs(exitPrice - (level + shift)) <= tol);
+  if (near(stopPrice)) return 'stop';
+  if (near(targetPrice)) return 'target';
   if (Number.isFinite(stopPrice) && Number.isFinite(entryPrice) && (entryPrice > stopPrice ? exitPrice < stopPrice : exitPrice > stopPrice)) return 'stop (gap)';
   return 'other';
 }

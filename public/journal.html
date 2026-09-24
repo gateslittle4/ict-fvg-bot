@@ -375,7 +375,7 @@
 
   <div class="card">
     <h2 id="journal-heading">Journal de trading<span style="display:flex; gap:8px;"><button type="button" id="export-csv-btn" class="btn-ghost" title="Exporter les trades affichés (selon les filtres actifs) en CSV">⬇ CSV</button><button type="button" id="export-pdf-btn" class="btn-ghost" title="Rapport PDF complet : performance globale, répartitions, et les trades affichés (selon les filtres actifs)">⬇ PDF</button></span></h2>
-    <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader), stratégie utilisée, et R-multiple (quand le journal durable a pu le calculer — voir sa propre note plus bas) — stop/cible non affichés, cTrader ne les garde pas après clôture.</div>
+    <div class="meta" style="margin-bottom:8px;">Entrée/sortie/P&amp;L réels (cTrader), stratégie utilisée, et R-multiple (quand le journal durable a pu le calculer — voir sa propre note plus bas) — stop et cible tels que posés par le bot (lignes rouge et verte, depuis le journal durable ; absents si le trade n'y a pas été retrouvé).</div>
     <!-- Filtres (2026-09, "un vrai site... filtres + export CSV du journal") -
          symbole/stratégie filtrent CÔTÉ CLIENT sur les trades déjà reçus (pas
          de round-trip courtier pour un simple filtre d'affichage) ; la
@@ -917,8 +917,8 @@ async function refreshTradeLog() {
 // trade: candles for full market context (see cTraderDataSource.js's
 // chartMarginMs - several candles before entry AND after exit, not just
 // enough to not look broken), plus dashed lines + labels at the actual
-// entry/exit prices (verified, from the deal history) - deliberately no
-// stop/target line, see the journal card's own explanation for why.
+// entry/exit prices (verified, from the deal history), plus the stop/target
+// the bot set (durable journal - cTrader itself forgets them after close).
 function renderTradeChart(trade, decimals) {
   // W/H (2026-09-15: this page's own, bigger than index.html's old inline
   // version - matches .journal-chart's 460px height, see its own comment).
@@ -928,7 +928,9 @@ function renderTradeChart(trade, decimals) {
     return '<div class="meta">Pas de données de graphique pour ce trade.</div>';
   }
 
-  const prices = candles.flatMap((c) => [c.high, c.low]).concat([trade.entryPrice, trade.exitPrice]);
+  // Stop/target the bot SET (from the durable journal, 2026-09-24) - null for a trade the journal did not match.
+  const levels = [['Stop', trade.stopPrice, 'var(--red)'], ['Cible', trade.targetPrice, 'var(--green)']].filter(([, p]) => Number.isFinite(p));
+  const prices = candles.flatMap((c) => [c.high, c.low]).concat([trade.entryPrice, trade.exitPrice], levels.map(([, p]) => p));
   const minP = Math.min(...prices), maxP = Math.max(...prices);
   const range = (maxP - minP) || 1;
   const y = (p) => PAD_T + (1 - (p - minP) / range) * (H - PAD_T - PAD_B);
@@ -983,6 +985,9 @@ function renderTradeChart(trade, decimals) {
       <text x="4" y="${entryLabelY}" fill="var(--blue)" font-size="13">Entrée ${fmt(trade.entryPrice, decimals)}</text>
       <line x1="${PAD_L}" y1="${exitY}" x2="${W - PAD_R}" y2="${exitY}" stroke="var(--amber)" stroke-width="1" stroke-dasharray="5,4" />
       <text x="4" y="${exitLabelY}" fill="var(--amber)" font-size="13">Sortie ${fmt(trade.exitPrice, decimals)}</text>
+      ${levels.map(([label, p, color]) => `
+        <line x1="${PAD_L}" y1="${y(p)}" x2="${W - PAD_R}" y2="${y(p)}" stroke="${color}" stroke-width="1" stroke-dasharray="2,3" />
+        <text x="${W - PAD_R - 4}" y="${y(p) - 5 < 12 ? y(p) + 14 : y(p) - 5}" fill="${color}" font-size="13" text-anchor="end">${label} ${fmt(p, decimals)}</text>`).join('')}
       <circle cx="${entryX}" cy="${entryY}" r="4" fill="var(--blue)" />
       <circle cx="${exitX}" cy="${exitY}" r="4" fill="var(--amber)" />
     </svg>

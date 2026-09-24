@@ -50,6 +50,8 @@ const DAILY_RSI2_STRATEGY = 'rsi2-daily';
 // 2026-09-24: sources whose real position is opened AND closed by their own engine (not LiveStrategyEngine's netting/beliefs) - RSI(2)
 // journalier, A (ORB 5 min, US100) and B (noise area, US500). One entry per symbol in dailyPositionBySymbol, with its source.
 const MANAGED_SOURCES = new Set([DAILY_RSI2_STRATEGY, ORB_STRATEGY, NOISE_STRATEGY]);
+// Candles shown on each side of a trade in the journal chart (getTradeHistory).
+export const CHART_MARGIN_CANDLES = 90;
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
@@ -988,7 +990,11 @@ export class CTraderDataSource {
       // journal moved to its own dedicated page (no longer squeezed next to
       // a dozen other cards), so the chart can afford real context on both
       // sides instead of just enough to not look broken.
-      const chartMarginMs = 30 * (TIMEFRAME_DURATION_MS[symbolTimeframe] || TIMEFRAME_DURATION_MS.M15);
+      // 90x (2026-09-24, Esdras: "dézoomer encore plus pour voir beaucoup plus de bougies") - about a full day on each side in M15.
+      // count is sent explicitly: without it the broker silently caps a from/to request to its own small default (see
+      // _attachComplianceChecklists's H1 fetch), which a window this wide would hit.
+      const candleMs = TIMEFRAME_DURATION_MS[symbolTimeframe] || TIMEFRAME_DURATION_MS.M15;
+      const chartMarginMs = CHART_MARGIN_CANDLES * candleMs;
       let candles = [];
       try {
         const history = await sendCommandWithTimeout(this.connection, 'ProtoOAGetTrendbarsReq', {
@@ -997,6 +1003,7 @@ export class CTraderDataSource {
           toTimestamp: trade.exitTime + chartMarginMs,
           symbolId: trade.symbolId,
           period,
+          count: Math.ceil((trade.exitTime - trade.entryTime + 2 * chartMarginMs) / candleMs) + 2,
         });
         candles = (history.trendbar || [])
           .map((bar) => this._trendbarToCandle(bar))

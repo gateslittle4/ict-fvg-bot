@@ -328,6 +328,14 @@ test('enrichTradesWithRMultiple: matches a broker trade to its durable row by sy
   assert.equal(enriched.pnl, 50);
 });
 
+test('enrichTradesWithRMultiple: carries the stop/target the bot set (for the journal chart), null when unmatched', () => {
+  const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }, { symbol: 'GER40', exitTime: 1000000 }];
+  const durableRows = [{ symbol: 'US100', exitTime: 1000200, rMultiple: -1, stopPrice: 30234.4, targetPrice: 30264.4 }];
+  const [us, ger] = enrichTradesWithRMultiple(brokerTrades, durableRows);
+  assert.equal(us.stopPrice, 30234.4); assert.equal(us.targetPrice, 30264.4);
+  assert.equal(ger.stopPrice, null); assert.equal(ger.targetPrice, null);
+});
+
 test('enrichTradesWithRMultiple: a durable row on a DIFFERENT symbol never matches, even at the exact same time', () => {
   const brokerTrades = [{ symbol: 'US100', exitTime: 1000000 }];
   const durableRows = [{ symbol: 'XAUUSD', exitTime: 1000000, rMultiple: 3 }];

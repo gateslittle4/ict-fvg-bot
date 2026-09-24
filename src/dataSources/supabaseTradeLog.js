@@ -124,7 +124,7 @@ export async function fetchRecentTradeRows(client, { days = 7 } = {}) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await client
     .from(TABLE)
-    .select('symbol, source, direction, outcome, r_multiple, entry_price, entry_time, exit_time, pnl_usd, balance_after')
+    .select('symbol, source, direction, outcome, r_multiple, entry_price, entry_time, exit_time, pnl_usd, balance_after, stop_price, target_price')
     .gte('exit_time', since)
     .order('exit_time', { ascending: false });
   if (error) return [];
@@ -143,6 +143,9 @@ export async function fetchRecentTradeRows(client, { days = 7 } = {}) {
     // existed, never backfilled with a guess.
     pnlUsd: row.pnl_usd ?? null,
     balanceAfter: row.balance_after ?? null,
+    // stop/target the bot SET (signal levels, 2026-09-24: drawn on the journal chart - cTrader forgets them once a position is closed)
+    stopPrice: row.stop_price == null ? null : Number(row.stop_price),
+    targetPrice: row.target_price == null ? null : Number(row.target_price),
   }));
 }
 
@@ -177,9 +180,10 @@ export function enrichTradesWithRMultiple(brokerTrades, durableRows, toleranceMs
         bestDiff = diff;
       }
     });
-    if (best === null) return { ...trade, rMultiple: null, pnlUsd: null, balanceAfter: null };
+    if (best === null) return { ...trade, rMultiple: null, pnlUsd: null, balanceAfter: null, stopPrice: null, targetPrice: null };
     used.add(best);
-    return { ...trade, rMultiple: durableRows[best].rMultiple, pnlUsd: durableRows[best].pnlUsd, balanceAfter: durableRows[best].balanceAfter };
+    const row = durableRows[best];
+    return { ...trade, rMultiple: row.rMultiple, pnlUsd: row.pnlUsd, balanceAfter: row.balanceAfter, stopPrice: row.stopPrice ?? null, targetPrice: row.targetPrice ?? null };
   });
 }
 

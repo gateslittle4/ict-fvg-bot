@@ -36,6 +36,12 @@ test('exit reason: stop, target, gap through the stop, other', () => {
   assert.equal(classifyExit(null, 100), null);
 });
 
+test('exit reason: a MARKET stop sits at the same DISTANCE from the fill, not at the signal stop (real US100 CBDR loss of 2026-09-24)', () => {
+  const info = { direction: 'bullish', entryPrice: 30241.9, signalPrice: 30241.9, fillPrice: 30244.52, stopPrice: 30234.4, targetPrice: 30264.4 };
+  assert.equal(classifyExit(info, 30236.63), 'stop');
+  assert.equal(classifyExit({ ...info, fillPrice: undefined }, 30236.63), 'other'); // without the fill, the same exit stays unexplained
+});
+
 test('extra trade fields: slippage is signed by side, missing data stays null', () => {
   const buy = extraTradeFields({ direction: 'bullish', entryPrice: 100, signalPrice: 100, fillPrice: 100.4, stopPrice: 98, targetPrice: 106, spreadAtEntry: 0.6, riskPct: 0.3, signalTime: T0, orderTime: T0 + 2000 }, 106);
   assert.ok(Math.abs(buy.slippage - 0.4) < 1e-9);
