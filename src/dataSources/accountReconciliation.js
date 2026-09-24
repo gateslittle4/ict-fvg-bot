@@ -88,6 +88,9 @@ export function enrichRealPosition(position, currentPrice) {
     stopLoss: toNumberOrNull(position.stopLoss),
     takeProfit: toNumberOrNull(position.takeProfit),
     openTimestamp: position.tradeData?.openTimestamp ?? null,
+    // 2026-09-24: the order label the bot set (`auto-<source>-<symbol>`), echoed back by the broker - lets the chart name a
+    // position no combo engine tracks (A/B/RSI(2)). null for a manual or unlabeled position.
+    label: position.tradeData?.label ?? null,
     usedMargin,
     swap,
     commission,

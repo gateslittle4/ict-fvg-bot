@@ -734,6 +734,12 @@ function focusOnCurrentPrice() {
   chart.timeScale().setVisibleLogicalRange({ from, to: total + 5 });
 }
 
+// Nom court affiché sur le graphique pour chaque stratégie (les signaux du combo n'étaient étiquetés que DIV ou FVG).
+function sourceLabel(source) {
+  const names = { divergence: 'DIV', fvg: 'FVG', nwog: 'NWOG', weeklysweep: 'WS', breakerblock: 'BB', silverbullet: 'SB', cbdr: 'CBDR', judaswing: 'JUDAS', orb5: 'A · ORB 5 min', noise: 'B · Noise', 'rsi2-daily': 'RSI(2)' };
+  return names[source] || (source ? String(source).toUpperCase() : 'Position');
+}
+
 function setPositionLines(openPosition, decimals) {
   for (const line of priceLines) candleSeries.removePriceLine(line);
   priceLines = [];
@@ -812,8 +818,8 @@ function renderOverlays(overlays, decimals) {
       shape: blocked ? 'circle' : bullish ? 'arrowUp' : 'arrowDown',
       color: blocked ? '#8b98a5' : sig.outcome === 'win' ? '#2fd480' : sig.outcome === 'loss' ? '#ff5c5f' : '#4c9eff',
       text: blocked
-        ? `${sig.source === 'divergence' ? 'DIV' : 'FVG'} bloqué (${sig.blockedReason})`
-        : `${sig.source === 'divergence' ? 'DIV' : 'FVG'} ${fmt(sig.entryPrice, decimals)}${outcomeLabel}`,
+        ? `${sourceLabel(sig.source)} bloqué (${sig.blockedReason})`
+        : `${sourceLabel(sig.source)} ${fmt(sig.entryPrice, decimals)}${outcomeLabel}`,
     });
   }
   // Markers must be handed over in chronological order.
@@ -954,10 +960,29 @@ async function loadChart({ keepView = false } = {}) {
     if (!keepView) focusOnCurrentPrice();
 
     const symbolStatus = (statusData.symbols || []).find((s) => s.symbol === currentSymbol);
-    const openPosition = symbolStatus ? symbolStatus.openPosition : null;
+    let openPosition = symbolStatus ? symbolStatus.openPosition : null;
+    // 2026-09-24 (Esdras : « pourquoi je ne vois pas le trade orb5 dans le graphique ? ») : /api/status ne connaît que les positions
+    // du combo (LiveStrategyEngine). A (orb5), B (noise) et RSI(2) sont gérés à part : sans position du combo, on affiche la
+    // vraie position ouverte chez le courtier sur ce symbole (niveaux réels du courtier, stratégie lue dans le label de l'ordre).
+    let brokerPosition = null;
+    if (!openPosition) {
+      try {
+        const accRes = await fetch('/api/account');
+        const acc = accRes.ok ? await accRes.json() : null;
+        const real = (acc?.positions || []).find((p) => p.symbol === currentSymbol);
+        if (real) {
+          const source = (real.label || '').match(/^auto-(.+)-[^-]+$/)?.[1] ?? null;
+          brokerPosition = {
+            source, direction: real.direction, entryPrice: real.entryPrice, stopPrice: real.stopLoss, targetPrice: real.takeProfit,
+            entryTime: real.openTimestamp != null ? Number(real.openTimestamp) : null, confirmed: true, fromBroker: true,
+          };
+          openPosition = brokerPosition;
+        }
+      } catch { /* affichage seulement : une erreur ici ne doit jamais casser le graphique */ }
+    }
     setPositionLines(positionLinesVisible ? openPosition : null, decimals);
 
-    renderOverlays(overlaysData, decimals);
+    renderOverlays(brokerPosition?.entryTime ? { ...overlaysData, signals: [...(overlaysData.signals || []), { time: brokerPosition.entryTime, direction: brokerPosition.direction, source: brokerPosition.source, entryPrice: brokerPosition.entryPrice }] } : overlaysData, decimals);
     updateSessionBands();
     refreshPendingChecklist(); // not awaited - its own try/catch, must never block or fail the chart itself
 
@@ -967,7 +992,9 @@ async function loadChart({ keepView = false } = {}) {
       ? `${currentSymbol} · ${currentTimeframe} · ${new Date(last.time).toLocaleString('fr-FR')} · ${lastCandles.length} bougies`
       : 'Pas encore de données — initialisation du flux en cours.';
     document.getElementById('position-note').textContent = openPosition
-      ? openPosition.confirmed
+      ? openPosition.fromBroker
+        ? `Position réellement ouverte chez le courtier : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'} (${sourceLabel(openPosition.source)})`
+        : openPosition.confirmed
         ? `Position réellement ouverte chez le courtier (confirmée) : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
         : `Signal validé, PAS ENCORE CONFIRMÉ chez le courtier : ${openPosition.direction === 'bullish' ? 'achat' : 'vente'}`
       : '';

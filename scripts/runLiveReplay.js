@@ -35,7 +35,9 @@ const RISK = Number(process.argv[3] ?? 0.5);
 // FROM_DATE=2026-09-21T01:16:00Z : début précis (UTC) au lieu d'une année ; DEBUG_EVENTS=1 : affiche chaque signal validé, bloqué ou non.
 const FROM = process.env.FROM_DATE ? Date.parse(process.env.FROM_DATE) - OFF : process.argv[4] ? eng(Number(process.argv[4])) : -Infinity;
 const TO = process.argv[5] ? eng(Number(process.argv[5])) : Infinity;
-const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}${process.env.SPREAD_MULT != null ? `-spread${process.env.SPREAD_MULT}` : ''}`;
+// SB_RR=<n> : RRR du Silver Bullet remplacé (preregistration-silverbullet-rr-2026-09-24.md), fichiers séparés.
+const SB_RR = process.env.SB_RR ? Number(process.env.SB_RR) : null;
+const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}${process.env.SPREAD_MULT != null ? `-spread${process.env.SPREAD_MULT}` : ''}${SB_RR ? `-sbrr${SB_RR}` : ''}`;
 const START_BALANCE = 10000;
 const WARMUP_BARS = 8640; // ce que le live demande au démarrage (90 jours de M15)
 const DAILY = 'rsi2-daily';
@@ -58,7 +60,7 @@ const firstLive = Math.max(FROM, ...SYMS.map((s) => data[s].m15[Math.min(WARMUP_
 guardrail.setBalance(START_BALANCE, firstLive + OFF);
 const engine = new LiveStrategyEngine({
   symbols: SYMS, fvgConfig: fvgLive, divergenceConfig: CONFIG.divergence, nwogConfig: CONFIG.nwog, judasSwingConfig: CONFIG.judasSwing,
-  weeklySweepConfig: CONFIG.weeklySweep, breakerBlockConfig: CONFIG.breakerBlock, silverBulletConfig: CONFIG.silverBullet, cbdrConfig: CONFIG.cbdr,
+  weeklySweepConfig: CONFIG.weeklySweep, breakerBlockConfig: CONFIG.breakerBlock, silverBulletConfig: SB_RR ? { ...CONFIG.silverBullet, rrMultiple: SB_RR } : CONFIG.silverBullet, cbdrConfig: CONFIG.cbdr,
   guardrail, riskPctPerTrade: RISK, spreads: DEFAULT_SPREADS,
 });
 // Préchauffage comme au démarrage du live, puis nettoyage des positions « crues » sans ordre réel (_clearStaleBeliefsAgainstBroker).

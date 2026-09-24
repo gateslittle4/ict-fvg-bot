@@ -477,3 +477,9 @@ test('computeUntrackedPositionInfos: a position this process tracks from its own
   const manual = { ...livePosition, tradeData: { ...livePosition.tradeData, label: 'manual' } };
   assert.deepEqual(computeUntrackedPositionInfos({ ...args, realPositions: [manual], getTrackedInfo: () => null }), []);
 });
+
+test('enrichRealPosition: exposes the order label the bot set (so the chart can name an A/B/RSI(2) position), null when absent', () => {
+  const labeled = enrichRealPosition(realPosition({ tradeData: { symbolId: 100, volume: 10000, tradeSide: 'BUY', openTimestamp: 1000, label: 'auto-orb5-US100' } }), 20010);
+  assert.equal(labeled.label, 'auto-orb5-US100');
+  assert.equal(enrichRealPosition(realPosition(), 20010).label, null);
+});
