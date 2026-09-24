@@ -479,6 +479,21 @@ export const CONFIG = {
   // discipline exists to avoid. No direction filter - validated bidirectional
   // on all 3 symbols in both checks above, unlike US100/NWOG's genuine
   // long-only edge.
+  // 2026-09-24 - A (cassure de la bougie d'ouverture de 5 min, Zarattini & Aziz 2023) sur US100 et B (« noise area », Zarattini, Aziz &
+  // Barbon 2024) sur US500, SUR LE MÊME COMPTE que le combo (décision d'Esdras : « mets-le dans le même compte, il faut que tout soit
+  // enregistré au même endroit »). Pré-enregistrés (preregistration-intraday-momentum-2026-09-23.md) : candidates à l'entraînement
+  // 2010-2022 (A t 3,22, B t 2,43), test 2023-2025 positif, 2026 négatif ; ajoutés au combo en simulation FTMO (portfolio-ftmo-study.md) :
+  // 0,3 % -> 22 réussis / 9 ratés (2010-2022), 4 / 1 (2023-2025), 1 / 1 (2026). Jamais testés en exécution réelle avant ce déploiement.
+  // Moteur : src/intradayMomentumEngine.js (mêmes fonctions de décision que l'étude, parité testée sur M1 réel), exécution :
+  // cTraderDataSource._executeMomentumEvent. Risque = celui du compte (riskPctPerTrade) : A = % du solde au stop, B = cible de volatilité
+  // journalière (taille sur 1 sigma journalier, stop de secours à 3 sigma - B n'a pas de stop dans ses règles). enabled: false = arrêt.
+  intradayMomentum: {
+    enabled: true,
+    warmupDays: 30,
+    maxLeverage: 4,
+    orb: { symbols: ['US100'], rrMultiple: 10, minStopSpreads: 3 },
+    noise: { symbols: ['US500'], lookback: 14, emergencyStopVolMultiple: 3 },
+  },
   silverBullet: {
     symbols: ['US100', 'US500', 'GER40'],
     rrMultiple: 3,

@@ -14,6 +14,10 @@ import { buildSessions, orbSetup, noiseCheck, noiseDecision, dailyVol, nyOffsetM
 export const ORB_STRATEGY = 'orb5';
 export const NOISE_STRATEGY = 'noise';
 const OPEN_MINUTE = 9 * 60 + 30;
+// Une décision n'est exécutée que si elle tombe au plus tard STALE_MINUTES après sa minute prévue (A : 9:34 ; B : chaque contrôle).
+// Au-delà (bot redémarré en pleine séance, trou de données) elle est seulement appliquée à la position virtuelle, sans événement :
+// jamais d'entrée à 11:00 sur la bougie de 9:30, ni sur un contrôle de B vieux d'une heure.
+const STALE_MINUTES = 5;
 
 /** Jour de New York (jours depuis l'époque) et minute de séance (0 = 9:30) d'un instant UTC. */
 export function nySessionPosition(utc) {
@@ -105,7 +109,7 @@ export class IntradayMomentumEngine {
     // A : une seule décision par jour, dès que la bougie de 5 min (barres 9:30-9:34) est complète.
     if (this.orbSymbols.has(symbol) && !st.orbDecided && pos.k >= 4) {
       st.orbDecided = true;
-      if (today() >= 0) {
+      if (pos.k - 4 <= STALE_MINUTES && today() >= 0) {
         const setup = orbSetup(days[i]);
         if (setup) {
           events.push({ type: 'entry', strategy: ORB_STRATEGY, symbol, side: setup.long ? 'buy' : 'sell', stopPrice: setup.long ? setup.lo : setup.hi, rangeHigh: setup.hi, rangeLow: setup.lo, time: bar.time });
@@ -122,10 +126,11 @@ export class IntradayMomentumEngine {
         const check = noiseCheck(days, i, k, { lookback: this.lookback });
         if (!check) continue;
         const dec = noiseDecision(st.noisePos, check);
-        if (dec.exit) { events.push({ type: 'exit', strategy: NOISE_STRATEGY, symbol, side: st.noisePos.long ? 'buy' : 'sell', reason: 'noise', check: k, time: bar.time }); st.noisePos = null; }
+        const live = pos.k - k <= STALE_MINUTES;
+        if (dec.exit) { if (live) events.push({ type: 'exit', strategy: NOISE_STRATEGY, symbol, side: st.noisePos.long ? 'buy' : 'sell', reason: 'noise', check: k, time: bar.time }); st.noisePos = null; }
         if (dec.enter) {
           const long = dec.enter === 'long';
-          events.push({ type: 'entry', strategy: NOISE_STRATEGY, symbol, side: long ? 'buy' : 'sell', vol14: dailyVol(days, i, this.lookback), upper: check.ub, lower: check.lb, twap: check.twap, check: k, time: bar.time });
+          if (live) events.push({ type: 'entry', strategy: NOISE_STRATEGY, symbol, side: long ? 'buy' : 'sell', vol14: dailyVol(days, i, this.lookback), upper: check.ub, lower: check.lb, twap: check.twap, check: k, time: bar.time });
           st.noisePos = { long };
         }
       }

@@ -97,3 +97,16 @@ test('IntradayMomentumEngine: fed minute by minute on REAL broker M1, A and B ta
     }
   }
 });
+
+test('IntradayMomentumEngine: started mid-session (bot restart), no stale A entry and no burst of old B checks', () => {
+  const from = Date.UTC(2024, 0, 2), warmEnd = Date.UTC(2024, 1, 1);
+  const bars = loadBars('US500', from, Date.UTC(2024, 1, 3));
+  const eng = new IntradayMomentumEngine({ orbSymbols: ['US500'], noiseSymbols: ['US500'] });
+  eng.addBars('US500', bars.filter((b) => b.time < warmEnd));
+  // first live bar of 2024-02-01 arrives at 11:02 NY (16:02 UTC): everything before is history, nothing is traded on it
+  const live = bars.filter((b) => b.time >= warmEnd);
+  const restart = Date.UTC(2024, 1, 1, 16, 2);
+  eng.addBars('US500', live.filter((b) => b.time < restart));
+  const first = eng.ingestBar('US500', live.find((b) => b.time >= restart));
+  assert.deepEqual(first.filter((e) => e.type === 'entry'), [], 'no entry on a 9:35 range or 10:00/10:30 checks seen at 11:02');
+});

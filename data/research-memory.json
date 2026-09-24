@@ -1178,5 +1178,25 @@
       "scripts/runPortfolioFtmoStudy.js",
       "data/backtest-input/portfolio-ftmo-study.md"
     ]
+  },
+  {
+    "id": "ab-live-same-account-2026-09-24",
+    "title": "A (ORB US100) et B (noise area US500) codés en live sur le même compte que le combo",
+    "date": "2026-09-24",
+    "status": "live",
+    "summary": "Décision d'Esdras (même compte, tout enregistré au même endroit). Moteur src/intradayMomentumEngine.js aux mêmes fonctions de décision que l'étude (parité testée sur M1 réel févr.-juin 2024). A : stop bougie 9:30-9:35, 10R ; B : taille 1 sigma journalier, stop de secours 3 sigma ; plafond 4x ; garde-fou partagé ; exclusion mutuelle avec combo et RSI(2). Correctif : positions gérées exclues de l'adoption du balayage 5 min. Jamais exécutés en réel avant : suivre les premières semaines contre la simulation.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M1",
+    "files": [
+      "src/intradayMomentumEngine.js",
+      "src/backtest/intradayMomentum.js",
+      "src/dataSources/cTraderDataSource.js",
+      "src/config.js",
+      "test/intradayMomentumEngine.test.js",
+      "test/intradayMomentumLive.test.js"
+    ]
   }
 ]

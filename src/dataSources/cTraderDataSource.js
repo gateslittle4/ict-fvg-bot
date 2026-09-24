@@ -40,11 +40,15 @@ import { pairDealsIntoTrades } from './dealPairing.js';
 import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes, computeUntrackedPositionInfos, findBotPositionsToClose } from './accountReconciliation.js';
 import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields, logAlertSignal } from './demoTrackingLog.js';
 import { DailyAlertEngine } from '../dailyAlertEngine.js';
+import { IntradayMomentumEngine, TickBarBuilder, ORB_STRATEGY, NOISE_STRATEGY } from '../intradayMomentumEngine.js';
 
 // 2026-09-22: single source of truth for the daily strategy's identifier, used by _loadDailyAlertEngines (registers the engine), the mutual-
 // exclusion check and the fill/close handlers below - was two inconsistent literals ('rsi2-daily' vs 'rsi2daily') before this constant, which
 // would have silently broken both the self-exemption and the fill tracking (caught by test/dailyStrategyRealExecution.test.js before deploy).
 const DAILY_RSI2_STRATEGY = 'rsi2-daily';
+// 2026-09-24: sources whose real position is opened AND closed by their own engine (not LiveStrategyEngine's netting/beliefs) - RSI(2)
+// journalier, A (ORB 5 min, US100) and B (noise area, US500). One entry per symbol in dailyPositionBySymbol, with its source.
+const MANAGED_SOURCES = new Set([DAILY_RSI2_STRATEGY, ORB_STRATEGY, NOISE_STRATEGY]);
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { createTradeLogClient, logClosedTrade, fetchRecentTradeRows, enrichTradesWithRMultiple, enrichTradesWithSlippage } from './supabaseTradeLog.js';
@@ -427,6 +431,11 @@ export class CTraderDataSource {
     // 2026-09-22 (RSI(2)/US500 daily, real execution): symbol -> {positionId, volumeCents} for the ONE real position this process's daily
     // strategy currently holds, if any - see _handleAutoExecuteEntry's mutual-exclusion check and _feedDailyAlertEngines' exit handling.
     this.dailyPositionBySymbol = new Map();
+    // 2026-09-24 (A/B intraday momentum, same account as the combo): live engine fed with M1 bars built from bid ticks, the builder, and a
+    // B reversal waiting for its own close to be confirmed before re-entering (symbol -> { ev, until }).
+    this.intradayMomentum = null;
+    this.tickBars = new TickBarBuilder();
+    this.pendingEntryAfterClose = new Map();
     // 2026-09-17, real incident: a connection can silently degrade into
     // still receiving spot/candle ticks (so the dashboard looks fine) while
     // no longer delivering ProtoOAExecutionEvent pushes at all - two real
@@ -592,6 +601,9 @@ export class CTraderDataSource {
     );
     console.log('[cTrader] subscribing to live candles for', this.symbols.join(', '));
     await this._subscribeLiveCandles(accountId);
+    this._startIntradayMomentum().catch((err) =>
+      console.warn('[cTrader] A/B (momentum intraday) warm-up failed (non-fatal, the rest of the bot trades normally):', err.message)
+    );
 
     // 2026-09-14 (Esdras: "Alors? Tout se passe bien?" - checking on the
     // guardrail fix live turned up a SECOND, bigger bug behind it): moved
@@ -679,6 +691,7 @@ export class CTraderDataSource {
   async stop() {
     const store = this.account;
     if (this._heartbeat) clearInterval(this._heartbeat);
+    if (this._momentumClock) clearInterval(this._momentumClock);
     if (this._staleBeliefSweep) clearInterval(this._staleBeliefSweep);
     if (this._balanceRefresh) clearInterval(this._balanceRefresh);
     if (this.connection) await this.connection.close?.();
@@ -1394,8 +1407,11 @@ export class CTraderDataSource {
     // a durable journal row (source:'adopted', riskAmount:null -> rMultiple
     // reads as null rather than a fabricated number - see
     // _handleExecutionEvent's own use of this map).
+    // 2026-09-24: a real position held by a MANAGED_SOURCES strategy (RSI(2)/A/B) is not "real-only" - never adopt it into the combo
+    // engine (that relabelled its journal row 'adopted' and hid its close from the managed tracking).
+    const managedIds = new Set([...this.dailyPositionBySymbol.values()].map((p) => String(p.positionId)));
     const toAdopt = computeRealOnlyPositionsToAdopt({
-      realPositions: res.position || [],
+      realPositions: (res.position || []).filter((p) => !managedIds.has(String(p.positionId))),
       symbolNameById: this.symbolNameById,
       symbols: this.symbols,
       getBelievedPosition: (symbol) => store.strategyEngine.getOpenPosition(symbol),
@@ -1737,6 +1753,10 @@ export class CTraderDataSource {
         const existing = store.lastCandleBySymbol.get(symbolName);
         const folded = foldLiveBidIntoCandle(existing, bid);
         if (folded && folded !== existing) store.lastCandleBySymbol.set(symbolName, folded);
+        // A/B (2026-09-24): after the fold, so an order sent on this tick uses THIS tick's bid.
+        if (bid !== null && this.intradayMomentum?.symbols.includes(symbolName)) {
+          for (const { symbol, bar } of this.tickBars.onTick(symbolName, Date.now(), bid)) this._onMomentumBar(symbol, bar);
+        }
 
         // Real-spread sampling (2026-09, at the user's request: "est-ce que
         // le spread est celui qu'on avait planifié?" - see accountRuntime.js's
@@ -1872,6 +1892,10 @@ export class CTraderDataSource {
     }
     if (ev.event === 'exit') {
       const held = this.dailyPositionBySymbol.get(symbolName);
+      if (held && held.source && held.source !== ev.strategy) {
+        console.log(`[mode-alerte->reel] ${ev.strategy} ${symbolName}: la position suivie appartient à ${held.source} - rien à fermer.`);
+        return;
+      }
       if (!held) {
         // Nothing real to close: either the entry order never actually filled at the broker (rejected/expired), or the broker's own stop
         // already closed it and _handleExecutionEvent's generic close branch already cleared dailyPositionBySymbol - either way, correct to do
@@ -1894,6 +1918,122 @@ export class CTraderDataSource {
         console.error(`[mode-alerte->reel] ${ev.strategy} ${symbolName}: échec de l'envoi de la clôture (positionId=${held.positionId}): ${err.message}`);
       }
     }
+  }
+
+  /**
+   * 2026-09-24 - A (cassure de la bougie d'ouverture de 5 min, US100) et B (« noise area », US500) sur CE compte (Esdras : « mets-le dans le
+   * même compte, il faut que tout soit enregistré au même endroit »). Règles : preregistration-intraday-momentum-2026-09-23.md, décisions par
+   * IntradayMomentumEngine (mêmes fonctions que l'étude, test de parité sur M1 réel). Préchauffage : 30 jours de M1 du broker ; ensuite des
+   * barres M1 construites à partir des ticks (bid). Best-effort : un échec ici ne touche jamais le combo.
+   */
+  async _startIntradayMomentum() {
+    const cfg = CONFIG.intradayMomentum;
+    if (!cfg?.enabled) return;
+    const orbSymbols = (cfg.orb?.symbols || []).filter((s) => this.symbols.includes(s));
+    const noiseSymbols = (cfg.noise?.symbols || []).filter((s) => this.symbols.includes(s));
+    if (!orbSymbols.length && !noiseSymbols.length) return;
+    const engine = new IntradayMomentumEngine({ orbSymbols, noiseSymbols, lookback: cfg.noise?.lookback ?? 14 });
+    for (const symbol of engine.symbols) {
+      const bars = await this.getHistoricalCandles({ symbol, days: cfg.warmupDays ?? 30, timeframe: 'M1' });
+      engine.addBars(symbol, bars);
+      console.log(`[A/B] ${symbol}: ${bars.length} barres M1 de préchauffage, ${engine.sessionCount(symbol)} séances.`);
+    }
+    this.intradayMomentum = engine;
+    if (this._momentumClock) clearInterval(this._momentumClock);
+    this._momentumClock = setInterval(() => {
+      try {
+        for (const { symbol, bar } of this.tickBars.flush(Date.now())) this._onMomentumBar(symbol, bar);
+        for (const ev of engine.onClock(Date.now())) this._handleMomentumEvent(ev);
+      } catch (err) {
+        console.warn(`[A/B] clock tick failed (non-fatal): ${err.message}`);
+      }
+    }, 5000);
+    this._momentumClock.unref?.();
+    console.log(`[A/B] actif : A (ORB 5 min) sur ${orbSymbols.join(', ') || '-'}, B (noise area) sur ${noiseSymbols.join(', ') || '-'}.`);
+  }
+
+  _onMomentumBar(symbol, bar) {
+    let events;
+    try {
+      events = this.intradayMomentum.ingestBar(symbol, bar);
+    } catch (err) {
+      console.warn(`[A/B] ${symbol}: ingestBar failed (non-fatal): ${err.message}`);
+      return;
+    }
+    for (const ev of events) this._handleMomentumEvent(ev);
+  }
+
+  _handleMomentumEvent(ev) {
+    const price = this.account.lastCandleBySymbol.get(ev.symbol)?.close ?? null;
+    console.log(`[A/B] ${ev.strategy} ${ev.symbol} ${ev.type} ${ev.side}${ev.reason ? ` (${ev.reason})` : ''}`);
+    logAlertSignal(this.tradeLogClient, {
+      strategy: ev.strategy, symbol: ev.symbol, event: ev.type, direction: ev.side === 'buy' ? 'bullish' : 'bearish', price,
+      stopPrice: ev.stopPrice ?? null, targetPrice: null, rMultiple: null, barTime: ev.time,
+      detail: ev.type === 'exit' ? ev.reason : ev.strategy === NOISE_STRATEGY ? `check=${ev.check} vol14=${ev.vol14}` : `range=${ev.rangeLow}-${ev.rangeHigh}`,
+    });
+    this._executeMomentumEvent(ev).catch((err) => console.error(`[A/B] ${ev.strategy} ${ev.symbol} ${ev.type}: échec (non-fatal): ${err.message}`));
+  }
+
+  /** One A/B engine event -> real order / real close, through the shared guardrail and _handleAutoExecuteEntry. Never throws (caller catches). */
+  async _executeMomentumEvent(ev) {
+    const store = this.account;
+    const cfg = CONFIG.intradayMomentum || {};
+    const symbolName = ev.symbol;
+    const held = this.dailyPositionBySymbol.get(symbolName);
+    const skip = (detail) => {
+      console.log(`[A/B] ${ev.strategy} ${symbolName} ${ev.type}: ${detail}`);
+      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: ev.strategy, event: 'skipped', side: ev.side, price: store.lastCandleBySymbol.get(symbolName)?.close ?? null, detail });
+    };
+    if (ev.type === 'exit') {
+      if (!held || held.source !== ev.strategy) return; // never filled, already stopped/targeted by the broker, or someone else's position
+      if (held.closing) return;
+      held.closing = true;
+      try {
+        await sendCommandWithTimeout(this.connection, 'ProtoOAClosePositionReq', { ctidTraderAccountId: Number(this.accountId), positionId: held.positionId, volume: held.volumeCents });
+        logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: ev.strategy, event: 'close_sent', side: ev.side === 'buy' ? 'sell' : 'buy', price: store.lastCandleBySymbol.get(symbolName)?.close ?? null, detail: `positionId=${held.positionId} reason=${ev.reason}` });
+      } catch (err) {
+        held.closing = false;
+        console.error(`[A/B] ${ev.strategy} ${symbolName}: échec de l'envoi de la clôture (positionId=${held.positionId}): ${err.message}`);
+      }
+      return;
+    }
+    // entry
+    if (!store.isAutoExecuteActive()) return skip('auto-execute inactive');
+    if (held) {
+      if (held.source === ev.strategy && held.closing) { this.pendingEntryAfterClose.set(symbolName, { ev, until: Date.now() + 60000 }); return; }
+      return skip(`${held.source ?? DAILY_RSI2_STRATEGY} already holds a position on this symbol`);
+    }
+    if (store.strategyEngine.getOpenPosition?.(symbolName)) return skip('the combo already holds a position on this symbol');
+    if (!store.guardrail.canTakeNewTrade(Date.now(), symbolName)) return skip('blocked by shared guardrail');
+    const symbolId = this.symbolIdByName.get(symbolName);
+    const spec = this._specFor(symbolName);
+    const bid = store.lastCandleBySymbol.get(symbolName)?.close;
+    const spread = this.lastSpreadBySymbol.get(symbolName) ?? 0;
+    if (symbolId == null || !spec || !(bid > 0)) return skip('no symbol id / spec / price');
+    const buy = ev.side === 'buy';
+    const fill = buy ? bid + spread : bid;
+    const notionalPerLot = (bid / (spec.pointSize || 1)) * (spec.valuePerPointPerLot || 1);
+    const maxLots = notionalPerLot > 0 ? ((cfg.maxLeverage ?? 4) * store.balance) / notionalPerLot : undefined;
+    let signal;
+    if (ev.strategy === ORB_STRATEGY) {
+      const R = buy ? fill - ev.stopPrice : ev.stopPrice - fill;
+      if (!(R > 0) || R < (cfg.orb?.minStopSpreads ?? 3) * spread) return skip(`stop too tight or crossed (R=${R}, spread=${spread})`);
+      const rr = cfg.orb?.rrMultiple ?? 10;
+      signal = { stopPrice: ev.stopPrice, targetPrice: buy ? fill + rr * R : fill - rr * R, distance: R };
+    } else {
+      if (!(ev.vol14 > 0)) return skip('no 14-session volatility yet');
+      const unit = ev.vol14 * bid; // one daily sigma, in price
+      const k = cfg.noise?.emergencyStopVolMultiple ?? 3;
+      signal = { stopPrice: buy ? bid - k * unit : bid + k * unit, sizingStopPrice: buy ? bid - unit : bid + unit, targetPrice: null, distance: unit };
+    }
+    await this._handleAutoExecuteEntry(symbolName, symbolId, {
+      id: `${ev.strategy}-${symbolName}-${ev.time}`,
+      source: ev.strategy,
+      suggestedSide: ev.side,
+      entryPrice: bid,
+      maxLots,
+      ...signal,
+    });
   }
 
   async _ingestNewLiveBar(symbolName, symbolId, candle, engineCandle) {
@@ -2579,9 +2719,13 @@ export class CTraderDataSource {
     // 2026-09-22 (RSI(2)/US500 daily, real execution): mutual exclusion with the daily strategy on the SAME symbol - never two independent real
     // positions on one instrument, in either direction. The daily strategy's own entry (source DAILY_RSI2_STRATEGY) is exempt from this check against
     // itself (dailyPositionBySymbol isn't set yet when ITS OWN entry runs), only intraday sources are blocked while a daily position is open.
-    if (signal.source !== DAILY_RSI2_STRATEGY && this.dailyPositionBySymbol?.has(symbolName)) {
-      console.log(`[auto-execute] ${symbolName} source=${signal.source}: skipped, RSI(2)/daily already holds a real position on this symbol.`);
-      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'skipped', side: signal.suggestedSide, price: signal.entryPrice, detail: 'daily strategy already holds a position on this symbol' });
+    // 2026-09-24: generalized to every MANAGED_SOURCES strategy (A/B too) - any entry, combo or managed, is skipped while a managed strategy
+    // holds a real position on the symbol (a managed strategy never enters while its own position is open: its engine is not flat then).
+    const heldEntry = this.dailyPositionBySymbol?.get(symbolName);
+    const heldBy = heldEntry ? (heldEntry.source ?? DAILY_RSI2_STRATEGY) : null;
+    if (heldEntry && !(signal.source === DAILY_RSI2_STRATEGY && heldBy === DAILY_RSI2_STRATEGY)) {
+      console.log(`[auto-execute] ${symbolName} source=${signal.source}: skipped, ${heldBy} already holds a real position on this symbol.`);
+      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'skipped', side: signal.suggestedSide, price: signal.entryPrice, detail: heldBy === DAILY_RSI2_STRATEGY ? 'daily strategy already holds a position on this symbol' : `${heldBy} already holds a position on this symbol` });
       return;
     }
     // 2026-09-13: this was the ONLY path that can submit a real order, yet
@@ -2621,9 +2765,17 @@ export class CTraderDataSource {
         balance: store.balance,
         riskPct: store.strategyEngine.riskPctPerTrade,
         entryPrice: signal.entryPrice,
-        stopPrice: protection.stopPrice,
+        // 2026-09-24 (B, noise area): sized on its volatility unit (1 daily sigma), not on its far emergency stop - see _executeMomentumEvent.
+        stopPrice: signal.sizingStopPrice ?? protection.stopPrice,
         symbolSpec: spec,
       });
+      // 2026-09-24 (A/B): the study caps exposure at 4x the balance - never more lots than that, whatever the stop distance.
+      if (Number.isFinite(signal.maxLots) && signal.maxLots > 0 && sizing.lots > signal.maxLots) {
+        const step = spec.volumeStep || 0.01;
+        const capped = Math.max(spec.minVolume || step, Math.floor(signal.maxLots / step) * step);
+        sizing.actualRiskAmount = sizing.actualRiskAmount * (capped / sizing.lots);
+        sizing.lots = Number(capped.toFixed(6));
+      }
       // Was a flat 4 candles (~1h) - far shorter than CONFIG.fvg.maxAgeCandles
       // (50, ~12.5h), the window the BACKTEST itself gives an FVG zone to be
       // retested before calling it stale. 'validated' only fires once price
@@ -2900,8 +3052,14 @@ export class CTraderDataSource {
           this.openPositionInfoByPositionId.delete(closedPositionId);
           // 2026-09-22: whatever closed it (the broker's own stop, or our proactive ProtoOAClosePositionReq below on a signal exit) - the daily
           // strategy no longer holds a real position on this symbol either way, so the mutual-exclusion check above must see it as flat again.
-          if (info.source === DAILY_RSI2_STRATEGY && String(this.dailyPositionBySymbol.get(info.symbolName)?.positionId) === closedPositionId) {
+          if (MANAGED_SOURCES.has(info.source) && String(this.dailyPositionBySymbol.get(info.symbolName)?.positionId) === closedPositionId) {
             this.dailyPositionBySymbol.delete(info.symbolName);
+            // B reversal (2026-09-24): its new entry waited for this close - send it now if still fresh.
+            const queued = this.pendingEntryAfterClose.get(info.symbolName);
+            if (queued) {
+              this.pendingEntryAfterClose.delete(info.symbolName);
+              if (Date.now() <= queued.until) this._executeMomentumEvent(queued.ev).catch((err) => console.error(`[A/B] ${info.symbolName}: queued re-entry failed: ${err.message}`));
+            }
           }
           logClosedTrade(this.tradeLogClient, {
             symbol: info.symbolName,
@@ -3079,10 +3237,10 @@ export class CTraderDataSource {
           // exit (SMA5 recovery / time-out - never a stop/target the broker itself resolves) knows exactly what to close, and so
           // _handleAutoExecuteEntry's mutual-exclusion check above can see it. volumeCents straight from the broker fill, in the SAME 0.01-of-a-
           // unit the close request needs (ProtoOAClosePositionReq.volume) - no re-derivation from our own lot math.
-          if (pending.source === DAILY_RSI2_STRATEGY) {
+          if (MANAGED_SOURCES.has(pending.source)) {
             const volumeCents = Number(event.deal?.filledVolume ?? event.deal?.volume);
             if (Number.isFinite(volumeCents) && volumeCents > 0) {
-              this.dailyPositionBySymbol.set(pending.symbolName, { positionId: filledPositionId, volumeCents });
+              this.dailyPositionBySymbol.set(pending.symbolName, pending.source === DAILY_RSI2_STRATEGY ? { positionId: filledPositionId, volumeCents } : { positionId: filledPositionId, volumeCents, source: pending.source });
             } else {
               console.warn(`[mode-alerte->reel] RSI(2)/${pending.symbolName}: fill confirmed but no usable volume on the deal - a later signal exit may not find anything to close.`);
             }
