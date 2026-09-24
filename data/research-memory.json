@@ -1133,10 +1133,10 @@
   },
   {
     "id": "silverbullet-us500-removed-2026-09-24",
-    "title": "Silver Bullet US500 retiré du live",
+    "title": "Retrait de Silver Bullet US500 : ANNULÉ le jour même (jamais déployé)",
     "date": "2026-09-24",
-    "status": "live",
-    "summary": "Décision d'Esdras après l'étude de la règle d'arrêt (kill-switch-study.md) : Silver Bullet US500 aurait été arrêtée le 2025-09-16 (baisse > 1,5 × pire baisse 2010-2022) ; rejeu fidèle 2023-2025 −20,2 R, 2026 −17,4 R. config.js silverBullet.symbols = [US100, GER40].",
+    "status": "rejected",
+    "summary": "Décision d'Esdras après l'étude de la règle d'arrêt (kill-switch-study.md) : Silver Bullet US500 aurait été arrêtée le 2025-09-16 (baisse > 1,5 × pire baisse 2010-2022) ; rejeu fidèle 2023-2025 −20,2 R, 2026 −17,4 R. config.js silverBullet.symbols = [US100, GER40]. ANNULÉ (Esdras : « réactive-le, il y a un truc pas logique ») avant tout déploiement : le bot en ligne n'a jamais perdu Silver Bullet US500. config.js revenu à [US100, US500, GER40].",
     "markets": [
       "US500"
     ],

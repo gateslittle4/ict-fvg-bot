@@ -6916,3 +6916,4 @@ Pré-enregistré (`a9ad911`) ; `scripts/runKillSwitchStudy.js` → `data/backtes
 ## 2026-09-24 — Silver Bullet US500 retiré du live (demande d'Esdras : « retire cette stratégie »)
 
 `src/config.js` : `silverBullet.symbols` passe de `['US100', 'US500', 'GER40']` à `['US100', 'GER40']`. Raison : rejeu fidèle 2023-2025 −20,2 R et 2026 −17,4 R ; la règle d'arrêt pré-enregistrée (baisse > 1,5 × pire baisse 2010-2022, `kill-switch-study.md`) l'aurait coupée le 2025-09-16. Silver Bullet US100 inchangé. Tests 1130/1130.
+**Annulé le jour même, avant tout déploiement** (Esdras : « réactive-le, il y a un truc pas logique ») : `silverBullet.symbols` revenu à `['US100', 'US500', 'GER40']`. Le bot en ligne n'a jamais perdu Silver Bullet US500 (le déploiement avait été refusé).
