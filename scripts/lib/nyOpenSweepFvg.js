@@ -40,17 +40,19 @@ const H = (h, m = 0) => h * 60 + m;
  * Le trade du jour `d` (null si aucun). `prev` = jour de New York précédent (Asie 20:00-23:59 et séance NY de la veille).
  * `spreadAt(prix)` = spread au niveau de prix.
  */
-export function sweepFvgTrade(d, prev, spreadAt, { minRR = 2, minStopSpreads = 3 } = {}) {
+export function sweepFvgTrade(d, prev, spreadAt, { minRR = 2, minStopSpreads = 3, needSweep = true, needFloor = true, needBos = true } = {}) {
   const london = range(d, H(2), H(5)), pre = range(d, H(5), H(9, 30));
   const A = range(d, H(9, 15), H(9, 30)), B = range(d, H(9, 30), H(9, 45)), C = range(d, H(9, 45), H(10));
   if (!london || !pre || !A || !B || !C) return null;
   const asia = range(prev, H(20), H(24)), prevNy = range(prev, H(9, 30), H(16));
   let setup = null;
   // achat : plus bas de pré-ouverture sous Londres, fait avant 8:00, clôture de 9:30 au-dessus du plus haut de pré-ouverture, FVG haussier
-  if (pre.lo < london.lo && pre.loM < H(8) && B.close > pre.hi && A.hi < C.lo) {
+  // variantes de l'amendement : chaque condition de contexte peut être désactivée (needSweep / needFloor / needBos)
+  const bull = A.hi < C.lo, bear = A.lo > C.hi;
+  if (bull && (!needSweep || pre.lo < london.lo) && (!needFloor || pre.loM < H(8)) && (!needBos || B.close > pre.hi)) {
     const levels = [asia?.hi, london.hi, prevNy?.hi].filter((x) => Number.isFinite(x));
     setup = { long: true, entry: C.lo, stop: B.lo, levels };
-  } else if (pre.hi > london.hi && pre.hiM < H(8) && B.close < pre.lo && A.lo > C.hi) {
+  } else if (bear && (!needSweep || pre.hi > london.hi) && (!needFloor || pre.hiM < H(8)) && (!needBos || B.close < pre.lo)) {
     const levels = [asia?.lo, london.lo, prevNy?.lo].filter((x) => Number.isFinite(x));
     setup = { long: false, entry: C.hi, stop: B.hi, levels };
   }

@@ -21,3 +21,8 @@ Date : 2026-09-24. Esdras : « tu vois comment ça a fonctionné aujourd'hui ? c
 - **US100 = jambe principale** (le scénario vient d'US100) ; **US500 = contrôle** (un vrai effet devrait avoir le même signe), jamais adoptable seul.
 - Entraînement 2010-2022 (HistData M1), test 2023-2025 et 2026 (M1 du broker, → 2026-09-21).
 - **Candidate** si, à l'entraînement : ≥ 60 trades, moyenne > 0 avec t ≥ 2, positive en 2010-2016 et en 2017-2022 ; puis au test (lu une fois) : ≥ 30 trades et > 0. Moins de 60 trades à l'entraînement = **non concluant** (on ne relâche pas les règles pour en avoir plus). Une candidate passe en démo/alerte avant tout réel.
+
+## AMENDEMENT — variantes simplifiées (écrit le 2026-09-24 ~19:40 UTC, APRÈS le résultat de la version complète, AVANT tout calcul des variantes)
+Esdras : « et si on en retire quelques-unes ? je tradais ça beaucoup en 2025 ». Biais déclaré : le choix de simplifier vient après avoir vu l'échec de la version complète. Pour ne pas choisir la variante qui arrange, **toutes** les suppressions possibles des conditions 1-3 sont figées ici, le reste (FVG 9:15/9:30/9:45, LIMIT 10:00-11:59 au bord, stop à l'extrême de 9:30, cible liquidité ≥ 2R, sortie 15:59, spread) est inchangé :
+- **V1** sans le sweep (règle 1) ; **V2** sans le plancher avant 8:00 (règle 2) ; **V3** sans la cassure du plus haut de pré-ouverture (règle 3) ; **V4** sans 1 ni 2 (pas de contexte de nuit) ; **V5** sans 1, 2 ni 3 (le FVG de 9:30 seul).
+- **Critère plus strict pour 5 essais** : entraînement 2010-2022 ≥ 60 trades, moyenne > 0 avec **t ≥ 2,6**, deux moitiés positives ; puis test 2023-2025 ≥ 30 trades et > 0. US100 principale, US500 contrôle. **2025 affiché à part (descriptif)**, jamais un critère.
