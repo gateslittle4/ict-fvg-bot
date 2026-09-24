@@ -1162,5 +1162,21 @@
       "scripts/runRiskBrakeFtmoStudy.js",
       "data/backtest-input/risk-brake-ftmo-study.md"
     ]
+  },
+  {
+    "id": "portfolio-ftmo-combo-ab-2026-09-24",
+    "title": "FTMO 1-Step : combo + A + B et A + B seuls, mêmes configurations de risque (descriptif)",
+    "date": "2026-09-24",
+    "status": "inconclusive",
+    "summary": "Descriptif, demandé après risk-brake-ftmo-study (rien choisi). scripts/runPortfolioFtmoStudy.js → data/backtest-input/portfolio-ftmo-study.md. Réussis/ratés 2010-2022 | 2023-2025 | 2026 : combo seul 0,3 % 13/5 | 1/2 | 0/1, 0,5 % 24/14 | 3/5 | 1/2 ; combo + A + B même compte 0,3 % 22/9 | 4/1 | 1/1, 0,5 % 38/24 | 7/6 | 1/2, 0,75 % 69/52 | 15/16 | 4/5 ; A + B seuls 0,3 % 15/3 | 4/0 | 0/1, 0,5 % 30/14 | 7/3 | 0/2, 1 % 57/36 | 13/9 | 0/4. A + B améliorent nettement réussis − ratés à l'entraînement et au test ; 2026 reste faible partout (A + B seuls : 0 réussi). Freins toujours sans avantage net.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15/M1",
+    "files": [
+      "scripts/runPortfolioFtmoStudy.js",
+      "data/backtest-input/portfolio-ftmo-study.md"
+    ]
   }
 ]
