@@ -6917,3 +6917,7 @@ Pré-enregistré (`a9ad911`) ; `scripts/runKillSwitchStudy.js` → `data/backtes
 
 `src/config.js` : `silverBullet.symbols` passe de `['US100', 'US500', 'GER40']` à `['US100', 'GER40']`. Raison : rejeu fidèle 2023-2025 −20,2 R et 2026 −17,4 R ; la règle d'arrêt pré-enregistrée (baisse > 1,5 × pire baisse 2010-2022, `kill-switch-study.md`) l'aurait coupée le 2025-09-16. Silver Bullet US100 inchangé. Tests 1130/1130.
 **Annulé le jour même, avant tout déploiement** (Esdras : « réactive-le, il y a un truc pas logique ») : `silverBullet.symbols` revenu à `['US100', 'US500', 'GER40']`. Le bot en ligne n'a jamais perdu Silver Bullet US500 (le déploiement avait été refusé).
+
+## 2026-09-24 — Frein de risque contre risque fixe pour FTMO, combo live : pré-enregistré, frein NON retenu
+
+Pré-enregistré (`37aac9d`) ; `scripts/runRiskBrakeFtmoStudy.js` → `data/backtest-input/risk-brake-ftmo-study.md` (trades du rejeu fidèle, seule la taille varie, cycles FTMO 1-Step enchaînés). Entraînement 2010-2022, réussis/ratés : fixe 0,25 % 11/3 ; 0,3 % 13/5 ; **0,5 % 24/13 (+11, meilleur)** ; 0,75 % 49/42 ; 1 % 72/66 ; freins 0,5→0,25 % à −4/−5 % 15/7 et 15/8 ; freins 0,75→0,375 % 27/17 et 29/19 (+10). Le frein ne bat pas le meilleur fixe. 0,5 % lu une fois : test 2023-2025 3/5, 2026 1/2. Au test, aucune configuration n'a plus de réussis que de ratés (le combo est faible depuis 2023). Risque live inchangé (0,3 %).
