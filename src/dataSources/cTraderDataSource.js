@@ -37,7 +37,7 @@ import { calculateLotSize, getDefaultSpec, buildSpecFromBrokerSymbol } from '../
 import { describeBrokerPayload, extractBrokerError } from './brokerPayload.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from '../backtest/nySession.js';
 import { pairDealsIntoTrades } from './dealPairing.js';
-import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes, computeUntrackedPositionInfos, findBotPositionsToClose } from './accountReconciliation.js';
+import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeManagedPositionsToRestore, computeMissingStopFixes, computeUntrackedPositionInfos, findBotPositionsToClose } from './accountReconciliation.js';
 import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields, logAlertSignal } from './demoTrackingLog.js';
 import { DailyAlertEngine } from '../dailyAlertEngine.js';
 import { IntradayMomentumEngine, TickBarBuilder, ORB_STRATEGY, NOISE_STRATEGY } from '../intradayMomentumEngine.js';
@@ -1417,6 +1417,29 @@ export class CTraderDataSource {
     // _handleExecutionEvent's own use of this map).
     // 2026-09-24: a real position held by a MANAGED_SOURCES strategy (RSI(2)/A/B) is not "real-only" - never adopt it into the combo
     // engine (that relabelled its journal row 'adopted' and hid its close from the managed tracking).
+    // 2026-09-24 - restore first (see computeManagedPositionsToRestore): after a restart, a real RSI(2)/A/B position is tracked again
+    // by its own strategy (so its exit is really sent) instead of being adopted by the combo below.
+    for (const r of computeManagedPositionsToRestore({
+      realPositions: res.position || [],
+      symbolNameById: this.symbolNameById,
+      managedSources: MANAGED_SOURCES,
+      isTracked: (symbol, positionId) => this.dailyPositionBySymbol.has(symbol) || [...this.dailyPositionBySymbol.values()].some((p) => String(p.positionId) === String(positionId)),
+    })) {
+      this.dailyPositionBySymbol.set(r.symbol, { positionId: r.positionId, volumeCents: r.volumeCents, source: r.source, at: Date.now() });
+      // The combo engine may have adopted it before this fix existed in the running process (or before this sweep): release that belief.
+      const believed = store.strategyEngine.getOpenPosition(r.symbol);
+      if (believed?.source === 'adopted') store.strategyEngine.clearBelievedPosition(r.symbol, believed.id);
+      console.warn(`[cTrader] position ${r.source} ${r.symbol} (positionId=${r.positionId}) reprise en suivi après redémarrage - sa sortie sera bien envoyée.`);
+    }
+    // ...and the mirror case: a tracked managed position that no longer exists at the broker (its close confirmation was missed - a
+    // disconnect at the wrong moment) would block the symbol for EVERY strategy until the next restart (mutual exclusion). Dropped here,
+    // only when tracked for more than 2 minutes (a fill confirmed after this reconcile request was sent must not be dropped).
+    const openIds = new Set((res.position || []).filter((p) => !p.positionStatus || p.positionStatus === 'POSITION_STATUS_OPEN').map((p) => String(p.positionId)));
+    for (const [symbol, held] of this.dailyPositionBySymbol) {
+      if (openIds.has(String(held.positionId)) || !(Date.now() - (held.at ?? 0) > 120000)) continue;
+      this.dailyPositionBySymbol.delete(symbol);
+      console.warn(`[cTrader] suivi ${held.source ?? DAILY_RSI2_STRATEGY} ${symbol} (positionId=${held.positionId}) retiré : la position n'existe plus chez le courtier (confirmation de clôture manquée).`);
+    }
     const managedIds = new Set([...this.dailyPositionBySymbol.values()].map((p) => String(p.positionId)));
     const toAdopt = computeRealOnlyPositionsToAdopt({
       realPositions: (res.position || []).filter((p) => !managedIds.has(String(p.positionId))),
@@ -1822,6 +1845,7 @@ export class CTraderDataSource {
     const text = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8');
     let pos = text.indexOf('\n') + 1; // skip the header line
     let count = 0;
+    let lastFileTime = -Infinity; // engine time of the file's last bar
     while (pos > 0 && pos < text.length) {
       let end = text.indexOf('\n', pos);
       if (end === -1) end = text.length;
@@ -1829,17 +1853,39 @@ export class CTraderDataSource {
         const line = text.slice(pos, end);
         const c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1), c3 = line.indexOf(',', c2 + 1), c4 = line.indexOf(',', c3 + 1);
         if (c1 > 0 && c2 > c1 && c3 > c2 && c4 > c3) {
+          const time = Number(line.slice(0, c1)) - FIXED_EST_TO_UTC_OFFSET_MS;
           engine.ingest(
-            { time: Number(line.slice(0, c1)) - FIXED_EST_TO_UTC_OFFSET_MS, open: Number(line.slice(c1 + 1, c2)), high: Number(line.slice(c2 + 1, c3)), low: Number(line.slice(c3 + 1, c4)), close: Number(line.slice(c4 + 1)) },
+            { time, open: Number(line.slice(c1 + 1, c2)), high: Number(line.slice(c2 + 1, c3)), low: Number(line.slice(c3 + 1, c4)), close: Number(line.slice(c4 + 1)) },
             { silent: true }
           );
+          lastFileTime = time;
           count++;
         }
       }
       pos = end + 1;
     }
+    // 2026-09-24 FIX (bug hunt, Esdras : « cherche tout autre défaut ») : the file above is the one COMMITTED in the repo - it stops on the
+    // day it was exported (2026-09-21 03:43 UTC), and every boot since fed live bars on top of it with the days in between simply
+    // missing (RSI(2), SMA5, ATR and the position state computed on a daily series with holes - 3 days missing at the 2026-09-24 deploy,
+    // and growing). Top up with the broker's own M15 history from the file's end to now before going live.
+    let topUp = 0;
+    try {
+      const gapDays = Math.ceil((Date.now() - (lastFileTime + FIXED_EST_TO_UTC_OFFSET_MS)) / 86400000) + 1;
+      if (Number.isFinite(gapDays) && gapDays > 0) {
+        const recent = await this.getHistoricalCandles({ symbol: 'US500', days: Math.min(gapDays, 240), timeframe: 'M15' });
+        for (const c of recent) {
+          const time = c.time - FIXED_EST_TO_UTC_OFFSET_MS; // broker candles are real UTC, the daily engine runs on engine time
+          if (time <= lastFileTime) continue;
+          engine.ingest({ time, open: c.open, high: c.high, low: c.low, close: c.close }, { silent: true });
+          lastFileTime = time;
+          topUp++;
+        }
+      }
+    } catch (err) {
+      console.warn(`[cTrader] mode-alerte: complément d'historique US500 depuis le courtier impossible (${err.message}) - RSI(2) démarre avec un trou depuis la fin du fichier.`);
+    }
     this.dailyAlertEngines.set('US500', engine);
-    console.log(`[cTrader] mode-alerte: RSI(2)/US500 warmed up on ${count} bars (${engine.bars.length} jours), position=${engine.position ? 'ouverte' : 'plate'}`);
+    console.log(`[cTrader] mode-alerte: RSI(2)/US500 warmed up on ${count} bars + ${topUp} broker M15 bars since the file's end (${engine.bars.length} jours), position=${engine.position ? 'ouverte' : 'plate'}`);
   }
 
   /**
@@ -3251,7 +3297,7 @@ export class CTraderDataSource {
           if (MANAGED_SOURCES.has(pending.source)) {
             const volumeCents = Number(event.deal?.filledVolume ?? event.deal?.volume);
             if (Number.isFinite(volumeCents) && volumeCents > 0) {
-              this.dailyPositionBySymbol.set(pending.symbolName, pending.source === DAILY_RSI2_STRATEGY ? { positionId: filledPositionId, volumeCents } : { positionId: filledPositionId, volumeCents, source: pending.source });
+              this.dailyPositionBySymbol.set(pending.symbolName, pending.source === DAILY_RSI2_STRATEGY ? { positionId: filledPositionId, volumeCents, at: Date.now() } : { positionId: filledPositionId, volumeCents, source: pending.source, at: Date.now() });
             } else {
               console.warn(`[mode-alerte->reel] RSI(2)/${pending.symbolName}: fill confirmed but no usable volume on the deal - a later signal exit may not find anything to close.`);
             }

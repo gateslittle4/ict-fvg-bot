@@ -350,6 +350,30 @@ export function sourceFromOrderLabel(label, symbol) {
 }
 
 /**
+ * 2026-09-24 (Esdras : « le trade est protégé si je déploie ? ») - the managed strategies (RSI(2) journalier, A ORB 5 min, B noise area)
+ * track their real position in cTraderDataSource.dailyPositionBySymbol, in memory only. After a restart the map was empty: their exit
+ * (RSI(2)'s SMA5/time-out, A's 15:59 close, B's 30-min checks) found nothing to close and was ignored, and the periodic sweep even
+ * adopted the position into the combo engine as 'adopted'. Result: a position the strategy should have closed stayed open (overnight
+ * for A/B) until its broker stop/target. Returns every open real position whose bot label names a managed source and that is not
+ * tracked yet, with what the map needs ({ symbol, positionId, volumeCents, source }). Manual/unknown positions are never returned.
+ */
+export function computeManagedPositionsToRestore({ realPositions, symbolNameById, managedSources, isTracked }) {
+  const out = [];
+  for (const pos of realPositions || []) {
+    if (pos.positionStatus && pos.positionStatus !== 'POSITION_STATUS_OPEN') continue;
+    const symbol = symbolNameById.get(String(pos.tradeData?.symbolId));
+    if (!symbol) continue;
+    const source = sourceFromOrderLabel(pos.tradeData?.label, symbol);
+    if (!source || !managedSources.has(source)) continue;
+    if (isTracked(symbol, pos.positionId)) continue;
+    const volumeCents = Number(pos.tradeData?.volume);
+    if (!(volumeCents > 0)) continue;
+    out.push({ symbol, positionId: pos.positionId, volumeCents, source });
+  }
+  return out;
+}
+
+/**
  * 2026-09-23 (Esdras: « rends le système très fiable ») - pure logic behind the journal self-heal. openPositionInfoByPositionId
  * (what lets a real close write its row, with its R, to bot_trade_events) lives in memory only: every restart while a position is
  * open used to lose it, so that trade's close was never journaled (found live: a Divergence US500 position open across the

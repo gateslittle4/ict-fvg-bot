@@ -934,7 +934,10 @@ function createAccountRouter(getStore) {
   // { enabled: true, hours: 24 } to switch the bot to auto-executing entries
   // itself for that many hours (capped server-side), or { enabled: false } to
   // switch back to semi-automatic (alert-only) immediately.
-  router.post('/auto-execute', (req, res) => {
+  // 2026-09-24 (bug hunt) : every route that changes real trading (arm/disarm, risk, close a position, cancel an order, flatten the
+  // account) required NO credential - anyone who knew the public URL could flatten the account or raise the risk. Same admin code as
+  // the Comptes page (x-admin-token header, stored by the dashboard in localStorage 'apexfvg_admin_token').
+  router.post('/auto-execute', requireAdminGate, (req, res) => {
     const store = getStore(req);
     try {
       const { enabled, hours } = req.body || {};
@@ -956,7 +959,7 @@ function createAccountRouter(getStore) {
   // subscriptions at boot (cTraderDataSource.js) and netting/history keys
   // (LiveStrategyEngine's constructor), none of which safely re-run without a
   // restart - changing it live risks orphaning an open position's tracking.
-  router.post('/settings/risk', (req, res) => {
+  router.post('/settings/risk', requireAdminGate, (req, res) => {
     const store = getStore(req);
     try {
       const { riskPctPerTrade } = req.body || {};
@@ -1033,7 +1036,7 @@ function createAccountRouter(getStore) {
   // call it directly. `volume` is required explicitly, same reasoning as
   // the admin route: a wrong PARTIAL volume would only partially close the
   // position, so never inferred/guessed here.
-  router.post('/positions/:positionId/close', async (req, res) => {
+  router.post('/positions/:positionId/close', requireAdminGate, async (req, res) => {
     const store = getStore(req);
     const ds = store.liveDataSource;
     if (!ds?.connection) {
@@ -1057,7 +1060,7 @@ function createAccountRouter(getStore) {
   // dashboard "Ordres en attente" card could only be cleared via the
   // all-or-nothing emergency flatten below). Mirrors close-position's shape
   // exactly - same connection guard, same report-then-fill-in pattern.
-  router.post('/orders/:orderId/cancel', async (req, res) => {
+  router.post('/orders/:orderId/cancel', requireAdminGate, async (req, res) => {
     const store = getStore(req);
     const ds = store.liveDataSource;
     if (!ds?.connection || typeof ds._cancelOrder !== 'function') {
@@ -1082,7 +1085,7 @@ function createAccountRouter(getStore) {
   // never touches the strategy's simulated beliefs, and continues through
   // partial failures so the response shows exactly what did and did not
   // close/cancel.
-  router.post('/positions/close-all', async (req, res) => {
+  router.post('/positions/close-all', requireAdminGate, async (req, res) => {
     const store = getStore(req);
     const ds = store.liveDataSource;
     if (!ds?.connection || typeof ds.getAccountReconciliation !== 'function') {

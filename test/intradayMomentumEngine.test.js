@@ -110,3 +110,22 @@ test('IntradayMomentumEngine: started mid-session (bot restart), no stale A entr
   const first = eng.ingestBar('US500', live.find((b) => b.time >= restart));
   assert.deepEqual(first.filter((e) => e.type === 'entry'), [], 'no entry on a 9:35 range or 10:00/10:30 checks seen at 11:02');
 });
+
+test('IntradayMomentumEngine: after a mid-session restart, an A position decided before the restart is still closed at 15:59 (2026-09-24 fix)', () => {
+  // Real US100 M1, 2024-02-01: the bot restarts at 11:02 NY. The 9:35 decision is stale (no new entry), but the virtual position must
+  // exist so the 15:59 exit is emitted - otherwise a real A position held across a deploy stays open overnight.
+  const bars = loadBars('US100', Date.UTC(2024, 0, 2), Date.UTC(2024, 1, 2));
+  const day = bars.filter((b) => b.time >= Date.UTC(2024, 1, 1) && b.time < Date.UTC(2024, 1, 2));
+  const expected = orbSetup(buildSessions(toS(day)).at(-1));
+  assert.ok(expected, 'fixture day must have an A setup');
+  const eng = new IntradayMomentumEngine({ orbSymbols: ['US100'], noiseSymbols: [] });
+  const restart = Date.UTC(2024, 1, 1, 16, 2);
+  eng.addBars('US100', bars.filter((b) => b.time < restart));
+  const events = [];
+  for (const b of bars.filter((x) => x.time >= restart)) events.push(...eng.ingestBar('US100', b));
+  assert.deepEqual(events.filter((e) => e.type === 'entry'), [], 'no late entry');
+  const exits = events.filter((e) => e.type === 'exit' && e.strategy === ORB_STRATEGY);
+  assert.equal(exits.length, 1, 'the 15:59 exit is emitted once');
+  assert.equal(exits[0].side, expected.long ? 'buy' : 'sell');
+  assert.equal(nySessionPosition(exits[0].time).k, 389);
+});

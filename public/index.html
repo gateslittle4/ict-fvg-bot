@@ -758,6 +758,25 @@
 // selected account with no per-card special-casing. Resolved once at boot
 // by initAccounts() - see the bottom of this script.
 let currentAccountId = null;
+// 2026-09-24 (bug hunt) : les actions qui touchent au vrai trading (armer/désarmer, risque, fermer, annuler, FLATTEN) exigent maintenant
+// le code administrateur côté serveur (avant : aucun code, n'importe qui connaissant l'adresse pouvait vider le compte). Même code et même
+// mémoire que la page Comptes (localStorage 'apexfvg_admin_token') ; demandé une seule fois s'il manque ou s'il est refusé.
+const ADMIN_TOKEN_KEY = 'apexfvg_admin_token';
+function readAdminToken() { try { return localStorage.getItem(ADMIN_TOKEN_KEY) || ''; } catch { return ''; } }
+async function adminFetch(url, options = {}) {
+  const send = (token) => fetch(url, { ...options, headers: { ...(options.headers || {}), 'x-admin-token': token } });
+  let token = readAdminToken();
+  let res = token ? await send(token) : null;
+  if (!res || res.status === 403) {
+    const typed = prompt('Code administrateur (le même que sur la page Comptes) :');
+    if (!typed) return res || new Response(JSON.stringify({ error: 'code administrateur requis' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+    token = typed.trim();
+    res = await send(token);
+    if (res.status !== 403) { try { localStorage.setItem(ADMIN_TOKEN_KEY, token); } catch { /* mémoire indisponible : redemandé la prochaine fois */ } }
+  }
+  return res;
+}
+
 function acctUrl(suffix) {
   return `/api/accounts/${encodeURIComponent(currentAccountId)}${suffix}`;
 }
@@ -1033,7 +1052,7 @@ async function closeAllPositions() {
   const button = document.getElementById('close-all-positions-btn');
   if (button) { button.disabled = true; button.textContent = 'FERMETURE EN COURS…'; }
   try {
-    const res = await fetch(acctUrl('/positions/close-all'), { method: 'POST' });
+    const res = await adminFetch(acctUrl('/positions/close-all'), { method: 'POST' });
     const data = await res.json();
     if (!res.ok && res.status !== 207) throw new Error(data.error || `Erreur HTTP ${res.status}`);
     const failed = (data.failed || 0) + (data.pendingCancelFailed || 0);
@@ -1097,7 +1116,7 @@ async function pauseAutoExecution() {
   const actionsEl = document.getElementById('control-center-actions');
   if (actionsEl) actionsEl.textContent = 'pause en cours…';
   try {
-    const res = await fetch(acctUrl('/auto-execute'), {
+    const res = await adminFetch(acctUrl('/auto-execute'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: false }),
@@ -1478,7 +1497,7 @@ function renderPendingOrders(pendingOrders) {
 async function cancelPendingOrder(orderId, symbol) {
   if (!confirm(`Annuler réellement l'ordre en attente sur ${symbol} (id ${orderId}) chez le courtier ? Cette action est irréversible.`)) return;
   try {
-    const res = await fetch(acctUrl(`/orders/${orderId}/cancel`), { method: 'POST' });
+    const res = await adminFetch(acctUrl(`/orders/${orderId}/cancel`), { method: 'POST' });
     const data = await res.json();
     if (!res.ok) {
       alert(`Échec de l'annulation: ${data.error || res.statusText}`);
@@ -1500,7 +1519,7 @@ async function cancelPendingOrder(orderId, symbol) {
 async function closePosition(positionId, volume, symbol) {
   if (!confirm(`Fermer réellement la position ${symbol} (id ${positionId}) au marché ? Cette action est irréversible.`)) return;
   try {
-    const res = await fetch(acctUrl(`/positions/${positionId}/close`), {
+    const res = await adminFetch(acctUrl(`/positions/${positionId}/close`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ volume }),
@@ -1616,7 +1635,7 @@ async function refreshOrderLog() {
 }
 
 async function setAutoExecute(enabled, hours) {
-  await fetch(acctUrl('/auto-execute'), {
+  await adminFetch(acctUrl('/auto-execute'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(hours ? { enabled, hours } : { enabled }),
@@ -1966,7 +1985,7 @@ document.getElementById('settings-risk-save').addEventListener('click', async ()
     return;
   }
   try {
-    const res = await fetch(acctUrl('/settings/risk'), {
+    const res = await adminFetch(acctUrl('/settings/risk'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ riskPctPerTrade: value }),

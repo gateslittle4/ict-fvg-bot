@@ -109,10 +109,12 @@ export class IntradayMomentumEngine {
     // A : une seule décision par jour, dès que la bougie de 5 min (barres 9:30-9:34) est complète.
     if (this.orbSymbols.has(symbol) && !st.orbDecided && pos.k >= 4) {
       st.orbDecided = true;
-      if (pos.k - 4 <= STALE_MINUTES && today() >= 0) {
+      if (today() >= 0) {
         const setup = orbSetup(days[i]);
         if (setup) {
-          events.push({ type: 'entry', strategy: ORB_STRATEGY, symbol, side: setup.long ? 'buy' : 'sell', stopPrice: setup.long ? setup.lo : setup.hi, rangeHigh: setup.hi, rangeLow: setup.lo, time: bar.time });
+          // 2026-09-24 fix: a STALE decision (bot restarted mid-session) now also opens the VIRTUAL position, as the header says -
+          // before, it was silently dropped, so the 15:59 exit of a real A position held across a restart was never emitted.
+          if (pos.k - 4 <= STALE_MINUTES) events.push({ type: 'entry', strategy: ORB_STRATEGY, symbol, side: setup.long ? 'buy' : 'sell', stopPrice: setup.long ? setup.lo : setup.hi, rangeHigh: setup.hi, rangeLow: setup.lo, time: bar.time });
           st.orbOpen = { long: setup.long };
         }
       }

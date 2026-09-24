@@ -114,7 +114,7 @@ test('a confirmed real fill of an rsi2-daily order records the position for late
   const { ds } = makeDs();
   ds.pendingEntryOrderByOrderId.set('999', { symbolName: 'US500', source: 'rsi2-daily', signalId: 'rsi2-daily-US500-1', direction: 'bullish', entryPrice: 5700, riskAmount: 30, stopPrice: 5670, targetPrice: null });
   ds._handleExecutionEvent({ executionType: 'ORDER_FILLED', order: { orderId: '999' }, position: { positionId: 424242 }, deal: { executionPrice: 5700.2, filledVolume: '30000' } });
-  assert.deepEqual(ds.dailyPositionBySymbol.get('US500'), { positionId: 424242, volumeCents: 30000 });
+  assert.deepEqual((({ at, ...rest }) => rest)(ds.dailyPositionBySymbol.get('US500')), { positionId: 424242, volumeCents: 30000 }); // `at` = tracking time (stale-tracking sweep)
 });
 
 test('a real close of the tracked rsi2-daily position (however it happened) clears dailyPositionBySymbol', () => {
@@ -132,5 +132,5 @@ test('a close of some OTHER (non-rsi2-daily) position never touches dailyPositio
   ds.openPositionInfoByPositionId.set('111', { symbolName: 'US500', source: 'fvg', signalId: 'y', direction: 'bullish', entryPrice: 5700, riskAmount: 30, entryTime: Date.now() - 1000 });
   ds.account.strategyEngine.clearBelievedPosition = () => {};
   ds._handleExecutionEvent({ executionType: 'ORDER_FILLED', deal: { positionId: '111', symbolId: 215, closePositionDetail: { grossProfit: '10', balance: '1001000', moneyDigits: 2 } } });
-  assert.deepEqual(ds.dailyPositionBySymbol.get('US500'), { positionId: 424242, volumeCents: 30000 });
+  assert.deepEqual((({ at, ...rest }) => rest)(ds.dailyPositionBySymbol.get('US500')), { positionId: 424242, volumeCents: 30000 }); // `at` = tracking time (stale-tracking sweep)
 });

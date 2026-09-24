@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { enrichRealPosition, reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes } from '../src/dataSources/accountReconciliation.js';
+import { enrichRealPosition, reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRealOnlyPositionsToAdopt, computeMissingStopFixes, computeManagedPositionsToRestore } from '../src/dataSources/accountReconciliation.js';
 
 function realPosition(overrides = {}) {
   return {
@@ -482,4 +482,23 @@ test('enrichRealPosition: exposes the order label the bot set (so the chart can 
   const labeled = enrichRealPosition(realPosition({ tradeData: { symbolId: 100, volume: 10000, tradeSide: 'BUY', openTimestamp: 1000, label: 'auto-orb5-US100' } }), 20010);
   assert.equal(labeled.label, 'auto-orb5-US100');
   assert.equal(enrichRealPosition(realPosition(), 20010).label, null);
+});
+
+test('computeManagedPositionsToRestore: a bot-labelled RSI(2)/A/B position not tracked is restored; combo, manual, tracked or other-symbol ones are not', () => {
+  const managedSources = new Set(['rsi2-daily', 'orb5', 'noise']);
+  const symbolNameById = new Map([['213', 'US100'], ['215', 'US500']]);
+  const pos = (positionId, symbolId, label, volume = 70) => ({ positionId, positionStatus: 'POSITION_STATUS_OPEN', tradeData: { symbolId, label, volume } });
+  const realPositions = [
+    pos(1, 213, 'auto-orb5-US100'),
+    pos(2, 215, 'auto-rsi2-daily-US500', 250),
+    pos(3, 215, 'auto-silverbullet-US500'), // combo: adopted elsewhere, not here
+    pos(4, 213, null), // manual
+    pos(5, 215, 'auto-noise-US100'), // label symbol does not match the position's symbol
+  ];
+  const isTracked = () => false;
+  assert.deepEqual(computeManagedPositionsToRestore({ realPositions, symbolNameById, managedSources, isTracked }), [
+    { symbol: 'US100', positionId: 1, volumeCents: 70, source: 'orb5' },
+    { symbol: 'US500', positionId: 2, volumeCents: 250, source: 'rsi2-daily' },
+  ]);
+  assert.deepEqual(computeManagedPositionsToRestore({ realPositions, symbolNameById, managedSources, isTracked: (s) => s === 'US100' }).map((r) => r.positionId), [2]);
 });

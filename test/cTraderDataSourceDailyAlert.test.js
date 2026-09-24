@@ -113,3 +113,29 @@ test('updateFormingBar never opens or closes a day (a bar from another day is ig
   assert.equal(e._cur.high, 10);
   assert.equal(e.bars.length, 0);
 });
+
+test('2026-09-24: _loadDailyAlertEngines tops the committed file up with the broker M15 history since its end (no missing days)', async () => {
+  const ds = setup();
+  ds.symbols = ['US500'];
+  const fileEndUtc = Date.parse('2026-09-21T03:45:00Z');
+  const asked = [];
+  // 3 full days of broker M15 after the file (real UTC times, as getHistoricalCandles returns them), plus 2 bars already in the file
+  const recent = [];
+  for (let t = fileEndUtc - 2 * 900000; t < fileEndUtc + 3 * 86400000; t += 900000) recent.push({ time: t, open: 7700, high: 7702, low: 7698, close: 7701 });
+  ds.getHistoricalCandles = async (opts) => { asked.push(opts); return recent; };
+  await ds._loadDailyAlertEngines();
+  const engine = ds.dailyAlertEngines.get('US500');
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].symbol, 'US500');
+  assert.equal(asked[0].timeframe, 'M15');
+  const lastDay = engine.bars[engine.bars.length - 1].time + 5 * 3600000; // START of the last closed day, engine time -> real UTC
+  assert.ok(lastDay >= Date.parse('2026-09-22T00:00:00Z'), `the daily series must reach the broker days after the file, last closed day ${new Date(lastDay).toISOString()}`);
+});
+
+test('2026-09-24: a broker failure during the top-up never blocks the daily engine (file warm-up kept)', async () => {
+  const ds = setup();
+  ds.symbols = ['US500'];
+  ds.getHistoricalCandles = async () => { throw new Error('timeout'); };
+  await ds._loadDailyAlertEngines();
+  assert.ok(ds.dailyAlertEngines.get('US500').bars.length > 500);
+});

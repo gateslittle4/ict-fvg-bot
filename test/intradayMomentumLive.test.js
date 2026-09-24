@@ -125,7 +125,8 @@ test('a confirmed fill of an A order is tracked with its source', () => {
   const { ds } = makeDs();
   ds.pendingEntryOrderByOrderId.set('9', { symbolName: 'US100', source: 'orb5', signalId: 'orb5-US100-1', direction: 'bullish', entryPrice: 20000, riskAmount: 30, stopPrice: 19970, targetPrice: 20300 });
   ds._handleExecutionEvent({ executionType: 'ORDER_FILLED', order: { orderId: '9' }, position: { positionId: 4242 }, deal: { executionPrice: 20000.6, filledVolume: '150' } });
-  assert.deepEqual(ds.dailyPositionBySymbol.get('US100'), { positionId: 4242, volumeCents: 150, source: 'orb5' });
+  assert.deepEqual((({ at, ...rest }) => rest)(ds.dailyPositionBySymbol.get('US100')), { positionId: 4242, volumeCents: 150, source: 'orb5' });
+  assert.ok(ds.dailyPositionBySymbol.get('US100').at > 0, 'tracking time recorded');
 });
 
 test('the 5-minute sweep never adopts a managed (RSI(2)/A/B) real position into the combo engine', async () => {
@@ -175,4 +176,35 @@ test('strategy switches: loaded from bot_settings at boot', async () => {
   assert.deepEqual(await sw.loadStrategySwitches(client), { orb5: true, noise: false });
   assert.equal(sw.isStrategyEnabled('noise'), false);
   sw.resetStrategySwitchesForTests();
+});
+
+test('2026-09-24: after a restart, the 5-min sweep restores a labelled A position (not adopted by the combo) so its 15:59 close is really sent', async () => {
+  const { ds } = makeDs();
+  const sent = [];
+  ds.connection = { sendCommand: async (name, payload) => {
+    sent.push({ name, payload });
+    if (name === 'ProtoOAReconcileReq') return { position: [{ positionId: 777, positionStatus: 'POSITION_STATUS_OPEN', price: 20000, stopLoss: 19950, takeProfit: 20500, tradeData: { symbolId: 101, volume: 70, tradeSide: 'BUY', label: 'auto-orb5-US100', openTimestamp: 1 } }], order: [] };
+    return {};
+  } };
+  let adopted = 0;
+  ds.account.strategyEngine.adoptExternalPosition = () => { adopted++; return null; };
+  assert.equal(ds.dailyPositionBySymbol.size, 0, 'fresh process: nothing tracked');
+  await ds._clearStaleBeliefsAgainstBroker(1);
+  const held = ds.dailyPositionBySymbol.get('US100');
+  assert.equal(held.positionId, 777); assert.equal(held.volumeCents, 70); assert.equal(held.source, 'orb5');
+  assert.equal(adopted, 0, 'never adopted into the combo engine');
+  await ds._executeMomentumEvent({ type: 'exit', strategy: 'orb5', symbol: 'US100', side: 'buy', reason: 'close', time: 2 });
+  const close = sent.find((c) => c.name === 'ProtoOAClosePositionReq');
+  assert.ok(close, 'the 15:59 close is sent');
+  assert.equal(close.payload.positionId, 777); assert.equal(close.payload.volume, 70);
+});
+
+test('2026-09-24: a tracked managed position that no longer exists at the broker (missed close confirmation) stops blocking the symbol', async () => {
+  const { ds } = makeDs();
+  ds.connection = { sendCommand: async (name) => (name === 'ProtoOAReconcileReq' ? { position: [], order: [] } : {}) };
+  ds.dailyPositionBySymbol.set('US100', { positionId: 5, volumeCents: 70, source: 'orb5', at: Date.now() - 10 * 60000 });
+  ds.dailyPositionBySymbol.set('US500', { positionId: 6, volumeCents: 70, source: 'noise', at: Date.now() - 1000 }); // just filled: kept
+  await ds._clearStaleBeliefsAgainstBroker(1);
+  assert.equal(ds.dailyPositionBySymbol.has('US100'), false);
+  assert.equal(ds.dailyPositionBySymbol.has('US500'), true);
 });
