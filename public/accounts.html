@@ -137,6 +137,14 @@
   </div>
 
   <div id="app" hidden>
+    <div class="card" id="switches-card">
+      <h2>Stratégies A et B</h2>
+      <p class="hint">A = cassure de la bougie d'ouverture de 5 min (US100) ; B = « noise area » (US500). Désactiver bloque les nouvelles entrées ; une position déjà ouverte est fermée normalement.</p>
+      <label><input type="checkbox" id="sw-orb5" /> A (US100) active</label>
+      <label><input type="checkbox" id="sw-noise" /> B (US500) active</label>
+      <div class="actions"><button class="primary" id="sw-save">Enregistrer</button></div>
+      <div class="msg" id="sw-msg"></div>
+    </div>
     <div class="card">
       <h2>Comptes déjà enregistrés</h2>
       <table id="accounts-table">
@@ -306,6 +314,30 @@ async function loadAccounts() {
   });
 }
 
+async function loadSwitches() {
+  try {
+    const r = await fetch('/api/strategy-switches');
+    const { switches } = await r.json();
+    document.getElementById('sw-orb5').checked = switches.orb5 !== false;
+    document.getElementById('sw-noise').checked = switches.noise !== false;
+  } catch (err) {
+    showMsg(document.getElementById('sw-msg'), 'Lecture impossible : ' + err.message, false);
+  }
+}
+document.getElementById('sw-save').addEventListener('click', async () => {
+  const msg = document.getElementById('sw-msg');
+  try {
+    const out = await api('/api/admin/strategy-switches', {
+      method: 'POST',
+      body: JSON.stringify({ orb5: document.getElementById('sw-orb5').checked, noise: document.getElementById('sw-noise').checked }),
+    });
+    const s = out.switches || {};
+    showMsg(msg, `Enregistré : A ${s.orb5 ? 'active' : 'désactivée'}, B ${s.noise ? 'active' : 'désactivée'}${out.persisted ? '' : ' (non sauvegardé : sera perdu au prochain redémarrage)'}.`, true);
+  } catch (err) {
+    showMsg(msg, 'Erreur : ' + err.message, false);
+  }
+});
+
 document.getElementById('unlock-btn').addEventListener('click', async () => {
   TOKEN = document.getElementById('token-input').value.trim();
   if (!TOKEN) return;
@@ -316,6 +348,7 @@ document.getElementById('unlock-btn').addEventListener('click', async () => {
     document.getElementById('gate-card').hidden = true;
     document.getElementById('app').hidden = false;
     loadAccounts();
+    loadSwitches();
   } catch (err) {
     showMsg(gateMsg, 'Token invalide ou fonctionnalité désactivée côté serveur.', false);
   }
@@ -375,6 +408,7 @@ if (TOKEN) {
     document.getElementById('gate-card').hidden = true;
     document.getElementById('app').hidden = false;
     loadAccounts();
+    loadSwitches();
   }).catch(() => { localStorage.removeItem(TOKEN_KEY); TOKEN = ''; });
 }
 

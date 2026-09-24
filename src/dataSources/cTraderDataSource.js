@@ -41,6 +41,7 @@ import { reconcileAccount, estimateEquity, computeStaleBeliefsToClear, computeRe
 import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, extraTradeFields, logAlertSignal } from './demoTrackingLog.js';
 import { DailyAlertEngine } from '../dailyAlertEngine.js';
 import { IntradayMomentumEngine, TickBarBuilder, ORB_STRATEGY, NOISE_STRATEGY } from '../intradayMomentumEngine.js';
+import { isStrategyEnabled, loadStrategySwitches } from '../strategySwitches.js';
 
 // 2026-09-22: single source of truth for the daily strategy's identifier, used by _loadDailyAlertEngines (registers the engine), the mutual-
 // exclusion check and the fill/close handlers below - was two inconsistent literals ('rsi2-daily' vs 'rsi2daily') before this constant, which
@@ -1932,6 +1933,8 @@ export class CTraderDataSource {
     const orbSymbols = (cfg.orb?.symbols || []).filter((s) => this.symbols.includes(s));
     const noiseSymbols = (cfg.noise?.symbols || []).filter((s) => this.symbols.includes(s));
     if (!orbSymbols.length && !noiseSymbols.length) return;
+    const switches = await loadStrategySwitches(this.tradeLogClient);
+    console.log(`[A/B] interrupteurs : A ${switches.orb5 ? 'actif' : 'DÉSACTIVÉ'}, B ${switches.noise ? 'actif' : 'DÉSACTIVÉ'}`);
     const engine = new IntradayMomentumEngine({ orbSymbols, noiseSymbols, lookback: cfg.noise?.lookback ?? 14 });
     for (const symbol of engine.symbols) {
       const bars = await this.getHistoricalCandles({ symbol, days: cfg.warmupDays ?? 30, timeframe: 'M1' });
@@ -1998,6 +2001,7 @@ export class CTraderDataSource {
       return;
     }
     // entry
+    if (!isStrategyEnabled(ev.strategy)) return skip('stratégie désactivée (interrupteur, page Comptes)');
     if (!store.isAutoExecuteActive()) return skip('auto-execute inactive');
     if (held) {
       if (held.source === ev.strategy && held.closing) { this.pendingEntryAfterClose.set(symbolName, { ev, until: Date.now() + 60000 }); return; }

@@ -20,7 +20,8 @@ import { resampleCandles } from './backtest/htfBias.js';
 import { buildChartOverlays } from './backtest/chartOverlays.js';
 import { startKeepAlive } from './keepAlive.js';
 import { buildHealthReport } from './healthReport.js';
-import { fetchPerformanceBySymbol } from './dataSources/supabaseTradeLog.js';
+import { fetchPerformanceBySymbol, createTradeLogClient } from './dataSources/supabaseTradeLog.js';
+import { getStrategySwitches, setStrategySwitches } from './strategySwitches.js';
 import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
@@ -222,6 +223,17 @@ function requireAdminToken(req, res) {
   }
   return true;
 }
+
+// 2026-09-24 - interrupteurs des stratégies A (orb5) et B (noise) : lecture publique, modification avec le code administrateur
+// (page Comptes). Voir src/strategySwitches.js : désactiver bloque les nouvelles entrées, les sorties continuent.
+let strategySwitchClient;
+const switchClient = () => (strategySwitchClient === undefined ? (strategySwitchClient = createTradeLogClient()) : strategySwitchClient);
+app.get('/api/strategy-switches', (req, res) => res.json({ switches: getStrategySwitches() }));
+app.post('/api/admin/strategy-switches', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const result = await setStrategySwitches(switchClient(), req.body || {});
+  res.status(result.ok ? 200 : 400).json(result);
+});
 
 app.get('/api/admin/accounts', async (req, res) => {
   if (!requireAdminToken(req, res)) return;

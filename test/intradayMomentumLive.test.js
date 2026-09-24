@@ -143,3 +143,36 @@ test('the 5-minute sweep never adopts a managed (RSI(2)/A/B) real position into 
   await ds._clearStaleBeliefsAgainstBroker(1);
   assert.deepEqual(adopted, []);
 });
+
+test('strategy switches: a disabled strategy takes no new entry, but still closes its open position', async () => {
+  const sw = await import('../src/strategySwitches.js');
+  sw.resetStrategySwitchesForTests();
+  const saved = [];
+  const fakeClient = { from: () => ({ upsert: async (row) => { saved.push(row); return { error: null }; } }) };
+  const res = await sw.setStrategySwitches(fakeClient, { orb5: false, bogus: true });
+  assert.equal(res.ok, true); assert.equal(res.persisted, true);
+  assert.deepEqual(res.switches, { orb5: false, noise: true });
+  assert.equal(saved[0].key, 'strategy_switches');
+  const { ds } = makeDs();
+  let called = false;
+  ds._handleAutoExecuteEntry = async () => { called = true; };
+  await ds._executeMomentumEvent(orbEntry());
+  assert.equal(called, false, 'A disabled: no entry');
+  const sent = [];
+  ds.connection.sendCommand = async (name, data, cb) => { sent.push(name); if (cb) cb(null, {}); return {}; };
+  ds.dailyPositionBySymbol.set('US100', { positionId: 9, volumeCents: 100, source: 'orb5' });
+  await ds._executeMomentumEvent({ type: 'exit', strategy: 'orb5', symbol: 'US100', side: 'buy', reason: 'close' });
+  assert.deepEqual(sent, ['ProtoOAClosePositionReq'], 'A disabled: its open position is still closed at 15:59');
+  const bad = await sw.setStrategySwitches(null, { orb5: 'no' });
+  assert.equal(bad.ok, false);
+  sw.resetStrategySwitchesForTests();
+});
+
+test('strategy switches: loaded from bot_settings at boot', async () => {
+  const sw = await import('../src/strategySwitches.js');
+  sw.resetStrategySwitchesForTests();
+  const client = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { value: { orb5: true, noise: false } }, error: null }) }) }) }) };
+  assert.deepEqual(await sw.loadStrategySwitches(client), { orb5: true, noise: false });
+  assert.equal(sw.isStrategyEnabled('noise'), false);
+  sw.resetStrategySwitchesForTests();
+});
