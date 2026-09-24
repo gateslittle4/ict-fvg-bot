@@ -1116,17 +1116,19 @@
   },
   {
     "id": "prereg-kill-switch-2026-09-24",
-    "title": "Arrêt d'une stratégie si sa baisse dépasse 1,5 × sa pire baisse historique : pré-enregistré",
+    "title": "Arrêt à 1,5 × la pire baisse historique : GARDÉ comme filet de sécurité (pas encore codé en live)",
     "date": "2026-09-24",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul. Règle de sécurité par jambe : baisse courante > 1,5 × pire baisse connue → arrêt définitif. Évaluée 2010-2022 → 2023-2026 et en glissant (référence 2010-2014, appliquée 2015-2026, mise à jour chaque année). Gardée si le R total avec la règle ≥ sans la règle − 5 % dans les deux évaluations.",
+    "status": "validated-research",
+    "summary": "Écrit avant tout calcul. Règle de sécurité par jambe : baisse courante > 1,5 × pire baisse connue → arrêt définitif. Évaluée 2010-2022 → 2023-2026 et en glissant (référence 2010-2014, appliquée 2015-2026, mise à jour chaque année). Gardée si le R total avec la règle ≥ sans la règle − 5 % dans les deux évaluations. RÉSULTAT (scripts/runKillSwitchStudy.js, data/backtest-input/kill-switch-study.md) : 2023-2026 (référence 2010-2022) : seule Silver Bullet US500 arrêtée (16/09/2025), −20,3 R évités ; total R +86 → +107. Glissant 2015-2026 : total R +723 → +739 ; Silver Bullet US500 arrêtée à la même date (−20 R évités) ; mais 2 faux arrêts en 2016 sur des références trop courtes (RSI(2) : référence 1,9 R, +4,7 R ratés ; B : référence 5,1 %, +49 % ratés, hors total en R). Leçon : la référence doit reposer sur un long historique (A et B : 13 ans disponibles).",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "M15/M1",
     "files": [
-      "data/backtest-input/preregistration-kill-switch-2026-09-24.md"
+      "data/backtest-input/preregistration-kill-switch-2026-09-24.md",
+      "scripts/runKillSwitchStudy.js",
+      "data/backtest-input/kill-switch-study.md"
     ]
   }
 ]
