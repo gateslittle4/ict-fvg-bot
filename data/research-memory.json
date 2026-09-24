@@ -1218,17 +1218,21 @@
   },
   {
     "id": "prereg-ny-open-sweep-fvg-2026-09-24",
-    "title": "Sweep de la nuit + déplacement à 9:30 + FVG (scénario US100 du 24/09) : pré-enregistré",
+    "title": "Sweep de la nuit + déplacement à 9:30 + FVG (scénario US100 du 24/09) : ÉCHEC à l entraînement (t 1,36, trop rare)",
     "date": "2026-09-24",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul. Achat (vente miroir) : plus bas de pré-ouverture (5:00-9:29 NY) sous le plus bas de Londres (2:00-4:59), fait avant 8:00 ; clôture de la M15 de 9:30 au-dessus du plus haut de pré-ouverture ; FVG haut(9:15) < bas(9:45) ; LIMIT au haut du FVG 10:00-11:59 ; stop plus bas de la bougie de 9:30 ; cible la plus proche ≥ 2R parmi hauts Asie / Londres / séance NY de la veille ; sortie 15:59. US100 principale, US500 contrôle. Critère projet ; <60 trades à l entraînement = non concluant. Texte : data/backtest-input/preregistration-ny-open-sweep-fvg-2026-09-24.md.",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul. Achat (vente miroir) : plus bas de pré-ouverture (5:00-9:29 NY) sous le plus bas de Londres (2:00-4:59), fait avant 8:00 ; clôture de la M15 de 9:30 au-dessus du plus haut de pré-ouverture ; FVG haut(9:15) < bas(9:45) ; LIMIT au haut du FVG 10:00-11:59 ; stop plus bas de la bougie de 9:30 ; cible la plus proche ≥ 2R parmi hauts Asie / Londres / séance NY de la veille ; sortie 15:59. US100 principale, US500 contrôle. Critère projet ; <60 trades à l entraînement = non concluant. Texte : data/backtest-input/preregistration-ny-open-sweep-fvg-2026-09-24.md. RÉSULTAT (scripts/runNyOpenSweepFvgStudy.js -> data/backtest-input/ny-open-sweep-fvg-study.md) : US100 entraînement 77 trades (~6/an), 39 % gagnants, +29,2 R, +0,38 R/trade, t 1,36 ; 2010-2016 +2,4 R, 2017-2022 +26,9 R -> ÉCHEC (t < 2). Test 2023-2025 : 7 trades -3,7 R ; 2026 : 3 trades -3 R. US500 contrôle : +6,3 R (t 0,43). Pas de relâchement des règles.",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "M1/M15 intraday",
     "files": [
-      "data/backtest-input/preregistration-ny-open-sweep-fvg-2026-09-24.md"
+      "data/backtest-input/preregistration-ny-open-sweep-fvg-2026-09-24.md",
+      "scripts/lib/nyOpenSweepFvg.js",
+      "scripts/runNyOpenSweepFvgStudy.js",
+      "test/nyOpenSweepFvg.test.js",
+      "data/backtest-input/ny-open-sweep-fvg-study.md"
     ]
   }
 ]
