@@ -164,6 +164,11 @@
   .ticker-price.flash-down { color: var(--red); }
   .ticker-meta { font-size: 10px; color: var(--faint); font-family: var(--mono); }
   .ticker-pos { color: var(--blue); font-size: 10px; font-weight: 700; }
+  /* P&L flottant de la position réellement ouverte sur la paire, collé au prix (2026-09-24, Esdras : « voir d'un seul coup »). */
+  .ticker-right { display: flex; align-items: baseline; gap: 8px; }
+  .ticker-pnl { font-family: var(--mono); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 1px 6px; border-radius: 3px; }
+  .ticker-pnl.win { color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); }
+  .ticker-pnl.loss { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
   /* Deliberately distinct from .ticker-pos (2026-09-13, honesty fix - see
      server.js's withRealTimePosition): this is the engine's own unconfirmed
      belief, not yet matched to a real broker fill in orderOutcomeLog. */
@@ -1285,23 +1290,37 @@ function renderStatus(data) {
   controlState.status = data;
   renderControlCenter();
 
+  // P&L flottant par paire (2026-09-24) : positions RÉELLES du courtier (lastKnownPositions, /account toutes les 30 s), recalculé
+  // à chaque rafraîchissement avec le prix live de la paire - même calcul que le tableau des positions. Couvre toutes les
+  // stratégies (combo, A, B, RSI(2)), pas seulement celles que le moteur du combo suit.
+  const pnlBySymbol = {};
+  for (const p of lastKnownPositions) {
+    const live = recomputeFloatingPnl(p, data.symbols.find((x) => x.symbol === p.symbol)?.lastPrice);
+    if (live.netFloatingPnl === null || live.netFloatingPnl === undefined) continue;
+    pnlBySymbol[p.symbol] = (pnlBySymbol[p.symbol] ?? 0) + live.netFloatingPnl;
+  }
   document.getElementById('prices-body').innerHTML = data.symbols.map((s) => {
     const prev = previousPrices[s.symbol];
+    const pnl = pnlBySymbol[s.symbol];
+    const realOpen = lastKnownPositions.some((p) => p.symbol === s.symbol);
     const flashClass = prev === undefined || s.lastPrice === prev ? '' : s.lastPrice > prev ? 'flash-up' : 'flash-down';
     previousPrices[s.symbol] = s.lastPrice;
     return `
     <div class="ticker-cell">
       <div>
         <div class="ticker-sym"><span class="dot"></span>${s.symbol}${
-          s.openPosition
-            ? s.openPosition.confirmed
-              ? ' <span class="ticker-pos">●POSITION</span>'
-              : ' <span class="ticker-signal">●signal (non confirmé)</span>'
-            : ''
+          realOpen || s.openPosition?.confirmed
+            ? ' <span class="ticker-pos">●POSITION</span>'
+            : s.openPosition
+              ? ' <span class="ticker-signal">●signal (non confirmé)</span>'
+              : ''
         }${s.cooldownRemainingMs > 0 ? ` <span class="ticker-signal">⏸ cooldown ${fmtDuration(s.cooldownRemainingMs)}</span>` : ''}</div>
         <div class="ticker-meta">${fmtTime(s.lastCandleTime)}</div>
       </div>
-      <div class="ticker-price ${flashClass}">${fmt(s.lastPrice, priceDecimals(s.symbol))}</div>
+      <div class="ticker-right">
+        <div class="ticker-price ${flashClass}">${fmt(s.lastPrice, priceDecimals(s.symbol))}</div>
+        ${pnl !== undefined ? `<span class="ticker-pnl ${pnl >= 0 ? 'win' : 'loss'}" title="P&L flottant de la position ouverte (estimé en direct)">${pnl >= 0 ? '+' : ''}${fmt(pnl)} $</span>` : ''}
+      </div>
     </div>
   `;
   }).join('');
