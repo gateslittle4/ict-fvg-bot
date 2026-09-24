@@ -480,7 +480,10 @@ export const CONFIG = {
   // on all 3 symbols in both checks above, unlike US100/NWOG's genuine
   // long-only edge.
   silverBullet: {
-    symbols: ['US100', 'US500', 'GER40'],
+    // 2026-09-24 - US500 retiré du live (Esdras : « retire cette stratégie ») : rejeu fidèle 2023-2025 -20,2 R, 2026 -17,4 R, et la
+    // règle d'arrêt pré-enregistrée (baisse > 1,5 x la pire baisse 2010-2022, data/backtest-input/kill-switch-study.md) l'aurait
+    // coupée le 2025-09-16. US100 et GER40 inchangés.
+    symbols: ['US100', 'GER40'],
     rrMultiple: 3,
     maxHoldingM15Candles: 480,
   },

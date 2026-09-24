@@ -6912,3 +6912,7 @@ Complément descriptif (demande d'Esdras, après le résultat, donc non pré-enr
 ## 2026-09-24 — Arrêt d'une stratégie à 1,5 × sa pire baisse historique : pré-enregistré, GARDÉ comme filet de sécurité (non codé en live)
 
 Pré-enregistré (`a9ad911`) ; `scripts/runKillSwitchStudy.js` → `data/backtest-input/kill-switch-study.md`. Référence 2010-2022 appliquée à 2023-2026 : **seule Silver Bullet US500 s'arrête (16/09/2025), −20,3 R évités ; total +86 → +107 R.** Glissant 2015-2026 : +723 → +739 R, même arrêt de Silver Bullet US500. Coût ≤ 5 % dans les deux → gardé. Attention : 2 faux arrêts en 2016 quand la référence reposait sur trop peu d'historique (RSI(2) 1,9 R ; B 5,1 %, +49 % ratés) → n'appliquer qu'avec une référence longue. Pas encore dans le bot : à coder (suivi du R cumulé par jambe + arrêt + alerte) si Esdras le demande.
+
+## 2026-09-24 — Silver Bullet US500 retiré du live (demande d'Esdras : « retire cette stratégie »)
+
+`src/config.js` : `silverBullet.symbols` passe de `['US100', 'US500', 'GER40']` à `['US100', 'GER40']`. Raison : rejeu fidèle 2023-2025 −20,2 R et 2026 −17,4 R ; la règle d'arrêt pré-enregistrée (baisse > 1,5 × pire baisse 2010-2022, `kill-switch-study.md`) l'aurait coupée le 2025-09-16. Silver Bullet US100 inchangé. Tests 1130/1130.
