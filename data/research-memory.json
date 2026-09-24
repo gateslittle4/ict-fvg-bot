@@ -1096,5 +1096,20 @@
       "scripts/runTrendDayFilterStudy.js",
       "data/backtest-input/trend-day-filter-study.md"
     ]
+  },
+  {
+    "id": "prereg-streak-block-2026-09-24",
+    "title": "Bloquer une stratégie après 3 pertes, réactiver après un gain virtuel : pré-enregistré",
+    "date": "2026-09-24",
+    "status": "inconclusive",
+    "summary": "Écrit avant tout calcul. Par jambe : 3 pertes consécutives prises → bloquée ; trades suivis à blanc ; premier gagnant virtuel → réactivée. Combo live (rejeu fidèle) + A en R, B à part. Utile si, à l'entraînement, R moyen des trades pris − R moyen des sautés > 0 avec t ≥ 2, deux moitiés positives, puis > 0 au test. K=2 et 4 en sensibilité seulement.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15/M1",
+    "files": [
+      "data/backtest-input/preregistration-streak-block-2026-09-24.md"
+    ]
   }
 ]
