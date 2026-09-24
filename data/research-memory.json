@@ -1041,5 +1041,22 @@
       "scripts/runTurnOfMonthStudy.js",
       "data/backtest-input/turn-of-month-study.md"
     ]
+  },
+  {
+    "id": "prereg-night-hypothesis-2026-09-24",
+    "title": "Hypothèse « la nuit, les stratégies marchent mieux » : pré-enregistrée",
+    "date": "2026-09-24",
+    "status": "inconclusive",
+    "summary": "Écrite avant le calcul. Testée sur 19 jambes hors combo live jamais découpées par session (runCleanStudy LIVE_FILL=1, RRR de production). Écart nuit (18h-2h NY) − séance (9h30-16h) par jambe (≥30 trades par session), combiné en variance inverse : soutenue si z≥2 à l'entraînement, ≥60 % des jambes positives, puis écart >0 au test. <3 jambes : non concluant. Secondaire : retour vs continuation (classement par le code ; CBDR = retour, correction de la discussion).",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15",
+    "files": [
+      "data/backtest-input/preregistration-night-hypothesis-2026-09-24.md"
+    ]
   }
 ]
