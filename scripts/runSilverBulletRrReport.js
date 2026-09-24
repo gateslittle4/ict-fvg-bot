@@ -9,11 +9,12 @@ import { CONFIG } from '../src/config.js';
 import { OFF, eng } from './lib/m1Data.js';
 
 const RRS = [2, 3, 4, 5, 6, 7];
-const TRANCHES = ['hist-2010-2014', 'hist-2014-2017', 'hist-2017-2020', 'hist-2020-2023', 'broker-2023-2024', 'broker-2024-2025', 'broker-2025-2026', 'broker-2026-2027'];
+const TRANCHES = ['hist-2010-2014', 'hist-2014-2017', 'broker-2023-2024', 'broker-2024-2025', 'broker-2025-2026', 'broker-2026-2027'];
 const PERIODS = [
-  { id: 'train', label: 'Entraînement 2010-2022', from: eng(2010), to: eng(2023) },
-  { id: 'h1', label: '  2010-2016', from: eng(2010), to: eng(2017) },
-  { id: 'h2', label: '  2017-2022', from: eng(2017), to: eng(2023) },
+  // Amendement du pré-enregistrement (écrit avant tout résultat) : entraînement ramené à 2010-2016, moitiés 2010-2013 / 2014-2016.
+  { id: 'train', label: 'Entraînement 2010-2016', from: eng(2010), to: eng(2017) },
+  { id: 'h1', label: '  2010-2013', from: eng(2010), to: eng(2014) },
+  { id: 'h2', label: '  2014-2016', from: eng(2014), to: eng(2017) },
   { id: 'test', label: 'Test 2023-2025', from: eng(2023), to: eng(2026) },
   { id: 'fwd', label: '2026 (→ 21/09)', from: eng(2026), to: eng(2027) },
 ];
@@ -52,7 +53,7 @@ function ftmo(trades, risk = 0.3) {
 }
 
 const md = ['# RRR du Silver Bullet au rejeu fidèle au live — résultat du pré-enregistrement', '',
-  'Règles : `data/backtest-input/preregistration-silverbullet-rr-2026-09-24.md` (commité avant ce calcul). Rejeux : `SB_RR=<n> node scripts/runLiveReplay.js …` (config live, 0,3 %, 8 tranches avec 90 jours de préchauffage chacune), rapport : `scripts/runSilverBulletRrReport.js`. HistData reconstruit sur le poste d\'Esdras (fichiers identiques octet pour octet à ceux de la session cloud).', ''];
+  'Règles : `data/backtest-input/preregistration-silverbullet-rr-2026-09-24.md` (commité avant ce calcul, avec son AMENDEMENT écrit avant tout résultat : entraînement ramené à 2010-2016). Rejeux : `SB_RR=<n> node scripts/runLiveReplay.js …` (config live, 0,3 %, 6 tranches avec 90 jours de préchauffage chacune), rapport : `scripts/runSilverBulletRrReport.js`.', ''];
 md.push('## Chaque jambe par RRR (R net, trades, t)', '');
 for (const [src, sym] of LEGS) {
   md.push(`### Silver Bullet ${sym}`, '', `| RRR | ${PERIODS.map((p) => p.label.trim()).join(' | ')} |`, `|---|${PERIODS.map(() => '---').join('|')}|`);
