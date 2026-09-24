@@ -46,7 +46,8 @@ test('entryPolicy: capLots caps at the volume step and scales the real risk the 
 });
 
 test('entryPolicy: the bot and the replay both use this module (one rule, one place)', () => {
-  const bot = fs.readFileSync(new URL('../src/dataSources/cTraderDataSource.js', import.meta.url), 'utf8');
+  const dir = new URL('../src/dataSources/ctrader/', import.meta.url);
+  const bot = [fs.readFileSync(new URL('../src/dataSources/cTraderDataSource.js', import.meta.url), 'utf8'), ...fs.readdirSync(dir).map((f) => fs.readFileSync(new URL(f, dir), 'utf8'))].join('\n');
   const replay = fs.readFileSync(new URL('../scripts/runLiveReplay.js', import.meta.url), 'utf8');
   for (const fn of ['entryBlockReason', 'momentumEntryBlockReason', 'momentumOrderSignal', 'orderProtection']) {
     assert.ok(bot.includes(`${fn}(`), `bot does not call ${fn}`);
