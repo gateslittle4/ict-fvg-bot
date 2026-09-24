@@ -16,3 +16,9 @@ Date : 2026-09-24. Question d'Esdras : « le stop du Silver Bullet est très pet
 
 ## Limites déclarées
 6 RRR testés sur la même période : le meilleur à l'entraînement est en partie de la chance, d'où la lecture du test. Un rejeu par RRR avec le même RRR sur les deux paires : les interactions entre paires (garde-fou journalier) sont approximées quand les RRR* diffèrent. HistData ≠ prix du broker.
+
+## AMENDEMENT (2026-09-24, 14:50 UTC, écrit AVANT d'avoir lu le moindre résultat)
+Esdras : « peux-tu réduire le nombre d'années sans biaiser le résultat ? » (le rejeu complet demandait ~3 h sur 4 cœurs). Décidé sur le seul critère du temps de calcul, avant d'ouvrir un seul fichier `*-sbrr*.json` ni un seul journal de rejeu (les tranches déjà finies ou en cours : 2010-2014 et 2014-2017, tous RRR) :
+- **Entraînement ramené à 2010-2016** (tranches HistData 2010-2014 et 2014-2017 seulement ; 2017-2020 et 2020-2023 ne sont pas calculées). Les deux moitiés de la règle 1 deviennent **2010-2013** et **2014-2016**.
+- **Test 2023-2025 et 2026 inchangés** (tranches broker complètes). Les règles 1 à 4 sont inchangées par ailleurs.
+- Coût déclaré : moins de trades pour choisir RRR* (plus de bruit, pas de biais), et l'entraînement ne contient plus les années 2017-2022, les plus proches du test.
