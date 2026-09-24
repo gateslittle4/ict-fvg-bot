@@ -1145,5 +1145,20 @@
       "src/config.js",
       "data/backtest-input/kill-switch-study.md"
     ]
+  },
+  {
+    "id": "prereg-risk-brake-ftmo-2026-09-24",
+    "title": "Frein de risque (÷2 à −4/−5 %) contre risque fixe, FTMO 1-Step, combo live : pré-enregistré",
+    "date": "2026-09-24",
+    "status": "inconclusive",
+    "summary": "Écrit avant tout calcul. Trades du rejeu fidèle 2010-2026, taille seule varie : fixe 0,25/0,3/0,5/0,75/1 % ; frein base 0,5 ou 0,75 % divisé par 2 à −4 ou −5 % du plus haut du cycle. Choix sur l'entraînement 2010-2022 : max réussis − ratés (égalité : moins de ratés) ; frein retenu seulement s'il bat le meilleur fixe. Test 2023-2025 et 2026 lus une fois.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15",
+    "files": [
+      "data/backtest-input/preregistration-risk-brake-ftmo-2026-09-24.md"
+    ]
   }
 ]
