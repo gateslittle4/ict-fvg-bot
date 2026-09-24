@@ -74,7 +74,7 @@ function main() {
   const md = ['# Bloquer une stratégie après une série de pertes, la réactiver après un gain virtuel — résultat du pré-enregistrement', '',
     'Règles : `data/backtest-input/preregistration-streak-block-2026-09-24.md` (commité avant ce calcul, rien changé depuis). Script : `scripts/runStreakBlockStudy.js`. Par jambe : 3 pertes consécutives prises → bloquée ; trades suivis à blanc ; premier gagnant virtuel → réactivée. Jambes en R : combo live (rejeu fidèle 2010-2026) + A ; B (en %) à part.', ''];
   const inP = (a, b) => (x) => x.t >= a && x.t < b;
-  for (const K of [3, 2, 4]) {
+  for (const K of (process.env.KS ? process.env.KS.split(',').map(Number) : [3, 2, 4])) {
     const all = Object.entries(legsR).flatMap(([leg, l]) => applyRule(l, K).map((x) => ({ ...x, leg })));
     const cmp = (L) => ({ taken: mv(L.filter((x) => x.taken).map((x) => x.v)), skipped: mv(L.filter((x) => !x.taken).map((x) => x.v)), all: mv(L.map((x) => x.v)) });
     const tr = cmp(all.filter(inP(PERIODS[0][2], PERIODS[0][3]))), w = welch(tr.taken, tr.skipped);
