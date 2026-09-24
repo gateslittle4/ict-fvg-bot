@@ -1024,5 +1024,20 @@
       "scripts/runOvernightStudy.js",
       "data/backtest-input/overnight-study.md"
     ]
+  },
+  {
+    "id": "prereg-turn-of-month-2026-09-24",
+    "title": "Effet de fin de mois (jour −1 à +3) US100 / US500 : pré-enregistré",
+    "date": "2026-09-24",
+    "status": "inconclusive",
+    "summary": "Écrit avant tout calcul. Achat à la clôture du jour −2, vente à la clôture du jour +3 (McConnell & Xu 2008), un trade par mois, spread + swap du broker. Contrôle : autres fenêtres de 4 séances. Critère habituel par indice (US500 principal, US100) : entraînement ≥60 trades, t≥2, deux moitiés positives ; test ≥30 trades, >0.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "D1 (M1)",
+    "files": [
+      "data/backtest-input/preregistration-turn-of-month-2026-09-24.md"
+    ]
   }
 ]
