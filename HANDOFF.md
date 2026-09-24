@@ -6887,3 +6887,7 @@ Esdras : « teste la stratégie de nuit » (après avoir vu que la hausse de 202
 ## 2026-09-24 — Effet de fin de mois (jour −2 → +3) US100 / US500 : pré-enregistré, ÉCHEC
 
 Pré-enregistré (`d46eb40`) ; `scripts/runTurnOfMonthStudy.js` → `data/backtest-input/turn-of-month-study.md`. Un trade par mois, spread + swap du broker. **US500 : entraînement 144 trades, +0,079 %/trade, t 0,48 (2010-2016 négatif) → échec. US100 : +0,180 %, t 0,92 → échec.** Contrôle : à peine mieux que n'importe quelle fenêtre de 4 séances sur 2010-2022, moins bien sur 2023-2025. 2026 +8,5 % / +10 % sur 8 trades (descriptif). Effet publié en 1987, pas mesurable ici. Rien changé en live.
+
+## 2026-09-24 — Hypothèse d'Esdras « la nuit, les stratégies marchent mieux » : pré-enregistrée, NON SOUTENUE
+
+Pré-enregistré (`f63b03d`) ; trades générés par `LIVE_FILL=1 RRS=<RRR prod> node scripts/runCleanStudy.js legs ...` (19 jambes hors combo live, jamais découpées par session ; cache ignoré par git) ; `scripts/runNightHypothesisStudy.js` → `data/backtest-input/night-hypothesis-study.md`. 11 jambes tradent aux deux sessions : **écart nuit (18h-2h NY) − séance (9h30-16h) +0,007 R/trade à l'entraînement, z 0,11** (7/11 positives) ; test +0,040 (z 0,30) ; 2026 −0,078. Stratégies « retour » seules : +0,001 R. Correction de la discussion : CBDR est une stratégie de retournement (code), pas de cassure. L'écart nuit/séance du combo live venait de sa composition (NWOG ne trade que la nuit). Rien changé en live.

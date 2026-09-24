@@ -9,6 +9,8 @@
 // Rapport : data/backtest-input/night-hypothesis-study.md.
 import fs from 'node:fs';
 import { FIXED_EST_TO_UTC_OFFSET_MS as OFF } from '../src/backtest/nySession.js';
+import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
+import { refPrice, swapPerUnit } from './lib/m1Data.js';
 
 const CACHE = 'data/clean-study-cache-livefill';
 const LEGS = [
@@ -33,12 +35,19 @@ const session = (h) => (h >= 18 || h < 2 ? 'nuit' : h < 9.5 ? 'londres' : h < 16
 const mv = (l) => { const n = l.length, m = n ? l.reduce((a, x) => a + x, 0) / n : 0; const v = n > 1 ? l.reduce((a, x) => a + (x - m) ** 2, 0) / (n - 1) : 0; return { n, m, v }; };
 const sgn = (x, d = 3) => (x >= 0 ? '+' : '') + x.toFixed(d);
 
+/** R net d'un trade du cache, même calcul que runCleanStudy.js costR (mode « price ») : spread par défaut et swap du broker en % du prix. */
+function netR(t) {
+  const k = t.price / refPrice(t.symbol);
+  const spread = t.spreadIncluded ? 0 : (DEFAULT_SPREADS[t.symbol] ?? 0) * (t.spreadMult ?? 1) * k;
+  return t.gross - spread / t.distance + swapPerUnit(t.symbol, t.direction, t.fillTime, t.exitTime) * k / t.distance;
+}
+
 function load(key, rr) {
   const out = [];
   for (const src of ['hist', 'broker']) {
     const f = `${CACHE}/${key}-rr${rr}-${src}.json`;
     if (!fs.existsSync(f)) { console.error(`${f} manquant`); process.exit(1); }
-    for (const t of JSON.parse(fs.readFileSync(f, 'utf8'))) { const utc = t.entryTime + OFF; out.push({ utc, r: t.r, s: session(nyHour(utc)) }); }
+    for (const t of JSON.parse(fs.readFileSync(f, 'utf8'))) { const utc = t.entryTime + OFF; out.push({ utc, r: netR(t), s: session(nyHour(utc)) }); }
   }
   return out;
 }
