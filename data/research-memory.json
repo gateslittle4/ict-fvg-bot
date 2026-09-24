@@ -1082,17 +1082,19 @@
   },
   {
     "id": "prereg-trend-day-filter-2026-09-24",
-    "title": "Filtre « journées de tendance » pour A (ORB US100) et B (noise area US500) : pré-enregistré",
+    "title": "Filtre « journées de tendance » pour A et B : REJETÉ (A t −0,53, B t 0,20)",
     "date": "2026-09-24",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul. Trader A/B seulement si la part de journées de tendance des 20 séances précédentes ≥ sa médiane des 250 séances précédentes. Retenu si, à l'entraînement, écart (jours actifs − inactifs) > 0 avec t ≥ 2, deux moitiés positives, ≥30 % des trades gardés ; puis écart > 0 au test.",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul. Trader A/B seulement si la part de journées de tendance des 20 séances précédentes ≥ sa médiane des 250 séances précédentes. Retenu si, à l'entraînement, écart (jours actifs − inactifs) > 0 avec t ≥ 2, deux moitiés positives, ≥30 % des trades gardés ; puis écart > 0 au test. RÉSULTAT (scripts/runTrendDayFilterStudy.js, data/backtest-input/trend-day-filter-study.md) : A-US100 entraînement jours actifs +0,139 R contre inactifs +0,191 R (écart −0,052, t −0,53), test −0,143 ; B-US500 écart +0,003 % (t 0,20), test 0. En 2026 le filtre aurait été actif les 2/3 des jours et n'aurait pas évité les pertes (A actif −27 R). La part récente de journées de tendance ne prédit pas les suivantes.",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "M1",
     "files": [
-      "data/backtest-input/preregistration-trend-day-filter-2026-09-24.md"
+      "data/backtest-input/preregistration-trend-day-filter-2026-09-24.md",
+      "scripts/runTrendDayFilterStudy.js",
+      "data/backtest-input/trend-day-filter-study.md"
     ]
   }
 ]

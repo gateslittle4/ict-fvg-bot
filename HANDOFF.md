@@ -6899,3 +6899,7 @@ Pré-enregistré (`ee3260b`) ; `scripts/runCalmNightStudy.js` → `data/backtest
 ## 2026-09-24 03:21 UTC — Déploiement du correctif Divergence (demande d'Esdras : « Déploie »)
 
 Vérifié avant : aucune position ni ordre en attente (`/api/account`), solde 11 263,68 $. Render `dep-daq9e9ou01pc73fbg17g` sur `9e3963f` (tête de `claude/lire-handoff-hxisa5`, déclenché via l'API car `[skip render]`). La version en ligne précédente (`d1902d9`) n'avait pas le correctif « la Divergence peut acheter la jambe ingérée en premier (US100) + routage des ordres par symbole du signal » (`9810522`). Après : `/healthz` ok, 1 compte connecté ; `/api/status` : live, 0,3 %, auto-exécution active, 0 trade le 24/09, aucun blocage. Rien d'autre n'a changé côté live.
+
+## 2026-09-24 — Filtre « journées de tendance » (détection du régime) pour A et B : pré-enregistré, REJETÉ
+
+Pré-enregistré (`e51e013`) ; `scripts/runTrendDayFilterStudy.js` → `data/backtest-input/trend-day-filter-study.md`. Trader A/B seulement si la part de journées de tendance des 20 séances précédentes ≥ sa médiane des 250 précédentes. **A-US100 : jours « actifs » +0,139 R contre « inactifs » +0,191 R (t −0,53) ; B-US500 : écart +0,003 % (t 0,20) → rejeté**, test sans effet. En 2026 le filtre aurait été actif 2 jours sur 3 et n'aurait pas évité les pertes. Le régime récent ne prédit pas le suivant (3e échec de détection de régime après le « 12 mois » et le VIX). A et B restent sans filtre. Rien changé en live.
