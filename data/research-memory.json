@@ -1060,5 +1060,22 @@
       "scripts/runNightHypothesisStudy.js",
       "data/backtest-input/night-hypothesis-study.md"
     ]
+  },
+  {
+    "id": "prereg-calm-night-2026-09-24",
+    "title": "Retour à la moyenne la nuit (idée « nuit calme » d'Esdras) US100/US500 : pré-enregistré",
+    "date": "2026-09-24",
+    "status": "inconclusive",
+    "summary": "Écrit avant tout calcul. Nuit 20:00-01:00 NY (sortie 02:00) : clôture M15 à ≥1,5×ATR14 de la moyenne des prix typiques depuis 18:00 → pari de retour vers cette moyenne, stop 1,5×ATR, un trade par nuit. Contrôle : même règle en séance NY (10:00-15:00, sortie 16:00). Critère habituel sur la nuit US100/US500 ; idée confirmée seulement si nuit > séance à l'entraînement et au test.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M1/M15",
+    "files": [
+      "data/backtest-input/preregistration-calm-night-2026-09-24.md"
+    ]
   }
 ]
