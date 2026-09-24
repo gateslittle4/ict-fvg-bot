@@ -1079,5 +1079,20 @@
       "scripts/runCalmNightStudy.js",
       "data/backtest-input/calm-night-study.md"
     ]
+  },
+  {
+    "id": "prereg-trend-day-filter-2026-09-24",
+    "title": "Filtre « journées de tendance » pour A (ORB US100) et B (noise area US500) : pré-enregistré",
+    "date": "2026-09-24",
+    "status": "inconclusive",
+    "summary": "Écrit avant tout calcul. Trader A/B seulement si la part de journées de tendance des 20 séances précédentes ≥ sa médiane des 250 séances précédentes. Retenu si, à l'entraînement, écart (jours actifs − inactifs) > 0 avec t ≥ 2, deux moitiés positives, ≥30 % des trades gardés ; puis écart > 0 au test.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M1",
+    "files": [
+      "data/backtest-input/preregistration-trend-day-filter-2026-09-24.md"
+    ]
   }
 ]
