@@ -1388,6 +1388,15 @@ function fmtUnits(units) {
   return String(Number(units.toFixed(4)));
 }
 
+// Stratégie qui a ouvert une position réelle (2026-09-24, Esdras) : lue dans le label de l'ordre `auto-<source>-<symbole>` que le
+// bot pose et que le courtier renvoie (accountReconciliation.js enrichRealPosition -> label). Sans label : position manuelle.
+function strategyNameFromLabel(label) {
+  const source = (label || '').match(/^auto-(.+)-[^-]+$/)?.[1];
+  if (!source) return 'Manuelle / inconnue';
+  const names = { divergence: 'Divergence', fvg: 'FVG', nwog: 'NWOG', weeklysweep: 'Weekly Sweep', breakerblock: 'Breaker Block', silverbullet: 'Silver Bullet', cbdr: 'CBDR', judaswing: 'Judas Swing', orb5: 'A · ORB 5 min', noise: 'B · Noise area', 'rsi2-daily': 'RSI(2) journalier' };
+  return names[source] || source;
+}
+
 function renderOpenPositions(positions) {
   const el = document.getElementById('open-positions-body');
   if (!el) return;
@@ -1407,6 +1416,7 @@ function renderOpenPositions(positions) {
     return `
       <tr>
         <td><span class="dir-${p.direction}">${p.direction === 'bullish' ? '▲' : '▼'}</span> ${p.symbol}</td>
+        <td><strong>${strategyNameFromLabel(p.label)}</strong></td>
         <td>${fmtUnits(p.units)}</td>
         <td>${fmt(p.entryPrice, d)}</td>
         <td>${fmt(p.currentPrice, d)}</td>
@@ -1420,7 +1430,7 @@ function renderOpenPositions(positions) {
   }).join('');
   el.innerHTML = `
     <table class="strategy-table positions-table">
-      <thead><tr><th>Symbole</th><th>Volume</th><th>Entrée</th><th>Prix actuel</th><th>Stop</th><th>Cible</th><th class="pnl-cell">P&amp;L flottant</th><th>Ouverte depuis</th><th></th></tr></thead>
+      <thead><tr><th>Symbole</th><th>Stratégie</th><th>Volume</th><th>Entrée</th><th>Prix actuel</th><th>Stop</th><th>Cible</th><th class="pnl-cell">P&amp;L flottant</th><th>Ouverte depuis</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
