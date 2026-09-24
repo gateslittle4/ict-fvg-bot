@@ -6895,3 +6895,7 @@ Pré-enregistré (`f63b03d`) ; trades générés par `LIVE_FILL=1 RRS=<RRR prod>
 ## 2026-09-24 — Retour à la moyenne la nuit (idée « nuit calme » d'Esdras) : pré-enregistré, ÉCHEC
 
 Pré-enregistré (`ee3260b`) ; `scripts/runCalmNightStudy.js` → `data/backtest-input/calm-night-study.md`. Nuit : écart ≥ 1,5 × ATR14 (M15) de la moyenne depuis 18:00 NY → pari de retour, stop 1,5 × ATR, sortie 02:00 ; contrôle identique en séance. **US100 nuit : −0,019 R/trade, t −0,93 ; US500 : −0,029 R, t −1,43 (deux moitiés négatives) → échec** ; test −26 R / −61 R. La nuit perd un peu moins que la séance sur les indices (+0,03 R/trade), mais le retour à la moyenne reste perdant partout. Idée non confirmée ; pas de retouche des seuils. Rien changé en live.
+
+## 2026-09-24 03:21 UTC — Déploiement du correctif Divergence (demande d'Esdras : « Déploie »)
+
+Vérifié avant : aucune position ni ordre en attente (`/api/account`), solde 11 263,68 $. Render `dep-daq9e9ou01pc73fbg17g` sur `9e3963f` (tête de `claude/lire-handoff-hxisa5`, déclenché via l'API car `[skip render]`). La version en ligne précédente (`d1902d9`) n'avait pas le correctif « la Divergence peut acheter la jambe ingérée en premier (US100) + routage des ordres par symbole du signal » (`9810522`). Après : `/healthz` ok, 1 compte connecté ; `/api/status` : live, 0,3 %, auto-exécution active, 0 trade le 24/09, aucun blocage. Rien d'autre n'a changé côté live.
