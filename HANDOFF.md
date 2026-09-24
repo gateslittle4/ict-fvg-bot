@@ -6883,3 +6883,7 @@ Esdras : « trouve-moi une stratégie qui fonctionne », puis « fais les calcul
 ## 2026-09-24 — Achat de nuit (clôture → ouverture) US100 / US500 : pré-enregistré, ÉCHEC
 
 Esdras : « teste la stratégie de nuit » (après avoir vu que la hausse de 2024-2026 se fait surtout hors séance). Pré-enregistré (`1526ec8`, décomposition brute 2019-2026 déjà vue, déclarée) ; `scripts/runOvernightStudy.js` → `data/backtest-input/overnight-study.md`. Achat 15:59 NY à l'ask, vente 9:30 au bid, spread + swap du broker. **US100 : entraînement +0,023 %/nuit, t 1,71 (deux moitiés positives) → échec (t < 2)** ; test +40 %, 2026 +7,5 %. **US500 : t 0,79 → échec** ; test +19,6 %, 2026 +4,2 %. Le swap long (relevé 2026, appliqué au passé : surestimé les années à taux zéro) mange près de la moitié du gain brut. Positif mais pas assez fort pour le critère ; on n'ajoute pas de filtres. Rien changé en live.
+
+## 2026-09-24 — Effet de fin de mois (jour −2 → +3) US100 / US500 : pré-enregistré, ÉCHEC
+
+Pré-enregistré (`d46eb40`) ; `scripts/runTurnOfMonthStudy.js` → `data/backtest-input/turn-of-month-study.md`. Un trade par mois, spread + swap du broker. **US500 : entraînement 144 trades, +0,079 %/trade, t 0,48 (2010-2016 négatif) → échec. US100 : +0,180 %, t 0,92 → échec.** Contrôle : à peine mieux que n'importe quelle fenêtre de 4 séances sur 2010-2022, moins bien sur 2023-2025. 2026 +8,5 % / +10 % sur 8 trades (descriptif). Effet publié en 1987, pas mesurable ici. Rien changé en live.

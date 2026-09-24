@@ -1027,17 +1027,19 @@
   },
   {
     "id": "prereg-turn-of-month-2026-09-24",
-    "title": "Effet de fin de mois (jour −1 à +3) US100 / US500 : pré-enregistré",
+    "title": "Effet de fin de mois US100/US500 : ÉCHEC à l'entraînement (t 0,92 et 0,48)",
     "date": "2026-09-24",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul. Achat à la clôture du jour −2, vente à la clôture du jour +3 (McConnell & Xu 2008), un trade par mois, spread + swap du broker. Contrôle : autres fenêtres de 4 séances. Critère habituel par indice (US500 principal, US100) : entraînement ≥60 trades, t≥2, deux moitiés positives ; test ≥30 trades, >0.",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul. Achat à la clôture du jour −2, vente à la clôture du jour +3 (McConnell & Xu 2008), un trade par mois, spread + swap du broker. Contrôle : autres fenêtres de 4 séances. Critère habituel par indice (US500 principal, US100) : entraînement ≥60 trades, t≥2, deux moitiés positives ; test ≥30 trades, >0. RÉSULTAT (scripts/runTurnOfMonthStudy.js, data/backtest-input/turn-of-month-study.md) : US500 entraînement 144 trades, +0,079 %, t 0,48 (2010-16 −0,4 %) → ÉCHEC ; US100 +0,180 %, t 0,92 → ÉCHEC. À peine mieux que n'importe quelle fenêtre de 4 séances à l'entraînement (+0,04 à +0,07 point), moins bien au test (−0,22 à −0,26 point). 2026 : +8,5 % / +10 % sur 8 mois (descriptif, 8 trades).",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "D1 (M1)",
     "files": [
-      "data/backtest-input/preregistration-turn-of-month-2026-09-24.md"
+      "data/backtest-input/preregistration-turn-of-month-2026-09-24.md",
+      "scripts/runTurnOfMonthStudy.js",
+      "data/backtest-input/turn-of-month-study.md"
     ]
   }
 ]
