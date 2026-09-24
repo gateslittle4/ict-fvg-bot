@@ -1201,17 +1201,19 @@
   },
   {
     "id": "prereg-silverbullet-rr-2026-09-24",
-    "title": "RRR du Silver Bullet (1:2 à 1:7) au rejeu fidèle au live : pré-enregistré",
+    "title": "RRR du Silver Bullet (1:2 à 1:7) au rejeu fidèle au live : on garde 1:3",
     "date": "2026-09-24",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul (question d'Esdras : stop très petit, et si on augmentait le RRR ?). SB_RR=2..7 dans runLiveReplay.js, config live sinon inchangée, 0,3 %, tranches HistData 2010-14/14-17/17-20/20-23 et broker 2023/24/25/26. Par jambe (US100, US500) : RRR* = meilleur R net 2010-2022, changement seulement si RRR* ≠ 3, t ≥ 2 et deux moitiés positives, puis test 2023-2025 lu une fois : RRR* au moins aussi bon qu'1:3. 2026 et combo/FTMO descriptifs. Déjà connu : ancien modèle choisissait 1:7/1:6, perdants au test. Texte : data/backtest-input/preregistration-silverbullet-rr-2026-09-24.md.",
+    "status": "rejected",
+    "summary": "Pré-enregistré avant calcul (question d'Esdras : stop très petit, et si on augmentait le RRR ?), amendé avant tout résultat pour le temps de calcul : entraînement 2010-2016 (moitiés 2010-13 / 2014-16), test 2023-2025 et 2026 complets. Meilleur à l'entraînement : US100 1:7 (+72,7 R, t 1,34, moitiés +74,5 / −1,9), US500 1:6 (+43,9 R, t 0,93) ; aucun n'a t ≥ 2 ni deux moitiés positives → on garde 1:3 sur les deux paires. Descriptif : au test 2023-2025 le Silver Bullet perd à tous les RRR sur US100 (1:3 : −7,8 R) et presque tous sur US500 (1:3 : −20,2 R ; seul 1:7 +6,0 R) ; 2026 négatif à 1:3 (−11,0 R US100, −17,4 R US500). Rapport : data/backtest-input/silverbullet-rr-study.md.",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "M15",
     "files": [
-      "data/backtest-input/preregistration-silverbullet-rr-2026-09-24.md"
+      "data/backtest-input/preregistration-silverbullet-rr-2026-09-24.md",
+      "data/backtest-input/silverbullet-rr-study.md",
+      "scripts/runSilverBulletRrReport.js"
     ]
   }
 ]
