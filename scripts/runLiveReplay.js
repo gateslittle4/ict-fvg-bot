@@ -20,6 +20,7 @@
 //   le live après un déploiement (le R ne dépend pas du solde, les tranches se recollent) ;
 //   node scripts/runLiveReplay.js summary -> toutes les tranches réunies, par période du protocole et par stratégie.
 import fs from 'node:fs';
+import path from 'node:path';
 import { LiveStrategyEngine } from '../src/liveStrategyEngine.js';
 import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
 import { DailyAlertEngine } from '../src/dailyAlertEngine.js';
@@ -195,8 +196,10 @@ for (const T of times) {
 // fin de tranche : les positions encore ouvertes sortent à leur stop/objectif ou au dernier prix connu (comme runExits(Infinity))
 runExits(Infinity);
 
-fs.mkdirSync('data/live-replay', { recursive: true });
-fs.writeFileSync(`data/live-replay/${TAG}.json`, JSON.stringify({ risk: RISK, startBalance: START_BALANCE, from: firstLive, trades }));
+// REPLAY_OUT=<fichier> : écrit ailleurs que data/live-replay/ (runWeeklyLiveCheck.js - ne jamais mêler un rejeu d'une semaine au résumé 2010-2026).
+const outFile = process.env.REPLAY_OUT || `data/live-replay/${TAG}.json`;
+fs.mkdirSync(path.dirname(outFile), { recursive: true });
+fs.writeFileSync(outFile, JSON.stringify({ risk: RISK, startBalance: START_BALANCE, from: firstLive, trades }));
 const periodsOld = SRC === 'hist' ? [['2010-2016', eng(2010), eng(2017)], ['2017-2022', eng(2017), eng(2023)]] : [['2023-2025', eng(2023), eng(2026)], ['2026', eng(2026), eng(2027)]];
 const stat = (l) => { const n = l.length; const s = l.reduce((a, t) => a + t.r, 0); const m = n ? s / n : 0; const sd = n > 1 ? Math.sqrt(l.reduce((a, t) => a + (t.r - m) ** 2, 0) / (n - 1)) : 0; return `${n} trades, ${n ? Math.round(100 * l.filter((t) => t.r > 0).length / n) : 0} % gagnants, ${s >= 0 ? '+' : ''}${s.toFixed(1)} R, t ${sd ? (m / (sd / Math.sqrt(n))).toFixed(2) : '—'}`; };
 console.log(`\nRejeu live ${SRC}, risque ${RISK} % (${((Date.now() - t0) / 1000).toFixed(0)} s)`);

@@ -1,0 +1,13 @@
+{
+  "2026-09-20": {
+    "to": "2026-09-26",
+    "identical": 6,
+    "liveOnly": 1,
+    "replayOnly": 3,
+    "outOfScope": 2,
+    "liveR": 8.7,
+    "replayR": 12.24,
+    "liveRMissing": 0,
+    "checkedAt": "2026-09-24T21:20:36.020Z"
+  }
+}
