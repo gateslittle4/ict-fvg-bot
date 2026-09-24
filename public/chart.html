@@ -103,10 +103,16 @@
   .draw-toolbar button:hover { background: rgba(76,158,255,0.12); }
   .draw-toolbar button.active { background: var(--blue); color: #fff; }
   .draw-toolbar input[type=color] { width: 28px; height: 24px; border: 0; padding: 0; background: transparent; cursor: pointer; }
-  .draw-toolbar .draw-hint { font-size: 11.5px; color: var(--muted); margin-left: 6px; }
+  /* une seule ligne de hauteur fixe : l'aide qui apparaît/disparaît ne doit jamais décaler le graphique sous le doigt */
+  .draw-toolbar .draw-hint { font-size: 11.5px; color: var(--muted); margin-left: 6px; height: 16px; line-height: 16px; flex: 1 1 200px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #draw-layer { position: absolute; left: 0; top: 0; width: 100%; height: 460px; pointer-events: none; z-index: 3; overflow: hidden; }
   #draw-layer.drawing { pointer-events: all; cursor: crosshair; touch-action: none; }
-  #draw-layer .drw { pointer-events: none; }
+  #draw-layer .drw { pointer-events: all; cursor: move; }
+  #draw-layer.drawing .drw { pointer-events: none; }
+  #draw-layer .hdl { pointer-events: all; cursor: nwse-resize; }
+  #draw-layer .hdl.ns { cursor: ns-resize; }
+  #draw-layer .hdl.ew { cursor: ew-resize; }
+  #draw-layer.dragging { pointer-events: all; }
   #draw-layer.erase .drw { pointer-events: all; cursor: not-allowed; }
   #draw-layer.erase .drw:hover { opacity: 0.45; }
   .price-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -1070,17 +1076,20 @@ function wireGroup(groupId, dataKey, onPick) {
 const DRAW_KEY = (sym) => `apexfvg_drawings_${sym}`;
 const TF_MS = { M15: 900000, H1: 3600000, H4: 14400000, D1: 86400000 };
 const DRAW_HINTS = {
-  cursor: '', rect: 'Clique-glisse pour tracer le rectangle', trend: 'Clique-glisse pour tracer la ligne', hline: 'Clique sur le prix voulu',
+  cursor: 'Clique un dessin pour le sélectionner : glisse-le pour le déplacer, tire ses poignées pour le redimensionner, Suppr pour l\'effacer', rect: 'Clique-glisse pour tracer le rectangle', trend: 'Clique-glisse pour tracer la ligne', hline: 'Clique sur le prix voulu',
   vline: "Clique sur l'heure voulue", text: 'Clique où écrire le texte', erase: "Touche un dessin pour l'effacer",
 };
 let drawTool = 'cursor';
 let drawings = [];
 let drawingsSymbol = null;
 let drawDraft = null;
+let selectedIdx = -1; // dessin sélectionné (poignées visibles), -1 = aucun
+let dragState = null; // { idx, handle: null|{t,p}, start:{t,p}, orig }
 let entryMark = null; // position ouverte : { time, price, bullish, source } - dessinée en V sur la bougie d'entrée
 
 function loadDrawings() {
   drawingsSymbol = currentSymbol;
+  selectedIdx = -1;
   try { drawings = JSON.parse(localStorage.getItem(DRAW_KEY(currentSymbol)) || '[]'); } catch { drawings = []; }
   if (!Array.isArray(drawings)) drawings = [];
   renderDrawings();
@@ -1115,6 +1124,22 @@ const priceToY = (p) => (candleSeries && Number.isFinite(p) ? candleSeries.price
 const yToPrice = (y) => (candleSeries ? candleSeries.coordinateToPrice(y) : null);
 const escSvg = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function hexToRgba(hex, a) { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return `rgba(232,179,57,${a})`; const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+
+// Poignées du dessin sélectionné (2026-09-24, Esdras : « pouvoir modifier la largeur, la longueur et la localisation ») : coins du
+// rectangle, extrémités de la ligne de tendance ; tout dessin se déplace en le faisant glisser.
+function handlesSvg(d) {
+  const pts = d.type === 'rect'
+    ? [['t1', 'p1'], ['t2', 'p1'], ['t1', 'p2'], ['t2', 'p2']]
+    : d.type === 'trend' ? [['t1', 'p1'], ['t2', 'p2']] : [];
+  const selColor = '#ffffff';
+  let out = '';
+  for (const [tk, pk] of pts) {
+    const x = timeToX(d[tk]), y = priceToY(d[pk]);
+    if (x === null || y === null) continue;
+    out += `<circle class="hdl" data-t="${tk}" data-p="${pk}" cx="${x}" cy="${y}" r="6" fill="#0e141b" stroke="${selColor}" stroke-width="2" />`;
+  }
+  return out;
+}
 
 function drawingSvg(d, idx) {
   const c = d.color || '#e8b339';
@@ -1170,7 +1195,9 @@ function renderDrawings() {
   const layer = document.getElementById('draw-layer');
   if (!layer) return;
   const all = drawDraft ? [...drawings, drawDraft] : drawings;
-  layer.innerHTML = all.map((d, i) => drawingSvg(d, i < drawings.length ? i : -1)).join('') + entryMarkSvg();
+  const sel = selectedIdx >= 0 && drawings[selectedIdx] ? drawings[selectedIdx] : null;
+  layer.innerHTML = all.map((d, i) => drawingSvg(d, i < drawings.length ? i : -1)).join('') + entryMarkSvg() + (sel ? handlesSvg(sel) : '');
+  if (sel) { const el = layer.querySelector(`.drw[data-idx="${selectedIdx}"]`); if (el) el.setAttribute('filter', 'drop-shadow(0 0 3px #ffffff)'); }
 }
 
 function setDrawTool(tool) {
@@ -1187,20 +1214,38 @@ function setDrawTool(tool) {
 function initDrawingTools() {
   const layer = document.getElementById('draw-layer');
   document.querySelectorAll('#draw-toolbar [data-tool]').forEach((b) => b.addEventListener('click', () => setDrawTool(b.dataset.tool)));
-  document.getElementById('draw-undo').addEventListener('click', () => { drawings.pop(); saveDrawings(); renderDrawings(); });
+  document.getElementById('draw-undo').addEventListener('click', () => { drawings.pop(); selectedIdx = -1; saveDrawings(); renderDrawings(); });
   document.getElementById('draw-clear').addEventListener('click', () => {
-    if (drawings.length && confirm(`Effacer les ${drawings.length} dessin(s) de ${currentSymbol} ?`)) { drawings = []; saveDrawings(); renderDrawings(); }
+    if (drawings.length && confirm(`Effacer les ${drawings.length} dessin(s) de ${currentSymbol} ?`)) { drawings = []; selectedIdx = -1; saveDrawings(); renderDrawings(); }
   });
   const color = () => document.getElementById('draw-color').value;
+  document.getElementById('draw-color').addEventListener('input', (e) => {
+    if (selectedIdx >= 0 && drawings[selectedIdx]) { drawings[selectedIdx].color = e.target.value; saveDrawings(); renderDrawings(); }
+  });
   const point = (e) => { const r = layer.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; return { t: xToTime(x), p: yToPrice(y) }; };
   layer.addEventListener('pointerdown', (e) => {
     if (drawTool === 'erase') {
       const hit = e.target.closest ? e.target.closest('.drw') : null;
       const idx = hit ? Number(hit.dataset.idx) : -1;
-      if (idx >= 0) { drawings.splice(idx, 1); saveDrawings(); renderDrawings(); }
+      if (idx >= 0) { drawings.splice(idx, 1); selectedIdx = -1; saveDrawings(); renderDrawings(); }
       return;
     }
-    if (drawTool === 'cursor') return;
+    if (drawTool === 'cursor') {
+      const hdl = e.target.closest ? e.target.closest('.hdl') : null;
+      const hit = e.target.closest ? e.target.closest('.drw') : null;
+      if (!hdl && !hit) return;
+      const idx = hdl ? selectedIdx : Number(hit.dataset.idx);
+      if (!(idx >= 0) || !drawings[idx]) return;
+      const pt = point(e);
+      if (pt.t === null || pt.p === null) return;
+      e.preventDefault(); e.stopPropagation();
+      selectedIdx = idx;
+      dragState = { idx, handle: hdl ? { t: hdl.dataset.t, p: hdl.dataset.p } : null, start: pt, orig: { ...drawings[idx] } };
+      layer.classList.add('dragging');
+      chart.applyOptions({ handleScroll: false, handleScale: false });
+      renderDrawings();
+      return;
+    }
     const pt = point(e);
     if (pt.t === null || pt.p === null) return;
     e.preventDefault();
@@ -1223,11 +1268,40 @@ function initDrawingTools() {
     drawDraft.t2 = pt.t; drawDraft.p2 = pt.p;
     renderDrawings();
   });
+  window.addEventListener('pointermove', (e) => {
+    if (!dragState) return;
+    const pt = point(e);
+    if (pt.t === null || pt.p === null) return;
+    const d = drawings[dragState.idx], o = dragState.orig;
+    if (!d) return;
+    if (dragState.handle) { d[dragState.handle.t] = pt.t; d[dragState.handle.p] = pt.p; }
+    else {
+      const dt = pt.t - dragState.start.t, dp = pt.p - dragState.start.p;
+      for (const k of ['t1', 't2']) if (Number.isFinite(o[k])) d[k] = o[k] + dt;
+      for (const k of ['p1', 'p2']) if (Number.isFinite(o[k])) d[k] = o[k] + dp;
+    }
+    renderDrawings();
+  });
+  window.addEventListener('pointerup', () => {
+    if (!dragState) return;
+    dragState = null;
+    layer.classList.remove('dragging');
+    chart.applyOptions({ handleScroll: true, handleScale: true });
+    saveDrawings();
+    renderDrawings();
+  });
+  // Clic ailleurs sur le graphique : désélectionne ; Suppr / Retour arrière : efface le dessin sélectionné.
+  chart.subscribeClick(() => { if (selectedIdx >= 0 && !dragState) { selectedIdx = -1; renderDrawings(); } });
+  document.addEventListener('keydown', (e) => {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIdx >= 0 && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) {
+      drawings.splice(selectedIdx, 1); selectedIdx = -1; saveDrawings(); renderDrawings(); e.preventDefault();
+    }
+  });
   const finish = () => {
     if (!drawDraft) return;
     const d = drawDraft; drawDraft = null;
     const x1 = timeToX(d.t1), x2 = timeToX(d.t2), y1 = priceToY(d.p1), y2 = priceToY(d.p2);
-    if (x1 !== null && x2 !== null && y1 !== null && y2 !== null && Math.hypot(x2 - x1, y2 - y1) > 4) { drawings.push(d); saveDrawings(); }
+    if (x1 !== null && x2 !== null && y1 !== null && y2 !== null && Math.hypot(x2 - x1, y2 - y1) > 4) { drawings.push(d); selectedIdx = drawings.length - 1; saveDrawings(); }
     renderDrawings();
     setDrawTool('cursor');
   };
