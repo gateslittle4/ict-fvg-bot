@@ -1007,5 +1007,20 @@
       "data/backtest-input/preregistration-intraday-momentum-2026-09-23.md",
       "data/backtest-input/intraday-momentum-study.md"
     ]
+  },
+  {
+    "id": "prereg-overnight-2026-09-24",
+    "title": "Achat de nuit (clôture 16:00 → ouverture 9:30) US100 / US500 : pré-enregistré",
+    "date": "2026-09-24",
+    "status": "inconclusive",
+    "summary": "Écrit avant le calcul (décomposition brute séance/nuit 2019-2026 déjà vue, déclarée). Achat à la clôture 15:59 NY (ask), vente à l'ouverture 9:30 suivante (bid), tous les jours, week-ends compris, sans stop ; spread par défaut + swap broker. Contrôles : 24 h et séance seule (dérive), sans week-ends. Critère habituel par indice : entraînement 2010-2022 ≥60 trades, t≥2, deux moitiés positives ; test 2023-2025 ≥30 trades, >0.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M1",
+    "files": [
+      "data/backtest-input/preregistration-overnight-2026-09-24.md"
+    ]
   }
 ]
