@@ -60,14 +60,38 @@ function apply(trades, from, to, refAt) {
   return { without: L.reduce((a, x) => a + x.v, 0), withRule, after, stoppedAt, n: L.length };
 }
 
+// --seed : écrit data/kill-switch-seed.json, le point de départ du filet de sécurité EN DIRECT (src/killSwitch.js) - l'évaluation 1
+// (référence = pire baisse 2010-2022, règle appliquée depuis le 01/01/2023) jouée jusqu'à la fin des données ; le live continue à
+// partir de là avec les vrais trades. B est exclu (sa baisse est en % du nominal, pas en R : les R du live ne sont pas comparables).
+function writeSeed(legs) {
+  const seedTime = Math.max(...['US100', 'US500'].map((s) => { const txt = zlib.gunzipSync(fs.readFileSync(`data/real-m1-full/${s}.csv.gz`)).toString('latin1').trimEnd(); return Number(txt.slice(txt.lastIndexOf('\n') + 1).split(',')[0]); }));
+  const out = { generatedBy: 'scripts/runKillSwitchStudy.js --seed', rule: 'preregistration-kill-switch-2026-09-24.md, évaluation 1', multiple: MULT, appliedFrom: new Date(Y(2023)).toISOString(), seedTime: new Date(seedTime).toISOString(), legs: {} };
+  for (const [name, leg] of Object.entries(legs)) {
+    if (leg.unit !== 'R') continue;
+    const key = name === 'A (ORB) US100' ? 'orb5 US100' : name;
+    const reference = maxDD(leg.trades.filter((x) => x.t < Y(2023)).map((x) => x.v));
+    let c = 0, pk = 0, stoppedAt = null;
+    for (const x of leg.trades.filter((x) => x.t >= Y(2023) && x.t <= seedTime)) {
+      if (stoppedAt !== null) break;
+      c += x.v; pk = Math.max(pk, c);
+      if (reference > 0 && pk - c > MULT * reference) stoppedAt = x.t;
+    }
+    out.legs[key] = { reference: +reference.toFixed(2), limit: +(MULT * reference).toFixed(2), cumR: +c.toFixed(2), peakR: +pk.toFixed(2), stoppedAt: stoppedAt ? new Date(stoppedAt).toISOString() : null };
+  }
+  fs.writeFileSync('data/kill-switch-seed.json', JSON.stringify(out, null, 2) + '\n');
+  console.log(JSON.stringify(out, null, 2));
+}
+
 function main() {
   const combo = {};
-  for (const f of fs.readdirSync('data/live-replay')) for (const t of JSON.parse(fs.readFileSync(`data/live-replay/${f}`, 'utf8')).trades) {
+  // Seules les tranches du rejeu fidèle (jamais les variantes, ex. *-sbrr<n>.json du test des RRR, ni *-spread*.json).
+  for (const f of fs.readdirSync('data/live-replay').filter((x) => /^(hist|broker)-\d{4}-\d{4}\.json$/.test(x))) for (const t of JSON.parse(fs.readFileSync(`data/live-replay/${f}`, 'utf8')).trades) {
     (combo[`${t.source} ${t.symbol}`] ??= []).push({ t: t.entryTime + OFF, v: t.r });
   }
   const legs = Object.fromEntries(Object.entries(combo).map(([k, l]) => [k, { unit: 'R', trades: l.sort((a, b) => a.t - b.t) }]));
   legs['A (ORB) US100'] = { unit: 'R', trades: momentumLeg('US100', 'orb') };
   legs['B (noise area) US500'] = { unit: '%', trades: momentumLeg('US500', 'noise') };
+  if (process.argv.includes('--seed')) return writeSeed(legs);
   const md = ['# Arrêt d\'une stratégie si sa baisse dépasse 1,5 × sa pire baisse historique — résultat du pré-enregistrement', '',
     'Règles : `data/backtest-input/preregistration-kill-switch-2026-09-24.md` (commité avant ce calcul, rien changé depuis). Script : `scripts/runKillSwitchStudy.js`. Baisse = recul du R cumulé depuis son plus haut (B en % du nominal). Jambe arrêtée définitivement dès que sa baisse dépasse 1,5 × la référence.', ''];
   const verdicts = [];

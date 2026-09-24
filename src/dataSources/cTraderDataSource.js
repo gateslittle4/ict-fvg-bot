@@ -42,6 +42,7 @@ import { createSpreadAggregator, toSpreadRow, upsertSpreadRows, logOrderEvent, e
 import { DailyAlertEngine } from '../dailyAlertEngine.js';
 import { IntradayMomentumEngine, TickBarBuilder, ORB_STRATEGY, NOISE_STRATEGY } from '../intradayMomentumEngine.js';
 import { isStrategyEnabled, loadStrategySwitches } from '../strategySwitches.js';
+import { isLegAllowed, refreshKillSwitch } from '../killSwitch.js';
 
 // 2026-09-22: single source of truth for the daily strategy's identifier, used by _loadDailyAlertEngines (registers the engine), the mutual-
 // exclusion check and the fill/close handlers below - was two inconsistent literals ('rsi2-daily' vs 'rsi2daily') before this constant, which
@@ -406,6 +407,11 @@ export class CTraderDataSource {
     // (persistence silently skipped) unless SUPABASE_URL/SUPABASE_SERVICE_KEY
     // are set.
     this.tradeLogClient = createTradeLogClient();
+    // 2026-09-24: filet de sécurité (src/killSwitch.js) - état recalculé depuis le journal réel au démarrage, puis après chaque clôture.
+    refreshKillSwitch(this.tradeLogClient).then((ks) => {
+      const stopped = Object.entries(ks.legs).filter(([, l]) => !l.allowed).map(([k]) => k);
+      console.log(`[kill-switch] ${Object.keys(ks.legs).length} jambes suivies ; arrêtées : ${stopped.length ? stopped.join(', ') : 'aucune'}`);
+    }).catch((err) => console.warn(`[kill-switch] démarrage : ${err.message}`));
     // Demo tracking (2026-09-20): spread per 15-minute bucket -> bot_spread_samples, flushed every minute once a bucket has ended
     this.spreadAggregator = createSpreadAggregator();
     this.lastSpreadBySymbol = new Map();
@@ -2794,6 +2800,12 @@ export class CTraderDataSource {
     // réellement") for the pipeline itself to be verifiable, not just
     // fixed - this line plus the ones below at submit/confirm time close
     // that gap.
+    // 2026-09-24: filet de sécurité - une jambe (stratégie + paire) arrêtée par la règle pré-enregistrée (ou à la main) ne passe plus d'ordre.
+    if (!isLegAllowed(signal.source, symbolName)) {
+      console.log(`[auto-execute] ${symbolName} source=${signal.source}: skipped, leg stopped by the kill switch (see /api/kill-switch).`);
+      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'skipped', side: signal.suggestedSide, price: signal.entryPrice, detail: 'kill switch: leg stopped (drawdown > 1.5x its worst 2010-2022 drawdown, or stopped by hand)' });
+      return;
+    }
     console.log(`[auto-execute] entry signal received: ${symbolName} source=${signal.source} side=${signal.suggestedSide} id=${signal.id}`);
     const signalTimeMs = Date.now();
     logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'signal', side: signal.suggestedSide, price: signal.entryPrice, detail: `stop=${signal.stopPrice} target=${signal.targetPrice}` });
@@ -3118,7 +3130,7 @@ export class CTraderDataSource {
               if (Date.now() <= queued.until) this._executeMomentumEvent(queued.ev).catch((err) => console.error(`[A/B] ${info.symbolName}: queued re-entry failed: ${err.message}`));
             }
           }
-          logClosedTrade(this.tradeLogClient, {
+          Promise.resolve(logClosedTrade(this.tradeLogClient, {
             symbol: info.symbolName,
             source: info.source,
             direction: info.direction,
@@ -3134,7 +3146,7 @@ export class CTraderDataSource {
             pnlUsd: pnl,
             balanceAfter: store.balance,
             extra: extraTradeFields(info, Number(event.deal.executionPrice)),
-          });
+          })).then(() => refreshKillSwitch(this.tradeLogClient)).catch((err) => console.warn(`[kill-switch] rafraîchissement après clôture : ${err.message}`));
           // 2026-09-14 (found live, monitoring BTCUSD right after the
           // null-orderId fix): the engine's own belief (openPositions) was
           // NEVER cleared by a REAL confirmed close - only by its OWN

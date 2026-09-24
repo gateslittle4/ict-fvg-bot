@@ -22,6 +22,7 @@ import { startKeepAlive } from './keepAlive.js';
 import { buildHealthReport } from './healthReport.js';
 import { fetchPerformanceBySymbol, createTradeLogClient } from './dataSources/supabaseTradeLog.js';
 import { getStrategySwitches, setStrategySwitches } from './strategySwitches.js';
+import { getKillSwitchState, setKillSwitchOverride, refreshKillSwitch } from './killSwitch.js';
 import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
@@ -232,6 +233,18 @@ app.get('/api/strategy-switches', (req, res) => res.json({ switches: getStrategy
 app.post('/api/admin/strategy-switches', async (req, res) => {
   if (!requireAdminToken(req, res)) return;
   const result = await setStrategySwitches(switchClient(), req.body || {});
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+// 2026-09-24 - filet de sécurité (src/killSwitch.js) : état public par jambe ; forcer une jambe avec le code administrateur
+// (corps { leg: 'silverbullet US500', enabled: true | false | null } - null = retour à la règle automatique).
+// Calculé aussi ici au démarrage (le connecteur cTrader le fait déjà ; sans connecteur, ex. mode démo, la page resterait vide).
+refreshKillSwitch(switchClient()).catch((err) => console.warn(`[kill-switch] ${err.message}`));
+app.get('/api/kill-switch', (req, res) => res.json(getKillSwitchState()));
+app.post('/api/admin/kill-switch', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const { leg, enabled } = req.body || {};
+  const result = await setKillSwitchOverride(switchClient(), leg, enabled);
   res.status(result.ok ? 200 : 400).json(result);
 });
 

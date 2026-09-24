@@ -1,0 +1,72 @@
+{
+  "generatedBy": "scripts/runKillSwitchStudy.js --seed",
+  "rule": "preregistration-kill-switch-2026-09-24.md, évaluation 1",
+  "multiple": 1.5,
+  "appliedFrom": "2023-01-01T00:00:00.000Z",
+  "seedTime": "2026-09-21T03:43:00.000Z",
+  "legs": {
+    "divergence US500": {
+      "reference": 21.04,
+      "limit": 31.56,
+      "cumR": 18.11,
+      "peakR": 28.78,
+      "stoppedAt": null
+    },
+    "silverbullet US500": {
+      "reference": 24.32,
+      "limit": 36.48,
+      "cumR": -17.25,
+      "peakR": 20.12,
+      "stoppedAt": "2025-09-16T14:30:00.000Z"
+    },
+    "silverbullet US100": {
+      "reference": 38.01,
+      "limit": 57.01,
+      "cumR": -18.73,
+      "peakR": 0,
+      "stoppedAt": null
+    },
+    "cbdr US100": {
+      "reference": 42.73,
+      "limit": 64.09,
+      "cumR": -16.24,
+      "peakR": 13.12,
+      "stoppedAt": null
+    },
+    "nwog US100": {
+      "reference": 14,
+      "limit": 21,
+      "cumR": 2.75,
+      "peakR": 3.75,
+      "stoppedAt": null
+    },
+    "divergence US100": {
+      "reference": 47.04,
+      "limit": 70.56,
+      "cumR": 34.02,
+      "peakR": 34.02,
+      "stoppedAt": null
+    },
+    "weeklysweep US500": {
+      "reference": 33.99,
+      "limit": 50.99,
+      "cumR": 21.74,
+      "peakR": 21.74,
+      "stoppedAt": null
+    },
+    "rsi2-daily US500": {
+      "reference": 12.91,
+      "limit": 19.36,
+      "cumR": 4.21,
+      "peakR": 4.21,
+      "stoppedAt": null
+    },
+    "orb5 US100": {
+      "reference": 57.53,
+      "limit": 86.29,
+      "cumR": 78.09,
+      "peakR": 117.99,
+      "stoppedAt": null
+    }
+  }
+}

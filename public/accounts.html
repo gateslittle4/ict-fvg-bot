@@ -145,6 +145,15 @@
       <div class="actions"><button class="primary" id="sw-save">Enregistrer</button></div>
       <div class="msg" id="sw-msg"></div>
     </div>
+    <div class="card" id="killswitch-card">
+      <h2>Filet de sécurité</h2>
+      <p class="hint">Une stratégie est arrêtée automatiquement dès que sa baisse (depuis le 01/01/2023, rejeu puis vrais trades) dépasse 1,5 × sa pire baisse de 2010-2022. Arrêtée = plus de nouveaux trades ; une position déjà ouverte se ferme normalement. « Réactiver » repart de zéro à partir de maintenant.</p>
+      <table id="ks-table">
+        <thead><tr><th>Stratégie</th><th>Baisse actuelle</th><th>Limite</th><th>Statut</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="msg" id="ks-msg"></div>
+    </div>
     <div class="card">
       <h2>Comptes déjà enregistrés</h2>
       <table id="accounts-table">
@@ -324,6 +333,34 @@ async function loadSwitches() {
     showMsg(document.getElementById('sw-msg'), 'Lecture impossible : ' + err.message, false);
   }
 }
+const legName = (k) => k.replace('orb5', 'A · ORB 5 min').replace('silverbullet', 'Silver Bullet').replace('divergence', 'Divergence').replace('weeklysweep', 'Weekly Sweep').replace('nwog', 'NWOG').replace('cbdr', 'CBDR').replace('rsi2-daily', 'RSI(2) journalier');
+async function loadKillSwitch() {
+  const tbody = document.querySelector('#ks-table tbody');
+  try {
+    const { legs } = await (await fetch('/api/kill-switch')).json();
+    tbody.innerHTML = '';
+    for (const [k, l] of Object.entries(legs)) {
+      const tr = document.createElement('tr');
+      const status = l.allowed ? (l.override?.enabled === true ? 'active (réactivée à la main)' : 'active') : `ARRÊTÉE ${l.stoppedBy === 'manuel' ? 'à la main' : 'par la règle'} le ${String(l.stoppedAt).slice(0, 10)}`;
+      tr.innerHTML = `<td>${legName(k)}</td><td>${l.drawdownR.toFixed(1)} R</td><td>${l.limit.toFixed(1)} R</td><td>${status}</td>
+        <td>${l.allowed ? `<button data-leg="${k}" data-enabled="false">Arrêter</button>` : `<button data-leg="${k}" data-enabled="true">Réactiver</button>`}${l.override ? ` <button data-leg="${k}" data-enabled="null">Règle auto</button>` : ''}</td>`;
+      tbody.appendChild(tr);
+    }
+    tbody.querySelectorAll('[data-leg]').forEach((btn) => btn.addEventListener('click', async () => {
+      const enabled = JSON.parse(btn.dataset.enabled);
+      if (enabled === true && !confirm(`Réactiver ${legName(btn.dataset.leg)} ? La règle l'avait arrêtée ; la mesure repartira de zéro.`)) return;
+      try {
+        await api('/api/admin/kill-switch', { method: 'POST', body: JSON.stringify({ leg: btn.dataset.leg, enabled }) });
+        showMsg(document.getElementById('ks-msg'), 'Enregistré.', true);
+        loadKillSwitch();
+      } catch (err) {
+        showMsg(document.getElementById('ks-msg'), 'Erreur : ' + err.message, false);
+      }
+    }));
+  } catch (err) {
+    showMsg(document.getElementById('ks-msg'), 'Lecture impossible : ' + err.message, false);
+  }
+}
 document.getElementById('sw-save').addEventListener('click', async () => {
   const msg = document.getElementById('sw-msg');
   try {
@@ -349,6 +386,7 @@ document.getElementById('unlock-btn').addEventListener('click', async () => {
     document.getElementById('app').hidden = false;
     loadAccounts();
     loadSwitches();
+    loadKillSwitch();
   } catch (err) {
     showMsg(gateMsg, 'Token invalide ou fonctionnalité désactivée côté serveur.', false);
   }
@@ -409,6 +447,7 @@ if (TOKEN) {
     document.getElementById('app').hidden = false;
     loadAccounts();
     loadSwitches();
+    loadKillSwitch();
   }).catch(() => { localStorage.removeItem(TOKEN_KEY); TOKEN = ''; });
 }
 
