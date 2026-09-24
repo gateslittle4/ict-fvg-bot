@@ -1099,17 +1099,19 @@
   },
   {
     "id": "prereg-streak-block-2026-09-24",
-    "title": "Bloquer une stratégie après 3 pertes, réactiver après un gain virtuel : pré-enregistré",
+    "title": "Bloquer après 3 pertes, réactiver après un gain virtuel : REJETÉ (nuisible)",
     "date": "2026-09-24",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul. Par jambe : 3 pertes consécutives prises → bloquée ; trades suivis à blanc ; premier gagnant virtuel → réactivée. Combo live (rejeu fidèle) + A en R, B à part. Utile si, à l'entraînement, R moyen des trades pris − R moyen des sautés > 0 avec t ≥ 2, deux moitiés positives, puis > 0 au test. K=2 et 4 en sensibilité seulement.",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul. Par jambe : 3 pertes consécutives prises → bloquée ; trades suivis à blanc ; premier gagnant virtuel → réactivée. Combo live (rejeu fidèle) + A en R, B à part. Utile si, à l'entraînement, R moyen des trades pris − R moyen des sautés > 0 avec t ≥ 2, deux moitiés positives, puis > 0 au test. K=2 et 4 en sensibilité seulement. RÉSULTAT (scripts/runStreakBlockStudy.js, data/backtest-input/streak-block-study.md) : entraînement pris +0,087 R/trade, sautés +0,151 R (écart −0,063, t −1,17) ; test pris +0,008, sautés +0,159 (t −1,48). R total : entraînement +776 → +346 R, test +128 → +8 R. Après 3 pertes, le trade suivant est MEILLEUR que la moyenne (+0,151 contre +0,114) : les pertes ne se suivent pas, la règle saute surtout les gains qui suivent. K=2 et K=4 aussi nuisibles.",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "M15/M1",
     "files": [
-      "data/backtest-input/preregistration-streak-block-2026-09-24.md"
+      "data/backtest-input/preregistration-streak-block-2026-09-24.md",
+      "scripts/runStreakBlockStudy.js",
+      "data/backtest-input/streak-block-study.md"
     ]
   }
 ]

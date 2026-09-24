@@ -6903,3 +6903,7 @@ Vérifié avant : aucune position ni ordre en attente (`/api/account`), solde 11
 ## 2026-09-24 — Filtre « journées de tendance » (détection du régime) pour A et B : pré-enregistré, REJETÉ
 
 Pré-enregistré (`e51e013`) ; `scripts/runTrendDayFilterStudy.js` → `data/backtest-input/trend-day-filter-study.md`. Trader A/B seulement si la part de journées de tendance des 20 séances précédentes ≥ sa médiane des 250 précédentes. **A-US100 : jours « actifs » +0,139 R contre « inactifs » +0,191 R (t −0,53) ; B-US500 : écart +0,003 % (t 0,20) → rejeté**, test sans effet. En 2026 le filtre aurait été actif 2 jours sur 3 et n'aurait pas évité les pertes. Le régime récent ne prédit pas le suivant (3e échec de détection de régime après le « 12 mois » et le VIX). A et B restent sans filtre. Rien changé en live.
+
+## 2026-09-24 — Idée d'Esdras « bloquer une stratégie après une série de pertes, la réactiver après un gain virtuel » : pré-enregistrée, REJETÉE (nuisible)
+
+Pré-enregistré (`41b7b47`) ; `scripts/runStreakBlockStudy.js` → `data/backtest-input/streak-block-study.md`. Combo live (rejeu fidèle) + A, K = 3. **Les trades sautés valent MIEUX que les trades pris** : entraînement +0,151 contre +0,087 R/trade (t −1,17), test +0,159 contre +0,008. R total : entraînement +776 → +346 R ; test +128 → +8 R. Après 3 pertes de suite, le trade suivant d'une jambe est meilleur que la moyenne : les pertes ne s'enchaînent pas, la règle fait rater les gains qui suivent. K = 2 et 4 aussi nuisibles. Rien changé en live.
