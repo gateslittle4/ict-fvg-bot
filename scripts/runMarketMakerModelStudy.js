@@ -6,7 +6,12 @@ import fs from 'node:fs';
 import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { readCsvGz } from './lib/m1Data.js';
 import { OFF } from './lib/m1Data.js';
-import { marketMakerTrades } from './lib/marketMakerModel.js';
+import { marketMakerTrades, MMM_RULES } from './lib/marketMakerModel.js';
+
+// --amendment : version de preregistration-market-maker-model-amendment-2026-09-25.md (consolidation 12 H1 dans 4 ATR, choisie sur la fréquence seule).
+const AMEND = process.argv.includes('--amendment');
+const RULES = AMEND ? { ...MMM_RULES, ocBars: 12, ocMaxAtr: 4 } : MMM_RULES;
+const OUT = AMEND ? 'data/backtest-input/market-maker-model-amendment-study.md' : 'data/backtest-input/market-maker-model-study.md';
 
 const Y = (y) => Date.UTC(y, 0, 1);
 const PERIODS = [['Entraînement 2011-2022', Y(2010), Y(2023)], ['  2011-2016', Y(2010), Y(2017)], ['  2017-2022', Y(2017), Y(2023)], ['Test 2023-2025', Y(2023), Y(2026)], ['2026 (→ 21/09)', Y(2026), Y(2027)]];
@@ -22,14 +27,15 @@ for (const sym of ['US100', 'US500']) {
   const hist = slice(utc(readCsvGz(`data/histdata-m1/${sym}.csv.gz`)), Y(2010), Y(2023));
   const b = slice(broker, Y(2022) + 300 * 86400000, Infinity); // un peu de 2022 pour l'ATR et la première consolidation de 2023
   for (const [S, keep] of [[hist, (t) => t < Y(2023)], [b, (t) => t >= Y(2023)]]) {
-    for (const tr of marketMakerTrades(S, spreadAt)) if (keep(tr.entryTime)) all.push({ ...tr, symbol: sym });
+    for (const tr of marketMakerTrades(S, spreadAt, RULES)) if (keep(tr.entryTime)) all.push({ ...tr, symbol: sym });
   }
   console.error(sym, all.filter((t) => t.symbol === sym).length, 'trades');
 }
 const st = (l) => { const n = l.length, s = l.reduce((a, t) => a + t.r, 0), m = n ? s / n : 0; const sd = n > 1 ? Math.sqrt(l.reduce((a, t) => a + (t.r - m) ** 2, 0) / (n - 1)) : 0; return { n, s, m, t: sd ? m / (sd / Math.sqrt(n)) : 0, w: n ? l.filter((t) => t.r > 0).length / n * 100 : 0 }; };
 const sgn = (x, d = 1) => (x >= 0 ? '+' : '') + x.toFixed(d);
 const inP = (a, b) => (t) => t.entryTime >= a && t.entryTime < b;
-const md = ['# Market Maker Buy / Sell Model (version mécanique) — résultat du pré-enregistrement', '',
+const md = [AMEND ? '# Market Maker Buy / Sell Model — AMENDEMENT (consolidation 12 H1 dans 4 ATR) — résultat' : '# Market Maker Buy / Sell Model (version mécanique) — résultat du pré-enregistrement', '',
+  ...(AMEND ? ['Amendement : `data/backtest-input/preregistration-market-maker-model-amendment-2026-09-25.md` (commité avant ce calcul ; seuil choisi sur le nombre de consolidations seul : 939 / 916 sur 2011-2022). Les R de la version stricte avaient été vus (déclaré).', ''] : []),
   'Règles : `data/backtest-input/preregistration-market-maker-model-2026-09-25.md` (commité avant ce calcul). Script : `scripts/runMarketMakerModelStudy.js`, règles `scripts/lib/marketMakerModel.js` (testées). R par trade, réglé à la minute, spread par défaut.', '',
   '| Paire | Période | Trades | Gagnants | Achats / ventes | Cible moyenne | R net | R/trade | t |', '|---|---|---|---|---|---|---|---|---|'];
 for (const sym of ['US100 + US500', 'US100', 'US500']) for (const [lab, a, b] of PERIODS) {
@@ -43,5 +49,5 @@ const verdict = tr.n < 60 ? '**NON CONCLUANT** (moins de 60 trades à l\'entraî
 md.push('', '## Verdict (US100 + US500, critère pré-enregistré)', '', `Entraînement : ${tr.n} trades, ${sgn(tr.m, 3)} R/trade, t ${tr.t.toFixed(2)}, 2011-2016 ${sgn(h1.s)} R, 2017-2022 ${sgn(h2.s)} R ; test 2023-2025 : ${te.n} trades, ${sgn(te.s)} R → ${verdict}`,
   '', '## Sorties (toutes périodes)', '', ...['target', 'stop', 'time'].map((r) => `- ${r} : ${all.filter((t) => t.reason === r).length}`),
   '', '## Limites', '', '- UNE traduction mécanique d\'un modèle visuel ; HistData ≠ prix du broker ; spread par défaut, pas de glissement ; bougies H1/M15 en heures UTC (les week-ends comptent comme des bougies manquantes).');
-fs.writeFileSync('data/backtest-input/market-maker-model-study.md', md.join('\n') + '\n');
+fs.writeFileSync(OUT, md.join('\n') + '\n');
 console.log(md.join('\n'));

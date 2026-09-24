@@ -1239,10 +1239,10 @@
   },
   {
     "id": "prereg-market-maker-model-2026-09-25",
-    "title": "Market Maker Buy / Sell Model (ICT), version mécanique : NON CONCLUANT (trop peu de trades)",
+    "title": "Market Maker Buy / Sell Model (ICT), version mécanique : rejeté (strict = non concluant, amendement = échec)",
     "date": "2026-09-25",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul (Esdras : « prends ta définition »). Consolidation de départ 12 H1 ≤ 1,5 ATR ; sortie en 24 H1 ; descente ≥ 3 ATR avec un plus bas fractal H1 balayé ; MSS M15 ; FVG de déplacement ; LIMIT au bord du FVG 4 h ; stop plus bas extrême ; cible OCL (≥ 2R) ; sortie à 5 jours. US100 + US500 réunis. Critère projet (≥ 60 trades, t ≥ 2, deux moitiés positives, test 2023-2025 > 0). Texte : data/backtest-input/preregistration-market-maker-model-2026-09-25.md. RÉSULTAT (scripts/runMarketMakerModelStudy.js -> data/backtest-input/market-maker-model-study.md) : 22 trades à l'entraînement (US100 10, US500 12), +4,3 R, t 0,39 ; 2011-2016 +7,9 R, 2017-2022 -3,6 R ; test 2023-2025 5 trades -1,5 R ; 2026 aucun -> NON CONCLUANT (< 60). Goulot : la règle 1 (12 H1 dans 1,5 ATR) ne trouve que ~35 consolidations en 12 ans par paire. Ni validé ni réfuté ; toute version plus large exige un nouveau pré-enregistrement (les R de cette version ont été vus).",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul (Esdras : « prends ta définition »). Consolidation de départ 12 H1 ≤ 1,5 ATR ; sortie en 24 H1 ; descente ≥ 3 ATR avec un plus bas fractal H1 balayé ; MSS M15 ; FVG de déplacement ; LIMIT au bord du FVG 4 h ; stop plus bas extrême ; cible OCL (≥ 2R) ; sortie à 5 jours. US100 + US500 réunis. Critère projet (≥ 60 trades, t ≥ 2, deux moitiés positives, test 2023-2025 > 0). Texte : data/backtest-input/preregistration-market-maker-model-2026-09-25.md. RÉSULTAT (scripts/runMarketMakerModelStudy.js -> data/backtest-input/market-maker-model-study.md) : 22 trades à l'entraînement (US100 10, US500 12), +4,3 R, t 0,39 ; 2011-2016 +7,9 R, 2017-2022 -3,6 R ; test 2023-2025 5 trades -1,5 R ; 2026 aucun -> NON CONCLUANT (< 60). Goulot : la règle 1 (12 H1 dans 1,5 ATR) ne trouve que ~35 consolidations en 12 ans par paire. Ni validé ni réfuté ; toute version plus large exige un nouveau pré-enregistrement (les R de cette version ont été vus). AMENDEMENT (69ce4e2, figé avant calcul, seuil choisi sur la fréquence seule) : consolidation 12 H1 dans 4 ATR -> 404 trades à l'entraînement, 19 % gagnants, cible moyenne 5,7 R, +16,0 R, +0,039 R/trade, t 0,31 (2011-2016 +14,6 R, 2017-2022 +1,3 R) -> ÉCHEC à l'entraînement. Test 2023-2025 : 103 trades +3,3 R ; 2026 : 24 trades -19,1 R. Gagne à peine plus souvent que le hasard (~15 % pour une cible à 5,7 R). data/backtest-input/market-maker-model-amendment-study.md.",
     "markets": [
       "US100",
       "US500"
@@ -1252,7 +1252,9 @@
       "data/backtest-input/preregistration-market-maker-model-2026-09-25.md",
       "data/backtest-input/market-maker-model-study.md",
       "scripts/runMarketMakerModelStudy.js",
-      "scripts/lib/marketMakerModel.js"
+      "scripts/lib/marketMakerModel.js",
+      "data/backtest-input/preregistration-market-maker-model-amendment-2026-09-25.md",
+      "data/backtest-input/market-maker-model-amendment-study.md"
     ]
   }
 ]
