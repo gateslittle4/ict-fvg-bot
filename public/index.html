@@ -1195,6 +1195,9 @@ const sourceLabel = (s) => {
   // Same gap as journal.html's own copy - see its comment (cbdr went live
   // on US100 2026-09-18 but was missing from every label lookup).
   if (s.source === 'cbdr') return 'CBDR';
+  if (s.source === 'orb5') return 'A · ORB 5 min';
+  if (s.source === 'noise') return 'B · Noise area';
+  if (s.source === 'rsi2-daily') return 'RSI(2) journalier';
   return 'manuel/inconnu';
 };
 
@@ -1361,7 +1364,7 @@ function renderStatus(data) {
 // through to the `|| r.source` raw-string fallback for every Judas Swing
 // mismatch alert instead of showing "Judas Swing". cbdr added alongside it
 // (went live on US100 today, was missing from this map entirely).
-const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judaswing: 'Judas Swing', weeklysweep: 'Weekly Sweep', breakerblock: 'Breaker Block', silverbullet: 'Silver Bullet', cbdr: 'CBDR' };
+const sourceLabelFull = { fvg: 'FVG', divergence: 'Divergence', nwog: 'NWOG', judaswing: 'Judas Swing', weeklysweep: 'Weekly Sweep', breakerblock: 'Breaker Block', silverbullet: 'Silver Bullet', cbdr: 'CBDR', orb5: 'A · ORB 5 min', noise: 'B · Noise area', 'rsi2-daily': 'RSI(2) journalier' };
 function reconciliationExplanation(r) {
   if (r.status === 'match') return '✓ correspond';
   // 'none' (2026-09-14, bug réel trouvé par Esdras : "Écart bot/courtier ⚠
@@ -1610,7 +1613,7 @@ async function refreshAccount() {
 
 // Same two fixes as sourceLabelFull just above: 'judaswing' (lowercase, the
 // real source string), and cbdr added.
-const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judaswing: 'Judas', weeklysweep: 'W.Sweep', breakerblock: 'Breaker', silverbullet: 'SilverB.', cbdr: 'CBDR' };
+const sourceLabelShort = { fvg: 'FVG', divergence: 'Div.', nwog: 'NWOG', judaswing: 'Judas', weeklysweep: 'W.Sweep', breakerblock: 'Breaker', silverbullet: 'SilverB.', cbdr: 'CBDR', orb5: 'A · ORB', noise: 'B · Noise', 'rsi2-daily': 'RSI(2)' };
 async function refreshOrderLog() {
   const bodyEl = document.getElementById('order-log-body');
   try {

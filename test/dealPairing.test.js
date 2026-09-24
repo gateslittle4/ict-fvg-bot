@@ -137,6 +137,20 @@ test('parseSourceFromLabel: recognizes each auto-executed source', () => {
   assert.equal(parseSourceFromLabel('pyramid-add-US100'), 'pyramid');
 });
 
+test('parseSourceFromLabel: A, B and RSI(2) daily (their own engines) are recognized - first real A trade of 2026-09-24 came back source: null', () => {
+  assert.equal(parseSourceFromLabel('auto-orb5-US100'), 'orb5');
+  assert.equal(parseSourceFromLabel('auto-noise-US500'), 'noise');
+  assert.equal(parseSourceFromLabel('auto-rsi2-daily-US500'), 'rsi2-daily');
+});
+
+test('parseSourceFromLabel: every source that can place a real order is recognized (the same gap has now been found 3 times)', async () => {
+  const fs = await import('node:fs');
+  const engine = fs.readFileSync(new URL('../src/liveStrategyEngine.js', import.meta.url), 'utf8');
+  const sources = new Set([...engine.matchAll(/source: '([a-z0-9-]+)'/g)].map((m) => m[1]).filter((s) => s !== 'adopted' && s !== 'pyramid'));
+  const { ORB_STRATEGY, NOISE_STRATEGY } = await import('../src/intradayMomentumEngine.js');
+  for (const s of [...sources, ORB_STRATEGY, NOISE_STRATEGY, 'rsi2-daily']) assert.equal(parseSourceFromLabel(`auto-${s}-US100`), s, `label auto-${s}-US100 not recognized`);
+});
+
 test('parseSourceFromLabel: no label, empty label, or an unrecognized one all return null (never guessed)', () => {
   assert.equal(parseSourceFromLabel(undefined), null);
   assert.equal(parseSourceFromLabel(null), null);

@@ -436,6 +436,9 @@ const sourceLabel = (s) => {
   // label lookups, and both connectors' _notify() - see dealPairing.js's
   // comment for the full list.
   if (s.source === 'cbdr') return 'CBDR';
+  if (s.source === 'orb5') return 'A · ORB 5 min';
+  if (s.source === 'noise') return 'B · Noise area';
+  if (s.source === 'rsi2-daily') return 'RSI(2) journalier';
   return 'manuel/inconnu';
 };
 
