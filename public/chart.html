@@ -96,6 +96,19 @@
   }
   .toolbar button.active { background: var(--blue); color: #fff; }
   .toolbar .spacer { flex: 1; }
+  /* Outils de dessin (2026-09-24, Esdras : « mettre des éléments comme le carré, et d'autres outils pour le graphe »). */
+  .draw-toolbar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: -4px 0 10px; }
+  .draw-toolbar .group { display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 3px; align-items: center; }
+  .draw-toolbar button { background: transparent; border: 0; color: var(--text); font-size: 13px; padding: 5px 9px; border-radius: 6px; cursor: pointer; min-width: 32px; }
+  .draw-toolbar button:hover { background: rgba(76,158,255,0.12); }
+  .draw-toolbar button.active { background: var(--blue); color: #fff; }
+  .draw-toolbar input[type=color] { width: 28px; height: 24px; border: 0; padding: 0; background: transparent; cursor: pointer; }
+  .draw-toolbar .draw-hint { font-size: 11.5px; color: var(--muted); margin-left: 6px; }
+  #draw-layer { position: absolute; left: 0; top: 0; width: 100%; height: 460px; pointer-events: none; z-index: 3; overflow: hidden; }
+  #draw-layer.drawing { pointer-events: all; cursor: crosshair; touch-action: none; }
+  #draw-layer .drw { pointer-events: none; }
+  #draw-layer.erase .drw { pointer-events: all; cursor: not-allowed; }
+  #draw-layer.erase .drw:hover { opacity: 0.45; }
   .price-header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
   .price-header .last { font-size: 26px; font-weight: 700; font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .price-header .meta { color: var(--muted); font-size: 12px; }
@@ -221,6 +234,22 @@
       </div>
     </div>
 
+    <div class="draw-toolbar" id="draw-toolbar">
+      <div class="group">
+        <button data-tool="cursor" class="active" title="Curseur : déplacer / zoomer le graphique">↖</button>
+        <button data-tool="rect" title="Rectangle (zone) : clique-glisse d'un coin à l'autre">▭</button>
+        <button data-tool="trend" title="Ligne de tendance : clique-glisse d'un point à l'autre">╱</button>
+        <button data-tool="hline" title="Ligne horizontale : clique sur un prix">―</button>
+        <button data-tool="vline" title="Ligne verticale : clique sur une heure">│</button>
+        <button data-tool="text" title="Texte : clique où écrire">T</button>
+        <button data-tool="erase" title="Gomme : touche un dessin pour l'effacer">⌫</button>
+        <input type="color" id="draw-color" value="#e8b339" title="Couleur des prochains dessins" />
+        <button id="draw-undo" title="Annuler le dernier dessin">↶</button>
+        <button id="draw-clear" title="Effacer tous les dessins de cette paire">🗑</button>
+      </div>
+      <span class="draw-hint" id="draw-hint"></span>
+    </div>
+
     <div class="price-header">
       <div>
         <div class="last" id="last-price">—</div>
@@ -233,6 +262,7 @@
     <div class="chart-wrap">
       <div class="chart-canvas-wrap">
         <div id="chart"></div>
+        <svg id="draw-layer" xmlns="http://www.w3.org/2000/svg"></svg>
         <div id="chart-loading">
           <div class="spinner"></div>
           <div class="label">Connexion au flux de marché en cours…</div>
@@ -951,6 +981,7 @@ async function loadChart({ keepView = false } = {}) {
     document.getElementById('chart-loading').hidden = lastCandles.length > 0;
     candleSeries.applyOptions({ priceFormat: { type: 'price', precision: decimals, minMove: 1 / 10 ** decimals } });
     candleSeries.setData(lastCandles.map(toChartCandle));
+    if (drawingsSymbol !== currentSymbol) loadDrawings(); else renderDrawings();
     // On a fresh load / symbol / timeframe switch, jump straight to the
     // current price instead of fitContent()'ing all ~1500 bars (which
     // compresses the whole window and leaves the live price a tiny sliver at
@@ -1025,7 +1056,169 @@ function wireGroup(groupId, dataKey, onPick) {
   });
 }
 
+// ---------- Outils de dessin (2026-09-24, Esdras : « mettre des éléments comme le carré, et d'autres outils pour le graphe ») ----------
+// Dessins stockés par paire dans ce navigateur (localStorage), en temps réel + prix : ils restent au bon endroit quelle que soit l'unité de
+// temps (M15/H1/H4/D1) et après un rechargement. Calque SVG au-dessus du canvas : en mode curseur il laisse passer la souris (le graphique
+// se déplace et zoome normalement) ; en mode dessin il capte le clic-glisser et bloque le déplacement du graphique le temps du tracé.
+const DRAW_KEY = (sym) => `apexfvg_drawings_${sym}`;
+const TF_MS = { M15: 900000, H1: 3600000, H4: 14400000, D1: 86400000 };
+const DRAW_HINTS = {
+  cursor: '', rect: 'Clique-glisse pour tracer le rectangle', trend: 'Clique-glisse pour tracer la ligne', hline: 'Clique sur le prix voulu',
+  vline: "Clique sur l'heure voulue", text: 'Clique où écrire le texte', erase: "Touche un dessin pour l'effacer",
+};
+let drawTool = 'cursor';
+let drawings = [];
+let drawingsSymbol = null;
+let drawDraft = null;
+
+function loadDrawings() {
+  drawingsSymbol = currentSymbol;
+  try { drawings = JSON.parse(localStorage.getItem(DRAW_KEY(currentSymbol)) || '[]'); } catch { drawings = []; }
+  if (!Array.isArray(drawings)) drawings = [];
+  renderDrawings();
+}
+function saveDrawings() { try { localStorage.setItem(DRAW_KEY(drawingsSymbol ?? currentSymbol), JSON.stringify(drawings)); } catch { /* navigateur privé : dessins non gardés */ } }
+
+// Temps réel (ms) <-> coordonnée x, via l'indice logique des bougies (interpolé entre deux bougies, prolongé au-delà des bords).
+function timeToX(tMs) {
+  if (!chart || lastCandles.length === 0 || !Number.isFinite(tMs)) return null;
+  const n = lastCandles.length, step = TF_MS[currentTimeframe] || 900000;
+  let logical;
+  if (tMs <= lastCandles[0].time) logical = (tMs - lastCandles[0].time) / step;
+  else if (tMs >= lastCandles[n - 1].time) logical = n - 1 + (tMs - lastCandles[n - 1].time) / step;
+  else {
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (lastCandles[mid].time <= tMs) lo = mid; else hi = mid; }
+    logical = lo + (tMs - lastCandles[lo].time) / (lastCandles[hi].time - lastCandles[lo].time);
+  }
+  return chart.timeScale().logicalToCoordinate(logical);
+}
+function xToTime(x) {
+  if (!chart || lastCandles.length === 0) return null;
+  const logical = chart.timeScale().coordinateToLogical(x);
+  if (logical === null || logical === undefined) return null;
+  const n = lastCandles.length, step = TF_MS[currentTimeframe] || 900000;
+  if (logical <= 0) return lastCandles[0].time + logical * step;
+  if (logical >= n - 1) return lastCandles[n - 1].time + (logical - (n - 1)) * step;
+  const i = Math.floor(logical);
+  return lastCandles[i].time + (logical - i) * (lastCandles[i + 1].time - lastCandles[i].time);
+}
+const priceToY = (p) => (candleSeries && Number.isFinite(p) ? candleSeries.priceToCoordinate(p) : null);
+const yToPrice = (y) => (candleSeries ? candleSeries.coordinateToPrice(y) : null);
+const escSvg = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function hexToRgba(hex, a) { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return `rgba(232,179,57,${a})`; const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+
+function drawingSvg(d, idx) {
+  const c = d.color || '#e8b339';
+  const attr = `class="drw" data-idx="${idx}"`;
+  const layer = document.getElementById('draw-layer');
+  const W = layer.clientWidth || 1000, H = layer.clientHeight || 460;
+  const dec = priceDecimals(currentSymbol);
+  if (d.type === 'rect') {
+    const x1 = timeToX(d.t1), x2 = timeToX(d.t2), y1 = priceToY(d.p1), y2 = priceToY(d.p2);
+    if ([x1, x2, y1, y2].some((v) => v === null)) return '';
+    return `<rect ${attr} x="${Math.min(x1, x2)}" y="${Math.min(y1, y2)}" width="${Math.abs(x2 - x1)}" height="${Math.abs(y2 - y1)}" fill="${hexToRgba(c, 0.16)}" stroke="${c}" stroke-width="1.5" />`;
+  }
+  if (d.type === 'trend') {
+    const x1 = timeToX(d.t1), x2 = timeToX(d.t2), y1 = priceToY(d.p1), y2 = priceToY(d.p2);
+    if ([x1, x2, y1, y2].some((v) => v === null)) return '';
+    return `<g ${attr}><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="transparent" stroke-width="12" /><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="2" /></g>`;
+  }
+  if (d.type === 'hline') {
+    const y = priceToY(d.p1);
+    if (y === null) return '';
+    return `<g ${attr}><line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="transparent" stroke-width="12" /><line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="${c}" stroke-width="1.5" /><text x="6" y="${y - 4}" fill="${c}" font-size="11" font-family="monospace">${escSvg(fmt(d.p1, dec))}</text></g>`;
+  }
+  if (d.type === 'vline') {
+    const x = timeToX(d.t1);
+    if (x === null) return '';
+    return `<g ${attr}><line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="transparent" stroke-width="12" /><line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${c}" stroke-width="1.5" stroke-dasharray="4,3" /></g>`;
+  }
+  if (d.type === 'text') {
+    const x = timeToX(d.t1), y = priceToY(d.p1);
+    if (x === null || y === null) return '';
+    return `<text ${attr} x="${x}" y="${y}" fill="${c}" font-size="13" font-weight="700" paint-order="stroke" stroke="rgba(0,0,0,0.55)" stroke-width="3">${escSvg(d.text || '')}</text>`;
+  }
+  return '';
+}
+
+function renderDrawings() {
+  const layer = document.getElementById('draw-layer');
+  if (!layer) return;
+  const all = drawDraft ? [...drawings, drawDraft] : drawings;
+  layer.innerHTML = all.map((d, i) => drawingSvg(d, i < drawings.length ? i : -1)).join('');
+}
+
+function setDrawTool(tool) {
+  drawTool = tool;
+  document.querySelectorAll('#draw-toolbar [data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
+  const layer = document.getElementById('draw-layer');
+  const drawing = !['cursor', 'erase'].includes(tool);
+  layer.classList.toggle('drawing', drawing);
+  layer.classList.toggle('erase', tool === 'erase');
+  if (chart) chart.applyOptions({ handleScroll: !drawing, handleScale: !drawing });
+  document.getElementById('draw-hint').textContent = DRAW_HINTS[tool] || '';
+}
+
+function initDrawingTools() {
+  const layer = document.getElementById('draw-layer');
+  document.querySelectorAll('#draw-toolbar [data-tool]').forEach((b) => b.addEventListener('click', () => setDrawTool(b.dataset.tool)));
+  document.getElementById('draw-undo').addEventListener('click', () => { drawings.pop(); saveDrawings(); renderDrawings(); });
+  document.getElementById('draw-clear').addEventListener('click', () => {
+    if (drawings.length && confirm(`Effacer les ${drawings.length} dessin(s) de ${currentSymbol} ?`)) { drawings = []; saveDrawings(); renderDrawings(); }
+  });
+  const color = () => document.getElementById('draw-color').value;
+  const point = (e) => { const r = layer.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; return { t: xToTime(x), p: yToPrice(y) }; };
+  layer.addEventListener('pointerdown', (e) => {
+    if (drawTool === 'erase') {
+      const hit = e.target.closest ? e.target.closest('.drw') : null;
+      const idx = hit ? Number(hit.dataset.idx) : -1;
+      if (idx >= 0) { drawings.splice(idx, 1); saveDrawings(); renderDrawings(); }
+      return;
+    }
+    if (drawTool === 'cursor') return;
+    const pt = point(e);
+    if (pt.t === null || pt.p === null) return;
+    e.preventDefault();
+    if (drawTool === 'hline') { drawings.push({ type: 'hline', p1: pt.p, color: color() }); saveDrawings(); renderDrawings(); setDrawTool('cursor'); return; }
+    if (drawTool === 'vline') { drawings.push({ type: 'vline', t1: pt.t, color: color() }); saveDrawings(); renderDrawings(); setDrawTool('cursor'); return; }
+    if (drawTool === 'text') {
+      const text = prompt('Texte à afficher sur le graphique :');
+      if (text && text.trim()) { drawings.push({ type: 'text', t1: pt.t, p1: pt.p, text: text.trim().slice(0, 80), color: color() }); saveDrawings(); renderDrawings(); }
+      setDrawTool('cursor');
+      return;
+    }
+    if (layer.setPointerCapture) layer.setPointerCapture(e.pointerId);
+    drawDraft = { type: drawTool, t1: pt.t, p1: pt.p, t2: pt.t, p2: pt.p, color: color() };
+    renderDrawings();
+  });
+  layer.addEventListener('pointermove', (e) => {
+    if (!drawDraft) return;
+    const pt = point(e);
+    if (pt.t === null || pt.p === null) return;
+    drawDraft.t2 = pt.t; drawDraft.p2 = pt.p;
+    renderDrawings();
+  });
+  const finish = () => {
+    if (!drawDraft) return;
+    const d = drawDraft; drawDraft = null;
+    const x1 = timeToX(d.t1), x2 = timeToX(d.t2), y1 = priceToY(d.p1), y2 = priceToY(d.p2);
+    if (x1 !== null && x2 !== null && y1 !== null && y2 !== null && Math.hypot(x2 - x1, y2 - y1) > 4) { drawings.push(d); saveDrawings(); }
+    renderDrawings();
+    setDrawTool('cursor');
+  };
+  layer.addEventListener('pointerup', finish);
+  layer.addEventListener('pointercancel', () => { drawDraft = null; renderDrawings(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { drawDraft = null; setDrawTool('cursor'); renderDrawings(); } });
+  // Suit le graphique : défilement/zoom (événement), redimensionnement, et l'échelle de prix qui s'ajuste toute seule (vérification légère).
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => renderDrawings());
+  window.addEventListener('resize', () => renderDrawings());
+  setInterval(() => { if (drawings.length || drawDraft) renderDrawings(); }, 400);
+  loadDrawings();
+}
+
 buildChart();
+initDrawingTools();
 wireSessionPanel();
 loadSessionDefs();
 document.getElementById('toggle-zones').checked = zonesVisible;
