@@ -1010,17 +1010,19 @@
   },
   {
     "id": "prereg-overnight-2026-09-24",
-    "title": "Achat de nuit (clôture 16:00 → ouverture 9:30) US100 / US500 : pré-enregistré",
+    "title": "Achat de nuit US100/US500 : ÉCHEC à l'entraînement (t 1,71 et 0,79)",
     "date": "2026-09-24",
-    "status": "inconclusive",
-    "summary": "Écrit avant le calcul (décomposition brute séance/nuit 2019-2026 déjà vue, déclarée). Achat à la clôture 15:59 NY (ask), vente à l'ouverture 9:30 suivante (bid), tous les jours, week-ends compris, sans stop ; spread par défaut + swap broker. Contrôles : 24 h et séance seule (dérive), sans week-ends. Critère habituel par indice : entraînement 2010-2022 ≥60 trades, t≥2, deux moitiés positives ; test 2023-2025 ≥30 trades, >0.",
+    "status": "rejected",
+    "summary": "Écrit avant le calcul (décomposition brute séance/nuit 2019-2026 déjà vue, déclarée). Achat à la clôture 15:59 NY (ask), vente à l'ouverture 9:30 suivante (bid), tous les jours, week-ends compris, sans stop ; spread par défaut + swap broker. Contrôles : 24 h et séance seule (dérive), sans week-ends. Critère habituel par indice : entraînement 2010-2022 ≥60 trades, t≥2, deux moitiés positives ; test 2023-2025 ≥30 trades, >0. RÉSULTAT (scripts/runOvernightStudy.js, data/backtest-input/overnight-study.md) : US100 entraînement 3 098 nuits, +0,023 % net par nuit, t 1,71 (deux moitiés positives, +37 % et +36 %) → ÉCHEC (t<2) ; test +0,052 % (+40 %), 2026 +7,5 %. US500 : t 0,79 → ÉCHEC ; test +19,6 %, 2026 +4,2 %. Le swap du broker (relevé 2026, appliqué au passé) mange près de la moitié du brut (US100 : +0,040 % brut → +0,023 % net). Contrôle descriptif sans week-ends US100 : t 2,27 à l'entraînement mais t 1,59 au test (non pré-désigné comme jambe, non adoptable).",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "M1",
     "files": [
-      "data/backtest-input/preregistration-overnight-2026-09-24.md"
+      "data/backtest-input/preregistration-overnight-2026-09-24.md",
+      "scripts/runOvernightStudy.js",
+      "data/backtest-input/overnight-study.md"
     ]
   }
 ]
