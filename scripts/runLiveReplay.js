@@ -25,7 +25,8 @@ import { LiveStrategyEngine } from '../src/liveStrategyEngine.js';
 import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
 import { DailyAlertEngine } from '../src/dailyAlertEngine.js';
 import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
-import { adjustMarketProtectionForSpread } from '../src/dataSources/cTraderDataSource.js';
+import { MANAGED_SOURCES, entryBlockReason, momentumEntryBlockReason, momentumOrderSignal, orderProtection } from '../src/execution/entryPolicy.js';
+import { IntradayMomentumEngine } from '../src/intradayMomentumEngine.js';
 import { CONFIG } from '../src/config.js';
 import { OFF, eng, loadM1, toM15, lower, refPrice, swapPerUnit } from './lib/m1Data.js';
 
@@ -42,6 +43,14 @@ const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}${p
 const START_BALANCE = 10000;
 const WARMUP_BARS = 8640; // ce que le live demande au démarrage (90 jours de M15)
 const DAILY = 'rsi2-daily';
+// A (ORB 5 min) et B (noise area), comme en live depuis le 2026-09-24 : même moteur (IntradayMomentumEngine), mêmes règles d'entrée et de
+// taille (src/execution/entryPolicy.js, partagé avec cTraderDataSource). NO_AB=1 : rejeu sans A/B (reproduit les études d'avant cet ajout).
+const MOM = CONFIG.intradayMomentum;
+const WITH_AB = Boolean(MOM?.enabled) && process.env.NO_AB !== '1';
+// STOPPED_LEGS="silverbullet US500,..." : jambes arrêtées par le filet de sécurité pendant tout le rejeu (runWeeklyLiveCheck.js les lit sur le bot).
+const STOPPED = new Set((process.env.STOPPED_LEGS || '').split(',').map((x) => x.trim()).filter(Boolean));
+const legAllowed = (source, sym) => !STOPPED.has(`${source} ${sym}`);
+const MIN = 60000;
 
 // Symboles réellement tradés en live par l'intraday (FVG et Judas Swing retirés - voir config.js) + RSI(2) sur US500.
 const fvgLive = Object.fromEntries(Object.entries(CONFIG.fvg.perSymbol).filter(([s]) => (CONFIG.fvg.liveSymbols ?? []).includes(s)));
@@ -74,7 +83,9 @@ daily.warmUp(warm.US500);
 let balance = START_BALANCE;
 const open = []; // positions réelles
 const trades = [];
-let dailyHeld = null;
+// Positions tenues par une stratégie gérée (RSI(2), A, B) - dailyPositionBySymbol en live : une seule par paire.
+const managed = new Map();
+const heldBy = (sym) => managed.get(sym)?.source ?? null;
 
 function closePosition(p, exitBid, exitTime, reason) {
   const s = p.spread;
@@ -84,7 +95,7 @@ function closePosition(p, exitBid, exitTime, reason) {
   const pnl = (move + swap) * p.units;
   balance += pnl;
   guardrail.recordTrade({ pnl, time: exitTime + OFF, balanceAfter: balance, symbol: p.sym });
-  if (p.source === DAILY) dailyHeld = null; else engine.clearBelievedPosition(p.sym, p.signalId);
+  if (MANAGED_SOURCES.has(p.source)) { if (managed.get(p.sym) === p) managed.delete(p.sym); } else engine.clearBelievedPosition(p.sym, p.signalId);
   trades.push({ symbol: p.sym, source: p.source, direction: p.dir, entryTime: p.fillTime, exitTime, r: Math.round((pnl / p.risk) * 1e4) / 1e4, pnl: Math.round(pnl * 100) / 100, balance: Math.round(balance * 100) / 100, reason });
   open.splice(open.indexOf(p), 1);
 }
@@ -116,21 +127,85 @@ function runExits(until) {
   }
 }
 
-function openPosition(sym, source, signalId, dir, entryPrice, stopPrice, targetPrice, T) {
-  const S = data[sym].m1; const i = lower(S.t, S.n, T); if (i >= S.n) return;
-  const bid = S.o[i]; const s = spreadAt(sym, bid);
+function openPosition(sym, source, signalId, dir, entryPrice, stopPrice, targetPrice, T, { sizingStopPrice, maxNotional, atBid } = {}) {
+  const S = data[sym].m1; const i = lower(S.t, S.n, T); if (i >= S.n) return null;
+  // atBid : prix connu à la minute exacte (A/B, depuis leurs propres M1) - sinon l'ouverture de la ligne de données suivante.
+  const bid = atBid ?? S.o[i]; const s = spreadAt(sym, bid);
   const side = dir === 'bullish' ? 'buy' : 'sell';
-  const prot = adjustMarketProtectionForSpread({ side, entryPrice, stopPrice, targetPrice, spread: s });
+  // Stop/objectif envoyés et stop de calcul de la taille : entryPolicy.orderProtection, la même fonction que le bot.
+  const { protection: prot, sizingStopPrice: sizeStop } = orderProtection({ suggestedSide: side, entryPrice, stopPrice, targetPrice, sizingStopPrice }, { spread: s });
   const stopDist = Math.abs(entryPrice - prot.stopPrice);
-  if (!(stopDist > 0)) return;
+  if (!(stopDist > 0)) return null;
   const tgtDist = prot.targetPrice == null ? null : Math.abs(prot.targetPrice - entryPrice);
   const fill = dir === 'bullish' ? bid + s : bid;
-  const risk = balance * (RISK / 100);
-  open.push({
-    sym, source, signalId, dir, fill, fillTime: S.t[i], spread: s, units: risk / stopDist, risk, cursor: i,
+  const sizeDist = Math.abs(entryPrice - sizeStop);
+  let risk = balance * (RISK / 100);
+  let units = risk / sizeDist;
+  // Plafond d'exposition de A/B (4 x le solde) : le risque réel diminue dans la même proportion, comme capLots en live.
+  if (Number.isFinite(maxNotional) && units * bid > maxNotional) { const k = maxNotional / (units * bid); units *= k; risk *= k; }
+  const p = {
+    sym, source, signalId, dir, fill, fillTime: atBid != null ? T : S.t[i], spread: s, units, risk, cursor: i,
     sl: dir === 'bullish' ? fill - stopDist : fill + stopDist,
     tp: tgtDist == null ? null : dir === 'bullish' ? fill + tgtDist : fill - tgtDist,
-  });
+  };
+  open.push(p);
+  if (MANAGED_SOURCES.has(source)) managed.set(sym, p);
+  return p;
+}
+
+// A et B : barres M1 données une par une au moteur (heures UTC, comme les barres construites à partir des ticks en live) ; chaque décision
+// est exécutée au prix d'ouverture de la minute suivante. Préchauffage : 30 jours de M1, comme _startIntradayMomentum.
+const momentum = WITH_AB ? new IntradayMomentumEngine({
+  orbSymbols: (MOM.orb?.symbols || []).filter((x) => SYMS.includes(x)), noiseSymbols: (MOM.noise?.symbols || []).filter((x) => SYMS.includes(x)), lookback: MOM.noise?.lookback ?? 14,
+}) : null;
+// Source des M1 de A/B : les vraies M1 du fichier jusqu'à m1End, puis (LIVE_M1_DIR/live-m1-<SYM>.json, heures UTC) les barres M1 que le
+// bot a lui-même construites à partir des ticks pour A/B (GET /api/momentum-bars) - jamais les lignes M15 du prolongement (fausses décisions).
+const mData = {};
+const mIdx = {};
+if (momentum) {
+  for (const sym of momentum.symbols) {
+    const S = data[sym].m1; const end = lower(S.t, S.n, S.m1End + 1);
+    const t = Array.from(S.t.subarray(0, end)), o = Array.from(S.o.subarray(0, end)), h = Array.from(S.h.subarray(0, end)), l = Array.from(S.l.subarray(0, end)), c = Array.from(S.c.subarray(0, end));
+    const f = process.env.LIVE_M1_DIR && `${process.env.LIVE_M1_DIR}/live-m1-${sym}.json`;
+    if (f && fs.existsSync(f)) for (const b of JSON.parse(fs.readFileSync(f, 'utf8')).bars) { const bt = b.time - OFF; if (bt > S.m1End) { t.push(bt); o.push(b.open); h.push(b.high); l.push(b.low); c.push(b.close); } }
+    mData[sym] = { t: Float64Array.from(t), o: Float64Array.from(o), h: Float64Array.from(h), l: Float64Array.from(l), c: Float64Array.from(c), n: t.length };
+  }
+
+  for (const sym of momentum.symbols) {
+    const S = mData[sym]; const i0 = lower(S.t, S.n, firstLive); const iw = lower(S.t, S.n, firstLive - (MOM.warmupDays ?? 30) * 86400000);
+    const bars = []; for (let i = iw; i < i0; i++) bars.push({ time: S.t[i] + OFF, open: S.o[i], high: S.h[i], low: S.l[i], close: S.c[i] });
+    momentum.addBars(sym, bars);
+    mIdx[sym] = i0;
+  }
+}
+function executeMomentumEvent(ev, t) {
+  const sym = ev.symbol; const M = mData[sym]; const j = lower(M.t, M.n, t);
+  // Prix d'exécution : l'ouverture de la minute t dans les M1 de A/B (le premier tick après la décision, en live).
+  if (j >= M.n || M.t[j] - t > 5 * MIN) return; // pas de cotation dans les 5 minutes : marché fermé
+  const bid = M.o[j];
+  const held = managed.get(sym);
+  if (ev.type === 'exit') { if (held && held.source === ev.strategy) closePosition(held, bid, t, ev.reason === 'close' ? 'close' : 'signal'); return; }
+  const blocked = momentumEntryBlockReason({ heldBy: heldBy(sym), comboHolds: Boolean(engine.getOpenPosition(sym)), guardrailOk: guardrail.canTakeNewTrade(t + OFF, sym) })
+    ?? entryBlockReason({ source: ev.strategy, heldBy: heldBy(sym), legAllowed: legAllowed(ev.strategy, sym) });
+  if (blocked) { if (process.env.DEBUG_EVENTS) console.log(`  [A/B] ${new Date(t + OFF).toISOString().slice(0, 16)} ${ev.strategy} ${sym} ${ev.side} BLOQUÉ: ${blocked}`); return; }
+  const plan = momentumOrderSignal(ev, { bid, spread: spreadAt(sym, bid), balance, cfg: MOM });
+  if (plan.skip) return;
+  openPosition(sym, ev.strategy, null, ev.side === 'buy' ? 'bullish' : 'bearish', bid, plan.signal.stopPrice, plan.signal.targetPrice, t, { sizingStopPrice: plan.signal.sizingStopPrice, maxNotional: plan.maxNotional, atBid: bid });
+}
+/** Donne à A/B toutes les barres M1 finies avant `until` (ou jusqu'à `until` inclus), dans l'ordre du temps, avec les sorties broker entre deux. */
+function feedMomentum(until, inclusive) {
+  if (!momentum) return;
+  for (;;) {
+    let sym = null, t = Infinity;
+    for (const s of momentum.symbols) { const S = mData[s]; const i = mIdx[s]; if (i < S.n && S.t[i] < t) { t = S.t[i]; sym = s; } }
+    if (sym === null) return;
+    const done = t + MIN; // la barre de t est finie à t + 1 min
+    if (inclusive ? done > until : done >= until) return;
+    const S = mData[sym]; const i = mIdx[sym]++;
+    runExits(done);
+    const evs = momentum.ingestBar(sym, { time: t + OFF, open: S.o[i], high: S.h[i], low: S.l[i], close: S.c[i] });
+    for (const ev of [...evs, ...momentum.onClock(done + OFF)]) executeMomentumEvent(ev, done);
+  }
 }
 
 // Boucle : toutes les bougies M15 après le préchauffage, dans l'ordre du temps (tous symboles).
@@ -141,6 +216,7 @@ const MAX_BARS = Number(process.env.MAX_BARS || Infinity); // profilage : s'arr�
 let nBars = 0;
 for (const T of times) {
   if (++nBars > MAX_BARS) break;
+  feedMomentum(T, false); // A/B : minutes finies avant T (en live, le combo traite sa bougie avant A/B à la même minute)
   runExits(T);
   // Balayage des positions « crues » sans position réelle (_clearStaleBeliefsAgainstBroker, toutes les 5 min en live, donc
   // avant la bougie suivante) : un signal validé puis refusé (exclusion RSI(2), taille nulle...) ne bloque pas le symbole.
@@ -167,11 +243,11 @@ for (const T of times) {
     const now = T + OFF;
     const events = engine.ingestCandle(sym, stub, now, { deferCloseToRealConfirmation: true });
     for (const e of events) {
-      if (process.env.DEBUG_EVENTS && e.type === 'validated') console.log(`  [signal] ${new Date(now).toISOString().slice(0, 16)} ${e.source} ${e.symbol ?? sym} ${e.direction} ${e.blockedReason ? 'BLOQUÉ: ' + e.blockedReason : 'pris'}${sym === 'US500' && dailyHeld ? ' (RSI2 tient US500)' : ''}`);
+      if (process.env.DEBUG_EVENTS && e.type === 'validated') console.log(`  [signal] ${new Date(now).toISOString().slice(0, 16)} ${e.source} ${e.symbol ?? sym} ${e.direction} ${e.blockedReason ? 'BLOQUÉ: ' + e.blockedReason : 'pris'}${heldBy(e.symbol ?? sym) ? ` (${heldBy(e.symbol ?? sym)} tient ${e.symbol ?? sym})` : ''}`);
       if (e.type === 'validated' && !e.blockedReason) {
         if (e.source === 'fvg') continue; // retiré du live
         const esym = e.symbol ?? sym; // une Divergence peut concerner l'autre jambe de la paire (routée comme le live)
-        if (esym === 'US500' && dailyHeld) continue; // exclusion mutuelle avec RSI(2), comme _handleAutoExecuteEntry
+        if (entryBlockReason({ source: e.source, heldBy: heldBy(esym), legAllowed: legAllowed(e.source, esym) })) continue; // même règle que _handleAutoExecuteEntry
         openPosition(esym, e.source, e.id, e.direction, e.entryPrice, e.stopPrice, e.targetPrice, T);
       } else if (e.type === 'closed' && e.outcome === 'timeout') {
         const S = data[sym].m1; const i = lower(S.t, S.n, T);
@@ -181,16 +257,16 @@ for (const T of times) {
     if (sym === 'US500') {
       if (k > 0) daily.updateFormingBar(bars[k - 1]);
       for (const ev of daily.ingest(stub)) {
-        if (ev.event === 'entry' && !dailyHeld && guardrail.canTakeNewTrade(now, 'US500')) {
+        if (ev.event === 'entry' && guardrail.canTakeNewTrade(now, 'US500') && !entryBlockReason({ source: DAILY, heldBy: heldBy('US500'), legAllowed: legAllowed(DAILY, 'US500') })) {
           openPosition('US500', DAILY, null, 'bullish', ev.price, ev.stopPrice, null, T);
-          dailyHeld = open[open.length - 1]?.source === DAILY ? open[open.length - 1] : null;
-        } else if (ev.event === 'exit' && ev.detail !== 'stop' && dailyHeld) {
+        } else if (ev.event === 'exit' && ev.detail !== 'stop' && managed.get('US500')?.source === DAILY) {
           const S = data.US500.m1; const i = lower(S.t, S.n, T);
-          closePosition(dailyHeld, S.o[i], S.t[i], ev.detail);
+          closePosition(managed.get('US500'), S.o[i], S.t[i], ev.detail);
         }
       }
     }
   }
+  feedMomentum(T, true);
   if (Date.now() - lastLog > 30000) { lastLog = Date.now(); console.log(`  ${new Date(T + OFF).toISOString().slice(0, 10)} - ${trades.length} trades, solde ${balance.toFixed(0)}`); }
 }
 // fin de tranche : les positions encore ouvertes sortent à leur stop/objectif ou au dernier prix connu (comme runExits(Infinity))

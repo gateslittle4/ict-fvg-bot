@@ -1348,6 +1348,19 @@ function createAccountRouter(getStore) {
     res.json({ symbol, timeframe, candles });
   });
 
+  // 2026-09-24 - the M1 bars (bid, session 9:30-16:00 NY) A and B actually decided on, as the bot built them from ticks (plus its 30-day
+  // broker warm-up). Read-only, no broker round-trip. Used by scripts/runWeeklyLiveCheck.js so the faithful replay decides A/B on the SAME
+  // bars as the live bot after the end of the committed M1 file.
+  router.get('/momentum-bars', (req, res) => {
+    const store = getStore(req);
+    const symbol = req.query.symbol;
+    const b = store.liveDataSource?.intradayMomentum?.bars?.get(symbol);
+    if (!b) return res.json({ symbol, bars: [] });
+    const bars = [];
+    for (let i = 0; i < b.t.length; i++) bars.push({ time: b.t[i], open: b.o[i], high: b.h[i], low: b.l[i], close: b.c[i] });
+    res.json({ symbol, bars });
+  });
+
   // The bot's own reasoning, drawn on the chart: the FVG zones it detected and
   // the signals it fired. This is the one thing a broker's chart (MT4,
   // Match-Trader) structurally cannot show, since it knows nothing about this

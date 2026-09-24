@@ -14,11 +14,13 @@ test('liveCheck: same pair, strategy, side and entry within 20 min -> identical;
   assert.equal(rows[0].liveR, 3.29); assert.equal(rows[0].replayR, 2.93);
 });
 
-test('liveCheck: A/B, pairs outside the replay and unlabelled trades are out of scope, never counted as a mismatch', () => {
-  const rows = matchLiveAndReplay([L({ source: 'orb5' }), L({ symbol: 'GER40', source: 'silverbullet' }), L({ source: null })], [], opts);
-  assert.deepEqual(rows.map((r) => r.status), ['hors rejeu', 'hors rejeu', 'hors rejeu']);
+test('liveCheck: pairs outside the replay and unlabelled trades are out of scope, never counted as a mismatch; A/B are compared like the rest', () => {
+  const rows = matchLiveAndReplay([L({ symbol: 'GER40', source: 'silverbullet' }), L({ source: null })], [], opts);
+  assert.deepEqual(rows.map((r) => r.status), ['hors rejeu', 'hors rejeu']);
   const s = summarizeCheck(rows);
-  assert.equal(s.outOfScope, 3); assert.equal(s.liveR, 0);
+  assert.equal(s.outOfScope, 2); assert.equal(s.liveR, 0);
+  const ab = matchLiveAndReplay([L({ source: 'orb5', rMultiple: 4.46 })], [R({ source: 'orb5', r: 4.2 })], opts);
+  assert.deepEqual(ab.map((r) => r.status), ['identique']);
 });
 
 test('liveCheck: a replay-only trade while A/B held the pair in real life is explained in the note', () => {

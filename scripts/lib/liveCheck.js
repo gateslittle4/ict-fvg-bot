@@ -1,8 +1,9 @@
 // liveCheck.js - rapprochement trade par trade entre les trades RÉELS du bot (GET /api/trade-history) et le rejeu fidèle
 // (runLiveReplay.js) sur la même semaine. Pur, testé dans test/liveCheck.test.js ; utilisé par scripts/runWeeklyLiveCheck.js.
 
-// Sources qui ouvrent leurs propres positions en live mais que le rejeu du combo ne simule pas (A et B : leur étude a son propre moteur).
-export const NOT_REPLAYED_SOURCES = new Set(['orb5', 'noise']);
+// Sources qui ouvrent des positions en live mais que le rejeu ne simule pas. Vide depuis le 2026-09-24 : A et B sont dans le rejeu fidèle
+// (même moteur et mêmes règles d'entrée que le bot, src/execution/entryPolicy.js).
+export const NOT_REPLAYED_SOURCES = new Set();
 // Sources qui tiennent la place de la paire en live (une seule position par paire) - un trade du rejeu absent en réel pendant
 // qu'une de ces positions était ouverte s'explique par ce blocage, que le rejeu ne connaît pas.
 export const SLOT_HOLDERS = new Set(['orb5', 'noise']);

@@ -1,0 +1,7 @@
+{
+  "US100|nwog|2026-09-20T22:15": "avant le correctif des bougies live (21/09 01:16 UTC) : aucun signal enregistré en réel",
+  "US500|weeklysweep|2026-09-21T00:15": "avant le correctif des bougies live (21/09 01:16 UTC) : aucun signal enregistré en réel",
+  "US500|divergence|2026-09-22T14:00": "écart connu (ordre d'arrivée des cotations US100/US500, corrigé le 23/09) : le réel l'a prise à 16:00",
+  "US500|divergence|2026-09-22T20:00": "même écart connu que la ligne de 10:00",
+  "US100|orb5|2026-09-24T13:35": "A n'est rejoué qu'avec ses barres M1 du bot (GET /api/momentum-bars), pas encore en ligne cette semaine-là"
+}

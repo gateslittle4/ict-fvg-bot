@@ -43,14 +43,15 @@ import { DailyAlertEngine } from '../dailyAlertEngine.js';
 import { IntradayMomentumEngine, TickBarBuilder, ORB_STRATEGY, NOISE_STRATEGY } from '../intradayMomentumEngine.js';
 import { isStrategyEnabled, loadStrategySwitches } from '../strategySwitches.js';
 import { isLegAllowed, refreshKillSwitch } from '../killSwitch.js';
+import { adjustMarketProtectionForSpread } from '../execution/marketProtection.js';
+import { DAILY_RSI2_STRATEGY, MANAGED_SOURCES, entryBlockReason, momentumEntryBlockReason, momentumOrderSignal, orderProtection, capLots } from '../execution/entryPolicy.js';
 
 // 2026-09-22: single source of truth for the daily strategy's identifier, used by _loadDailyAlertEngines (registers the engine), the mutual-
 // exclusion check and the fill/close handlers below - was two inconsistent literals ('rsi2-daily' vs 'rsi2daily') before this constant, which
 // would have silently broken both the self-exemption and the fill tracking (caught by test/dailyStrategyRealExecution.test.js before deploy).
-const DAILY_RSI2_STRATEGY = 'rsi2-daily';
+// (now defined once in src/execution/entryPolicy.js, shared with the faithful replay)
 // 2026-09-24: sources whose real position is opened AND closed by their own engine (not LiveStrategyEngine's netting/beliefs) - RSI(2)
 // journalier, A (ORB 5 min, US100) and B (noise area, US500). One entry per symbol in dailyPositionBySymbol, with its source.
-const MANAGED_SOURCES = new Set([DAILY_RSI2_STRATEGY, ORB_STRATEGY, NOISE_STRATEGY]);
 // Candles shown on each side of a trade in the journal chart (getTradeHistory).
 export const CHART_MARGIN_CANDLES = 90;
 import fs from 'node:fs';
@@ -166,38 +167,9 @@ export function relativeProtectionStep(priceDigits) {
   return 10 ** (5 - digits);
 }
 
-/**
- * Compensates a MARKET order's spread-shifted protection (2026-09-21, found after the first real EURUSD trade).
- *
- * A MARKET order can only carry RELATIVE stop/target distances, anchored on the FILL price (see toRelativeProtectionDistance). A buy fills at the
- * ask (= bid + spread) but its stop/target trigger on the bid, so a stop `d` below the fill sits only `d - spread` below the bid the backtest
- * (bid candles) tested, and the target `T` above sits `T + spread` away: the stop is tighter and the target farther than the strategy's own
- * levels. A sell fills at the bid and triggers on the ask: same shift. Measured on 4 years of M1 (data/backtest-input/order-geometry-live-vs-backtest.md)
- * that costs ~17 % of the edge (+266 R live geometry vs +322 R strategy levels).
- *
- * Returned prices are what to pass as stopLoss/takeProfit together with referencePrice = the signal's entry price, so the relative distances
- * become d + spread (stop) and T - spread (target): anchored on the expected fill they land on the strategy's own levels. `stopPrice` for sizing
- * is the same widened stop, so the worst-case loss stays the planned risk. A missing/invalid spread, or one that would invert the target, returns
- * the inputs untouched (the previous behaviour).
- */
-export function adjustMarketProtectionForSpread({ side, entryPrice, stopPrice, targetPrice, spread }) {
-  const s = Number(spread);
-  const untouched = { stopPrice, targetPrice, spreadApplied: 0 };
-  if (!Number.isFinite(s) || s <= 0) return untouched;
-  const isBuy = String(side).toLowerCase() === 'buy';
-  const stopDist = Math.abs(entryPrice - stopPrice);
-  if (!(stopDist > 0) || s > stopDist / 2) return untouched;
-  // 2026-09-22 (RSI(2)/US500 daily, Esdras: "on le code" - see dailyAlertEngine.js): this strategy has NO fixed target - it exits on its own
-  // signal (SMA5 recovery / time-out), not on a price level. Widen the stop only in that case; a real target still gets pulled in as before.
-  if (targetPrice == null) return { stopPrice: isBuy ? stopPrice - s : stopPrice + s, targetPrice: null, spreadApplied: s };
-  const targetDist = Math.abs(targetPrice - entryPrice);
-  if (targetDist - s <= 0) return untouched;
-  return {
-    stopPrice: isBuy ? stopPrice - s : stopPrice + s,
-    targetPrice: isBuy ? targetPrice - s : targetPrice + s,
-    spreadApplied: s,
-  };
-}
+// adjustMarketProtectionForSpread moved to src/execution/marketProtection.js (2026-09-24, shared with the replay via entryPolicy.js) -
+// re-exported here so every existing import keeps working.
+export { adjustMarketProtectionForSpread };
 
 export function toRelativeProtectionDistance(referencePrice, protectionPrice, priceDigits = null) {
   const reference = Number(referencePrice);
@@ -2060,35 +2032,27 @@ export class CTraderDataSource {
       return;
     }
     // entry
-    if (!isStrategyEnabled(ev.strategy)) return skip('stratégie désactivée (interrupteur, page Comptes)');
+    if (!isStrategyEnabled(ev.strategy)) return skip(momentumEntryBlockReason({ strategyEnabled: false }));
     if (!store.isAutoExecuteActive()) return skip('auto-execute inactive');
-    if (held) {
-      if (held.source === ev.strategy && held.closing) { this.pendingEntryAfterClose.set(symbolName, { ev, until: Date.now() + 60000 }); return; }
-      return skip(`${held.source ?? DAILY_RSI2_STRATEGY} already holds a position on this symbol`);
-    }
-    if (store.strategyEngine.getOpenPosition?.(symbolName)) return skip('the combo already holds a position on this symbol');
-    if (!store.guardrail.canTakeNewTrade(Date.now(), symbolName)) return skip('blocked by shared guardrail');
+    if (held && held.source === ev.strategy && held.closing) { this.pendingEntryAfterClose.set(symbolName, { ev, until: Date.now() + 60000 }); return; }
+    // Pair already held (managed strategy or combo), shared guardrail: entryPolicy.momentumEntryBlockReason, shared with the replay.
+    const blocked = momentumEntryBlockReason({
+      heldBy: held ? (held.source ?? DAILY_RSI2_STRATEGY) : null,
+      comboHolds: Boolean(store.strategyEngine.getOpenPosition?.(symbolName)),
+      guardrailOk: store.guardrail.canTakeNewTrade(Date.now(), symbolName),
+    });
+    if (blocked) return skip(blocked);
     const symbolId = this.symbolIdByName.get(symbolName);
     const spec = this._specFor(symbolName);
     const bid = store.lastCandleBySymbol.get(symbolName)?.close;
     const spread = this.lastSpreadBySymbol.get(symbolName) ?? 0;
     if (symbolId == null || !spec || !(bid > 0)) return skip('no symbol id / spec / price');
-    const buy = ev.side === 'buy';
-    const fill = buy ? bid + spread : bid;
+    // Stop / target / sizing stop / 4x cap: entryPolicy.momentumOrderSignal, the same function the replay uses.
+    const plan = momentumOrderSignal(ev, { bid, spread, balance: store.balance, cfg });
+    if (plan.skip) return skip(plan.skip);
     const notionalPerLot = (bid / (spec.pointSize || 1)) * (spec.valuePerPointPerLot || 1);
-    const maxLots = notionalPerLot > 0 ? ((cfg.maxLeverage ?? 4) * store.balance) / notionalPerLot : undefined;
-    let signal;
-    if (ev.strategy === ORB_STRATEGY) {
-      const R = buy ? fill - ev.stopPrice : ev.stopPrice - fill;
-      if (!(R > 0) || R < (cfg.orb?.minStopSpreads ?? 3) * spread) return skip(`stop too tight or crossed (R=${R}, spread=${spread})`);
-      const rr = cfg.orb?.rrMultiple ?? 10;
-      signal = { stopPrice: ev.stopPrice, targetPrice: buy ? fill + rr * R : fill - rr * R, distance: R };
-    } else {
-      if (!(ev.vol14 > 0)) return skip('no 14-session volatility yet');
-      const unit = ev.vol14 * bid; // one daily sigma, in price
-      const k = cfg.noise?.emergencyStopVolMultiple ?? 3;
-      signal = { stopPrice: buy ? bid - k * unit : bid + k * unit, sizingStopPrice: buy ? bid - unit : bid + unit, targetPrice: null, distance: unit };
-    }
+    const maxLots = notionalPerLot > 0 ? plan.maxNotional / notionalPerLot : undefined;
+    const signal = plan.signal;
     await this._handleAutoExecuteEntry(symbolName, symbolId, {
       id: `${ev.strategy}-${symbolName}-${ev.time}`,
       source: ev.strategy,
@@ -2786,9 +2750,12 @@ export class CTraderDataSource {
     // holds a real position on the symbol (a managed strategy never enters while its own position is open: its engine is not flat then).
     const heldEntry = this.dailyPositionBySymbol?.get(symbolName);
     const heldBy = heldEntry ? (heldEntry.source ?? DAILY_RSI2_STRATEGY) : null;
-    if (heldEntry && !(signal.source === DAILY_RSI2_STRATEGY && heldBy === DAILY_RSI2_STRATEGY)) {
-      console.log(`[auto-execute] ${symbolName} source=${signal.source}: skipped, ${heldBy} already holds a real position on this symbol.`);
-      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'skipped', side: signal.suggestedSide, price: signal.entryPrice, detail: heldBy === DAILY_RSI2_STRATEGY ? 'daily strategy already holds a position on this symbol' : `${heldBy} already holds a position on this symbol` });
+    // 2026-09-24: filet de sécurité - une jambe (stratégie + paire) arrêtée par la règle pré-enregistrée (ou à la main) ne passe plus d'ordre.
+    // Both rules live in entryPolicy.js (entryBlockReason), the SAME function the faithful replay applies.
+    const blocked = entryBlockReason({ source: signal.source, heldBy, legAllowed: isLegAllowed(signal.source, symbolName) });
+    if (blocked) {
+      console.log(`[auto-execute] ${symbolName} source=${signal.source}: skipped, ${blocked}.`);
+      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'skipped', side: signal.suggestedSide, price: signal.entryPrice, detail: blocked });
       return;
     }
     // 2026-09-13: this was the ONLY path that can submit a real order, yet
@@ -2800,12 +2767,6 @@ export class CTraderDataSource {
     // réellement") for the pipeline itself to be verifiable, not just
     // fixed - this line plus the ones below at submit/confirm time close
     // that gap.
-    // 2026-09-24: filet de sécurité - une jambe (stratégie + paire) arrêtée par la règle pré-enregistrée (ou à la main) ne passe plus d'ordre.
-    if (!isLegAllowed(signal.source, symbolName)) {
-      console.log(`[auto-execute] ${symbolName} source=${signal.source}: skipped, leg stopped by the kill switch (see /api/kill-switch).`);
-      logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'skipped', side: signal.suggestedSide, price: signal.entryPrice, detail: 'kill switch: leg stopped (drawdown > 1.5x its worst 2010-2022 drawdown, or stopped by hand)' });
-      return;
-    }
     console.log(`[auto-execute] entry signal received: ${symbolName} source=${signal.source} side=${signal.suggestedSide} id=${signal.id}`);
     const signalTimeMs = Date.now();
     logOrderEvent(this.tradeLogClient, { symbol: symbolName, source: signal.source, event: 'signal', side: signal.suggestedSide, price: signal.entryPrice, detail: `stop=${signal.stopPrice} target=${signal.targetPrice}` });
@@ -2821,30 +2782,17 @@ export class CTraderDataSource {
       const isFvg = signal.source === 'fvg';
       // MARKET orders only: widen the stop by the spread (and pull the target in) so the fill-anchored relative distances land on the strategy's
       // own levels, and size on that widened stop - see adjustMarketProtectionForSpread. LIMIT (FVG) keeps absolute prices, unchanged.
-      const protection = isFvg
-        ? { stopPrice: signal.stopPrice, targetPrice: signal.targetPrice, spreadApplied: 0 }
-        : adjustMarketProtectionForSpread({
-            side: signal.suggestedSide,
-            entryPrice: signal.entryPrice,
-            stopPrice: signal.stopPrice,
-            targetPrice: signal.targetPrice,
-            spread: this.lastSpreadBySymbol.get(symbolName),
-          });
-      const sizing = calculateLotSize({
+      // (entryPolicy.orderProtection, shared with the replay.) B (noise area) is sized on its volatility unit (1 daily sigma), not on its far
+      // emergency stop - see momentumOrderSignal.
+      const { protection, sizingStopPrice } = orderProtection(signal, { spread: this.lastSpreadBySymbol.get(symbolName), isLimit: isFvg });
+      // 2026-09-24 (A/B): the study caps exposure at 4x the balance - never more lots than that, whatever the stop distance (capLots).
+      const sizing = capLots(calculateLotSize({
         balance: store.balance,
         riskPct: store.strategyEngine.riskPctPerTrade,
         entryPrice: signal.entryPrice,
-        // 2026-09-24 (B, noise area): sized on its volatility unit (1 daily sigma), not on its far emergency stop - see _executeMomentumEvent.
-        stopPrice: signal.sizingStopPrice ?? protection.stopPrice,
+        stopPrice: sizingStopPrice,
         symbolSpec: spec,
-      });
-      // 2026-09-24 (A/B): the study caps exposure at 4x the balance - never more lots than that, whatever the stop distance.
-      if (Number.isFinite(signal.maxLots) && signal.maxLots > 0 && sizing.lots > signal.maxLots) {
-        const step = spec.volumeStep || 0.01;
-        const capped = Math.max(spec.minVolume || step, Math.floor(signal.maxLots / step) * step);
-        sizing.actualRiskAmount = sizing.actualRiskAmount * (capped / sizing.lots);
-        sizing.lots = Number(capped.toFixed(6));
-      }
+      }), signal.maxLots, spec);
       // Was a flat 4 candles (~1h) - far shorter than CONFIG.fvg.maxAgeCandles
       // (50, ~12.5h), the window the BACKTEST itself gives an FVG zone to be
       // retested before calling it stale. 'validated' only fires once price

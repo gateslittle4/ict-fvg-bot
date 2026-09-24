@@ -36,12 +36,13 @@ export function loadM1(src, sym) {
   // GET /api/candles?symbol=SYM&limit=5000, heures UTC) après la fin du M1. Chaque M15 devient UNE ligne : l'entrée à
   // l'ouverture reste exacte, les sorties sont vues à la bougie M15 (stop d'abord si stop et objectif dans la même bougie).
   const dir = process.env.LIVE_M15_DIR;
-  if (src !== 'broker' || !dir || !fs.existsSync(`${dir}/live-${sym}.json`)) return base;
+  // m1End : dernière vraie minute (au-delà, une ligne = une bougie M15 prolongée) - les moteurs qui ont besoin de vraies M1 (A/B) s'y arrêtent.
+  if (src !== 'broker' || !dir || !fs.existsSync(`${dir}/live-${sym}.json`)) return Object.assign(base, { m1End: base.t[base.n - 1] });
   const lastT = base.t[base.n - 1];
   const extra = JSON.parse(fs.readFileSync(`${dir}/live-${sym}.json`, 'utf8')).candles
     .map((c) => ({ ...c, time: c.time - OFF })).filter((c) => c.time >= Math.floor(lastT / 900000) * 900000 + 900000);
   const col = (k) => Float64Array.from(extra, (c) => c[k]);
-  return concat(base, { t: col('time'), o: col('open'), h: col('high'), l: col('low'), c: col('close'), n: extra.length });
+  return Object.assign(concat(base, { t: col('time'), o: col('open'), h: col('high'), l: col('low'), c: col('close'), n: extra.length }), { m1End: lastT });
 }
 function loadM1Base(src, sym) {
   // Sans HistData (jamais commité, ex. un poste Windows fraîchement cloné), 'broker' se contente du M1 du broker (2023+) :
