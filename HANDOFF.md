@@ -6891,3 +6891,7 @@ Pré-enregistré (`d46eb40`) ; `scripts/runTurnOfMonthStudy.js` → `data/backte
 ## 2026-09-24 — Hypothèse d'Esdras « la nuit, les stratégies marchent mieux » : pré-enregistrée, NON SOUTENUE
 
 Pré-enregistré (`f63b03d`) ; trades générés par `LIVE_FILL=1 RRS=<RRR prod> node scripts/runCleanStudy.js legs ...` (19 jambes hors combo live, jamais découpées par session ; cache ignoré par git) ; `scripts/runNightHypothesisStudy.js` → `data/backtest-input/night-hypothesis-study.md`. 11 jambes tradent aux deux sessions : **écart nuit (18h-2h NY) − séance (9h30-16h) +0,007 R/trade à l'entraînement, z 0,11** (7/11 positives) ; test +0,040 (z 0,30) ; 2026 −0,078. Stratégies « retour » seules : +0,001 R. Correction de la discussion : CBDR est une stratégie de retournement (code), pas de cassure. L'écart nuit/séance du combo live venait de sa composition (NWOG ne trade que la nuit). Rien changé en live.
+
+## 2026-09-24 — Retour à la moyenne la nuit (idée « nuit calme » d'Esdras) : pré-enregistré, ÉCHEC
+
+Pré-enregistré (`ee3260b`) ; `scripts/runCalmNightStudy.js` → `data/backtest-input/calm-night-study.md`. Nuit : écart ≥ 1,5 × ATR14 (M15) de la moyenne depuis 18:00 NY → pari de retour, stop 1,5 × ATR, sortie 02:00 ; contrôle identique en séance. **US100 nuit : −0,019 R/trade, t −0,93 ; US500 : −0,029 R, t −1,43 (deux moitiés négatives) → échec** ; test −26 R / −61 R. La nuit perd un peu moins que la séance sur les indices (+0,03 R/trade), mais le retour à la moyenne reste perdant partout. Idée non confirmée ; pas de retouche des seuils. Rien changé en live.

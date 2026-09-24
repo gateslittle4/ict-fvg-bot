@@ -1063,10 +1063,10 @@
   },
   {
     "id": "prereg-calm-night-2026-09-24",
-    "title": "Retour à la moyenne la nuit (idée « nuit calme » d'Esdras) US100/US500 : pré-enregistré",
+    "title": "Retour à la moyenne la nuit (nuit calme) US100/US500 : ÉCHEC à l'entraînement",
     "date": "2026-09-24",
-    "status": "inconclusive",
-    "summary": "Écrit avant tout calcul. Nuit 20:00-01:00 NY (sortie 02:00) : clôture M15 à ≥1,5×ATR14 de la moyenne des prix typiques depuis 18:00 → pari de retour vers cette moyenne, stop 1,5×ATR, un trade par nuit. Contrôle : même règle en séance NY (10:00-15:00, sortie 16:00). Critère habituel sur la nuit US100/US500 ; idée confirmée seulement si nuit > séance à l'entraînement et au test.",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul. Nuit 20:00-01:00 NY (sortie 02:00) : clôture M15 à ≥1,5×ATR14 de la moyenne des prix typiques depuis 18:00 → pari de retour vers cette moyenne, stop 1,5×ATR, un trade par nuit. Contrôle : même règle en séance NY (10:00-15:00, sortie 16:00). Critère habituel sur la nuit US100/US500 ; idée confirmée seulement si nuit > séance à l'entraînement et au test. RÉSULTAT (scripts/runCalmNightStudy.js, data/backtest-input/calm-night-study.md) : US100 nuit entraînement 2 704 trades, −0,019 R, t −0,93 (deux moitiés négatives), test −26 R ; US500 nuit −0,029 R, t −1,43, test −61 R → ÉCHEC. Nuance : sur les indices la nuit perd un peu moins que la séance (+0,03 R/trade à l'entraînement, ~+0,01 au test) — cohérent avec un marché plus calme, mais pas assez pour gagner. Or et EUR/USD perdent aussi la nuit (EUR/USD −409 R).",
     "markets": [
       "US100",
       "US500",
@@ -1075,7 +1075,9 @@
     ],
     "timeframe": "M1/M15",
     "files": [
-      "data/backtest-input/preregistration-calm-night-2026-09-24.md"
+      "data/backtest-input/preregistration-calm-night-2026-09-24.md",
+      "scripts/runCalmNightStudy.js",
+      "data/backtest-input/calm-night-study.md"
     ]
   }
 ]
