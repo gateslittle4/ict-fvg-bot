@@ -247,6 +247,9 @@
         <button id="draw-undo" title="Annuler le dernier dessin">↶</button>
         <button id="draw-clear" title="Effacer tous les dessins de cette paire">🗑</button>
       </div>
+      <div class="group">
+        <button id="chart-shot" title="Capture d'écran du graphique (avec tes dessins), enregistrée en image PNG">📷 Capture</button>
+      </div>
       <span class="draw-hint" id="draw-hint"></span>
     </div>
 
@@ -981,7 +984,6 @@ async function loadChart({ keepView = false } = {}) {
     document.getElementById('chart-loading').hidden = lastCandles.length > 0;
     candleSeries.applyOptions({ priceFormat: { type: 'price', precision: decimals, minMove: 1 / 10 ** decimals } });
     candleSeries.setData(lastCandles.map(toChartCandle));
-    if (drawingsSymbol !== currentSymbol) loadDrawings(); else renderDrawings();
     // On a fresh load / symbol / timeframe switch, jump straight to the
     // current price instead of fitContent()'ing all ~1500 bars (which
     // compresses the whole window and leaves the live price a tiny sliver at
@@ -1012,6 +1014,11 @@ async function loadChart({ keepView = false } = {}) {
       } catch { /* affichage seulement : une erreur ici ne doit jamais casser le graphique */ }
     }
     setPositionLines(positionLinesVisible ? openPosition : null, decimals);
+    // V d'entrée (2026-09-24, Esdras : « le petit V où l'entrée a été effectuée, pour savoir en direct où le trade a été pris »).
+    entryMark = openPosition && Number.isFinite(openPosition.entryPrice) && Number.isFinite(Number(openPosition.entryTime))
+      ? { time: Number(openPosition.entryTime), price: openPosition.entryPrice, bullish: openPosition.direction === 'bullish', source: openPosition.source }
+      : null;
+    if (drawingsSymbol !== currentSymbol) loadDrawings(); else renderDrawings();
 
     renderOverlays(brokerPosition?.entryTime ? { ...overlaysData, signals: [...(overlaysData.signals || []), { time: brokerPosition.entryTime, direction: brokerPosition.direction, source: brokerPosition.source, entryPrice: brokerPosition.entryPrice }] } : overlaysData, decimals);
     updateSessionBands();
@@ -1070,6 +1077,7 @@ let drawTool = 'cursor';
 let drawings = [];
 let drawingsSymbol = null;
 let drawDraft = null;
+let entryMark = null; // position ouverte : { time, price, bullish, source } - dessinée en V sur la bougie d'entrée
 
 function loadDrawings() {
   drawingsSymbol = currentSymbol;
@@ -1142,11 +1150,27 @@ function drawingSvg(d, idx) {
   return '';
 }
 
+// V au-dessus (achat) ou au-dessous (vente) de la bougie d'entrée, pointe sur le prix d'entrée, heure d'entrée écrite à côté.
+function entryMarkSvg() {
+  if (!entryMark || !positionLinesVisible) return '';
+  const bucket = TF_MS[currentTimeframe] || 900000;
+  const candle = [...lastCandles].reverse().find((c) => c.time <= entryMark.time);
+  const x = timeToX(candle ? candle.time + 0 : Math.floor(entryMark.time / bucket) * bucket);
+  const y = priceToY(entryMark.price);
+  if (x === null || y === null) return '';
+  const hhmm = new Date(entryMark.time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const d = entryMark.bullish ? 1 : -1; // achat : V qui pointe vers le bas sur l'entrée, placé au-dessus ; vente : l'inverse
+  const tipY = y - d * 3, armY = y - d * 17;
+  const color = '#4c9eff';
+  return `<g class="entry-mark"><path d="M ${x - 8} ${armY} L ${x} ${tipY} L ${x + 8} ${armY}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    <text x="${x + 11}" y="${armY + d * 2}" fill="${color}" font-size="12" font-weight="700" paint-order="stroke" stroke="rgba(0,0,0,0.6)" stroke-width="3">${escSvg(`Entrée ${hhmm}${entryMark.source ? ' · ' + sourceLabel(entryMark.source) : ''}`)}</text></g>`;
+}
+
 function renderDrawings() {
   const layer = document.getElementById('draw-layer');
   if (!layer) return;
   const all = drawDraft ? [...drawings, drawDraft] : drawings;
-  layer.innerHTML = all.map((d, i) => drawingSvg(d, i < drawings.length ? i : -1)).join('');
+  layer.innerHTML = all.map((d, i) => drawingSvg(d, i < drawings.length ? i : -1)).join('') + entryMarkSvg();
 }
 
 function setDrawTool(tool) {
@@ -1219,6 +1243,49 @@ function initDrawingTools() {
 
 buildChart();
 initDrawingTools();
+
+// ---------- Capture d'écran (2026-09-24, Esdras : « pouvoir faire un screenshot du graphe ») ----------
+// Le canvas du graphique (bougies, zones, sessions, signaux, lignes de position) via chart.takeScreenshot(), plus les dessins (calque SVG
+// peint par-dessus) et un bandeau avec la paire, l'unité de temps, le prix et l'heure. Téléchargée en PNG ; sur téléphone, proposée au
+// partage (Photos, WhatsApp...) quand le navigateur le permet.
+async function takeChartScreenshot() {
+  if (!chart) return;
+  const base = chart.takeScreenshot(true, false);
+  const HEADER = 34;
+  const out = document.createElement('canvas');
+  out.width = base.width; out.height = base.height + HEADER;
+  const ctx = out.getContext('2d');
+  ctx.fillStyle = '#0e141b'; ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(base, 0, HEADER);
+  // dessins : le SVG du calque, à l'échelle du canvas (écrans haute densité)
+  const layer = document.getElementById('draw-layer');
+  if (layer && layer.innerHTML.trim()) {
+    const scale = base.width / (document.getElementById('chart').clientWidth || base.width);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.clientWidth}" height="${layer.clientHeight}">${layer.innerHTML}</svg>`;
+    const img = new Image();
+    await new Promise((res) => { img.onload = res; img.onerror = res; img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+    try { ctx.drawImage(img, 0, HEADER, layer.clientWidth * scale, layer.clientHeight * scale); } catch { /* dessins non peints, le reste de la capture reste valable */ }
+  }
+  const now = new Date();
+  const last = lastCandles[lastCandles.length - 1];
+  ctx.fillStyle = '#e6edf3'; ctx.font = `bold ${Math.round(15 * (base.width / 1000 > 1 ? base.width / 1000 : 1))}px sans-serif`; ctx.textBaseline = 'middle';
+  ctx.fillText(`${currentSymbol} · ${currentTimeframe} · ${last ? fmt(last.close, priceDecimals(currentSymbol)) : ''}`, 12, HEADER / 2);
+  ctx.fillStyle = '#8b98a5'; ctx.textAlign = 'right';
+  ctx.fillText(now.toLocaleString('fr-FR'), out.width - 12, HEADER / 2);
+  const stamp = now.toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  const name = `graphique-${currentSymbol}-${currentTimeframe}-${stamp}.png`;
+  const blob = await new Promise((res) => out.toBlob(res, 'image/png'));
+  if (!blob) return;
+  const file = typeof File === 'function' ? new File([blob], name, { type: 'image/png' }) : null;
+  if (file && navigator.canShare && navigator.canShare({ files: [file] }) && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+    try { await navigator.share({ files: [file], title: name }); return; } catch { /* partage annulé : on télécharge */ }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+document.getElementById('chart-shot').addEventListener('click', () => takeChartScreenshot().catch((err) => alert(`Capture impossible : ${err.message}`)));
 wireSessionPanel();
 loadSessionDefs();
 document.getElementById('toggle-zones').checked = zonesVisible;
@@ -1235,6 +1302,7 @@ document.getElementById('toggle-signals').addEventListener('change', (e) => {
   loadChart({ keepView: true });
 });
 document.getElementById('toggle-position-lines').addEventListener('change', (e) => {
+  setTimeout(() => renderDrawings(), 0);
   positionLinesVisible = e.currentTarget.checked;
   saveOverlayToggleState();
   loadChart({ keepView: true });
