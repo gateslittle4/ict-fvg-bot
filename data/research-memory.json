@@ -1328,17 +1328,21 @@
   },
   {
     "id": "weekend-close-2026-09-25",
-    "title": "Fermer les positions intraday avant le week-end : pré-enregistré",
+    "title": "Fermer les positions intraday avant le week-end : NON RETENU",
     "date": "2026-09-25",
-    "status": "inconclusive",
-    "summary": "Pré-enregistré avant tout calcul : vendredi 16:45 NY, fermeture de toutes les positions du combo sauf RSI(2) et pas de nouvelle entrée jusqu'au dimanche. Retenu si le taux de réussite FTMO 1-Step (départ chaque lundi, 0,5 %) ne baisse ni en 2011-2016, ni en 2017-2022, ni au test 2023-2025.",
+    "status": "rejected",
+    "summary": "Pré-enregistré (ab9d220), amendement déclaré (8316278 : le 1er calcul ne fermait qu'environ la moitié des week-ends, données arrêtées avant 16:45). Vendredi 16:45 NY (ou dernière bougie du vendredi), fermeture du combo sauf RSI(2). Réussite FTMO 1-Step (départ chaque lundi, 0,5 %) : 2011-2016 49 -> 50 %, 2017-2022 77 -> 71 % -> NON RETENU. R : 2011-16 +30 -> +53, 2017-22 +296 -> +213, test 2023-25 +21.6 -> +47.8 (réussite 42 -> 42 %), 2026 -13.3 -> +12.7. Pire trade 2017-22 -6.6 -> -2.2, 2026 -9.5 -> -1.2. 298 trades fermés le vendredi valaient +230 R à la fermeture : en 2017-2022 les positions gardées le week-end rapportaient en moyenne (Divergence surtout). La règle coupe les queues mais aussi du gain. Vu en passant : le trade RSI(2) de 2016-12-29 à 2020-03-22 (-9 R) du rejeu, bug déjà connu. data/backtest-input/weekend-close-study.md.",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "M15 / rejeu fidèle",
     "files": [
-      "data/backtest-input/preregistration-weekend-close-2026-09-25.md"
+      "data/backtest-input/preregistration-weekend-close-2026-09-25.md",
+      "data/backtest-input/weekend-close-study.md",
+      "scripts/runWeekendCloseStudy.js",
+      "scripts/lib/weekendClose.js",
+      "scripts/lib/ftmoChallenge.js"
     ]
   }
 ]
