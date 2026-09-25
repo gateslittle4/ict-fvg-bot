@@ -29,7 +29,7 @@ import { MANAGED_SOURCES, entryBlockReason, momentumEntryBlockReason, momentumOr
 import { IntradayMomentumEngine } from '../src/intradayMomentumEngine.js';
 import { CONFIG } from '../src/config.js';
 import { OFF, eng, loadM1, toM15, lower, refPrice, swapPerUnit } from './lib/m1Data.js';
-import { fridayCloseReached } from './lib/weekendClose.js';
+import { weekendCloseAt } from './lib/weekendClose.js';
 
 const SRC = process.argv[2];
 if (SRC === 'summary') { summary(); process.exit(0); }
@@ -218,7 +218,8 @@ const times = [...new Set(SYMS.flatMap((s) => data[s].m15.slice(idx[s]).map((c) 
 let lastLog = Date.now();
 const MAX_BARS = Number(process.env.MAX_BARS || Infinity); // profilage : s'arrêter après N horodatages
 let nBars = 0;
-for (const T of times) {
+for (let ti = 0; ti < times.length; ti++) {
+  const T = times[ti];
   if (++nBars > MAX_BARS) break;
   feedMomentum(T, false); // A/B : minutes finies avant T (en live, le combo traite sa bougie avant A/B à la même minute)
   runExits(T);
@@ -226,9 +227,13 @@ for (const T of times) {
   // avant la bougie suivante) : un signal validé puis refusé (exclusion RSI(2), taille nulle...) ne bloque pas le symbole.
   // Absent jusqu'au 2026-09-23 : la croyance restait coincée pour des mois (Divergence US500 bloquée « netting » dès juillet).
   for (const s of SYMS) { const b = engine.getOpenPosition(s); if (b && !open.some((p) => p.sym === s)) engine.clearBelievedPosition(s, b.id); }
-  const weekendLock = WEEKEND_CLOSE && fridayCloseReached(T);
+  const weekendLock = WEEKEND_CLOSE && weekendCloseAt(T, times[ti + 1] ?? Infinity);
   if (weekendLock) {
-    for (const p of open.filter((x) => !MANAGED_SOURCES.has(x.source))) { const S = data[p.sym].m1; const i = lower(S.t, S.n, T); if (i < S.n) closePosition(p, S.o[i], S.t[i], 'weekend'); }
+    for (const p of open.filter((x) => !MANAGED_SOURCES.has(x.source))) {
+      const S = data[p.sym].m1; const i = lower(S.t, S.n, T);
+      if (i < S.n && S.t[i] < T + 15 * MIN) closePosition(p, S.o[i], S.t[i], 'weekend');
+      else if (i > 0) closePosition(p, S.c[i - 1], S.t[i - 1], 'weekend'); // plus de cotation de la paire à cette heure : sa dernière
+    }
   }
   for (const sym of SYMS) {
     const bars = data[sym].m15; const k = idx[sym];
