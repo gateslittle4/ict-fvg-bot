@@ -100,7 +100,10 @@ function closePosition(p, exitBid, exitTime, reason) {
   balance += pnl;
   guardrail.recordTrade({ pnl, time: exitTime + OFF, balanceAfter: balance, symbol: p.sym });
   if (MANAGED_SOURCES.has(p.source)) { if (managed.get(p.sym) === p) managed.delete(p.sym); } else engine.clearBelievedPosition(p.sym, p.signalId);
-  trades.push({ symbol: p.sym, source: p.source, direction: p.dir, entryTime: p.fillTime, exitTime, r: Math.round((pnl / p.risk) * 1e4) / 1e4, pnl: Math.round(pnl * 100) / 100, balance: Math.round(balance * 100) / 100, reason });
+  // Prix (pour le Simulateur du site) : entrée au bid (un achat paie bid + spread), stop/objectif tels qu'envoyés, sortie au prix d'exécution.
+  const q = (x) => (x == null ? null : Math.round(x * 1e5) / 1e5);
+  trades.push({ symbol: p.sym, source: p.source, direction: p.dir, entryTime: p.fillTime, exitTime, r: Math.round((pnl / p.risk) * 1e4) / 1e4, pnl: Math.round(pnl * 100) / 100, balance: Math.round(balance * 100) / 100, reason,
+    entryPrice: q(p.dir === 'bullish' ? p.fill - s : p.fill), stopPrice: q(p.sl), targetPrice: q(p.tp), exitPrice: q(exitPx) });
   open.splice(open.indexOf(p), 1);
 }
 
