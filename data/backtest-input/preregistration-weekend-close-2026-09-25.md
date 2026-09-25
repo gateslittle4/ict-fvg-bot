@@ -30,3 +30,15 @@ versions. **Retenu** si ce taux, AVEC la règle, est supérieur ou égal à celu
 - Jours fériés : un marché fermé le vendredi (Vendredi saint) ou fermant plus tôt n'est pas traité (la règle ne vise que 16:45 le vendredi).
 - A et B ne sont pas dans les tranches ; elles ferment déjà le soir même.
 - Les tranches repartent chacune d'un préchauffage de 90 jours (comme les existantes).
+
+## AMENDEMENT (écrit APRÈS un premier calcul, déclaré) — 2026-09-25
+Le premier calcul est invalide : dans les données, la dernière minute du vendredi est souvent AVANT 16:45 New York (HistData s'arrête
+souvent à 16:15 en heure d'été ; jours fériés). Mesuré : US100 HistData, une bougie M15 de 16:45 existe sur 301 week-ends sur 634 ;
+courtier (2022-2026) 183 sur 245. La règle ne s'est donc appliquée qu'à environ la moitié des week-ends. Résultat de ce premier calcul,
+vu (déclaré) : taux de réussite FTMO 49 → 50 % (2011-2016), 77 → 81 % (2017-2022), 42 → 42 % (test) ; R 2017-2022 +296 → +246.
+
+Correction (la seule, qui rend le calcul conforme à l'intention écrite plus haut ; le bot live, lui, connaît l'heure de fermeture) :
+le vendredi (heure de New York), la fermeture se fait à la première bougie M15 à 16:45 ou plus tard, OU, si les données de la semaine
+s'arrêtent avant, à la dernière bougie M15 du vendredi (celle suivie d'au moins 36 h sans cotation). Prix : l'ouverture de cette bougie
+(ou la dernière cotation de la paire si elle n'a plus de données à cette heure). Critère inchangé. Vendredi saint (pas de cotation le
+vendredi) : toujours non traité.
