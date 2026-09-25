@@ -1274,5 +1274,22 @@
       "scripts/runMeanReversionStudy.js",
       "scripts/lib/meanReversion.js"
     ]
+  },
+  {
+    "id": "orb-hold-next-day-2026-09-25",
+    "title": "A (ORB 5 min US100) gardée jusqu'à la clôture du lendemain : NON RETENUE",
+    "date": "2026-09-25",
+    "status": "rejected",
+    "summary": "Pré-enregistré avant calcul (a16fda0). Même entrée/stop/objectif 10R, la position ouverte à 15:59 est gardée la nuit (stop et objectif surveillés toutes heures, swap compté) et fermée à 15:59 le lendemain. Concerne 862 trades sur 4013. Entraînement : +533,8 R contre +450,4 R (écart +83,4 R) MAIS 2011-2016 −47,5 R (2017-2022 +130,9 R) -> critère non rempli ; test 2023-2025 −2,8 R ; 2026 +4,2 R. Gagnants 23 % -> 16 %. Gain concentré sur le marché haussier 2017-2022 (effet de tenue longue, pas du momentum d'ouverture). A reste fermée à 15:59. data/backtest-input/orb-hold-next-day-study.md.",
+    "markets": [
+      "US100"
+    ],
+    "timeframe": "M1",
+    "files": [
+      "data/backtest-input/preregistration-orb-hold-next-day-2026-09-25.md",
+      "data/backtest-input/orb-hold-next-day-study.md",
+      "scripts/lib/orbHold.js",
+      "scripts/runOrbHoldNextDayStudy.js"
+    ]
   }
 ]
