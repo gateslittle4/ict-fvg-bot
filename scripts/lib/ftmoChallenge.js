@@ -6,21 +6,40 @@ const DAY = 86400000, CET = 3600000;
 
 /**
  * @param {Array<{ u: number, x: number, r: number }>} trades - entrée / sortie en ms UTC, triés par sortie
+ * @param {object} [opts]
+ * @param {'realized'|'mae'|'stop'} [opts.open] - pertes latentes (FTMO mesure l'équité, pas le solde réalisé) : 'realized' = ignorées ;
+ *   'mae' = chaque position compte, de son entrée à sa sortie, pour sa pire perte réellement atteinte (t.mae, en R) ; 'stop' = pire cas,
+ *   min(-1, r) R (au stop, ou pire si elle a fini sous le stop). Les deux derniers placent la pire perte sur toute la vie du trade.
  * @returns {{ res: 'pass'|'bust'|'bust-day'|'open', days: number }}
  */
-export function challengeOutcome(trades, start, { riskPct = 0.5, end = Infinity } = {}) {
+export function challengeOutcome(trades, start, { riskPct = 0.5, end = Infinity, open: openMode = 'realized', worstCaseOpen = false } = {}) {
+  const mode = worstCaseOpen ? 'stop' : openMode;
+  const floatOf = (t) => (mode === 'stop' ? Math.min(-1, t.r) : Math.min(0, t.mae ?? Math.min(-1, t.r)));
   const target = 10 / riskPct, maxLoss = 10 / riskPct, dayLoss = 3 / riskPct;
-  let eq = 0, maxEod = 0, day = null, dayStart = 0;
-  const byDay = new Map();
+  // Événements dans l'ordre du temps : sorties (réalisé) et, en pire cas, entrées (perte latente ajoutée jusqu'à la sortie).
+  const ev = [];
   for (const t of trades) {
     if (t.u < start) continue;
-    const d = Math.floor((t.x + CET) / DAY);
+    ev.push({ time: t.x, kind: 1, t });
+    if (mode !== 'realized') ev.push({ time: t.u, kind: 0, t });
+  }
+  ev.sort((a, b) => a.time - b.time || a.kind - b.kind);
+  let eq = 0, open = 0, maxEod = 0, day = null, dayStart = 0;
+  const byDay = new Map();
+  for (const { time, kind, t } of ev) {
+    const d = Math.floor((time + CET) / DAY);
     if (d !== day) { if (day !== null) maxEod = Math.max(maxEod, eq); day = d; dayStart = eq; }
-    eq += t.r;
-    byDay.set(d, (byDay.get(d) || 0) + t.r);
-    if (dayStart - eq >= dayLoss) return { res: 'bust-day', days: (t.x - start) / DAY };
-    if (eq <= maxEod - maxLoss) return { res: 'bust', days: (t.x - start) / DAY };
-    if (eq >= target && Math.max(...byDay.values()) <= 0.5 * eq) return { res: 'pass', days: (t.x - start) / DAY };
+    const float = floatOf(t);
+    if (kind === 0) open += float;
+    else {
+      if (mode !== 'realized') open -= float;
+      eq += t.r;
+      byDay.set(d, (byDay.get(d) || 0) + t.r);
+    }
+    const equity = eq + open;
+    if (dayStart - equity >= dayLoss) return { res: 'bust-day', days: (time - start) / DAY };
+    if (equity <= maxEod - maxLoss) return { res: 'bust', days: (time - start) / DAY };
+    if (kind === 1 && eq >= target && Math.abs(open) < 1e-9 && Math.max(...byDay.values()) <= 0.5 * eq) return { res: 'pass', days: (time - start) / DAY };
   }
   return { res: 'open', days: (end - start) / DAY };
 }

@@ -103,7 +103,9 @@ function closePosition(p, exitBid, exitTime, reason) {
   // Prix (pour le Simulateur du site) : entrée au bid (un achat paie bid + spread), stop/objectif tels qu'envoyés, sortie au prix d'exécution.
   const q = (x) => (x == null ? null : Math.round(x * 1e5) / 1e5);
   trades.push({ symbol: p.sym, source: p.source, direction: p.dir, entryTime: p.fillTime, exitTime, r: Math.round((pnl / p.risk) * 1e4) / 1e4, pnl: Math.round(pnl * 100) / 100, balance: Math.round(balance * 100) / 100, reason,
-    entryPrice: q(p.dir === 'bullish' ? p.fill - s : p.fill), stopPrice: q(p.sl), targetPrice: q(p.tp), exitPrice: q(exitPx) });
+    entryPrice: q(p.dir === 'bullish' ? p.fill - s : p.fill), stopPrice: q(p.sl), targetPrice: q(p.tp), exitPrice: q(exitPx),
+    // pire perte latente pendant la vie du trade, en R (sans le swap) : bid le plus bas pour un achat, ask le plus haut pour une vente
+    mae: Math.round(Math.min(0, pnl / p.risk, ((p.worst == null ? 0 : p.dir === 'bullish' ? p.worst - p.fill : p.fill - (p.worst + s)) * p.units) / p.risk) * 1e4) / 1e4 });
   open.splice(open.indexOf(p), 1);
 }
 
@@ -123,13 +125,17 @@ function runExits(until) {
           let exitBid;
           if (stopHit) exitBid = bull ? Math.min(S.o[i], p.sl) : Math.max(S.o[i], p.sl - s); // gap à travers le stop : sortie à l'ouverture
           else exitBid = bull ? Math.max(S.o[i], p.tp) : Math.min(S.o[i], p.tp - s);
-          if (!best || S.t[i] < best.time) best = { p, time: S.t[i], exitBid, reason: stopHit ? 'stop' : 'target' };
+          // pire prix atteint (MAE) : au stop, la sortie ; à l'objectif, le pire de la minute compte aussi (prudent)
+          const worst = stopHit ? exitBid : bull ? S.l[i] : S.h[i];
+          if (!best || S.t[i] < best.time) best = { p, time: S.t[i], exitBid, reason: stopHit ? 'stop' : 'target', worst };
           break;
         }
+        p.worst = p.worst == null ? (bull ? S.l[i] : S.h[i]) : bull ? Math.min(p.worst, S.l[i]) : Math.max(p.worst, S.h[i]);
         p.cursor = i + 1;
       }
     }
     if (!best) return;
+    const bw = best.p.dir === 'bullish'; best.p.worst = best.p.worst == null ? best.worst : bw ? Math.min(best.p.worst, best.worst) : Math.max(best.p.worst, best.worst);
     closePosition(best.p, best.exitBid, best.time, best.reason);
   }
 }
