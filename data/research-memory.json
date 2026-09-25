@@ -1311,17 +1311,19 @@
   },
   {
     "id": "volatility-sizing-2026-09-25",
-    "title": "Taille réduite de moitié en marché agité (ATR14 / moyenne 100 > 1,5) : pré-enregistré",
+    "title": "Taille réduite de moitié en marché agité : NON RETENU",
     "date": "2026-09-25",
-    "status": "preregistered",
-    "summary": "Pré-enregistré avant tout calcul : risque x0,5 quand ATR(14) journalier / moyenne 100 de cet ATR > 1,5 (définition et seuil de l'étude précédente). Retenu seulement si R total / pire baisse s'améliore en 2011-2016, 2017-2022 et au test 2023-2025.",
+    "status": "rejected",
+    "summary": "Pré-enregistré (53c1cca). Risque x0,5 quand ATR(14) journalier / moyenne 100 > 1,5. Ratio R total / pire baisse : 2011-2016 0,36 -> 0,13, 2017-2022 8,38 -> 6,85 -> non retenu. Le combo gagne SURTOUT en marché agité à l'entraînement (+0,365 R/trade sur 393 trades contre +0,054 ailleurs ; Divergence, Weekly Sweep, NWOG ~+0,6 R/trade). Test 2023-2025 : agités -0,009 R/trade (76 trades), la règle aurait à peine aidé (0,33 -> 0,36). 2026 : 7 trades agités seulement. Même constat que l'ancienne étude : c'est le marché calme qui est faible, pas l'agité. data/backtest-input/volatility-sizing-study.md.",
     "markets": [
       "US100",
       "US500"
     ],
     "timeframe": "D1 régime / trades du rejeu fidèle",
     "files": [
-      "data/backtest-input/preregistration-volatility-sizing-2026-09-25.md"
+      "data/backtest-input/preregistration-volatility-sizing-2026-09-25.md",
+      "data/backtest-input/volatility-sizing-study.md",
+      "scripts/runVolatilitySizingStudy.js"
     ]
   }
 ]
