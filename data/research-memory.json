@@ -1330,7 +1330,7 @@
     "id": "weekend-close-2026-09-25",
     "title": "Fermer les positions intraday avant le week-end : pré-enregistré",
     "date": "2026-09-25",
-    "status": "preregistered",
+    "status": "inconclusive",
     "summary": "Pré-enregistré avant tout calcul : vendredi 16:45 NY, fermeture de toutes les positions du combo sauf RSI(2) et pas de nouvelle entrée jusqu'au dimanche. Retenu si le taux de réussite FTMO 1-Step (départ chaque lundi, 0,5 %) ne baisse ni en 2011-2016, ni en 2017-2022, ni au test 2023-2025.",
     "markets": [
       "US100",

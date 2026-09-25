@@ -29,6 +29,7 @@ import { MANAGED_SOURCES, entryBlockReason, momentumEntryBlockReason, momentumOr
 import { IntradayMomentumEngine } from '../src/intradayMomentumEngine.js';
 import { CONFIG } from '../src/config.js';
 import { OFF, eng, loadM1, toM15, lower, refPrice, swapPerUnit } from './lib/m1Data.js';
+import { fridayCloseReached } from './lib/weekendClose.js';
 
 const SRC = process.argv[2];
 if (SRC === 'summary') { summary(); process.exit(0); }
@@ -39,7 +40,10 @@ const FROM = process.env.FROM_DATE ? Date.parse(process.env.FROM_DATE) - OFF : p
 const TO = process.argv[5] ? eng(Number(process.argv[5])) : Infinity;
 // SB_RR=<n> : RRR du Silver Bullet remplacé (preregistration-silverbullet-rr-2026-09-24.md), fichiers séparés.
 const SB_RR = process.env.SB_RR ? Number(process.env.SB_RR) : null;
-const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}${process.env.SPREAD_MULT != null ? `-spread${process.env.SPREAD_MULT}` : ''}${SB_RR ? `-sbrr${SB_RR}` : ''}`;
+// WEEKEND_CLOSE=1 : vendredi 16:45 New York, positions du combo fermées (RSI(2), A, B exceptées) et plus d'entrée du combo jusqu'au
+// dimanche (preregistration-weekend-close-2026-09-25.md), fichiers séparés.
+const WEEKEND_CLOSE = process.env.WEEKEND_CLOSE === '1';
+const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}${process.env.SPREAD_MULT != null ? `-spread${process.env.SPREAD_MULT}` : ''}${SB_RR ? `-sbrr${SB_RR}` : ''}${WEEKEND_CLOSE ? '-weekendclose' : ''}`;
 const START_BALANCE = 10000;
 const WARMUP_BARS = 8640; // ce que le live demande au démarrage (90 jours de M15)
 const DAILY = 'rsi2-daily';
@@ -222,6 +226,10 @@ for (const T of times) {
   // avant la bougie suivante) : un signal validé puis refusé (exclusion RSI(2), taille nulle...) ne bloque pas le symbole.
   // Absent jusqu'au 2026-09-23 : la croyance restait coincée pour des mois (Divergence US500 bloquée « netting » dès juillet).
   for (const s of SYMS) { const b = engine.getOpenPosition(s); if (b && !open.some((p) => p.sym === s)) engine.clearBelievedPosition(s, b.id); }
+  const weekendLock = WEEKEND_CLOSE && fridayCloseReached(T);
+  if (weekendLock) {
+    for (const p of open.filter((x) => !MANAGED_SOURCES.has(x.source))) { const S = data[p.sym].m1; const i = lower(S.t, S.n, T); if (i < S.n) closePosition(p, S.o[i], S.t[i], 'weekend'); }
+  }
   for (const sym of SYMS) {
     const bars = data[sym].m15; const k = idx[sym];
     if (k >= bars.length || bars[k].time !== T) continue;
@@ -246,6 +254,7 @@ for (const T of times) {
       if (process.env.DEBUG_EVENTS && e.type === 'validated') console.log(`  [signal] ${new Date(now).toISOString().slice(0, 16)} ${e.source} ${e.symbol ?? sym} ${e.direction} ${e.blockedReason ? 'BLOQUÉ: ' + e.blockedReason : 'pris'}${heldBy(e.symbol ?? sym) ? ` (${heldBy(e.symbol ?? sym)} tient ${e.symbol ?? sym})` : ''}`);
       if (e.type === 'validated' && !e.blockedReason) {
         if (e.source === 'fvg') continue; // retiré du live
+        if (weekendLock) continue;
         const esym = e.symbol ?? sym; // une Divergence peut concerner l'autre jambe de la paire (routée comme le live)
         if (entryBlockReason({ source: e.source, heldBy: heldBy(esym), legAllowed: legAllowed(e.source, esym) })) continue; // même règle que _handleAutoExecuteEntry
         openPosition(esym, e.source, e.id, e.direction, e.entryPrice, e.stopPrice, e.targetPrice, T);
