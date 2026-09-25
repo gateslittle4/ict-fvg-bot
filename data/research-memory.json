@@ -1291,5 +1291,22 @@
       "scripts/lib/orbHold.js",
       "scripts/runOrbHoldNextDayStudy.js"
     ]
+  },
+  {
+    "id": "sma200-direction-filter-2026-09-25",
+    "title": "Filtre de sens par la moyenne 200 jours sur le combo : NON RETENU",
+    "date": "2026-09-25",
+    "status": "rejected",
+    "summary": "Pré-enregistré (820d08b). Achats gardés seulement au-dessus de la moyenne 200 jours, ventes seulement en dessous (trades du rejeu fidèle filtrés). Trades retirés : 2011-2016 +41,5 R (634), 2017-2022 +92,0 R (810) -> ils GAGNAIENT à l'entraînement -> non retenu. Test 2023-2025 : retirés −28,6 R (le filtre aurait aidé), 2026 −6,6 R. Les stratégies du combo sont surtout des retournements : les trades à contre-tendance font partie de leur avantage (Divergence US500 achats sous la moyenne +58,6 R, ventes Silver Bullet US500 +39,1 R et Weekly Sweep +33,5 R au-dessus). Même inversion de régime que achats/ventes (ventes +105 R en 2011-2022, −47 R depuis 2023). data/backtest-input/sma200-direction-filter-study.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "D1 filtre / M15 trades",
+    "files": [
+      "data/backtest-input/preregistration-sma200-direction-filter-2026-09-25.md",
+      "data/backtest-input/sma200-direction-filter-study.md",
+      "scripts/runSma200DirectionFilterStudy.js"
+    ]
   }
 ]
