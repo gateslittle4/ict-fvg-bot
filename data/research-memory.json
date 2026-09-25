@@ -1256,5 +1256,20 @@
       "data/backtest-input/preregistration-market-maker-model-amendment-2026-09-25.md",
       "data/backtest-input/market-maker-model-amendment-study.md"
     ]
+  },
+  {
+    "id": "prereg-mean-reversion-ibs-3down-2026-09-25",
+    "title": "Retour à la moyenne journalier (IBS, 3 baisses de suite) sur US100/US500 : pré-enregistré",
+    "date": "2026-09-25",
+    "status": "inconclusive",
+    "summary": "Écrit avant tout calcul. Bougies 17:00-17:00 temps moteur, décision à la clôture, exécution à l'ouverture suivante, achats seulement au-dessus de la moyenne 200 jours, stop 3 ATR(14), swap du courtier. IBS < 0,2 -> sortie IBS > 0,8 / 10 jours ; 3 clôtures en baisse -> sortie première clôture en hausse / 10 jours. US100 + US500 réunis par règle ; ≥ 60 trades, t ≥ 2,2 (2 hypothèses), deux moitiés positives, test 2023-2025 > 0. Texte : data/backtest-input/preregistration-mean-reversion-ibs-3down-2026-09-25.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "D1",
+    "files": [
+      "data/backtest-input/preregistration-mean-reversion-ibs-3down-2026-09-25.md"
+    ]
   }
 ]
