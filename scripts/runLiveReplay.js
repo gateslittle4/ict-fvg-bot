@@ -189,6 +189,7 @@ function executeMomentumEvent(ev, t) {
   const bid = M.o[j];
   const held = managed.get(sym);
   if (ev.type === 'exit') { if (held && held.source === ev.strategy) closePosition(held, bid, t, ev.reason === 'close' ? 'close' : 'signal'); return; }
+  if (t >= TO) return; // après la fin de la tranche : sorties seulement
   const blocked = momentumEntryBlockReason({ heldBy: heldBy(sym), comboHolds: Boolean(engine.getOpenPosition(sym)), guardrailOk: guardrail.canTakeNewTrade(t + OFF, sym) })
     ?? entryBlockReason({ source: ev.strategy, heldBy: heldBy(sym), legAllowed: legAllowed(ev.strategy, sym) });
   if (blocked) { if (process.env.DEBUG_EVENTS) console.log(`  [A/B] ${new Date(t + OFF).toISOString().slice(0, 16)} ${ev.strategy} ${sym} ${ev.side} BLOQUÉ: ${blocked}`); return; }
@@ -214,13 +215,18 @@ function feedMomentum(until, inclusive) {
 
 // Boucle : toutes les bougies M15 après le préchauffage, dans l'ordre du temps (tous symboles).
 const idx = {}; for (const s of SYMS) idx[s] = lower(data[s].m15.map((c) => c.time), data[s].m15.length, firstLive);
-const times = [...new Set(SYMS.flatMap((s) => data[s].m15.slice(idx[s]).map((c) => c.time)))].filter((t) => t < TO).sort((a, b) => a - b);
+const times = [...new Set(SYMS.flatMap((s) => data[s].m15.slice(idx[s]).map((c) => c.time)))].sort((a, b) => a - b);
 let lastLog = Date.now();
 const MAX_BARS = Number(process.env.MAX_BARS || Infinity); // profilage : s'arrêter après N horodatages
 let nBars = 0;
 for (let ti = 0; ti < times.length; ti++) {
   const T = times[ti];
   if (++nBars > MAX_BARS) break;
+  // Après la fin de la tranche : plus aucune entrée, on continue seulement jusqu'à la sortie normale des positions encore ouvertes
+  // (durée max, signal de sortie RSI(2)). Avant le 2026-09-25, runExits(Infinity) ne voyait que stop/objectif : un RSI(2) ouvert le
+  // 29/12/2016 (sans objectif) a couru jusqu'au stop de mars 2020 (-9 R).
+  const pastEnd = T >= TO;
+  if (pastEnd && open.length === 0) break;
   feedMomentum(T, false); // A/B : minutes finies avant T (en live, le combo traite sa bougie avant A/B à la même minute)
   runExits(T);
   // Balayage des positions « crues » sans position réelle (_clearStaleBeliefsAgainstBroker, toutes les 5 min en live, donc
@@ -259,7 +265,7 @@ for (let ti = 0; ti < times.length; ti++) {
       if (process.env.DEBUG_EVENTS && e.type === 'validated') console.log(`  [signal] ${new Date(now).toISOString().slice(0, 16)} ${e.source} ${e.symbol ?? sym} ${e.direction} ${e.blockedReason ? 'BLOQUÉ: ' + e.blockedReason : 'pris'}${heldBy(e.symbol ?? sym) ? ` (${heldBy(e.symbol ?? sym)} tient ${e.symbol ?? sym})` : ''}`);
       if (e.type === 'validated' && !e.blockedReason) {
         if (e.source === 'fvg') continue; // retiré du live
-        if (weekendLock) continue;
+        if (weekendLock || pastEnd) continue;
         const esym = e.symbol ?? sym; // une Divergence peut concerner l'autre jambe de la paire (routée comme le live)
         if (entryBlockReason({ source: e.source, heldBy: heldBy(esym), legAllowed: legAllowed(e.source, esym) })) continue; // même règle que _handleAutoExecuteEntry
         openPosition(esym, e.source, e.id, e.direction, e.entryPrice, e.stopPrice, e.targetPrice, T);
@@ -271,7 +277,7 @@ for (let ti = 0; ti < times.length; ti++) {
     if (sym === 'US500') {
       if (k > 0) daily.updateFormingBar(bars[k - 1]);
       for (const ev of daily.ingest(stub)) {
-        if (ev.event === 'entry' && guardrail.canTakeNewTrade(now, 'US500') && !entryBlockReason({ source: DAILY, heldBy: heldBy('US500'), legAllowed: legAllowed(DAILY, 'US500') })) {
+        if (ev.event === 'entry' && !pastEnd && guardrail.canTakeNewTrade(now, 'US500') && !entryBlockReason({ source: DAILY, heldBy: heldBy('US500'), legAllowed: legAllowed(DAILY, 'US500') })) {
           openPosition('US500', DAILY, null, 'bullish', ev.price, ev.stopPrice, null, T);
         } else if (ev.event === 'exit' && ev.detail !== 'stop' && managed.get('US500')?.source === DAILY) {
           const S = data.US500.m1; const i = lower(S.t, S.n, T);
