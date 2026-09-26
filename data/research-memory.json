@@ -1397,5 +1397,17 @@
       "scripts/runEsdrasPullbackStudy.js",
       "scripts/lib/pullbackRule.js"
     ]
+  },
+  {
+    "id": "esdras-manual-trades-analysis-2026-09-26",
+    "title": "Analyse exploratoire des 646 trades NAS100 réels d'Esdras (GoatFunded 83486, mars-juillet 2025)",
+    "date": "2026-09-26",
+    "status": "inconclusive",
+    "summary": "Exploratoire (pas un test). Recalage vérifié : heures affichées = heure de New York (UTC-4 dès le 9 mars) ; écart de prix plateforme - courtier variable (avril +12, juillet -16 pts, base des contrats à terme) recalculé par jour : 611/646 entrées dans la bonne bougie M1 (± 3 pts). Unité N = points / ATR H1. SOLIDE (deux moitiés, sans avril, IC 90 % hors 0) : 11 h-12 h -0,23 N/trade et 12 h-18 h -0,08 (≈ -2 250 $) ; entrées près d'un FVG M15 du sens formé il y a 5 à 24 bougies : +0,29 N/trade (149 trades, +4 062 $ ; hors 11 h-18 h +0,41, 111 trades, +4 291 $ ; positif chaque mois ; +1 665 $ sans les 5 meilleurs) ; FVG frais (0-4 bougies) perdants. MAIS la même règle appliquée mécaniquement à toutes les occurrences, sur la même période, fait ≈ 0 (+0,01 à +0,06 N/trade, t < 1,1) : l'avantage venait de son choix parmi ces FVG, pas du setup. Placebo : heure d'entrée pas meilleure qu'au hasard (± 90 min) ; sens : surtout la hausse de 2025 (ses ventes perdent à 1-4 h hors setup). Sorties : 59 % du meilleur mouvement capté ; perdants coupés en 8 min (médiane) à -0,29 N, 28 % repartent ensuite à +2 N. Réentrées (essai 2+) positives, essai 1 négatif. Pas de signe de tilt. Aucune règle à pré-enregistrer (version mécanique ≈ 0 sur la période même). Données personnelles hors du dépôt.",
+    "markets": [
+      "US100"
+    ],
+    "timeframe": "M15 / M1",
+    "files": []
   }
 ]

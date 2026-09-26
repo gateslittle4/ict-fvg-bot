@@ -7021,3 +7021,16 @@ autres trades > 0. Rejeu fidèle du bot complet (combo + A + B + RSI(2)) régén
 - **2026 n'est pas une année calme** : 15 % (US100) / 26 % (US500) de jours calmes, contre 23-33 % sur 2011-2025 ; 72-80 % de jours
   normaux. Le calme n'explique donc pas les pertes de 2026.
 - Remarque : le bot complet (avec A/B) fait t 2,43 et 3,50 hors calme sur 2011-2022, mais A/B ont été validées sur ces mêmes années.
+
+## 2026-09-26 — Analyse exploratoire des trades réels d'Esdras (GoatFunded 83486, 664 trades, mars-juillet 2025)
+
+Compte FINANCÉ 10 000 $ (80 %), plus haut 12 236 $ (+22,4 %), perdu le 30/07/2025 sur la perte journalière (4 ventes, −290 $, 0,38-0,45 lot)
+alors qu'il était à +8,6 %. Taille médiane des positions : 0,08 lot en avril (+1 941 $) → 0,34 en juillet (−1 059 $). Données brutes hors du
+dépôt (scratchpad de la session). Recalage : heure affichée = New York ; écart de prix recalculé par jour (base des contrats à terme).
+- **Test pré-enregistré « repli dans la tendance le matin »** (`0ab3fd8`) : ÉCHEC (entraînement −270,8 R, t −2,36 ; même 2025 −36,4 R).
+- **Exploratoire (N = points / ATR H1)** : solide — 11 h-18 h NY perdant (≈ −2 250 $) ; entrées près d'un FVG M15 formé 1 h 15-6 h plus
+  tôt : +4 062 $ (hors 11 h-18 h +4 291 $, 111 trades, positif chaque mois). Mais la même règle appliquée à toutes les occurrences sur la
+  même période ≈ 0 (t < 1,1) : c'est SON choix parmi ces FVG qui gagnait, non codable en l'état. Heure d'entrée pas meilleure que le hasard
+  (placebo ± 90 min) ; le sens gagnant vient surtout de la hausse 2025. Perdants coupés en 8 min (28 % repartent ensuite à +2 N).
+- Rien à pré-enregistrer. Pistes : règles personnelles (rien après 11 h, risque fixe, FVG « vieillis » plutôt que frais) ; éventuel mode
+  « assistant » (alertes FVG M15 vieillis 3 h-11 h NY, décision humaine, exécution et coupure à 11 h par le bot) — non construit.
