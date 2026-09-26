@@ -154,3 +154,16 @@ Idée d'Esdras : « quand le prix touche un FVG H4, il le remplit à moitié ou 
   - or : 48 % contre 46-47 %.
   À 2 zones contre 1 : 32-35 % contre 31-34 %.
 - **Conclusion** : c'est de la géométrie, pas un effet du FVG H4. Le prix fait la même chose avec une zone quelconque.
+
+## Ses « jamais » et ses cibles, mesurés (26/09, exploration 2011-2018, descriptif)
+Tous ces tests suivent sa règle v3, stop sous la mèche de A. Les résultats sont en R moyen par trade.
+- **Heure de formation du FVG** (`scripts/runFvgHourWindowsCheck.js`) :
+  - 4 h-6 h NY : −0,10 R sur US100, −0,08 R sur US500. Ce sont les pires, et il les laissait passer : bon filtre.
+  - 6 h-11 h : −0,01 R et +0,03 R.
+  - soir : 0,00 R et −0,05 R.
+  - ouverture de NY (1 h) : +0,03 R et +0,04 R.
+  - aucune tranche horaire n'est gagnante à elle seule.
+- **FVG M15 non comblé comme cible** (`scripts/runM15FvgMagnetCheck.js`) :
+  - avec une cible devant, à 3R : ≈ 0, comme sans cible ;
+  - objectif posé sur ce FVG : atteint 21 % des fois contre 16 % pour le même objectif en R sans FVG sur US100 (18 % contre 16 % sur
+    US500). Il y a un léger effet d'aimant, mais ≈ +0,04 R par trade sur US100 et −0,04 R sur US500 : pas d'argent à la clé.
