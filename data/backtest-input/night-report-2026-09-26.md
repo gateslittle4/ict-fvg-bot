@@ -109,3 +109,15 @@ Fichiers :
   `night-explore-manage.md`, `night-explore-quant.md`, `night-lab-explore.md` (et `-m15.md`) ;
 - règles figées et lectures cachées : `night-frozen-rules.json`, `night-lab-frozen.json`, `night-validation.md`,
   `night-lab-validation.md`.
+
+## Suite décidée (26/09, matin)
+Esdras : « 1 okay ; 2 possible mais je n'ai plus de temps pour trader ». Le mode discipline tombe. L'exercice à l'aveugle devient le
+moyen de savoir si son œil peut être écrit en règles pour un robot 100 % autonome.
+- **Le jeu de cas** : `scripts/buildBlindSetups.js` tire 200 FVG M15 US100 de 2011-2018 (tous âges de 0 à 24 bougies, 3 h-11 h NY, un
+  par jour), dates cachées. Les pages lisent `data/blind/setups.json`.
+- **Les résultats mécaniques** sont calculés à part (`blind-outcomes.json`) et ne sont jamais montrés. Moyenne de tous les cas :
+  +0,099 R (stop 1 ATR, 3R, sortie 11 h).
+- **La page** : artifact https://claude.ai/artifact/778pZta9Q3BGw3LcxggAGE. Les réponses vont dans sa base, collection `answers`
+  (id du cas → `take`, `reasons`).
+- **Critère d'analyse** (à pré-enregistrer avant de lire ses réponses) : ses « je prends » comparés à ses « je laisse » sur le même
+  résultat mécanique.

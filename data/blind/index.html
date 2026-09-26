@@ -1,0 +1,194 @@
+<title>FVG à l'aveugle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f3f5f4; --panel: #ffffff; --ink: #14201c; --muted: #5f6f69; --line: #d9e0dd;
+  --bull: #138a76; --bear: #c94a3d; --zone: rgba(214, 150, 20, 0.22); --zone-edge: #b87e0b; --accent: #0f6b5c;
+  --take: #138a76; --take-ink: #ffffff; --skip: #e4e9e7; --skip-ink: #14201c; --chip: #eef2f0;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1513; --panel: #151f1c; --ink: #e6efeb; --muted: #93a39d; --line: #26332f;
+    --bull: #34c2a8; --bear: #ef6f61; --zone: rgba(240, 180, 50, 0.20); --zone-edge: #e0a93a; --accent: #5fd3bd;
+    --take: #1fa58d; --take-ink: #04110e; --skip: #22302b; --skip-ink: #e6efeb; --chip: #1c2825;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1513; --panel: #151f1c; --ink: #e6efeb; --muted: #93a39d; --line: #26332f;
+  --bull: #34c2a8; --bear: #ef6f61; --zone: rgba(240, 180, 50, 0.20); --zone-edge: #e0a93a; --accent: #5fd3bd;
+  --take: #1fa58d; --take-ink: #04110e; --skip: #22302b; --skip-ink: #e6efeb; --chip: #1c2825;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: Archivo, system-ui, sans-serif; font-size: 15px; }
+.wrap { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 14px 28px; display: flex; flex-direction: column; gap: 12px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 20px; font-weight: 800; margin: 0; letter-spacing: -0.01em; }
+.count { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 14px; }
+.dir { font-weight: 800; padding: 3px 10px; border-radius: 999px; color: #fff; }
+.dir.up { background: var(--bull); } .dir.down { background: var(--bear); }
+.mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); }
+.tabs { display: flex; gap: 6px; }
+.tabs button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+.tabs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+canvas { width: 100%; height: 340px; display: block; touch-action: pan-y; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); cursor: pointer; }
+.chips button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions button { font: inherit; font-weight: 800; font-size: 17px; padding: 16px 10px; border-radius: 10px; border: 0; cursor: pointer; }
+#take { background: var(--take); color: var(--take-ink); } #skip { background: var(--skip); color: var(--skip-ink); }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.link { font: inherit; font-size: 13px; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 4px 0; text-decoration: underline; }
+.note { font-size: 13px; color: var(--muted); line-height: 1.5; max-width: 65ch; }
+.warn { font-size: 13px; color: var(--bear); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.done { text-align: center; padding: 30px 10px; }
+.done h2 { margin: 0 0 8px; font-size: 22px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>FVG à l'aveugle</h1>
+    <span class="count" id="count">…</span>
+  </header>
+  <div class="bar"><i id="progress"></i></div>
+  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018. La date est cachée et le graphique s'arrête au moment de décider. Réponds comme en réel : est-ce que tu prendrais ce trade ? Tu ne verras pas le résultat.</p>
+
+  <section class="panel" id="card">
+    <div class="meta">
+      <span class="dir" id="dir">…</span>
+      <span class="mono" id="when"></span>
+      <span class="mono" id="zone"></span>
+    </div>
+    <div class="row">
+      <div class="tabs" role="group" aria-label="Unité de temps">
+        <button id="tf15" aria-pressed="true">M15 · 24 h</button>
+        <button id="tf4" aria-pressed="false">H4 · 5 jours</button>
+      </div>
+      <span class="mono">zone orange = FVG · trait = maintenant</span>
+    </div>
+    <canvas id="chart" aria-label="Graphique du FVG"></canvas>
+    <div>
+      <div class="label">Pourquoi (facultatif)</div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="actions">
+      <button id="take">Je prends</button>
+      <button id="skip">Je laisse</button>
+    </div>
+    <div class="row">
+      <button class="link" id="back">← Revenir au précédent</button>
+      <span class="warn" id="warn" hidden></span>
+    </div>
+  </section>
+
+  <section class="panel done" id="done" hidden>
+    <h2>Les 200 cas sont faits.</h2>
+    <p class="note" style="margin:0 auto">Merci. Dis-le à Claude : il compare tes « je prends » à tes « je laisse » sur ce qui s'est vraiment passé ensuite.</p>
+  </section>
+</div>
+
+<script>
+const REASONS = ['Tendance', 'Contexte H4', 'Liquidité prise', 'Belle impulsion', 'Bonne heure', 'Trop loin', 'Impulsion faible', 'Mauvaise heure', 'Contre la tendance', 'Autre'];
+let setups = [], answers = {}, idx = 0, tf = 15, picked = new Set(), db = null, history = [];
+const $ = (id) => document.getElementById(id);
+
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function draw() {
+  const s = setups[idx]; if (!s) return;
+  const cv = $('chart'), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const bars = tf === 15 ? s.m15 : s.h4;
+  let hi = Math.max(...bars.map((b) => b[1]), s.zone[1]), lo = Math.min(...bars.map((b) => b[2]), s.zone[0]);
+  const pad = (hi - lo) * 0.06; hi += pad; lo -= pad;
+  const right = 58, top = 8, bottom = 18, plotW = W - right, plotH = H - top - bottom;
+  const y = (p) => top + (hi - p) / (hi - lo) * plotH;
+  const step = plotW / (bars.length + 2), bw = Math.max(1, step * 0.62);
+  const x = (k) => step * (k + 0.5);
+  // grille et prix
+  g.font = '11px "JetBrains Mono", monospace'; g.fillStyle = css('--muted'); g.strokeStyle = css('--line'); g.lineWidth = 1;
+  for (let q = 0; q <= 4; q++) { const p = lo + (hi - lo) * q / 4, yy = Math.round(y(p)) + 0.5; g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.fillText(p.toFixed(2), plotW + 6, yy + 4); }
+  // zone FVG
+  const zx = tf === 15 ? x(s.zoneBar - 2) - step / 2 : 0;
+  g.fillStyle = css('--zone'); g.fillRect(zx, y(s.zone[1]), plotW - zx, Math.max(1, y(s.zone[0]) - y(s.zone[1])));
+  g.strokeStyle = css('--zone-edge'); g.setLineDash([4, 3]); g.strokeRect(zx + 0.5, y(s.zone[1]) + 0.5, plotW - zx - 1, Math.max(1, y(s.zone[0]) - y(s.zone[1])));
+  g.setLineDash([]);
+  // bougies
+  bars.forEach((b, k) => {
+    const up = b[3] >= b[0], c = up ? css('--bull') : css('--bear'), cx = x(k);
+    g.strokeStyle = c; g.fillStyle = c; g.beginPath(); g.moveTo(Math.round(cx) + 0.5, y(b[1])); g.lineTo(Math.round(cx) + 0.5, y(b[2])); g.stroke();
+    const t = y(Math.max(b[0], b[3])), h = Math.max(1, Math.abs(y(b[0]) - y(b[3])));
+    g.fillRect(cx - bw / 2, t, bw, h);
+  });
+  // maintenant
+  const nx = x(bars.length - 1) + step * 0.8;
+  g.strokeStyle = css('--ink'); g.setLineDash([2, 3]); g.beginPath(); g.moveTo(nx, top); g.lineTo(nx, H - bottom); g.stroke(); g.setLineDash([]);
+  g.fillStyle = css('--muted'); g.fillText(tf === 15 ? 'M15' : 'H4', 4, H - 4);
+}
+
+function render() {
+  const n = setups.length, done = Object.keys(answers).length;
+  $('count').textContent = `${done} / ${n}`;
+  $('progress').style.width = `${(100 * done / (n || 1)).toFixed(1)}%`;
+  if (idx >= n) { $('card').hidden = true; $('done').hidden = false; return; }
+  $('card').hidden = false; $('done').hidden = true;
+  const s = setups[idx], a = answers[s.id];
+  $('dir').textContent = s.dir > 0 ? 'FVG haussier → achat' : 'FVG baissier → vente';
+  $('dir').className = 'dir ' + (s.dir > 0 ? 'up' : 'down');
+  $('when').textContent = `${s.weekday} · ${s.nyTime} NY · cas ${idx + 1}`;
+  $('zone').textContent = `zone ${s.zone[0].toFixed(2)} – ${s.zone[1].toFixed(2)}`;
+  picked = new Set(a?.reasons || []);
+  [...$('chips').children].forEach((b) => b.setAttribute('aria-pressed', picked.has(b.textContent) ? 'true' : 'false'));
+  $('take').textContent = a?.take === true ? 'Je prends ✓' : 'Je prends';
+  $('skip').textContent = a?.take === false ? 'Je laisse ✓' : 'Je laisse';
+  $('back').hidden = history.length === 0;
+  draw();
+}
+
+function nextUnanswered(from) { for (let k = from; k < setups.length; k++) if (!answers[setups[k].id]) return k; for (let k = 0; k < from; k++) if (!answers[setups[k].id]) return k; return setups.length; }
+
+async function answer(take) {
+  const s = setups[idx], rec = { take, reasons: [...picked], at: new Date().toISOString(), view: tf === 15 ? 'M15' : 'H4' };
+  answers[s.id] = rec;
+  try { localStorage.setItem('blind-answers', JSON.stringify(answers)); } catch (e) {}
+  if (db) {
+    try { await db.collection('answers').doc(s.id).set(rec); $('warn').hidden = true; }
+    catch (e) { $('warn').textContent = 'Réponse gardée sur ce téléphone seulement (connexion). Elle sera renvoyée au prochain choix.'; $('warn').hidden = false; }
+  }
+  history.push(idx); tf = 15; setTf();
+  idx = nextUnanswered(idx + 1); render();
+}
+function setTf() { $('tf15').setAttribute('aria-pressed', tf === 15); $('tf4').setAttribute('aria-pressed', tf !== 15); }
+
+async function syncLocal() {
+  if (!db) return;
+  for (const [id, rec] of Object.entries(answers)) { try { const d = await db.collection('answers').doc(id).get(); if (!d.exists) await db.collection('answers').doc(id).set(rec); } catch (e) { return; } }
+}
+
+async function start() {
+  REASONS.forEach((r) => { const b = document.createElement('button'); b.textContent = r; b.setAttribute('aria-pressed', 'false'); b.onclick = () => { picked.has(r) ? picked.delete(r) : picked.add(r); b.setAttribute('aria-pressed', picked.has(r)); }; $('chips').appendChild(b); });
+  $('take').onclick = () => answer(true); $('skip').onclick = () => answer(false);
+  $('tf15').onclick = () => { tf = 15; setTf(); draw(); }; $('tf4').onclick = () => { tf = 4; setTf(); draw(); };
+  $('back').onclick = () => { if (history.length) { idx = history.pop(); render(); } };
+  window.addEventListener('resize', draw);
+  setups = (await (await fetch('setups.json')).json()).setups;
+  try { answers = JSON.parse(localStorage.getItem('blind-answers') || '{}'); } catch (e) { answers = {}; }
+  idx = nextUnanswered(0); render();
+  db = window.claude?.use ? await window.claude.use('db') : null;
+  if (!db) { $('warn').textContent = 'Réponses gardées sur ce téléphone seulement : Claude ne pourra pas les lire. Ouvre la page depuis claude.ai.'; $('warn').hidden = false; return; }
+  try { const snap = await db.collection('answers').get(); for (const d of snap.docs) answers[d.id] = d.data(); } catch (e) {}
+  await syncLocal();
+  idx = nextUnanswered(0); render();
+}
+start();
+</script>
