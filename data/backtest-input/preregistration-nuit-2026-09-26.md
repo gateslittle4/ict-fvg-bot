@@ -110,3 +110,20 @@ rempli gagne) ; « autre règle » de la piste D2 = autre marché seulement (le 
 Essais multiples (déclaré) : 864 variantes FVG (+ 44 placebos × 20 tirages), 15 variantes de gestion, 1 196 variantes quantitatives, soit
 plus de 2 000 variantes explorées sur 2011-2018. 10 règles lues sur la validation : si aucune ne valait rien, il y aurait environ 20 %
 de chances qu'au moins une passe t ≥ 2 par hasard ; le final (R moyen > 0) divise ce risque environ par deux.
+
+---
+
+## SECOND TOUR (2026-09-26, écrit AVANT tout calcul du second tour) — les 22 stratégies du Labo
+
+Après la validation (aucune des 10 règles ne passe, `night-validation.md`), Esdras demandait de « tester tout ce qui peut l'être » :
+second tour sur les 22 stratégies déjà codées du Labo (`src/backtest/labRegistry.js` : Anchored VWAP, Asian Range Fade / Breakout,
+Bollinger Squeeze, Breaker Block, CBDR, DMI Trend, Equal Highs/Lows, Gap Continuation, Support HTF + renversement, Judas Swing, MACD
+Trend, Midnight Open, Mitigation Block, NDOG, NWOG, OTE, Power of Three, RSI Divergence, Star Patterns, Unicorn Model, Weekly Sweep).
+- Réglages par défaut du registre, AUCUNE optimisation ; US100, US500, XAUUSD, EURUSD ; bougies M15 tirées du M1 de la phase ; résultat
+  du moteur lui-même (règlement M15 du Labo), puis coûts de la nuit : spread du projet en % du prix / distance au stop, et swap.
+- Même découpage : exploration 2011-2018 → validation 2019-2022 (une lecture) → final 2023-2024 + 2026 (une lecture) ; mêmes critères.
+- Sélection : retenue = >= 60 trades, R moyen > 0, t >= 2, deux moitiés positives ; au plus 1 marché par stratégie (t le plus élevé) et
+  au plus 10 stratégies (t les plus élevés), figées et commitées avant la validation.
+- Déjà vu (déclaré) : ces stratégies ont été passées au crible il y a des mois sur d'autres découpages (commentaire du registre) ; les
+  années 2019-2022 ont été lues cette nuit pour les 10 règles du premier tour (sans lien avec ces moteurs).
+Script : `scripts/runNightLabSweep.js`.
