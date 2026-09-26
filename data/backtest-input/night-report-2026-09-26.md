@@ -121,3 +121,11 @@ moyen de savoir si son œil peut être écrit en règles pour un robot 100 % aut
   (id du cas → `take`, `reasons`).
 - **Critère d'analyse** (à pré-enregistrer avant de lire ses réponses) : ses « je prends » comparés à ses « je laisse » sur le même
   résultat mécanique.
+
+**Version 2 de l'exercice (26/09, remarques d'Esdras)** :
+- FVG âgé d'au moins 30 minutes (« pour qu'il soit viable »). Dans la v1, 3 cas sur 4 étaient des FVG tout juste formés, dont ses 7
+  premières réponses : elles sont écartées.
+- Le FVG doit être formé dans la fenêtre horaire. Avant, ceux de la nuit s'entassaient à 3 h.
+- 200 cas le matin (3 h-11 h NY, `m001`…) et 100 le soir (19 h-23 h NY, ses heures du soir d'après ses trades, `e001`…).
+- Graphiques dézoomés : 40 h en M15, 7 jours en H4, avec de l'espace à droite.
+- Moyenne mécanique des 300 cas : +0,05 R.
