@@ -1379,5 +1379,23 @@
       "scripts/lib/stopOrderEntry.js",
       "data/backtest-input/stop-order-entry-study.md"
     ]
+  },
+  {
+    "id": "esdras-pullback-2026-09-26",
+    "title": "Repli dans la tendance le matin (tiré des trades réels d'Esdras) : ÉCHEC",
+    "date": "2026-09-26",
+    "status": "rejected",
+    "summary": "Pré-enregistré (0ab3fd8). Hypothèse tirée de l'historique réel GoatFunded 83486 (664 trades mars-juillet 2025 : trades contre la dernière heure +2 885 $, dans le sens -1 572 $ ; 11 h-18 h -2 249 $). Règle mécanique US100 : clôtures M15 03 h-10 h 45 NY, 4 h dans un sens et dernière heure dans l'autre, pas à l'extrême du range du jour, stop 1 ATR H1, objectif 3R, sortie 4 h, 3 trades/jour max. Entraînement 2011-2022 : 6 386 trades, -0,042 R/trade, t -2,36, deux moitiés négatives -> ÉCHEC. Test 2023-2024 -44,5 R ; 2025 (année de l'idée) -36,4 R ; 2026 +14,0 R. US500 contrôle : -44 R entraînement. Même 2025 est négatif : l'avantage d'Esdras en 2025 ne venait pas de cette règle grossière (sélection des replis et sorties manuelles). data/backtest-input/esdras-pullback-study.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15 signal / M1 exécution",
+    "files": [
+      "data/backtest-input/preregistration-esdras-pullback-2026-09-26.md",
+      "data/backtest-input/esdras-pullback-study.md",
+      "scripts/runEsdrasPullbackStudy.js",
+      "scripts/lib/pullbackRule.js"
+    ]
   }
 ]
