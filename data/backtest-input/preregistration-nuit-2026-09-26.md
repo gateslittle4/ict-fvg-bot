@@ -127,3 +127,12 @@ Trend, Midnight Open, Mitigation Block, NDOG, NWOG, OTE, Power of Three, RSI Div
 - Déjà vu (déclaré) : ces stratégies ont été passées au crible il y a des mois sur d'autres découpages (commentaire du registre) ; les
   années 2019-2022 ont été lues cette nuit pour les 10 règles du premier tour (sans lien avec ces moteurs).
 Script : `scripts/runNightLabSweep.js`.
+
+**AMENDEMENT 3 (second tour, écrit après l'exploration au règlement M15 et AVANT toute lecture cachée et avant de voir le règlement M1)** :
+l'exploration au règlement M15 du Labo donne des chiffres invraisemblables (Anchored VWAP : +1,6 R par trade sur 3 800 trades avec 30 %
+de gagnants ; Midnight Open : +0,9 à +1,1 R), signe des biais connus du règlement M15 (stop pas vérifié dans la bougie d'entrée par
+certains moteurs, ordre stop/objectif dans une même bougie). Le second tour est donc réglé en **M1**, la méthode de référence du projet :
+chaque trade du moteur est rejoué minute par minute avec `simulate` (entrée au marché à la première minute de la bougie d'entrée — le
+moteur entre à son ouverture — ou, pour un prix d'entrée différent de l'ouverture (OTE), ordre limite valable pendant cette bougie ;
+stop et objectif du moteur ; sortie forcée à la fin de la bougie de sortie du moteur ; spread du projet et swap). Le règlement M15 reste
+affiché pour mémoire ; il ne décide rien. Tout le reste du second tour est inchangé.
