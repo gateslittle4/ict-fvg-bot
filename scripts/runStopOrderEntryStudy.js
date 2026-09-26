@@ -102,13 +102,22 @@ md.push('## Les trades US100 2023-2025 jamais repris par l\'ordre limite', '',
   `- Recomptés avec ce code : **${never.length}** (204 dans l'étude du 23/09) — objectif atteint avant le retour : ${why('target-first')}, ordre expiré : ${why('expired')}.`,
   `- Premier contact sur ces signaux : ${sgn(st(never.map((r) => r.first).filter((x) => x.r !== undefined)).s)} R.`,
   `- **Récupérés par l'ordre stop : ${got.length}** sur ${never.length}, pour ${sgn(st(got.map((r) => r.stop)).s)} R (R moyen ${sgn(st(got.map((r) => r.stop)).m, 3)}).`, '');
-// Verdict (précision 7) : exécution STOP, US100 + US500 réunis.
-const tr = res['stop-train'], te = res['stop-test'];
+// Verdict AMENDÉ (docs/PREREG_STOP_ORDER.md, amendement commité avant ce calcul) : exécution STOP, US100 + US500 réunis ; critère du
+// projet avec t >= 2,6. Le verdict d'origine (précision 7) est affiché pour mémoire, il ne décide rien.
+const tr = res['stop-train'], te = res['stop-test'], h1 = res['stop-h1'], h2 = res['stop-h2'];
+const MIN_TRADES = 60, MIN_T = 2.6;
 let verdict;
-if (tr.n < 10 || te.n < 10) verdict = `**PAS ASSEZ** (${tr.n} trades en train, ${te.n} en test)`;
-else if (te.m <= 0) verdict = `**REJETÉ** (espérance test ${sgn(te.m, 3)} R)`;
-else if (tr.m > 0 && te.m >= 0.3 * tr.m) verdict = `**ÇA TIENT** (train ${sgn(tr.m, 3)} R, test ${sgn(te.m, 3)} R ≥ 30 % du train)`;
-else verdict = `**NE TIENT PAS** (train ${sgn(tr.m, 3)} R, test ${sgn(te.m, 3)} R : cas non couvert par le verdict, précision 7)`;
-md.push('## Verdict (fixé à l\'avance, exécution stop, US100 + US500)', '', verdict, '');
+if (tr.n < MIN_TRADES) verdict = `**NON CONCLUANT** (${tr.n} trades à l'entraînement, il en faut ${MIN_TRADES})`;
+else if (!(tr.m > 0 && tr.t >= MIN_T && h1.s > 0 && h2.s > 0)) {
+  verdict = `**ÉCHEC à l'entraînement** (R moyen ${sgn(tr.m, 3)}, t ${tr.t.toFixed(2)} pour ${MIN_T} exigé ; 2010-2016 ${sgn(h1.s)} R, 2017-2022 ${sgn(h2.s)} R)`;
+} else if (te.m > 0) verdict = `**CANDIDAT** (entraînement t ${tr.t.toFixed(2)}, deux moitiés positives ; test ${sgn(te.m, 3)} R/trade sur ${te.n} trades) — démo seulement avant tout réel`;
+else verdict = `**ÉCHEC au test** (entraînement validé, t ${tr.t.toFixed(2)} ; test ${sgn(te.m, 3)} R/trade sur ${te.n} trades)`;
+let ancien;
+if (tr.n < 10 || te.n < 10) ancien = `pas assez (${tr.n} trades en train, ${te.n} en test)`;
+else if (te.m <= 0) ancien = `rejeté (espérance test ${sgn(te.m, 3)} R)`;
+else if (tr.m > 0 && te.m >= 0.3 * tr.m) ancien = `ça tient (train ${sgn(tr.m, 3)} R, test ${sgn(te.m, 3)} R ≥ 30 % du train)`;
+else ancien = `ne tient pas (train ${sgn(tr.m, 3)} R, test ${sgn(te.m, 3)} R)`;
+md.push('## Verdict (amendé avant calcul : exécution stop, US100 + US500, ≥ 60 trades, t ≥ 2,6, deux moitiés positives, test > 0)', '', verdict, '',
+  `Pour mémoire, verdict d'origine (10 trades / test ≥ 30 % du train, remplacé par l'amendement) : ${ancien}.`, '');
 fs.writeFileSync('data/backtest-input/stop-order-entry-study.md', md.join('\n') + '\n');
 console.log(md.join('\n'));

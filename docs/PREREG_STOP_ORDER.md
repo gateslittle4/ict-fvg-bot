@@ -67,3 +67,24 @@ récupère.
 - Aucun chiffre d'une entrée par ordre stop n'a été calculé ni regardé.
 
 Script : `scripts/runStopOrderEntryStudy.js` (règles dans `scripts/lib/stopOrderEntry.js` et `src/execution/entryPolicy.js`).
+
+---
+
+## AMENDEMENT du verdict (2026-09-26, écrit et commité AVANT tout calcul, validé par Esdras : « toi »)
+
+Déclaration : aucun résultat de ce test n'a été calculé ni regardé (`data/backtest-input/stop-order-entry-study.md` n'existe pas ; le
+script n'a tourné qu'en `--dry` au plus, qui ne donne que le nombre de signaux). Seule la règle de verdict change ; les règles d'ordre,
+les données, les coûts et les comparaisons (précisions 1 à 9) sont inchangés.
+
+**Pourquoi** : le verdict d'origine (10 trades, test ≥ 30 % du train) ne demande aucune solidité statistique ; un résultat dû au hasard
+(par exemple t = 0,5 à l'entraînement) pourrait « tenir ». C'est précisément le risque signalé par la critique externe (plus de 30
+études, famille FVG déjà rejetée six fois). On applique donc le critère habituel du projet (celui du Market Maker Model et des
+pré-enregistrements récents), avec le seuil relevé pour tenir compte des essais répétés.
+
+**Verdict amendé** (exécution STOP, US100 + US500 réunis ; chaque paire donnée à part, descriptif) :
+- **Entraînement 2010-2022** : au moins 60 trades, R moyen > 0, **t ≥ 2,6**, et R total positif en 2010-2016 ET en 2017-2022.
+  Moins de 60 trades : **NON CONCLUANT**. Sinon : **ÉCHEC**.
+- **Test 2023-2025**, lu une seule fois : R moyen > 0 → **CANDIDAT** (démo seulement avant tout réel, décision d'Esdras). Sinon **ÉCHEC**.
+- **Forward 2026** : descriptif.
+- Le verdict d'origine (10 trades / 30 % du train) est aussi affiché, pour mémoire, mais ne décide rien.
+- Aucune remise en service du FVG dans le bot sans ce verdict ET une décision explicite d'Esdras.
