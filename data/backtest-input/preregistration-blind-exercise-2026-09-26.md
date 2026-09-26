@@ -27,3 +27,15 @@ Date : 2026-09-26. Page : https://claude.ai/artifact/778pZta9Q3BGw3LcxggAGE (col
 ## Et si l'œil ajoute quelque chose
 Les caractéristiques qui séparent ses « oui » de ses « non » seront écrites en règle et pré-enregistrées. Cette règle sera testée une
 seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherche de nuit).
+
+## Amendement du 27/09 (écrit AVANT toute lecture des résultats) — version 4 : tout recommencer
+- **Le problème** : à 212 réponses (200 matin, 12 soir), Esdras a dit qu'il croyait que « vente » pouvait vouloir dire « achat pour de vrai ».
+  Sur une partie des ventes, ses « je pose l'ordre » voulaient donc parfois dire « j'achèterais ». On ne peut pas savoir lesquelles.
+- **Décision** : les réponses v3 (collection `answers`) sont écartées en entier. Elles sont gardées dans la base, mais ne comptent pas.
+  Aucun résultat mécanique n'a été croisé avec elles.
+- **Les cas restent les mêmes** (`setups.json` v3, a001-a200 et b001-b100) : il n'a jamais vu ce qui s'est passé après D.
+- **Les nouvelles réponses** vont dans la collection `answers4`. La page affiche désormais :
+  - « ACHAT » ou « VENTE » avec le prix de l'ordre ;
+  - un bouton « J'achète ici » ou « Je vends ici » ;
+  - une nouvelle raison « J'aurais pris l'autre sens ».
+- **Mesure, verdict et seuil de lecture inchangés** (150 réponses : 100 matin + 50 soir).
