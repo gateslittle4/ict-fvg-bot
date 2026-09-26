@@ -7008,3 +7008,16 @@ verdict d'origine (10 trades, test ≥ 30 % du train) ne demandait aucune solidi
   sans trade (`stop-crossed`), test ajouté. Le verdict STOP n'en dépend pas.
 - Conclusion : l'avantage apparent du FVG au premier contact n'est récupéré par aucune exécution réelle testée (LIMIT, LIMIT posé
   avant le contact, STOP). Rien changé dans le bot (FVG toujours hors live).
+
+## 2026-09-26 — Étape 0 « le robot ne gagne qu'en marché agité » (échange Gemini) : l'hypothèse TOMBE
+
+Règle commitée avant lecture (`423e134`, en-tête de `scripts/runVolRegimeStep0.js`) : hypothèse retenue seulement si, dans CHAQUE moitié
+de l'entraînement, le R moyen en régime calme (ATR14 / moyenne 100 des ATR14 < 0,8, mesuré avant le jour d'entrée) est ≤ 0 ET celui des
+autres trades > 0. Rejeu fidèle du bot complet (combo + A + B + RSI(2)) régénéré le 26/09 (`data/live-replay/hist-*.json`, calcul local,
+~40 min, laptop surchauffé : les prochains calculs lourds se font en ligne). Résultat `data/backtest-input/vol-regime-step0.md` :
+- 2011-2016 : calme −0,072 R/trade (852) ; normal + agité +0,108 (2 398, t 2,43) → conforme.
+- 2017-2022 : calme **+0,054** R/trade (963) ; normal + agité +0,160 (2 091, t 3,50) → **non conforme** → l'hypothèse tombe, pas de filtre.
+- Le calme est toujours le régime le plus faible (écart ≈ 0,1-0,2 R/trade), mais pas perdant dans les deux moitiés.
+- **2026 n'est pas une année calme** : 15 % (US100) / 26 % (US500) de jours calmes, contre 23-33 % sur 2011-2025 ; 72-80 % de jours
+  normaux. Le calme n'explique donc pas les pertes de 2026.
+- Remarque : le bot complet (avec A/B) fait t 2,43 et 3,50 hors calme sur 2011-2022, mais A/B ont été validées sur ces mêmes années.
