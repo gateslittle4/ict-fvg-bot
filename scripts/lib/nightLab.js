@@ -99,7 +99,7 @@ export function lastDoneBar(bars, i) {
 // ---------- Exécution ----------
 /**
  * Un trade simulé minute par minute.
- * spec : { dir: +1|-1, i: minute où l'ordre devient actif, entry: { type: 'market' } | { type: 'limit', price } | { type: 'stop', price },
+ * spec : { dir: +1|-1, i: minute où l'ordre devient actif, entry: { type: 'market' } | { type: 'limit', price, through? } | { type: 'stop', price },
  *   expiry: temps après lequel un ordre non rempli est annulé (défaut : pas d'expiration pour 'market'), stop: prix,
  *   target: prix | null, rr: objectif en multiple du risque réel (remplace target), exitAt: sortie forcée au marché (temps),
  *   spread: prix, swap: (dir, from, to, fill) => prix par unité, cancelIfTarget: annuler une limite si l'objectif est touché avant }.
@@ -117,7 +117,8 @@ export function simulate(S, spec) {
     const until = spec.expiry ?? Infinity;
     for (; i < S.n && S.t[i] < until; i++) {
       if (entry.type === 'limit') {
-        if (buy ? S.l[i] + spread <= entry.price : S.h[i] >= entry.price) { fill = buy ? Math.min(entry.price, S.o[i] + spread) : Math.max(entry.price, S.o[i]); break; }
+        const th = entry.through ?? 0; // exiger que le prix TRAVERSE le niveau d'au moins `through` (remplissage prudent)
+        if (buy ? S.l[i] + spread <= entry.price - th : S.h[i] >= entry.price + th) { fill = buy ? Math.min(entry.price, S.o[i] + spread) : Math.max(entry.price, S.o[i]); break; }
       } else if (buy ? S.h[i] + spread >= entry.price : S.l[i] <= entry.price) { fill = buy ? Math.max(entry.price, S.o[i] + spread) : Math.min(entry.price, S.o[i]); break; }
       if (spec.cancelIfTarget && spec.target != null && (buy ? S.h[i] >= spec.target : S.l[i] + spread <= spec.target)) return { missed: 'target-first' };
     }

@@ -64,10 +64,11 @@ export function qualifyingFvg(X, j, dir, price) {
 /** Le prix est-il dans un FVG vivant du sens sur H1 (idx 1) ou H4 (idx 2), formé dans les `look` dernières bougies ? */
 function inHtfFvg(X, idx, i, dir, price, look = 40) {
   const bars = idx === 1 ? X.b1h : X.b4h;
-  const j = lastDoneBar(bars, i);
-  for (const z of X.fvg[idx]) {
-    if (z.k > j) break;
-    if (z.k < j - look || z.dir !== dir || z.dead <= j) continue;
+  const j = lastDoneBar(bars, i), list = X.fvg[idx];
+  let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m].k < j - look) lo = m + 1; else hi = m; } // triés par k
+  for (let q = lo; q < list.length && list[q].k <= j; q++) {
+    const z = list[q];
+    if (z.dir !== dir || z.dead <= j) continue;
     if (price >= z.bot && price <= z.top) return 1;
   }
   return 0;

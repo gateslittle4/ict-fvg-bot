@@ -60,3 +60,26 @@ CBDR, Divergence, Weekly Sweep). Les variantes explorées cette nuit sont nouvel
 c'est précisément pourquoi 2019-2026 restent cachés pour elles.
 
 Scripts : `scripts/lib/nightLab.js` (outils testés) et `scripts/runNight*.js` ; données personnelles d'Esdras hors du dépôt.
+
+---
+
+## AMENDEMENT 1 (2026-09-26, après l'exploration FVG 2011-2018, AVANT toute lecture de 2019 et après)
+
+**Constat d'exploration** (2011-2018 seulement, `night-explore-fvg.md`, sondes `runNightFvgPlacebo.js`) : un ordre limite posé à une
+distance fixe du prix gagne beaucoup MÊME AU HASARD, et même exécuté au marché une à cinq minutes après le toucher : c'est un retour à
+la moyenne intrajournalier, pas un effet du FVG. Une règle FVG « limite » peut donc être retenue sans que le FVG y soit pour rien : sur
+US100, le placebo (même distance, moment tiré au hasard) fait mieux que le vrai FVG frais 20 fois sur 20.
+
+**Changements de la SÉLECTION seulement** (découpage, critères de validation et du final inchangés) :
+1. Familles A et B : une variante retenue doit aussi **battre son placebo** — chaque opportunité déplacée de 1 à 6 bougies M15 au
+   hasard (même sens, même fenêtre), zone fictive à la même distance du prix, même gestion, mêmes filtres, 20 tirages : le placebo ne
+   doit pas faire aussi bien (R moyen) plus de **2 fois sur 20**.
+2. Les 2 places d'une famille vont à deux règles vraiment différentes : 1re place = t le plus élevé ; 2e place = t le plus élevé parmi
+   les variantes éligibles qui diffèrent de la 1re par la **fenêtre (âge / heures) ou le marché** (un filtre ou une gestion voisine de la
+   même règle ne compte pas comme une autre règle).
+3. Le retour à la moyenne par ordre limite devient une **piste D à part entière** : « limite à d ATR H1 du prix de clôture M15, le
+   matin, stop 1 ATR au-delà, objectif en R, sortie à heure fixe », petite grille déclarée dans son script, sélection comme les autres
+   pistes D (2 places au plus, réglages voisins positifs).
+
+Déjà vu au moment de cet amendement : la grille FVG (864 variantes), le placebo de 3 règles × 4 filtres sur US100 et les sondes de
+remplissage (au toucher, en traversant d'un tick, au marché 1 et 5 minutes après), tout sur 2011-2018.

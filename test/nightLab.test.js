@@ -80,6 +80,9 @@ test('nightLab.simulate: sell limit fills at its level, pays the spread on exit,
   const X = simulate(S, { dir: -1, i: 1, entry: { type: 'limit', price: 101 }, stop: 100.5, rr: 3 });
   assert.equal(X.missed, 'stop-crossed');
   assert.equal(simulate(S, { dir: -1, i: 1, entry: { type: 'limit', price: 110 }, stop: 111, rr: 3, expiry: S.t[3] }).missed, 'expired');
+  // remplissage prudent : le haut 102,1 ne dépasse 102 que de 0,1 -> pas rempli avec through 0,25 à cette minute
+  const th = simulate(S, { dir: -1, i: 1, entry: { type: 'limit', price: 102, through: 0.25 }, stop: 103, rr: 3, expiry: S.t[3] });
+  assert.equal(th.missed, 'expired');
 });
 
 test('nightLab.simulate: a limit order is cancelled if the target trades first; stop entry fills at its level; time exit', () => {
