@@ -54,6 +54,11 @@ export function limitEntry(S, sig, { spread, swap, maxAgeCandles }) {
   for (let i = lower(S.t, S.n, sig.time + M15); i < end; i++) {
     if (buy ? S.l[i] + spread <= sig.entryPrice : S.h[i] >= sig.entryPrice) {
       const fill = buy ? Math.min(sig.entryPrice, S.o[i] + spread) : Math.max(sig.entryPrice, S.o[i]);
+      // Rempli au-delà du stop de protection (bougie de signal déjà clôturée sous le stop, ou trou) : le courtier refuse un ordre dont le
+      // stop est du mauvais côté du prix — pas de trade, comme stopEntry ('stop-crossed') et settleLiveMarket de runCleanStudy.js. Sans
+      // ce garde, la sortie « au stop », plus favorable que l'entrée, comptait un faux gain de +1 R (corrigé le 2026-09-26, après le
+      // premier calcul : la colonne limite est une comparaison, pas l'exécution testée).
+      if (buy ? fill <= protection.stopPrice : fill >= protection.stopPrice) return { missed: 'stop-crossed' };
       return manage(S, { buy, i, fill, stop: protection.stopPrice, target: protection.targetPrice, spread, swap });
     }
     if (buy ? S.h[i] >= sig.targetPrice : S.l[i] + spread <= sig.targetPrice) return { missed: 'target-first' };

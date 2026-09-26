@@ -80,7 +80,8 @@ const sgn = (x, d = 1) => (x >= 0 ? '+' : '') + x.toFixed(d);
 const EXEC = [['first', 'Premier contact (référence, non exécutable)'], ['limit', 'Limite (le bot jusqu\'au 23/09)'], ['stop', 'Stop (hypothèse)']];
 const inP = (p) => (r) => r.time >= p.from && r.time < p.to;
 const md = ['# Entrée FVG par ordre stop — résultat du pré-enregistrement', '',
-  `Règles : \`docs/PREREG_STOP_ORDER.md\` (commité avant ce calcul). Script : \`scripts/runStopOrderEntryStudy.js\`. R net de spread et de swap (commission 0), rapporté au risque réel |exécution − stop|. Généré le ${new Date().toISOString().slice(0, 16)} UTC.`, ''];
+  `Règles : \`docs/PREREG_STOP_ORDER.md\` (commité avant ce calcul). Script : \`scripts/runStopOrderEntryStudy.js\`. R net de spread et de swap (commission 0), rapporté au risque réel |exécution − stop|. Généré le ${new Date().toISOString().slice(0, 16)} UTC.`, '',
+  '**Correctif après le premier calcul (colonne limite seulement)** : un ordre LIMIT rempli à un prix déjà au-delà du stop de protection (bougie de signal clôturée sous le stop) sortait « au stop » avec un faux gain de +1 R ; il est maintenant compté sans trade, comme l\'ordre stop et l\'ordre au marché de l\'étude du 23/09. L\'exécution STOP, seule soumise au verdict, n\'est pas touchée.', ''];
 const res = {};
 for (const scope of [['US100 + US500', SYMS], ['US100', ['US100']], ['US500', ['US500']]]) {
   md.push(`## ${scope[0]}`, '', '| Période | Signaux | Exécution | Trades | Gagnants | R moyen | R total | t |', '|---|---|---|---|---|---|---|---|');
@@ -95,7 +96,7 @@ for (const scope of [['US100 + US500', SYMS], ['US100', ['US100']], ['US500', ['
   md.push('');
 }
 // Les trades US100 2023-2025 jamais repris par l'ordre LIMIT (204 dans l'étude du 23/09) : combien l'ordre stop récupère-t-il ?
-const never = rows.filter((r) => r.symbol === 'US100' && inP(PERIODS[3])(r) && r.limit.missed);
+const never = rows.filter((r) => r.symbol === 'US100' && inP(PERIODS[3])(r) && ['target-first', 'expired'].includes(r.limit.missed));
 const got = never.filter((r) => r.stop.r !== undefined);
 const why = (k) => never.filter((r) => r.limit.missed === k).length;
 md.push('## Les trades US100 2023-2025 jamais repris par l\'ordre limite', '',

@@ -58,3 +58,9 @@ test('manage: stop first when stop and target share a minute; a gap through the 
   const r = manage(g, { buy: true, i: 0, fill: 100, stop: 95, target: 125, spread: 0 });
   assert.equal(r.exit, 90); assert.equal(r.r, -2);
 });
+
+test('limitEntry: no trade when the first reachable price is already beyond the protective stop (no fake +1 R exit "at the stop")', () => {
+  // la bougie de signal clôture sous le stop (97) : l'ordre LIMIT d'achat à 102 serait rempli à 97,5 (ask), sous le stop 98
+  const below = series([...flat(15, 97), ...flat(30, 97)]);
+  assert.deepEqual(limitEntry(below, SIG, { spread: 0.5, swap: noSwap, maxAgeCandles: 50 }), { missed: 'stop-crossed' });
+});

@@ -6992,3 +6992,19 @@ Esdras a montré le FVG du 24/09 (30 280–30 287, bougies 9:15/9:30/9:45 NY) ; 
 - **Un seul moteur** (étape 1 de la demande d'Esdras) : `src/execution/entryPolicy.js` (place tenue par RSI(2)/A/B, filet, contrôles A/B, plan d'ordre A/B, protection spread, plafond de lots) appelé par le bot ET par `runLiveReplay.js` ; A/B rejoués sur les vraies M1 (`m1End`), `NO_AB=1` reproduit l'ancien rejeu à l'identique (270 trades 2026 vérifiés), `STOPPED_LEGS`. Rejeu 2026 du compte entier (combo + A/B, 0,3 %) : 467 trades, −16,5 R (A −25,5 R, B −3,4 R, combo +12,5 R car A/B prennent des places).
 - **Étape 2 faite** : `cTraderDataSource.js` (3 386 lignes) découpé sans changement de comportement - il garde la connexion (démarrage, symboles, solde, notifications, 654 lignes) ; `src/dataSources/ctrader/` : `shared.js` (constantes et fonctions pures, réexportées), `marketData.js`, `execution.js`, `reconciliation.js`, `tradeHistory.js`, `managedStrategies.js` (méthodes rattachées par `Object.assign(CTraderDataSource.prototype, ...)`). Vérifié : les 41 méthodes identiques au caractère près, ESLint sans variable indéfinie ni import inutile, 1176 tests, serveur local démarré.
 - **Déployé le 2026-09-24 23:25 UTC** (19:25 NY, `dep-daqr2qvlot8c73ed3k2g`, `d5bde90`, aucune position ni ordre en attente) : `[kill-switch] 9 jambes suivies ; arrêtées : silverbullet US500`, RSI(2) préchauffé, A/B préchauffés (24 séances), `connected and live`. `/api/kill-switch` et `/api/momentum-bars` (9 404 barres US100) répondent. À surveiller : premier trade après ce déploiement (chemin d'exécution déplacé dans `ctrader/execution.js`).
+
+## 2026-09-26 — FVG entré par ordre STOP (idée de Gemini) : pré-enregistré, amendé avant calcul, ÉCHEC
+
+Pré-enregistrement `docs/PREREG_STOP_ORDER.md` (`c3936e7`, texte de Gemini + précisions), verdict amendé AVANT calcul (`67b0464`) : le
+verdict d'origine (10 trades, test ≥ 30 % du train) ne demandait aucune solidité statistique ; remplacé par le critère du projet
+(≥ 60 trades, t ≥ 2,6, deux moitiés positives, test > 0). `scripts/runStopOrderEntryStudy.js` → `data/backtest-input/stop-order-entry-study.md`.
+
+- **STOP (US100 + US500)** : entraînement 1738 trades, 17 % gagnants, −138,5 R, t −1,54 (2010-2016 −94,4 R ; 2017-2022 −44,1 R) → **ÉCHEC**.
+  Test −63,4 R ; 2026 −97,2 R. Ancien verdict (pour mémoire) : rejeté aussi.
+- Les 161 signaux US100 2023-2025 jamais repris par le LIMIT (204 le 23/09 avec l'ancien code de remplissage) sont tous pris par le
+  STOP, mais pour +67,8 R seulement (+225,7 R au premier contact) ; sur les autres signaux, l'entrée plus haute coûte davantage.
+- **Bug corrigé pendant l'étude** (`scripts/lib/stopOrderEntry.js`, colonne limite seulement) : un LIMIT rempli au-delà du stop de
+  protection (bougie de signal clôturée sous le stop) sortait « au stop » avec un faux +1 R (37 % de « gagnants » à 1:5). Maintenant
+  sans trade (`stop-crossed`), test ajouté. Le verdict STOP n'en dépend pas.
+- Conclusion : l'avantage apparent du FVG au premier contact n'est récupéré par aucune exécution réelle testée (LIMIT, LIMIT posé
+  avant le contact, STOP). Rien changé dans le bot (FVG toujours hors live).
