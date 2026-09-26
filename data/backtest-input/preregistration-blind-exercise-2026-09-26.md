@@ -39,3 +39,8 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
   - un bouton « J'achète ici » ou « Je vends ici » ;
   - une nouvelle raison « J'aurais pris l'autre sens ».
 - **Mesure, verdict et seuil de lecture inchangés** (150 réponses : 100 matin + 50 soir).
+- **Précision (27/09, avant toute réponse v4)** : à la demande d'Esdras, la page a trois boutons, Achat, Vente et Rien. C'est lui qui
+  choisit le sens.
+  - `take` = vrai seulement s'il choisit le sens du FVG. C'est la mesure principale, inchangée.
+  - Choisir le sens inverse compte comme « non » pour ce trade. Ce choix (`side`) est analysé en descriptif seulement.
+- **Ordre d'affichage** : a001-a100 et b001-b050 d'abord, pour atteindre le premier point de lecture ; puis le reste.

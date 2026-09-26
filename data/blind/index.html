@@ -42,9 +42,9 @@ canvas { width: 100%; height: 340px; display: block; touch-action: pan-y; }
 .chips button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); cursor: pointer; }
 .chips button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .actions button { font: inherit; font-weight: 800; font-size: 17px; padding: 16px 10px; border-radius: 10px; border: 0; cursor: pointer; }
-#take { background: var(--take); color: var(--take-ink); } #skip { background: var(--skip); color: var(--skip-ink); }
+#buy { background: var(--bull); color: #fff; } #sell { background: var(--bear); color: #fff; } #skip { background: var(--skip); color: var(--skip-ink); }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .link { font: inherit; font-size: 13px; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 4px 0; text-decoration: underline; }
 .note { font-size: 13px; color: var(--muted); line-height: 1.5; max-width: 65ch; }
@@ -60,7 +60,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <span class="count" id="count">…</span>
   </header>
   <div class="bar"><i id="progress"></i></div>
-  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018, selon ta règle : la bougie C forme le FVG, la bougie D reste hors de la zone. Le graphique s'arrête à la fermeture de D ; la date est cachée. Question : poses-tu <b>cet ordre-là, dans ce sens-là</b> ? FVG haussier = achat au haut de la zone ; FVG baissier = vente au bas de la zone. Si tu ne prendrais pas ce sens (même si tu aurais pris l'autre), réponds « Je laisse ». Tu ne verras pas le résultat.</p>
+  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018, selon ta règle : la bougie C forme le FVG, la bougie D reste hors de la zone. Le graphique s'arrête à la fermeture de D ; la date est cachée. Question : à cet instant, <b>tu achètes, tu vends, ou rien</b> ? Réponds ce que tu ferais vraiment, sans t'occuper de la couleur du FVG. Tu ne verras pas le résultat.</p>
 
   <section class="panel" id="card">
     <div class="meta">
@@ -81,8 +81,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <div class="chips" id="chips"></div>
     </div>
     <div class="actions">
-      <button id="take">J'achète / je vends</button>
-      <button id="skip">Je laisse</button>
+      <button id="buy">Achat</button>
+      <button id="sell">Vente</button>
+      <button id="skip">Rien</button>
     </div>
     <div class="row">
       <button class="link" id="back">← Revenir au précédent</button>
@@ -97,9 +98,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </div>
 
 <script>
-const REASONS = ['Tendance', 'Contexte H4', 'Dans un FVG H4', 'Liquidité H4 prise', 'Liquidité prise', 'Belle impulsion', 'Bonne heure', 'Trop loin', 'Impulsion faible', 'Mauvaise heure', 'Contre la tendance', "J'aurais pris l'autre sens", 'Autre'];
+const REASONS = ['Tendance', 'Contexte H4', 'Dans un FVG H4', 'Liquidité H4 prise', 'Liquidité prise', 'Belle impulsion', 'Bonne heure', 'Trop loin', 'Impulsion faible', 'Mauvaise heure', 'Contre la tendance', 'Autre'];
 // Version 4 (27/09) : Esdras croyait que « vente » pouvait vouloir dire achat ; il recommence tout. Nouvelle collection et nouvelle
-// clé locale : les réponses v3 (collection `answers`) sont gardées mais ne comptent plus.
+// clé locale : les réponses v3 (collection `answers`) sont gardées mais ne comptent plus. Trois boutons (achat, vente, rien) : il choisit
+// le sens lui-même ; `take` = il a choisi le sens du FVG (mesure pré-enregistrée), `side` = son choix. Ordre des cas : a001-a100 puis
+// b001-b050 d'abord (le premier point de lecture), puis le reste.
 const COL = 'answers4', LS = 'blind-answers-v4';
 let setups = [], answers = {}, idx = 0, tf = 15, picked = new Set(), db = null, history = [];
 const $ = (id) => document.getElementById(id);
@@ -141,28 +144,29 @@ function draw() {
 
 function render() {
   const n = setups.length, done = setups.filter((x) => answers[x.id]).length;
-  $('count').textContent = `${done} / ${n}`;
+  $('count').textContent = done < 150 ? `${done} / 150 pour le premier résultat` : `${done} / ${n}`;
   $('progress').style.width = `${(100 * done / (n || 1)).toFixed(1)}%`;
   if (idx >= n) { $('card').hidden = true; $('done').hidden = false; return; }
   $('card').hidden = false; $('done').hidden = true;
   const s = setups[idx], a = answers[s.id];
-  $('dir').textContent = s.dir > 0 ? 'ACHAT · FVG haussier' : 'VENTE · FVG baissier';
+  $('dir').textContent = s.dir > 0 ? 'FVG haussier' : 'FVG baissier';
   $('dir').className = 'dir ' + (s.dir > 0 ? 'up' : 'down');
   $('when').textContent = `${s.weekday} · ${s.nyTime} NY · cas ${idx + 1}`;
-  $('zone').textContent = s.dir > 0 ? `achat limite à ${s.zone[1].toFixed(2)} (haut de la zone)` : `vente limite à ${s.zone[0].toFixed(2)} (bas de la zone)`;
+  $('zone').textContent = `zone ${s.zone[0].toFixed(2)} – ${s.zone[1].toFixed(2)}`;
   picked = new Set(a?.reasons || []);
   [...$('chips').children].forEach((b) => b.setAttribute('aria-pressed', picked.has(b.textContent) ? 'true' : 'false'));
-  const verb = s.dir > 0 ? 'J\'achète ici' : 'Je vends ici';
-  $('take').textContent = a?.take === true ? verb + ' ✓' : verb;
-  $('skip').textContent = a?.take === false ? 'Je laisse ✓' : 'Je laisse';
+  const side = a ? (a.side || (a.take ? (s.dir > 0 ? 'buy' : 'sell') : 'none')) : null;
+  $('buy').textContent = side === 'buy' ? 'Achat ✓' : 'Achat';
+  $('sell').textContent = side === 'sell' ? 'Vente ✓' : 'Vente';
+  $('skip').textContent = side === 'none' ? 'Rien ✓' : 'Rien';
   $('back').hidden = history.length === 0;
   draw();
 }
 
 function nextUnanswered(from) { for (let k = from; k < setups.length; k++) if (!answers[setups[k].id]) return k; for (let k = 0; k < from; k++) if (!answers[setups[k].id]) return k; return setups.length; }
 
-async function answer(take) {
-  const s = setups[idx], rec = { take, reasons: [...picked], at: new Date().toISOString(), view: tf === 15 ? 'M15' : 'H4' };
+async function answer(side) {
+  const s = setups[idx], take = side === (s.dir > 0 ? 'buy' : 'sell'), rec = { side, take, reasons: [...picked], at: new Date().toISOString(), view: tf === 15 ? 'M15' : 'H4' };
   answers[s.id] = rec;
   try { localStorage.setItem(LS, JSON.stringify(answers)); } catch (e) {}
   if (db) {
@@ -181,11 +185,12 @@ async function syncLocal() {
 
 async function start() {
   REASONS.forEach((r) => { const b = document.createElement('button'); b.textContent = r; b.setAttribute('aria-pressed', 'false'); b.onclick = () => { picked.has(r) ? picked.delete(r) : picked.add(r); b.setAttribute('aria-pressed', picked.has(r)); }; $('chips').appendChild(b); });
-  $('take').onclick = () => answer(true); $('skip').onclick = () => answer(false);
+  $('buy').onclick = () => answer('buy'); $('sell').onclick = () => answer('sell'); $('skip').onclick = () => answer('none');
   $('tf15').onclick = () => { tf = 15; setTf(); draw(); }; $('tf4').onclick = () => { tf = 4; setTf(); draw(); };
   $('back').onclick = () => { if (history.length) { idx = history.pop(); render(); } };
   window.addEventListener('resize', draw);
-  setups = (await (await fetch('setups.json')).json()).setups;
+  const all = (await (await fetch('setups.json')).json()).setups, first = (x) => (x.id[0] === 'a' ? +x.id.slice(1) <= 100 : +x.id.slice(1) <= 50);
+  setups = [...all.filter(first), ...all.filter((x) => !first(x))];
   try { answers = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { answers = {}; }
   idx = nextUnanswered(0); render();
   db = window.claude?.use ? await window.claude.use('db') : null;
