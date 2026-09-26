@@ -60,7 +60,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <span class="count" id="count">…</span>
   </header>
   <div class="bar"><i id="progress"></i></div>
-  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018, formé il y a au moins 30 minutes. La date est cachée et le graphique s'arrête au moment de décider. Réponds comme en réel : est-ce que tu prendrais ce trade ? Tu ne verras pas le résultat.</p>
+  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018, selon ta règle : la bougie C forme le FVG, la bougie D reste hors de la zone. Le graphique s'arrête à la fermeture de D ; la date est cachée. Question : poses-tu ton ordre limite au bord de la zone ? Tu ne verras pas le résultat.</p>
 
   <section class="panel" id="card">
     <div class="meta">
@@ -81,7 +81,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       <div class="chips" id="chips"></div>
     </div>
     <div class="actions">
-      <button id="take">Je prends</button>
+      <button id="take">Je pose l'ordre</button>
       <button id="skip">Je laisse</button>
     </div>
     <div class="row">
@@ -92,7 +92,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   <section class="panel done" id="done" hidden>
     <h2>Tous les cas sont faits.</h2>
-    <p class="note" style="margin:0 auto">Merci. Dis-le à Claude : il compare tes « je prends » à tes « je laisse » sur ce qui s'est vraiment passé ensuite.</p>
+    <p class="note" style="margin:0 auto">Merci. Dis-le à Claude : il compare les ordres que tu as posés à ceux que tu as laissés sur ce qui s'est vraiment passé ensuite.</p>
   </section>
 </div>
 
@@ -146,10 +146,10 @@ function render() {
   $('dir').textContent = s.dir > 0 ? 'FVG haussier → achat' : 'FVG baissier → vente';
   $('dir').className = 'dir ' + (s.dir > 0 ? 'up' : 'down');
   $('when').textContent = `${s.weekday} · ${s.nyTime} NY · cas ${idx + 1}`;
-  $('zone').textContent = `zone ${s.zone[0].toFixed(2)} – ${s.zone[1].toFixed(2)} · FVG formé il y a ${(s.m15.length - 1 - s.zoneBar) * 15} min`;
+  $('zone').textContent = `zone ${s.zone[0].toFixed(2)} – ${s.zone[1].toFixed(2)} · D fermée hors de la zone`;
   picked = new Set(a?.reasons || []);
   [...$('chips').children].forEach((b) => b.setAttribute('aria-pressed', picked.has(b.textContent) ? 'true' : 'false'));
-  $('take').textContent = a?.take === true ? 'Je prends ✓' : 'Je prends';
+  $('take').textContent = a?.take === true ? 'Je pose l\'ordre ✓' : 'Je pose l\'ordre';
   $('skip').textContent = a?.take === false ? 'Je laisse ✓' : 'Je laisse';
   $('back').hidden = history.length === 0;
   draw();
@@ -160,7 +160,7 @@ function nextUnanswered(from) { for (let k = from; k < setups.length; k++) if (!
 async function answer(take) {
   const s = setups[idx], rec = { take, reasons: [...picked], at: new Date().toISOString(), view: tf === 15 ? 'M15' : 'H4' };
   answers[s.id] = rec;
-  try { localStorage.setItem('blind-answers-v2', JSON.stringify(answers)); } catch (e) {}
+  try { localStorage.setItem('blind-answers-v3', JSON.stringify(answers)); } catch (e) {}
   if (db) {
     try { await db.collection('answers').doc(s.id).set(rec); $('warn').hidden = true; }
     catch (e) { $('warn').textContent = 'Réponse gardée sur ce téléphone seulement (connexion). Elle sera renvoyée au prochain choix.'; $('warn').hidden = false; }
@@ -182,7 +182,7 @@ async function start() {
   $('back').onclick = () => { if (history.length) { idx = history.pop(); render(); } };
   window.addEventListener('resize', draw);
   setups = (await (await fetch('setups.json')).json()).setups;
-  try { answers = JSON.parse(localStorage.getItem('blind-answers-v2') || '{}'); } catch (e) { answers = {}; }
+  try { answers = JSON.parse(localStorage.getItem('blind-answers-v3') || '{}'); } catch (e) { answers = {}; }
   idx = nextUnanswered(0); render();
   db = window.claude?.use ? await window.claude.use('db') : null;
   if (!db) { $('warn').textContent = 'Réponses gardées sur ce téléphone seulement : Claude ne pourra pas les lire. Ouvre la page depuis claude.ai.'; $('warn').hidden = false; return; }

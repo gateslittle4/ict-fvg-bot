@@ -129,3 +129,15 @@ moyen de savoir si son œil peut être écrit en règles pour un robot 100 % aut
 - 200 cas le matin (3 h-11 h NY, `m001`…) et 100 le soir (19 h-23 h NY, ses heures du soir d'après ses trades, `e001`…).
 - Graphiques dézoomés : 40 h en M15, 7 jours en H4, avec de l'espace à droite.
 - Moyenne mécanique des 300 cas : +0,05 R.
+
+**Version 3 de l'exercice (26/09, règle confirmée par Esdras sur le schéma `data/blind/regle-fvg.html`)** :
+- **La règle** : la bougie C forme le FVG, la bougie D se ferme sans toucher la zone, et le prix n'y entre qu'à partir de E.
+- **Le cas montré** : graphique arrêté à la fermeture de D ; question « poses-tu ton ordre ? ».
+- **Le résultat mécanique**, calculé à part :
+  - limite au bord proche de la zone ;
+  - stop sous la zone, ou sous la mèche de la bougie A ;
+  - objectif 2, 3 ou 4R, ordre annulé si l'objectif est touché avant ;
+  - sortie à 11 h NY le matin, 3 h NY le soir.
+- **Les 300 cas** : 200 le matin (`a001`…) et 100 le soir (`b001`…).
+- **Moyenne sur tous les cas, à 3R** : −0,134 R avec le stop sous la zone (88 ordres remplis) ; +0,007 R avec le stop sous la mèche
+  (188 remplis). C'est la référence que ses choix devront battre.

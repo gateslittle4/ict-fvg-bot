@@ -20,10 +20,25 @@ const S = loadPhase(SYM, 'explore'), X = buildContext(S);
 const quals = qualifications(X);
 const r2 = (x) => Math.round(x * 100) / 100;
 const setups = [], outcomes = [], usedDays = new Set();
-function build({ n, win, exit, seed, ageMin, prefix }) {
+// Version 3 (26/09, règle confirmée par Esdras sur le schéma data/blind/regle-fvg.html) : la bougie C qui forme le FVG se ferme, la
+// bougie D suivante se forme SANS toucher la zone, et le prix n'a le droit d'y entrer qu'à partir de E. Le graphique s'arrête à la
+// fermeture de D ; question : « tu poses ton ordre ? ». Entrée : limite au bord proche (haut de la zone pour un achat). Stop : sous la
+// zone, ou sous la mèche de la bougie A (celle qui fait le bas d'un FVG haussier / le haut d'un baissier). Objectifs 2, 3 et 4R ;
+// ordre annulé si l'objectif est touché avant, ou à l'heure de sortie (11 h NY le matin, 3 h NY le soir). Identifiants a001… (matin)
+// et b001… (soir) : les réponses des versions précédentes ne comptent pas.
+function build({ n, win, exit, seed, prefix }) {
   const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
-  const opps = opportunities(quals, { ageMin, ageMax: 24, ...win }).filter((o) => o.tau >= eng(2011, 1) && o.tau < eng(2019))
-    .filter((o) => { const fm = nyMin(X.b15[o.k].t + 15 * MIN); return fm >= win.fromMin && fm < win.toMin; }); // FVG formé DANS la fenêtre (sinon les FVG de la nuit s'entassent à son ouverture)
+  const { b15 } = X, inWin = (m) => m >= win.fromMin && m < win.toMin;
+  const opps = [];
+  for (const z of X.fvg[0]) {
+    const k = z.k, j = k + 1; if (j >= b15.length - 1 || j < M15N) continue;
+    const D = b15[j], tau = D.t + 15 * MIN;
+    if (tau < eng(2011, 1) || tau >= eng(2019)) continue;
+    if (!inWin(nyMin(b15[k].t + 15 * MIN)) || !inWin(nyMin(tau))) continue;
+    if (z.dir > 0 ? D.l <= z.top : D.h >= z.bot) continue; // D touche la zone : pas valide
+    if (b15[j + 1].t - tau > 5 * MIN) continue; // marché fermé juste après
+    opps.push({ j, tau, nm: nyMin(tau), dir: z.dir, k, age: 1, where: 'beyond', z });
+  }
   const byDay = new Map(); for (const o of opps) { const k = dayKey(o.tau); (byDay.get(k) || byDay.set(k, []).get(k)).push(o); }
   const days = [...byDay.keys()];
   for (let i = days.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [days[i], days[j]] = [days[j], days[i]]; }
@@ -33,9 +48,9 @@ function build({ n, win, exit, seed, ageMin, prefix }) {
     const list = byDay.get(d), o = list[Math.floor(rnd() * list.length)];
     if (usedDays.has(d)) continue;
     const f = featuresOf(X, o); if (!f) continue;
-    const j = o.j, i = X.b15[j].i1 + 1, atr = atrH1At(X, i); if (!atr || j < M15N) continue;
+    const j = o.j, i = b15[j].i1 + 1, atr = atrH1At(X, i); if (!atr) continue;
     const jh = lastDoneBar(X.b4h, i); if (jh < H4N) continue;
-    const m15 = X.b15.slice(j - M15N + 1, j + 1).map((b) => [r2(b.o), r2(b.h), r2(b.l), r2(b.c)]);
+    const m15 = b15.slice(j - M15N + 1, j + 1).map((b) => [r2(b.o), r2(b.h), r2(b.l), r2(b.c)]);
     const cur = X.b4h[jh + 1] && X.b4h[jh + 1].i0 < i ? X.b4h[jh + 1] : null; // H4 en cours, coupée à la décision
     const h4 = X.b4h.slice(jh - H4N + 1, jh + 1).map((b) => [r2(b.o), r2(b.h), r2(b.l), r2(b.c)]);
     if (cur) { let h = -Infinity, l = Infinity; for (let m = cur.i0; m < i; m++) { h = Math.max(h, S.h[m]); l = Math.min(l, S.l[m]); } h4.push([r2(cur.o), r2(h), r2(l), r2(S.c[i - 1])]); }
@@ -44,21 +59,24 @@ function build({ n, win, exit, seed, ageMin, prefix }) {
     const tau = o.tau, nm = nyMin(tau);
     setups.push({ id, dir: o.dir, nyTime: `${String(Math.floor(nm / 60)).padStart(2, '0')}h${String(nm % 60).padStart(2, '0')}`, weekday: ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'][dayOfWeek(tau)],
       zone: [r2(o.z.bot), r2(o.z.top)], zoneBar: M15N - 1 - (j - o.k), m15, h4, atrH1: r2(atr) });
-    // résultats mécaniques (jamais dans la page)
-    const sp = spreadAt(SYM, S.o[i]), f0 = o.dir > 0 ? S.o[i] + sp : S.o[i], exitAt = nextNyTime(tau, exit), sw = swapCost(SYM);
-    const far = o.dir > 0 ? o.z.bot : o.z.top; let zs = far - o.dir * 0.1 * atr; if (Math.abs(f0 - zs) < 0.3 * atr) zs = f0 - o.dir * 0.3 * atr;
-    const run = (spec) => { const r = simulate(S, { dir: o.dir, i, exitAt, spread: sp, swap: sw, ...spec }); return r.missed ? null : Math.round(r.r * 1000) / 1000; };
-    outcomes.push({ id, time: tau, age: o.age, exitNy: exit === 180 ? '03h' : '11h', features: f,
-      r: { atr1_3R_main: run({ stop: f0 - o.dir * atr, rr: 3 }), zone_3R_main: run({ stop: zs, rr: 3 }), atr1_2R_main: run({ stop: f0 - o.dir * atr, rr: 2 }), atr1_3R_16h: run({ stop: f0 - o.dir * atr, rr: 3, exitAt: nextNyTime(tau, 960) }) } });
+    // résultats mécaniques (jamais dans la page) : limite au bord proche, deux stops, trois objectifs
+    const L = o.dir > 0 ? o.z.top : o.z.bot, A = b15[o.k - 2], sp = spreadAt(SYM, L), exitAt = nextNyTime(tau, exit), sw = swapCost(SYM);
+    const stops = { zone: o.dir > 0 ? o.z.bot : o.z.top, meche: o.dir > 0 ? A.l : A.h };
+    const r = {};
+    for (const [sk, stop] of Object.entries(stops)) for (const rr of [2, 3, 4]) {
+      const target = L + o.dir * rr * Math.abs(L - stop);
+      const t = simulate(S, { dir: o.dir, i, entry: { type: 'limit', price: L }, expiry: exitAt, stop, rr, target, cancelIfTarget: true, exitAt, spread: sp, swap: sw });
+      r[`${sk}_${rr}R`] = t.missed ? { missed: t.missed } : { r: Math.round(t.r * 1000) / 1000, reason: t.reason };
+    }
+    outcomes.push({ id, time: tau, exitNy: exit === 180 ? '03h' : '11h', riskAtr: { zone: Math.abs(L - stops.zone) / atr, meche: Math.abs(L - stops.meche) / atr }, features: f, r });
   }
   return made;
 }
 const MORNING = { fromMin: 180, toMin: 660 }, EVENING = { fromMin: 1140, toMin: 1380 };
-build({ n: 200, win: MORNING, exit: 660, seed: 26092030, ageMin: MINAGE, prefix: 'm' });
-build({ n: 100, win: EVENING, exit: 180, seed: 26092031, ageMin: MINAGE, prefix: 'e' });
+build({ n: 200, win: MORNING, exit: 660, seed: 26092040, prefix: 'a' });
+build({ n: 100, win: EVENING, exit: 180, seed: 26092041, prefix: 'b' });
 fs.mkdirSync('data/blind', { recursive: true });
-fs.writeFileSync('data/blind/setups.json', JSON.stringify({ symbol: SYM, version: 2, note: 'FVG M15 US100 2011-2018 âgés d\'au moins 30 min, dates masquées', setups }));
-fs.writeFileSync('data/backtest-input/blind-outcomes.json', JSON.stringify({ version: 2, note: 'Résultats mécaniques des cas de l\'exercice à l\'aveugle (*_main = sortie à 11 h NY le matin, 3 h NY le soir : champ exitNy) — NE PAS montrer à Esdras avant ses réponses', outcomes }));
-const mean = (k) => { const a = outcomes.map((x) => x.r[k]).filter((x) => x != null); return (a.reduce((s2, x) => s2 + x, 0) / a.length).toFixed(3); };
-const ages = outcomes.map((x) => x.age).sort((a, b) => a - b);
-console.log(`${setups.length} cas, âge médian ${ages[ages.length >> 1]} bougies (min ${ages[0]}), taille ${(fs.statSync('data/blind/setups.json').size / 1024).toFixed(0)} Ko ; moyenne mécanique ${mean('atr1_3R_main')} R`);
+fs.writeFileSync('data/blind/setups.json', JSON.stringify({ symbol: SYM, version: 3, note: 'FVG M15 US100 2011-2018 (bougie D hors de la zone), dates masquées, graphique arrêté à la fermeture de D', setups }));
+fs.writeFileSync('data/backtest-input/blind-outcomes.json', JSON.stringify({ version: 3, note: 'Résultats mécaniques des cas de l\'exercice à l\'aveugle (limite au bord, stop sous la zone ou sous la mèche de A, 2/3/4R, annulé si objectif avant) — NE PAS montrer à Esdras avant ses réponses', outcomes }));
+for (const k of ['zone_3R', 'meche_3R']) { const f = outcomes.map((x) => x.r[k]), got = f.filter((x) => x.r !== undefined); console.log(`${k} : ${got.length} remplis sur ${f.length}, moyenne ${(got.reduce((a, x) => a + x.r, 0) / got.length).toFixed(3)} R`); }
+console.log(`${setups.length} cas, taille ${(fs.statSync('data/blind/setups.json').size / 1024).toFixed(0)} Ko`);
