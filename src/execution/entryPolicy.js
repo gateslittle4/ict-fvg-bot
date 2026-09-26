@@ -78,3 +78,20 @@ export function capLots(sizing, maxLots, spec = {}) {
   const capped = Math.max(spec.minVolume || step, Math.floor(maxLots / step) * step);
   return { ...sizing, actualRiskAmount: sizing.actualRiskAmount * (capped / sizing.lots), lots: Number(capped.toFixed(6)) };
 }
+
+/**
+ * Entrée par ordre STOP (docs/PREREG_STOP_ORDER.md, idée de Gemini, 2026-09-26) : posé à la clôture de la bougie de signal, à l'extrême
+ * de la zone du côté de l'objectif + 1 tick (achat : haut + tick ; vente : bas - tick). Le stop de protection reste au niveau du signal.
+ * @param {{ direction: 'bullish'|'bearish', zone: { top: number, bottom: number }, stopPrice: number, rrMultiple: number }} signal
+ */
+export function stopEntryOrder({ direction, zone, stopPrice, rrMultiple }, { tick = 0.01 } = {}) {
+  const buy = direction === 'bullish';
+  return { side: buy ? 'buy' : 'sell', triggerPrice: buy ? zone.top + tick : zone.bottom - tick, stopPrice, rrMultiple };
+}
+
+/** Objectif en multiple du risque RÉEL, depuis le vrai prix d'exécution ; null si le stop est déjà dépassé. */
+export function targetFromFill({ side, fill, stopPrice, rrMultiple }) {
+  const R = side === 'buy' ? fill - stopPrice : stopPrice - fill;
+  if (!(R > 0)) return null;
+  return side === 'buy' ? fill + rrMultiple * R : fill - rrMultiple * R;
+}
