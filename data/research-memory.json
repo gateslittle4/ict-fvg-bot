@@ -1344,5 +1344,22 @@
       "scripts/lib/weekendClose.js",
       "scripts/lib/ftmoChallenge.js"
     ]
+  },
+  {
+    "id": "ftmo-open-losses-2026-09-26",
+    "title": "Simulation FTMO avec pertes latentes (critique externe) : effet faible",
+    "date": "2026-09-26",
+    "status": "methodology-fix",
+    "summary": "Critique de Gemini : FTMO mesure l'équité, la simulation ne comptait que le solde réalisé. Le rejeu note désormais la pire perte en cours de chaque trade (mae). Bot complet (combo + A + B), départ chaque lundi, 0,5 % : réussite 52 % (réalisé) / 52 % (pire perte réelle) / 48 % (tout au stop). Au plus 3 positions ouvertes, gagnants à -0,35 R en moyenne avant de gagner. La perte du jour 3 % n'est presque jamais la cause d'échec ; c'est la perte max suiveuse. Premier chiffre « tout au stop » (40 %) faux : erreur d'arrondi, corrigé 49 % (combo seul). Descriptif : bot complet à 0,3 % = 67 % de réussite (médiane 4 mois), à 0,5 % = 52 %. data/backtest-input/ftmo-worst-case-check.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M1 rejeu fidèle",
+    "files": [
+      "data/backtest-input/ftmo-worst-case-check.md",
+      "scripts/runFtmoWorstCaseCheck.js",
+      "scripts/lib/ftmoChallenge.js"
+    ]
   }
 ]
