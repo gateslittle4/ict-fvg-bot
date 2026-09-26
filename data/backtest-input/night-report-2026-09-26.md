@@ -172,3 +172,9 @@ Tous ces tests suivent sa règle v3, stop sous la mèche de A. Les résultats so
   - US100 : après un gagnant −0,050 R, après un perdant −0,051 R ;
   - US500 : après un gagnant −0,122 R, après un perdant −0,052 R.
   Aucun effet : un FVG gagnant n'annonce pas le suivant.
+- **« Le premier ou le deuxième FVG de la séance »** (`scripts/runFvgRankCheck.js`, séances matin 3 h-11 h et soir 18 h-23 h NY,
+  rang compté dans la séance ou dans le même sens) :
+  - aucun rang n'est gagnant ;
+  - le 1er FVG du matin sur US100 fait −0,09 R, le 2e −0,03 R ;
+  - dans le même sens, le 2e fait −0,09 R ;
+  - le seul rang un peu positif (4e et + le soir sur US100, +0,06 à +0,09 R, t ≤ 1) est du bruit.
