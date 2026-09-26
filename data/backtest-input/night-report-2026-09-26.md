@@ -167,3 +167,8 @@ Tous ces tests suivent sa règle v3, stop sous la mèche de A. Les résultats so
   - avec une cible devant, à 3R : ≈ 0, comme sans cible ;
   - objectif posé sur ce FVG : atteint 21 % des fois contre 16 % pour le même objectif en R sans FVG sur US100 (18 % contre 16 % sur
     US500). Il y a un léger effet d'aimant, mais ≈ +0,04 R par trade sur US100 et −0,04 R sur US500 : pas d'argent à la clé.
+- **« Si le FVG d'avant a marché, le suivant dans le même sens aussi »** (`scripts/runFvgPreviousWinnerCheck.js`). Le précédent est le
+  dernier FVG du même sens, décidé dans les 5 h d'avant et déjà terminé. Résultats du FVG suivant :
+  - US100 : après un gagnant −0,050 R, après un perdant −0,051 R ;
+  - US500 : après un gagnant −0,122 R, après un perdant −0,052 R.
+  Aucun effet : un FVG gagnant n'annonce pas le suivant.
