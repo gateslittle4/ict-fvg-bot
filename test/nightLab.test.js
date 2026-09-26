@@ -104,3 +104,10 @@ test('nightLab: stats and the exploration verdict (>= 60 trades, t >= 2, both ha
   assert.equal(exploreVerdict(oneHalf, halves).retained, false);
   assert.equal(exploreVerdict(good.slice(0, 50), halves).retained, false);
 });
+
+test('nightLab.simulate: break-even after +1R moves the stop to the entry from the next minute', () => {
+  const S = series('2024-01-10T15:00:00Z', [[100, 100, 100, 100], [100, 101.2, 100, 101], [101, 101, 99.8, 99.9], [99.9, 99.9, 97, 97]]);
+  const r = simulate(S, { dir: 1, i: 1, stop: 99, rr: 3, beAt: 1 });
+  assert.equal(r.reason, 'breakeven'); assert.equal(r.exit, 100); assert.equal(r.r, 0);
+  assert.equal(simulate(S, { dir: 1, i: 1, stop: 99, rr: 3 }).reason, 'stop');
+});

@@ -83,3 +83,30 @@ US100, le placebo (même distance, moment tiré au hasard) fait mieux que le vra
 
 Déjà vu au moment de cet amendement : la grille FVG (864 variantes), le placebo de 3 règles × 4 filtres sur US100 et les sondes de
 remplissage (au toucher, en traversant d'un tick, au marché 1 et 5 minutes après), tout sur 2011-2018.
+
+---
+
+## RÈGLES FIGÉES (2026-09-26, avant toute lecture de 2019 et après)
+
+Sélection appliquée (pré-enregistrement + amendement 1) : `night-select-fvg.md` (A, B), `night-explore-manage.md` (C),
+`night-explore-quant.md` (D). Règles exactes : `data/backtest-input/night-frozen-rules.json` (généré par
+`scripts/buildNightFrozenRules.js`) ; contrôle de fidélité : `scripts/runNightHidden.js explore` redonne exactement les chiffres de
+l'exploration pour les 10 règles. Corrections faites pendant l'exploration (avant ce gel) : ordres limite FVG en concurrence (le premier
+rempli gagne) ; « autre règle » de la piste D2 = autre marché seulement (le seuil d'écart et l'heure de sortie sont des réglages).
+
+| Id | Marché | Règle | Exploration 2011-2018 |
+|---|---|---|---|
+| A1 | US100 | FVG M15 vieilli (5-12 bougies) qualifié entre 9 h 30 et 11 h, 4 h en faveur, entrée au marché, stop derrière la zone, 3R, sortie 11 h | 684 trades, +0,163 R, t 2,49 |
+| A2 | XAUUSD | FVG M15 vieilli (5-12) qualifié entre 3 h et 9 h 30, avec la tendance 20 jours, marché, stop 1 ATR H1, 2R, sortie 11 h | 1 636 trades, +0,083 R, t 2,41 |
+| B1 | US100 | A1 sans le filtre 4 h | 842 trades, +0,133 R, t 2,26 |
+| C1 | US100 | B1 + réentrée sur le même FVG après un stop (une fois) | 974 trades, +0,162 R, t 2,94 |
+| C2 | US100 | A1 + réentrée sur le même FVG après un stop | 776 trades, +0,172 R, t 2,79 |
+| D1a | US100 | Nuit 18 h - 3 h : achat au marché après un recul de 0,25 ATR H1 sous la dernière clôture M15 (ordre renouvelé chaque quart d'heure), stop 1 ATR, 2R, sortie 3 h | 2 342 trades, +0,066 R, t 4,18 |
+| D1b | US100 | 3 h - 9 h 30 : même règle à 0,5 ATR, 1R, sortie 9 h 30 | 5 374 trades, +0,047 R, t 3,68 |
+| D2a | US100 | Écart d'ouverture 9 h 30 ≥ 0,5 ATR H1 par rapport à la clôture de 16 h : pari qu'il se referme, marché 9 h 31, stop 1 ATR, objectif la clôture de la veille, sortie 11 h | 1 586 trades, +0,141 R, t 3,48 |
+| D3a | US100 | Lundi : achat 9 h 31, stop 1 ATR, sortie 16 h | 408 trades, +0,380 R, t 2,94 |
+| D3b | US100 | Mardi : achat 9 h 31, stop 1 ATR, sortie 16 h | 412 trades, +0,390 R, t 2,60 |
+
+Essais multiples (déclaré) : 864 variantes FVG (+ 44 placebos × 20 tirages), 15 variantes de gestion, 1 196 variantes quantitatives, soit
+plus de 2 000 variantes explorées sur 2011-2018. 10 règles lues sur la validation : si aucune ne valait rien, il y aurait environ 20 %
+de chances qu'au moins une passe t ≥ 2 par hasard ; le final (R moyen > 0) divise ce risque environ par deux.

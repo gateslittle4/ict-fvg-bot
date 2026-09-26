@@ -102,7 +102,8 @@ export function lastDoneBar(bars, i) {
  * spec : { dir: +1|-1, i: minute où l'ordre devient actif, entry: { type: 'market' } | { type: 'limit', price, through? } | { type: 'stop', price },
  *   expiry: temps après lequel un ordre non rempli est annulé (défaut : pas d'expiration pour 'market'), stop: prix,
  *   target: prix | null, rr: objectif en multiple du risque réel (remplace target), exitAt: sortie forcée au marché (temps),
- *   spread: prix, swap: (dir, from, to, fill) => prix par unité, cancelIfTarget: annuler une limite si l'objectif est touché avant }.
+ *   spread: prix, swap: (dir, from, to, fill) => prix par unité, cancelIfTarget: annuler une limite si l'objectif est touché avant,
+ *   beAt: stop ramené au prix d'entrée dès que le gain latent atteint beAt × risque (actif à partir de la minute suivante) }.
  * Stop d'abord dans une même minute (y compris la minute de l'entrée) ; objectif à partir de la minute qui suit l'entrée ; un trou à
  * travers le stop sort à l'ouverture. Une exécution déjà au-delà du stop = pas de trade ('stop-crossed').
  * @returns {{ entryTime, fill, exitTime, exit, reason, risk, r, mfe, mae } | { missed: string }}
@@ -129,14 +130,15 @@ export function simulate(S, spec) {
   const risk = Math.abs(fill - stop);
   const target = spec.rr != null ? fill + dir * spec.rr * risk : spec.target ?? null;
   const exitAt = spec.exitAt ?? Infinity;
-  let j = i, exit = null, reason = 'time', best = 0, worst = 0;
+  let j = i, exit = null, reason = 'time', best = 0, worst = 0, sl = stop;
   for (; j < S.n; j++) {
     if (j > i && S.t[j] >= exitAt) { exit = buy ? S.o[j] : S.o[j] + spread; break; }
     const lowBid = S.l[j], highAsk = S.h[j] + spread;
-    if (buy ? lowBid <= stop : highAsk >= stop) { exit = j > i ? (buy ? Math.min(S.o[j], stop) : Math.max(S.o[j] + spread, stop)) : stop; reason = 'stop'; break; }
+    if (buy ? lowBid <= sl : highAsk >= sl) { exit = j > i ? (buy ? Math.min(S.o[j], sl) : Math.max(S.o[j] + spread, sl)) : sl; reason = sl === stop ? 'stop' : 'breakeven'; break; }
     if (j > i && target != null && (buy ? S.h[j] >= target : S.l[j] + spread <= target)) { exit = target; reason = 'target'; break; }
     best = Math.max(best, buy ? S.h[j] - fill : fill - (S.l[j] + spread));
     worst = Math.min(worst, buy ? S.l[j] - fill : fill - highAsk);
+    if (spec.beAt != null && best >= spec.beAt * risk) sl = fill; // seuil de rentabilité, actif dès la minute suivante
   }
   if (exit === null) { j = S.n - 1; exit = buy ? S.c[j] : S.c[j] + spread; reason = 'end'; }
   const pnl = (buy ? exit - fill : fill - exit) + swap(dir, S.t[i], S.t[j], fill);

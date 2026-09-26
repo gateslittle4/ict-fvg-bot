@@ -20,14 +20,15 @@ export function qualifications(X, { maxAge = 24 } = {}) {
   return out;
 }
 
-/** Première qualification de chaque FVG dans la fenêtre d'âge et d'heures (minutes NY [fromMin, toMin)). */
-export function opportunities(quals, { ageMin = 5, ageMax = 24, fromMin = 180, toMin = 660 } = {}) {
-  const seen = new Set(), out = [];
+/** Première qualification de chaque FVG dans la fenêtre d'âge et d'heures (minutes NY [fromMin, toMin)) ; maxPerFvg > 1 garde aussi les
+ * qualifications suivantes (marquées `repeat`), pour la réentrée après un stop. */
+export function opportunities(quals, { ageMin = 5, ageMax = 24, fromMin = 180, toMin = 660, maxPerFvg = 1 } = {}) {
+  const seen = new Map(), out = [];
   for (const q of quals) {
     if (q.age < ageMin || q.age > ageMax || q.nm < fromMin || q.nm >= toMin) continue;
-    const key = `${q.k}:${q.dir}`;
-    if (seen.has(key)) continue;
-    seen.add(key); out.push(q);
+    const key = `${q.k}:${q.dir}`, n = seen.get(key) || 0;
+    if (n >= maxPerFvg) continue;
+    seen.set(key, n + 1); out.push(n ? { ...q, repeat: n } : q);
   }
   return out;
 }
@@ -49,7 +50,8 @@ export function nextNyTime(t, min) {
 
 /**
  * Trades d'une règle. params : { filter(f, o) -> bool, entry: 'market'|'limit', stop: { type: 'atr'|'zone', k }, rr, exit: { type:
- * 'ny', min } | { type: 'hold', ms }, maxPerDay, spreadAt(price), swap }. Une position à la fois. Entrée au marché à la minute qui suit
+ * 'ny', min } | { type: 'hold', ms }, maxPerDay, spreadAt(price), swap, beAt (seuil de rentabilité en R), reentry (une qualification
+ * suivante du même FVG n'est prise qu'après un stop sur ce FVG ; sans reentry elle est ignorée) }. Une position à la fois. Entrée au marché à la minute qui suit
  * la clôture de j ; ou ordre limite au bord proche de la zone (haut pour un achat), posé à la clôture de j et valable jusqu'à la sortie
  * au temps : les ordres limite posés pendant qu'on est à plat sont EN CONCURRENCE, le premier rempli gagne et les autres sont annulés
  * (ce qu'un bot ferait en direct ; corrigé le 2026-09-26 pendant l'exploration, avant toute lecture cachée — la version d'avant
@@ -58,8 +60,9 @@ export function nextNyTime(t, min) {
 export function ruleTrades(X, opps, params) {
   const { S, b15 } = X;
   const P = { entry: 'market', stop: { type: 'atr', k: 1 }, rr: 3, exit: { type: 'ny', min: 660 }, maxPerDay: 3, swap: () => 0, ...params };
-  const out = []; let busy = -Infinity; const perDay = new Map();
+  const out = []; let busy = -Infinity; const perDay = new Map(); const lastByFvg = new Map();
   const prep = (o) => {
+    if (o.repeat) { const prev = lastByFvg.get(`${o.k}:${o.dir}`); if (!P.reentry || !prev || prev.reason !== 'stop') return null; }
     const i = b15[o.j].i1 + 1; if (i >= S.n) return null;
     const dk = dayKey(o.tau); if ((perDay.get(dk) || 0) >= P.maxPerDay) return null;
     const f = featuresOf(X, o); if (!f) return null;
@@ -72,11 +75,11 @@ export function ruleTrades(X, opps, params) {
     let stop;
     if (P.stop.type === 'atr') stop = fill0 - o.dir * P.stop.k * atr;
     else { const far = o.dir > 0 ? o.z.bot : o.z.top; stop = far - o.dir * 0.1 * atr; if (Math.abs(fill0 - stop) < 0.3 * atr) stop = fill0 - o.dir * 0.3 * atr; }
-    const spec = { dir: o.dir, i, stop, rr: P.rr, exitAt, spread: sp, swap: P.swap };
+    const spec = { dir: o.dir, i, stop, rr: P.rr, exitAt, spread: sp, swap: P.swap, beAt: P.beAt };
     if (P.entry === 'limit') Object.assign(spec, { entry: { type: 'limit', price: ref }, expiry: exitAt });
     return { spec, dk };
   };
-  const take = (o, r, dk) => { out.push({ ...r, dir: o.dir, age: o.age, nm: o.nm, tau: o.tau }); perDay.set(dk, (perDay.get(dk) || 0) + 1); busy = r.exitTime + MIN; };
+  const take = (o, r, dk) => { out.push({ ...r, dir: o.dir, age: o.age, nm: o.nm, tau: o.tau, repeat: o.repeat || 0 }); perDay.set(dk, (perDay.get(dk) || 0) + 1); lastByFvg.set(`${o.k}:${o.dir}`, r); busy = r.exitTime + MIN; };
   for (let q = 0; q < opps.length; q++) {
     const o = opps[q];
     if (o.tau < busy) continue;
