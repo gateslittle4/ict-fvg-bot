@@ -7034,3 +7034,37 @@ dépôt (scratchpad de la session). Recalage : heure affichée = New York ; éca
   (placebo ± 90 min) ; le sens gagnant vient surtout de la hausse 2025. Perdants coupés en 8 min (28 % repartent ensuite à +2 N).
 - Rien à pré-enregistrer. Pistes : règles personnelles (rien après 11 h, risque fixe, FVG « vieillis » plutôt que frais) ; éventuel mode
   « assistant » (alertes FVG M15 vieillis 3 h-11 h NY, décision humaine, exécution et coupure à 11 h par le bot) — non construit.
+
+## 2026-09-26 (nuit, 04:45-05:45 UTC) — Recherche de nuit avec années cachées : RIEN ne tient ; 2023-2026 intact
+
+Demande d'Esdras avant de dormir : pistes secondaires, années cachées pour un vrai test en avant, « teste tout ce qui peut l'être ».
+- **Protocole** : `data/backtest-input/preregistration-nuit-2026-09-26.md`.
+  - Commit `2708c32`, puis amendements `a9e8869` (placebo obligatoire, piste « limite ») et `884ba94` (second tour réglé en M1).
+  - Exploration libre sur 2011-2018 seulement : `loadPhase` coupe les données au 31/12/2018.
+  - Validation 2019-2022 lue une seule fois (`NIGHT_PHASE=validation`), avec des règles figées avant (`18d04a9`, `fa2a5dd`).
+  - Final 2023-2024 + 2026 réservé aux survivants : **jamais lu, rien n'a survécu**.
+- **Résultat** : environ 2 160 variantes, 11 règles figées, **les 11 rejetées en validation**.
+  - FVG vieilli 9 h 30-11 h US100 : −0,08 à −0,10 R.
+  - Or Londres : t 0,53.
+  - Écart d'ouverture de 9 h 30 US100 : +0,078 R, t 1,50.
+  - Lundi acheteur US100 : +0,307 R, t 1,80.
+  - Weekly Sweep du Labo : −0,007 R.
+- **Le profil des choix d'Esdras en 2025** (données personnelles dans le scratchpad) :
+  - il prenait les FVG vieillis les plus jeunes, avec la tendance 20 jours, avec les 4 h en faveur (modèle AUC 0,72) ;
+  - ses choix battent ceux qu'il a laissés de +0,16 R en sortie mécanique, mais ce n'est pas prouvé ;
+  - le modèle de ses choix, appliqué mécaniquement sur 2011-2018, donne +0,04 à +0,05 R (t ≈ 1-1,4).
+- **Pièges de méthode trouvés** :
+  1. Ordres limite FVG : ils doivent être en concurrence (le premier rempli gagne). Sinon l'ordre du plus vieux signal est pris même
+     s'il se remplit après un autre. C'est corrigé dans `scripts/lib/eyeRule.js`.
+  2. Placebo : un ordre limite posé au hasard à la même distance bat le FVG frais 20 fois sur 20. Le niveau du FVG n'apporte rien.
+  3. **Le Labo du site est faux pour les stops serrés** : ses moteurs ne vérifient pas le stop dans la bougie d'entrée. Anchored VWAP
+     fait +1,64 R au règlement M15 et −0,31 R en M1. **Non corrigé dans le site**, décision d'Esdras (research-memory
+     `labo-entry-candle-stop-bug-2026-09-26`).
+- **Outils** (testés) : `scripts/lib/nightLab.js`, `fvgContext.js`, `eyeRule.js`, `dipRule.js`, `nightFvgGrid.js`,
+  `nightQuantGrid.js` ; scripts `runNight*.js` et `buildNightFrozenRules.js`. Rapport pour Esdras :
+  `data/backtest-input/night-report-2026-09-26.md`.
+- **Suite proposée** (rien de décidé) :
+  - exercice à l'aveugle : environ 150-200 FVG vieillis au hasard, graphique coupé, il répond oui ou non ; on compare ; le test final se
+    fera une fois sur 2023-2026, gardé intact exprès ;
+  - mode discipline : risque fixe, rien après 11 h, arrêt journalier ;
+  - correctif du Labo.

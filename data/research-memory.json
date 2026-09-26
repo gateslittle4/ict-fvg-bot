@@ -1409,5 +1409,50 @@
     ],
     "timeframe": "M15 / M1",
     "files": []
+  },
+  {
+    "id": "night-research-hidden-years-2026-09-26",
+    "title": "Recherche de nuit : copier les FVG d'Esdras + pistes secondaires, années cachées (2019-2022 lu une fois, 2023-2026 intact) : RIEN ne tient",
+    "date": "2026-09-26",
+    "status": "rejected",
+    "summary": "Pré-enregistré (2708c32, amendements a9e8869 / 884ba94, règles figées 18d04a9 et fa2a5dd). Exploration libre 2011-2018 seulement (données coupées au 31/12/2018 par le code), validation 2019-2022 lue une fois (R moyen > 0 et t >= 2), final 2023-2024 + 2026 réservé aux survivants. ~2 160 variantes : A = profil des choix d'Esdras en 2025 (180 FVG M15 vieillis dans sa fenêtre active, 54 pris ; il prenait les plus jeunes, avec la tendance 20 j, 4 h en faveur ; modèle AUC 0,72 ; ses choix +0,144 R vs laissés -0,018 R en sortie mécanique, écart non prouvé, IC 90 % -0,19 à +0,62), B = FVG M15 mécaniques (864 variantes, placebo obligatoire : le FVG frais + limite ne bat pas un ordre posé au hasard à la même distance), C = gestion (réentrée après stop), D = pistes quantitatives (limite au creux, écart d'ouverture 9h30, jour de la semaine, 1 196 variantes), second tour = 22 stratégies du Labo réglées en M1. 11 règles figées ; validation 2019-2022 : toutes rejetées (FVG vieilli 9h30-11h US100 -0,08 à -0,10 R ; or Londres +0,026 t 0,53 ; écart d'ouverture +0,078 t 1,50 ; lundi acheteur +0,307 t 1,80 ; Weekly Sweep US100 -0,007). Final non lu : 2023-2026 intact. Rapport : data/backtest-input/night-report-2026-09-26.md.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 signal / M1 exécution",
+    "files": [
+      "data/backtest-input/preregistration-nuit-2026-09-26.md",
+      "data/backtest-input/night-report-2026-09-26.md",
+      "data/backtest-input/night-validation.md",
+      "data/backtest-input/night-lab-validation.md",
+      "data/backtest-input/night-frozen-rules.json",
+      "scripts/runNightHidden.js",
+      "scripts/lib/nightLab.js",
+      "scripts/lib/fvgContext.js",
+      "scripts/lib/eyeRule.js",
+      "scripts/lib/dipRule.js"
+    ]
+  },
+  {
+    "id": "labo-entry-candle-stop-bug-2026-09-26",
+    "title": "Le Labo du site (22 moteurs) ne vérifie pas le stop dans la bougie d'entrée : résultats gonflés pour les stops serrés",
+    "date": "2026-09-26",
+    "status": "methodology-fix",
+    "summary": "Trouvé pendant la recherche de nuit : les moteurs du Labo (src/backtest/*.js enregistrés dans labRegistry.js) résolvent une position seulement quand i > entryIndex (ex. anchoredVwap.js), comme le bug entry-candle-stop-bug corrigé autrefois dans le moteur principal. Rejoués en M1 (entrée à l'ouverture de la bougie, stop et objectif du moteur), 2011-2018 : Anchored VWAP XAUUSD +1,642 R/trade au règlement M15 contre -0,312 R en M1 ; US100 +1,789 contre -0,057 ; Midnight Open, CBDR et Judas Swing aussi surestimés. Le Labo du site affiche donc des chiffres faux pour ces stratégies. PAS ENCORE CORRIGÉ dans le site (décision d'Esdras) : correctif possible = vérifier le stop dans la bougie d'entrée ou rejouer en M1. Comparaison : data/backtest-input/night-lab-explore.md vs night-lab-explore-m15.md.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "files": [
+      "data/backtest-input/night-lab-explore.md",
+      "data/backtest-input/night-lab-explore-m15.md",
+      "scripts/runNightLabSweep.js",
+      "src/backtest/labRegistry.js"
+    ]
   }
 ]
