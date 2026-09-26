@@ -5,41 +5,13 @@
 //     modèle de ses choix data/backtest-input/night-eye-model.json) ; B = variantes mécaniques sans ce profil.
 // Usage : node --max-old-space-size=12000 scripts/runNightFvgExplore.js [SYM ...]  -> data/backtest-input/night-explore-fvg.{md,json}
 import fs from 'node:fs';
-import { loadPhase, PHASES, spreadAt, swapCost, stats, exploreVerdict, sgn, HOUR, inBlocks } from './lib/nightLab.js';
+import { loadPhase, PHASES, exploreVerdict, sgn, inBlocks } from './lib/nightLab.js';
 import { buildContext } from './lib/fvgContext.js';
 import { qualifications, opportunities, ruleTrades } from './lib/eyeRule.js';
+import { WINDOWS, FILTERS, MGMT, paramsFor } from './lib/nightFvgGrid.js';
 import { OFF } from './lib/m1Data.js';
 
 const SYMS = process.argv.slice(2).length ? process.argv.slice(2) : ['US100', 'US500', 'XAUUSD'];
-const MODEL = JSON.parse(fs.readFileSync('data/backtest-input/night-eye-model.json', 'utf8'));
-const modelScore = (f) => MODEL.w[0] + MODEL.features.reduce((s, k, q) => s + MODEL.w[q + 1] * (f[k] - MODEL.mu[k]) / MODEL.sd[k], 0);
-
-const WINDOWS = {
-  'âge 5-12, 3h-11h': { ageMin: 5, ageMax: 12, fromMin: 180, toMin: 660, exitMin: 660 },
-  'âge 5-24, 3h-11h': { ageMin: 5, ageMax: 24, fromMin: 180, toMin: 660, exitMin: 660 },
-  'âge 0-4 (frais), 3h-11h': { ageMin: 0, ageMax: 4, fromMin: 180, toMin: 660, exitMin: 660 },
-  'âge 5-24, 8h-12h': { ageMin: 5, ageMax: 24, fromMin: 480, toMin: 720, exitMin: 720 },
-  'âge 5-12, 9h30-11h': { ageMin: 5, ageMax: 12, fromMin: 570, toMin: 660, exitMin: 660 },
-  'âge 5-12, 3h-9h30': { ageMin: 5, ageMax: 12, fromMin: 180, toMin: 570, exitMin: 660 },
-};
-const FILTERS = {
-  aucun: { fam: 'B', f: null },
-  'tendance 20 j': { fam: 'A', f: (f) => f.trend20 > 0 },
-  '4 h en faveur': { fam: 'A', f: (f) => f.r4h > 0 },
-  'tendance 20 j + 4 h': { fam: 'A', f: (f) => f.trend20 > 0 && f.r4h > 0 },
-  'tendance 20 j + 4 h + veille prise': { fam: 'A', f: (f) => f.trend20 > 0 && f.r4h > 0 && f.sweepPrevDay === 1 },
-  'modèle de ses choix (tiers haut)': { fam: 'A', f: (f) => modelScore(f) > MODEL.threshold },
-  'achats seulement': { fam: 'B', f: (f) => f.long === 1 },
-  'achats + tendance 20 j': { fam: 'B', f: (f) => f.long === 1 && f.trend20 > 0 },
-};
-const MGMT = {
-  'marché, stop 1 ATR, 3R': { entry: 'market', stop: { type: 'atr', k: 1 }, rr: 3 },
-  'marché, stop 1 ATR, 2R': { entry: 'market', stop: { type: 'atr', k: 1 }, rr: 2 },
-  'marché, stop 1 ATR, 3R, 4 h max': { entry: 'market', stop: { type: 'atr', k: 1 }, rr: 3, hold: 4 * HOUR },
-  'limite au bord, stop 1 ATR, 3R': { entry: 'limit', stop: { type: 'atr', k: 1 }, rr: 3 },
-  'marché, stop derrière la zone, 3R': { entry: 'market', stop: { type: 'zone' }, rr: 3 },
-  'marché, stop 0,5 ATR, 4R': { entry: 'market', stop: { type: 'atr', k: 0.5 }, rr: 4 },
-};
 
 const P = PHASES.explore;
 const results = [];
@@ -52,8 +24,8 @@ for (const sym of SYMS) {
   for (const [wLab, W] of Object.entries(WINDOWS)) {
     const opps = opportunities(quals, W);
     for (const [fLab, F] of Object.entries(FILTERS)) {
-      for (const [mLab, M] of Object.entries(MGMT)) {
-        const params = { ...M, filter: F.f, exit: M.hold ? { type: 'hold', ms: M.hold } : { type: 'ny', min: W.exitMin }, spreadAt: (p) => spreadAt(sym, p), swap: swapCost(sym) };
+      for (const mLab of Object.keys(MGMT)) {
+        const params = paramsFor(sym, wLab, fLab, mLab);
         const tr = ruleTrades(X, opps, params).filter((t) => inBlocks(t.entryTime, P.count));
         const v = exploreVerdict(tr);
         const years = {}; for (const t of tr) { const y = new Date(t.entryTime + OFF).getUTCFullYear(); years[y] = (years[y] || 0) + t.r; }
