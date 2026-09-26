@@ -141,3 +141,16 @@ moyen de savoir si son œil peut être écrit en règles pour un robot 100 % aut
 - **Les 300 cas** : 200 le matin (`a001`…) et 100 le soir (`b001`…).
 - **Moyenne sur tous les cas, à 3R** : −0,134 R avec le stop sous la zone (88 ordres remplis) ; +0,007 R avec le stop sous la mèche
   (188 remplis). C'est la référence que ses choix devront battre.
+
+## Sa lecture H4, mesurée (26/09, exploration 2011-2018, descriptif)
+Idée d'Esdras : « quand le prix touche un FVG H4, il le remplit à moitié ou en entier, puis il repart ».
+- **Remplissage** (`scripts/runH4FvgFillCheck.js`), en comparant à des zones fictives de même taille posées au hasard :
+  - US100 : moitié 65 % (hasard 64 %), fond 48 % (hasard 49 %) ;
+  - US500 : 62 % contre 66 %, et 46 % contre 50 % ;
+  - or : 66 % contre 65 %, et 50 % contre 49 %.
+- **Rebond après remplissage** (`scripts/runH4FvgBounceCheck.js`), course +1 zone contre −1 zone :
+  - US100 : 47 % contre 46-47 % au hasard ;
+  - US500 : 49-51 % contre 49-50 % ;
+  - or : 48 % contre 46-47 %.
+  À 2 zones contre 1 : 32-35 % contre 31-34 %.
+- **Conclusion** : c'est de la géométrie, pas un effet du FVG H4. Le prix fait la même chose avec une zone quelconque.
