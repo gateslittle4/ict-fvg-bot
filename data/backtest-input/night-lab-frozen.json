@@ -1,0 +1,16 @@
+{
+ "frozenAt": "2026-09-26T05:22:13.331Z",
+ "note": "Second tour : stratégies du Labo figées (réglages par défaut) avant toute lecture de 2019 et après.",
+ "rules": [
+  {
+   "id": "weekly-sweep",
+   "sym": "US100",
+   "label": "Weekly Liquidity Sweep",
+   "explore": {
+    "n": 406,
+    "mean": 0.20867061027668532,
+    "t": 2.3134591132676388
+   }
+  }
+ ]
+}
