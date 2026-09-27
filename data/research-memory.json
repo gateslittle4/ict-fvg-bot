@@ -1509,7 +1509,7 @@
     "title": "5 modifications de la méthode d Esdras (3R fixe, discount/premium, accord Daily, breakeven 2R, tout) : toutes rejetées en exploration",
     "date": "2026-09-27",
     "status": "rejected",
-    "summary": "Pré-enregistré (preregistration-esdras-method-mods-2026-09-27.md, seuil t >= 2,5 pour 5 essais). US100 2011-2018 : M1 objectif fixe 3R +0,086 R (t 1,56, moitiés +0,058/+0,111, +70 R sans les 5 meilleurs, 27 % gagnants) = la seule encourageante mais non significative ; M2 discount +0,003 ; M3 accord Daily -0,042 ; M4 breakeven 2R -0,039 ; M5 tout +0,035 (289 trades). Base C1 +0,004 R. Le sens Daily et le discount/premium n ajoutent rien ; l objectif H4 lointain crée l effet loterie, un objectif fixe 3R l enlève sans créer d avantage prouvé.",
+    "summary": "Pré-enregistré (preregistration-esdras-method-mods-2026-09-27.md, seuil t >= 2,5 pour 5 essais). US100 2011-2018 : M1 objectif fixe 3R +0,086 R (t 1,56, moitiés +0,058/+0,111, +70 R sans les 5 meilleurs, 27 % gagnants) = la seule encourageante mais non significative ; M2 discount +0,003 ; M3 accord Daily -0,042 ; M4 breakeven 2R -0,039 ; M5 tout +0,035 (289 trades). Base C1 +0,004 R. Le sens Daily et le discount/premium n ajoutent rien ; l objectif H4 lointain crée l effet loterie, un objectif fixe 3R l enlève sans créer d avantage prouvé. M1 testée quand même sur 2023-2026 à la demande d Esdras (amendement, critère R > 0 et t >= 2) : final 349 trades -0,040 R (t -0,45) : ÉCHOUE ; 2019-2022 +0,098 R (t 1,26) ; 2025 -0,126 R. Les années 2023-2026 ont été lues une fois pour cette famille.",
     "markets": [
       "US100"
     ],
@@ -1517,7 +1517,9 @@
       "data/backtest-input/preregistration-esdras-method-mods-2026-09-27.md",
       "data/backtest-input/esdras-mods-explore.md",
       "scripts/runEsdrasMods.js",
-      "scripts/lib/esdrasMethod.js"
+      "scripts/lib/esdrasMethod.js",
+      "data/backtest-input/esdras-mods-validation.md",
+      "data/backtest-input/esdras-mods-final.md"
     ]
   }
 ]

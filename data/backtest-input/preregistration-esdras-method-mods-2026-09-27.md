@@ -52,3 +52,15 @@ Aucun réglage entre les étapes.
 - **Critère du final** (2023-2024 + 2026, 2025 à part en descriptif) : M1 **passe seulement si R moyen > 0 ET t ≥ 2**. Elle doit porter
   seule toute la preuve, puisqu'elle n'a pas passé l'exploration. Le chiffre « R > 0 seul » est aussi donné.
 - **2019-2022** est calculé en même temps, en descriptif. Il ne décide rien.
+
+## Résultat M1 (27/09) : ÉCHOUE au final
+| Période | Trades | R moyen | t | Gagnants |
+|---|---|---|---|---|
+| 2011-2018 (exploration) | 1 059 | +0,086 | 1,56 | 27 % |
+| 2019-2022 (descriptif) | 520 | +0,098 | 1,26 | 28 % |
+| **2023-2024 + 2026 (final)** | 349 | **−0,040** | −0,45 | 25 % |
+| 2025 (descriptif) | 140 | −0,126 | −0,90 | 22 % |
+
+- M1 échoue même au critère le plus faible (R > 0).
+- Les années récentes, marché des 2023-2026, ne montrent aucun avantage.
+- Détails : `esdras-mods-validation.md` et `esdras-mods-final.md`.
