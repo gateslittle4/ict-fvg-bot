@@ -27,3 +27,15 @@ les réentrées de moins de 30 minutes après une perte étaient son meilleur at
 3. En descriptif : US100 2019-2022 et 2023-2026, qui ont déjà été lues.
 
 Aucun réglage. La durée de 90 minutes est fixée ici et ne sera pas changée.
+
+## Résultat (27/09) : RE REJETÉE dès l'exploration US100 2011-2018
+- **Réentrées** : 88 trades, −0,055 R en moyenne (t −0,21). Les moitiés font +0,276 et −0,274.
+- **C1 + RE** : −0,007 R, contre +0,004 R pour C1 seul.
+- On s'arrête là : US500 et les autres périodes ne sont pas lues. Détails : `esdras-reentry-US100-explore.md`.
+- **Remarque, descriptive seulement** : les vraies réentrées d'Esdras en 2025 ne ressemblent pas à cette règle.
+  - Elles se font en quelques minutes (médiane 5 min), presque au prix du stop.
+  - Leurs stops sont très serrés, environ 18 points.
+  - Elles ne s'appuient pas sur un nouveau FVG M15.
+  - Leur gain total repose presque entièrement sur les 5 meilleures.
+
+  Les chiffres restent dans ses données personnelles, hors du dépôt.

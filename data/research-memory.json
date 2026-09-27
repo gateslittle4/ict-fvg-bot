@@ -1538,5 +1538,21 @@
       "scripts/runEsdrasWinners.js",
       "scripts/runEsdrasSweep.js"
     ]
+  },
+  {
+    "id": "esdras-reentry-2026-09-27",
+    "title": "Réentrées rapides après une perte (méthode d Esdras, nouveau FVG M15 dans les 90 min, même objectif H4) : rejetées en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-reentry-2026-09-27.md). US100 2011-2018 : 88 réentrées, -0,055 R (t -0,21), moitiés +0,276 / -0,274 ; C1+RE -0,007 R contre C1 +0,004 R. Rejeté, rien d autre lu. Ses vraies réentrées de 2025 sont différentes (quelques minutes après le stop, presque au même prix, stops ~18 pts, sans nouveau FVG M15) et leur gain tient aux 5 meilleures : une règle « réentrée immédiate, même distance de stop » serait une autre hypothèse, non testée.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-reentry-2026-09-27.md",
+      "data/backtest-input/esdras-reentry-US100-explore.md",
+      "scripts/runEsdrasReentry.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
   }
 ]
