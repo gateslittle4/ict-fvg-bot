@@ -60,7 +60,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <span class="count" id="count">…</span>
   </header>
   <div class="bar"><i id="progress"></i></div>
-  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018, selon ta règle : A, B, C forment le FVG ; la bougie juste avant A et la bougie D juste après C ne touchent pas la zone. Le graphique s'arrête à la fermeture de D ; la date est cachée. Le sens est donné : ACHAT ou VENTE. Question : <b>tu prends ce trade-là, oui ou non</b> ? Si tu ne le prendrais pas dans ce sens, réponds « Je laisse ». Prends le temps qu'il te faut : mieux vaut 50 cas bien regardés que 150 faits à la va-vite. Tu ne verras pas le résultat.</p>
+  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018, selon ta règle : A, B, C forment le FVG et la bougie D juste après C ne touche pas la zone. Le graphique s'arrête à la fermeture de D ; la date est cachée. Le sens est donné : ACHAT ou VENTE. Question : <b>tu prends ce trade-là, oui ou non</b> ? Si tu ne le prendrais pas dans ce sens, réponds « Je laisse ». Prends le temps qu'il te faut : mieux vaut 50 cas bien regardés que 150 faits à la va-vite. Tu ne verras pas le résultat.</p>
 
   <section class="panel" id="card">
     <div class="meta">
@@ -97,12 +97,12 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </div>
 
 <script>
-const REASONS = ['Tendance', 'Contexte H4', 'Dans un FVG H4', 'Liquidité H4 prise', 'Liquidité prise', "J'attends qu'un high/low proche soit pris", 'Belle impulsion', 'FVG vierge à gauche (même jour)', 'Bonne heure', 'Trop loin', 'Impulsion faible', 'Mauvaise heure', 'Contre la tendance', "J'aurais pris l'autre sens", 'Autre'];
+const REASONS = ['Tendance', 'Contexte H4', 'Dans un FVG H4', 'Liquidité H4 prise', 'Liquidité prise', 'Liquidité prise + BMS', 'Higher highs / lower lows', "J'attends qu'un high/low proche soit pris", 'Belle impulsion', 'FVG vierge à gauche (même jour)', 'Bonne heure', 'Trop loin', 'Impulsion faible', 'Mauvaise heure', 'Contre la tendance', "J'aurais pris l'autre sens", 'Autre'];
 // Version 4 (27/09) : Esdras croyait que « vente » pouvait vouloir dire achat ; il recommence tout. Nouvelle collection et nouvelle
 // clé locale : les réponses v3 (collection `answers`) sont gardées mais ne comptent plus. Trois boutons (achat, vente, rien) : il choisit
 // le sens lui-même (retiré : il préfère le sens donné, deux boutons). Ordre des cas : a001-a100 puis
 // b001-b050 d'abord (le premier point de lecture), puis le reste.
-const COL = 'answers5', LS = 'blind-answers-v5'; // v5 (27/09) : nouveaux cas, la bougie juste avant A ne touche pas la zone
+const COL = 'answers6', LS = 'blind-answers-v6'; // v6 (27/09) : retour aux cas v3 ; ses 121 réponses sur les achats v3 sont reprises (il confirme qu'achat voulait dire acheter)
 let setups = [], answers = {}, idx = 0, tf = 4, picked = new Set(), db = null, history = [];
 const $ = (id) => document.getElementById(id);
 
@@ -143,8 +143,9 @@ function draw() {
 
 function render() {
   const n = setups.length, done = setups.filter((x) => answers[x.id]).length;
-  $('count').textContent = done < 150 ? `${done} / 150 pour le premier résultat` : `${done} / ${n}`;
-  $('progress').style.width = `${(100 * done / (n || 1)).toFixed(1)}%`;
+  const goal = Math.min(100, setups.filter((x) => x.id[0] === 'a' && answers[x.id]).length) + Math.min(50, setups.filter((x) => x.id[0] === 'b' && answers[x.id]).length);
+  $('count').textContent = goal < 150 ? `${goal} / 150 pour le premier résultat` : `${done} / ${n}`;
+  $('progress').style.width = `${(100 * (goal < 150 ? goal / 150 : done / (n || 1))).toFixed(1)}%`;
   if (idx >= n) { $('card').hidden = true; $('done').hidden = false; return; }
   $('card').hidden = false; $('done').hidden = true;
   const s = setups[idx], a = answers[s.id];
@@ -188,7 +189,7 @@ async function start() {
   $('tf15').onclick = () => { tf = 15; setTf(); draw(); }; $('tf4').onclick = () => { tf = 4; setTf(); draw(); };
   $('back').onclick = () => { if (history.length) { idx = history.pop(); render(); } };
   window.addEventListener('resize', draw);
-  const all = (await (await fetch('setups.json')).json()).setups, first = (x) => (x.id[0] === 'c' ? +x.id.slice(1) <= 100 : +x.id.slice(1) <= 50);
+  const all = (await (await fetch('setups.json')).json()).setups, first = (x) => x.id[0] === 'b'; // le soir d'abord : c'est ce qui manque pour le premier résultat
   setups = [...all.filter(first), ...all.filter((x) => !first(x))];
   try { answers = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { answers = {}; }
   idx = nextUnanswered(0); render();

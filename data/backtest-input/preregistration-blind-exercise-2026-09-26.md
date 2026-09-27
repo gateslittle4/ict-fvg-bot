@@ -71,3 +71,19 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
   - la prise de liquidité ;
   - la taille du FVG ;
   - le rang.
+
+## Amendement du 27/09 (avant toute lecture des résultats) — version 6 : retour aux cas v3, réponses d'achat reprises
+- **Pourquoi** : Esdras ne peut pas refaire 150 graphiques. Il confirme que, sur les cas ACHAT, « je pose l'ordre » voulait bien dire
+  acheter ; sa confusion ne portait que sur les ventes. Ses réponses v3 le montrent aussi : il disait oui à 45 % des achats dans le sens
+  de la tendance sur 40 h, contre 26 % à contre-tendance.
+- **Cas** : retour à `setups.json` v3 et `blind-outcomes.json` v3. Les fichiers v5 sont gardés à part (`setups-v5.json`,
+  `blind-outcomes-v5.json`) et ne servent pas.
+- **Réponses** : collection `answers6`.
+  - Ses 121 réponses v3 sur des cas ACHAT y sont recopiées telles quelles : 110 du matin, 11 du soir.
+  - Ses réponses v3 sur les ventes (91) restent écartées.
+  - Les cas restants (soir d'abord) sont répondus sur la page au sens clairement affiché.
+- **Premier point de lecture** : 100 réponses du matin (ici 110 achats) et 50 du soir, soit encore 39 réponses du soir.
+  - Au matin, la mesure principale ne porte donc que sur des achats.
+  - Mesure, verdict et seuils de remplissage inchangés.
+- **Nouveaux descriptifs** : séparation selon que la bougie juste avant A touche la zone ou non (règle précisée v5).
+- **Raisons ajoutées** : « Liquidité prise + BMS » et « Higher highs / lower lows ». En descriptif, comme les autres raisons.
