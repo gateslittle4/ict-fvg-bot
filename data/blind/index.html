@@ -151,7 +151,7 @@ function render() {
   $('dir').textContent = s.dir > 0 ? 'ACHAT' : 'VENTE';
   $('dir').className = 'dir ' + (s.dir > 0 ? 'up' : 'down');
   $('when').textContent = `${s.weekday} · ${s.nyTime} NY · cas ${idx + 1}`;
-  $('zone').textContent = s.dir > 0 ? `achat limite à ${s.zone[1].toFixed(2)} (haut de la zone)` : `vente limite à ${s.zone[0].toFixed(2)} (bas de la zone)` + ` · FVG de ${(s.zone[1] - s.zone[0]).toFixed(1)} pts`;
+  $('zone').textContent = (s.dir > 0 ? `achat limite à ${s.zone[1].toFixed(2)} (haut de la zone)` : `vente limite à ${s.zone[0].toFixed(2)} (bas de la zone)`) + ` · FVG de ${(s.zone[1] - s.zone[0]).toFixed(1)} pts`;
   picked = new Set(a?.reasons || []);
   [...$('chips').children].forEach((b) => b.setAttribute('aria-pressed', picked.has(b.textContent) ? 'true' : 'false'));
   const verb = s.dir > 0 ? 'J\'achète' : 'Je vends';
