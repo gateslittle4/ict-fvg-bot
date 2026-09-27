@@ -94,3 +94,20 @@ modifié.
 - **B0** (sans sens H4) : +0,046 R. Le sens H4 n'apporte rien.
 - **Descriptif, qui ne décide rien** : soir +0,145 R (t 1,17), matin −0,132 R ; achats +0,093 R, ventes −0,113 R.
 - Détails : `esdras-method-explore.md`. On s'arrête selon le protocole. Validation et final ne sont pas lus.
+
+## Amendement du 27/09 (écrit AVANT tout calcul sur 2019-2026) : « le soir seulement », à la demande d'Esdras
+- **Hypothèse S1** : C1 avec seulement les signaux du soir, où la fermeture de D tombe entre 20 h et 23 h NY. Tout le reste de C1 est
+  inchangé :
+  - ordre annulé le lendemain à 7 h NY ;
+  - sortie à 17 h NY le lendemain ;
+  - au plus 3 trades par jour.
+
+  Les signaux du matin ne sont ni pris ni bloquants.
+- **Origine et prudence** : S1 vient de l'exploration 2011-2018 (soir +0,145 R, t 1,17). J'ai regardé environ six découpages (achats,
+  ventes, matin, soir, 1er et 2e ordre), et le soir est le meilleur. Il faut donc s'attendre à ce qu'une partie de cet écart soit du
+  hasard.
+- **Test** :
+  - 2011-2018 est recalculé en descriptif seulement, car c'est la source de l'hypothèse ;
+  - **validation 2019-2022** : lecture unique, R moyen > 0 et t ≥ 2 ;
+  - si elle passe, **final 2023-2024 + 2026** : lecture unique, R moyen > 0. 2025 est donné à part.
+- Aucun réglage entre les étapes.

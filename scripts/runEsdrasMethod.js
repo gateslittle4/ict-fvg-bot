@@ -9,13 +9,15 @@ import { buildContext } from './lib/fvgContext.js';
 import { h4Bias, m15Bms, signals, execute } from './lib/esdrasMethod.js';
 
 const SYM = 'US100', phase = process.argv[2] || 'explore', P = PHASES[phase];
+const EVENING = process.argv[3] === 'soir'; // hypothèse S1 (amendement du 27/09) : signaux du soir seulement
 const S = loadPhase(SYM, phase), X = buildContext(S);
 const bias = h4Bias(X), bms = m15Bms(X);
 const opts = { spread: (p) => spreadAt(SYM, p), swap: swapCost(SYM) };
-const sigBias = signals(X, bias, bms), sigB0 = signals(X, bias, bms, { useBias: false });
+const keep = (list) => (EVENING ? list.filter((s) => s.win === 1) : list);
+const sigBias = keep(signals(X, bias, bms)), sigB0 = keep(signals(X, bias, bms, { useBias: false }));
 const runs = { C1: execute(X, sigBias, opts), C2: execute(X, sigBias, { ...opts, trail: true }), B0: execute(X, sigB0, opts) };
 const fmt = (s) => `${String(s.n).padStart(4)} trades  R moyen ${sgn(s.mean, 3)}  t ${s.t.toFixed(2)}  gagnants ${(100 * s.win).toFixed(0)} %  total ${sgn(s.sum, 1)} R  creux max ${s.maxDD.toFixed(1)} R`;
-const lines = [`# Méthode d'Esdras : phase ${phase}`, '', `Signaux retenus (sens H4) : ${sigBias.length} ; référence B0 : ${sigB0.length}.`, ''];
+const lines = [`# Méthode d'Esdras${EVENING ? ' (S1 : soir seulement)' : ''} : phase ${phase}`, '', `Signaux retenus (sens H4) : ${sigBias.length} ; référence B0 : ${sigB0.length}.`, ''];
 const log = (s) => { console.log(s); lines.push(s); };
 const blocksList = [['compté', P.count], ...(P.descriptive ? [['2025 (descriptif)', P.descriptive]] : [])];
 const verdicts = [];
@@ -35,15 +37,16 @@ for (const [label, blocks] of blocksList) {
   log('```');
   if (label !== 'compté') continue;
   const b0 = stats(pick(runs.B0));
-  for (const k of ['C1', 'C2']) {
+  for (const k of EVENING ? ['C1'] : ['C1', 'C2']) {
     const list = pick(runs[k]), s = stats(list);
     if (phase === 'explore') {
       const v = exploreVerdict(list, P.halves);
       log(`${k} moitiés : ${v.halves.map((h) => `${h.n} trades ${sgn(h.mean, 3)} R`).join(' | ')}`);
+      if (EVENING) { verdicts.push(`S1 2011-2018 (descriptif, source de l'hypothèse) : ${s.n} trades, ${sgn(s.mean, 3)} R, t ${s.t.toFixed(2)}`); continue; }
       verdicts.push(`${k} : ${v.retained && s.mean > b0.mean ? 'RETENUE' : 'REJETÉE'} (critères de base : ${v.retained ? 'oui' : 'non'} ; bat B0 : ${s.mean > b0.mean ? 'oui' : 'non'})`);
     } else if (phase === 'validation') verdicts.push(`${k} : ${s.mean > 0 && s.t >= 2 ? 'PASSE' : 'ÉCHOUE'} (R > 0 et t >= 2)`);
     else verdicts.push(`${k} : ${s.mean > 0 ? 'PASSE' : 'ÉCHOUE'} (R > 0)`);
   }
 }
 log(''); log(`VERDICT ${phase.toUpperCase()}`); for (const v of verdicts) log(`- ${v}`);
-fs.writeFileSync(`data/backtest-input/esdras-method-${phase}.md`, lines.join('\n') + '\n');
+fs.writeFileSync(`data/backtest-input/esdras-method${EVENING ? '-soir' : ''}-${phase}.md`, lines.join('\n') + '\n');
