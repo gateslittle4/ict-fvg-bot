@@ -2,7 +2,7 @@
 // sens H4 par prise de PD arrays (sommets/creux H4 à 1 bougie, FVG H4 vierges), BMS M15, n'importe quel FVG M15 du sens après le BMS
 // (D hors de la zone) entre 7 h-11 h ou 20 h-23 h NY, objectif = niveau H4 opposé le plus proche (le 2e s'il est « proche »), échelle
 // d'entrée pour avoir au moins 3R, annulation à 11 h / 7 h le lendemain, sortie 17 h NY, au plus 3 trades remplis par jour.
-import { nyMin, dayKey, MIN } from './nightLab.js';
+import { nyMin, dayKey, MIN, lastDoneBar } from './nightLab.js';
 import { nextNyTime } from './eyeRule.js';
 
 export const WINDOWS = [{ from: 420, to: 660, expiry: 660 }, { from: 1200, to: 1380, expiry: 420 }];
@@ -18,18 +18,19 @@ const barEnd = (S, b) => S.t[b.i1] + MIN;
  */
 export function h4Bias(X) {
   const { S, b4h: b } = X, H4F = X.fvg[2];
-  let highs = [], lows = [], bullF = [], bearF = [], f = 0, bias = 0, since = -Infinity;
+  let highs = [], lows = [], bullF = [], bearF = [], f = 0, bias = 0, since = -Infinity, why = null;
   const out = new Array(b.length);
   for (let m = 0; m < b.length; m++) {
     const bar = b[m];
-    let bull = false, bear = false;
+    let bull = false, bear = false; const w = { 1: null, '-1': null }; // cause du signal (descriptif) : prise de liquidité, FVG H4, cassure
+    const mark = (d, kind) => { if (d > 0) bull = true; else bear = true; if (!w[d] || kind === 'sweep') w[d] = kind; };
     if (m >= 1) {
-      highs = highs.filter((h) => { if (bar.h <= h) return true; if (bar.c <= h) bear = true; else bull = true; return false; });
-      lows = lows.filter((l) => { if (bar.l >= l) return true; if (bar.c >= l) bull = true; else bear = true; return false; });
-      bullF = bullF.filter((z) => { if (bar.l > z.top) return true; if (bar.c >= z.bot) bull = true; else bear = true; return false; });
-      bearF = bearF.filter((z) => { if (bar.h < z.bot) return true; if (bar.c <= z.top) bear = true; else bull = true; return false; });
+      highs = highs.filter((h) => { if (bar.h <= h) return true; if (bar.c <= h) mark(-1, 'sweep'); else mark(1, 'break'); return false; });
+      lows = lows.filter((l) => { if (bar.l >= l) return true; if (bar.c >= l) mark(1, 'sweep'); else mark(-1, 'break'); return false; });
+      bullF = bullF.filter((z) => { if (bar.l > z.top) return true; if (bar.c >= z.bot) mark(1, 'fvg'); else mark(-1, 'break'); return false; });
+      bearF = bearF.filter((z) => { if (bar.h < z.bot) return true; if (bar.c <= z.top) mark(-1, 'fvg'); else mark(1, 'break'); return false; });
       const nb = bull && !bear ? 1 : bear && !bull ? -1 : bias;
-      if (nb !== bias) { bias = nb; since = barEnd(S, bar); }
+      if (nb !== bias) { bias = nb; since = barEnd(S, bar); why = w[nb]; }
     }
     // sommet / creux de la bougie m-1, confirmé à la fermeture de m ; FVG H4 dont la bougie C est m
     if (m >= 2) {
@@ -38,7 +39,7 @@ export function h4Bias(X) {
       if (p.l < b[m - 2].l && p.l < bar.l) lows.push(p.l);
     }
     while (f < H4F.length && H4F[f].k <= m) { const z = H4F[f++]; if (z.k === m) (z.dir > 0 ? bullF : bearF).push(z); }
-    out[m] = { t: barEnd(S, bar), bias, since, highs: highs.slice(), lows: lows.slice(), bearFvg: bearF.map((z) => z.bot), bullFvg: bullF.map((z) => z.top) };
+    out[m] = { t: barEnd(S, bar), bias, since, why, highs: highs.slice(), lows: lows.slice(), bearFvg: bearF.map((z) => z.bot), bullFvg: bullF.map((z) => z.top) };
   }
   return out;
 }
@@ -114,7 +115,7 @@ export function runOrder(S, { dir, i, entry, stop, target, expiry, exitAt, sprea
  * Signaux (FVG M15 qualifiés) de la méthode. opts.useBias = false donne la référence B0 (sens = celui du dernier BMS M15).
  * @returns [{ tau, dir, z, A, i, target, plan, expiry, exitAt, win }]
  */
-export function signals(X, bias, bms, { useBias = true, discount = false, daily = null } = {}) {
+export function signals(X, bias, bms, { useBias = true, discount = false, daily = null, why = null } = {}) {
   const { S, b15, b4h } = X, out = [];
   let dq = 0, dDir = 0;
   let q = 0, lastBull = -Infinity, lastBear = -Infinity;
@@ -136,6 +137,7 @@ export function signals(X, bias, bms, { useBias = true, discount = false, daily 
       if (st.bias !== z.dir) continue;
       const lastSame = z.dir > 0 ? lastBull : lastBear;
       if (!(lastSame > st.since)) continue; // BMS dans le sens, après le passage
+      if (why && st.why !== why) continue; // SW : passage déclenché par une prise de liquidité
     } else if (!(z.dir > 0 ? lastBull > lastBear : lastBear > lastBull)) continue;
     // objectifs encore intacts, y compris depuis la dernière fermeture H4
     let ext = z.dir > 0 ? -Infinity : Infinity;
@@ -143,13 +145,17 @@ export function signals(X, bias, bms, { useBias = true, discount = false, daily 
     const levels = (z.dir > 0 ? [...st.highs, ...st.bearFvg] : [...st.lows, ...st.bullFvg]).filter((x) => (z.dir > 0 ? x > ext : x < ext));
     const E = z.dir > 0 ? z.top : z.bot;
     const target = pickTarget(levels, E, z.dir); if (target === null) continue;
+    const fvgLevels = new Set(z.dir > 0 ? st.bearFvg : st.bullFvg), lastSame = z.dir > 0 ? lastBull : lastBear;
     if (discount) { // M2 : entrée dans la moitié discount (achat) / premium (vente) de la zone extrême depuis le passage -> objectif
       let x0 = lowerT(S, st.since), ext2 = z.dir > 0 ? Infinity : -Infinity;
       for (; x0 < i; x0++) ext2 = z.dir > 0 ? Math.min(ext2, S.l[x0]) : Math.max(ext2, S.h[x0]);
       if (z.dir > 0 ? E > (ext2 + target) / 2 : E < (ext2 + target) / 2) continue;
     }
     const A = b15[k - 2], plan = entryPlan(z, A, target, z.dir); if (!plan) continue;
-    out.push({ tau, dir: z.dir, z, A, i, target, plan, expiry: nextNyTime(tau, WINDOWS[win].expiry), exitAt: nextNyTime(tau, EXIT_MIN), win });
+    const h1 = lastDoneBar(X.b1h, i), atr = h1 >= 0 ? X.atr1h[h1] : null;
+    // caractéristiques connues à tau (descriptif seulement : elles ne changent aucune décision)
+    const f = { why: st.why, biasAgeH: (tau - st.since) / 3600000, bmsAgeMin: (tau - lastSame) / MIN, targetType: fvgLevels.has(target) ? 'fvg' : 'sommet', zoneAtr: atr ? (z.top - z.bot) / atr : null, targetAtr: atr ? Math.abs(target - E) / atr : null };
+    out.push({ tau, dir: z.dir, z, A, i, target, plan, expiry: nextNyTime(tau, WINDOWS[win].expiry), exitAt: nextNyTime(tau, EXIT_MIN), win, f });
   }
   return out;
 }
@@ -177,7 +183,7 @@ export function execute(X, sigs, { trail = false, spread = () => 0, swap = () =>
       const r = runOrder(S, { dir: s.dir, i, entry, stop, target, expiry: s.expiry, exitAt: s.exitAt, spread: spread(entry), swap, updates: upd[s.dir], beAt });
       if (r.missed) { busy = Math.max(busy, r.until); break; }
       perDay.set(day, (perDay.get(day) || 0) + 1);
-      trades.push({ ...r, dir: s.dir, tau: s.tau, day, step: o + 1, win: s.win, target });
+      trades.push({ ...r, dir: s.dir, tau: s.tau, day, step: o + 1, win: s.win, target, f: { ...s.f }, plannedRR: Math.abs(target - entry) / Math.abs(entry - stop) });
       busy = Math.max(busy, r.exitTime);
       if (r.reason !== 'stop') break; // l'échelle ne continue qu'après un stop
       i = lowerT(S, r.exitTime);
