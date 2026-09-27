@@ -167,8 +167,11 @@ export function trailUpdates(X, dir) {
 }
 
 /** Exécution : une chose à la fois, au plus 3 trades remplis par jour. opts : { trail, spread(price), swap } */
-export function execute(X, sigs, { trail = false, spread = () => 0, swap = () => 0, fixedRR = null, beAt = null } = {}) {
-  const { S } = X, trades = [], perDay = new Map();
+export function execute(X, sigs, { trail = false, spread = () => 0, swap = () => 0, fixedRR = null, beAt = null, reentryMin = null } = {}) {
+  const { S, b15 } = X, trades = [], perDay = new Map();
+  // RE : FVG M15 triés par fermeture de C, pour trouver vite le premier FVG du sens formé après un stop
+  const fvgByClose = reentryMin ? X.fvg[0].filter((z) => z.k >= 2).map((z) => ({ z, tc: barEnd(S, b15[z.k]) })).sort((a, c) => a.tc - c.tc) : [];
+  const firstAfter = (t) => { let lo = 0, hi = fvgByClose.length; while (lo < hi) { const m = (lo + hi) >> 1; if (fvgByClose[m].tc <= t) lo = m + 1; else hi = m; } return lo; };
   const upd = { 1: trail ? trailUpdates(X, 1) : [], '-1': trail ? trailUpdates(X, -1) : [] };
   let busy = -Infinity;
   for (const s of sigs) {
@@ -187,6 +190,24 @@ export function execute(X, sigs, { trail = false, spread = () => 0, swap = () =>
       busy = Math.max(busy, r.exitTime);
       if (r.reason !== 'stop') break; // l'échelle ne continue qu'après un stop
       i = lowerT(S, r.exitTime);
+    }
+    // RE : réentrées rapides après un stop (même sens, même objectif, au moins 3R), enchaînées tant que la limite du jour le permet
+    let last = trades[trades.length - 1];
+    while (reentryMin && last && last.tau === s.tau && last.reason === 'stop' && (perDay.get(day) || 0) < MAX_TRADES_PER_DAY) {
+      const until = last.exitTime + reentryMin * MIN;
+      let q = firstAfter(last.exitTime - 1), hit = null;
+      for (; q < fvgByClose.length && fvgByClose[q].tc <= until; q++) if (fvgByClose[q].z.dir === s.dir && fvgByClose[q].z.k - 2 >= 0) { hit = fvgByClose[q]; break; }
+      if (!hit) break;
+      const z = hit.z, A = b15[z.k - 2], entry = s.dir > 0 ? z.top : z.bot, stop = s.dir > 0 ? A.l : A.h;
+      const rr = Math.abs(s.target - entry) / Math.abs(entry - stop);
+      if (!(s.dir > 0 ? entry > stop && s.target > entry : entry < stop && s.target < entry) || rr < MIN_RR) break;
+      const target = fixedRR ? entry + s.dir * fixedRR * Math.abs(entry - stop) : s.target;
+      const r = runOrder(S, { dir: s.dir, i: lowerT(S, hit.tc), entry, stop, target, expiry: Math.min(until, s.exitAt), exitAt: s.exitAt, spread: spread(entry), swap, updates: upd[s.dir], beAt });
+      if (r.missed) { busy = Math.max(busy, r.until); break; }
+      perDay.set(day, (perDay.get(day) || 0) + 1);
+      last = { ...r, dir: s.dir, tau: s.tau, day, step: 're', win: s.win, target, f: { ...s.f }, plannedRR: rr };
+      trades.push(last);
+      busy = Math.max(busy, r.exitTime);
     }
   }
   return trades;
