@@ -55,3 +55,13 @@ Réponses d'Esdras du 27/09, pour préparer un test fidèle de sa méthode.
 - **Perte maximale (22)** : 3 pertes par jour.
 - **Marché (23)** : NAS100 seulement.
 - **Annonces (24)** : les deux façons, mais l'ordre posé avant l'annonce, exécuté ensuite, marchait mieux.
+
+## Réponses du 3e tour (27/09)
+- **Sommet H4 (1a)** : une bougie H4 plus haute que sa voisine de chaque côté.
+- **BMS M15 (2a)** : clôture au-delà du dernier petit sommet M15.
+- **FVG M15 (3)** : n'importe lequel après le BMS, car le prix peut ne pas revenir dans celui de l'impulsion.
+- **« Proches » (4)** : pas de chiffre. Ils ne doivent pas être trop éloignés.
+- **Daily (5)** : sert à voir la tendance.
+- **Stop suiveur (6)** : tester les deux versions.
+- **Ordre du soir (7)** : annulé le lendemain à 7 h NY.
+- **Trade inverse (8)** : seulement si le BMS et le retournement sont flagrants ou grands.
