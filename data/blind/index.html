@@ -70,8 +70,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     </div>
     <div class="row">
       <div class="tabs" role="group" aria-label="Unité de temps">
-        <button id="tf15" aria-pressed="true">M15 · 40 h</button>
-        <button id="tf4" aria-pressed="false">H4 · 7 jours</button>
+        <button id="tf4" aria-pressed="true">1. H4 · 7 jours</button>
+        <button id="tf15" aria-pressed="false">2. M15 · 40 h</button>
       </div>
       <span class="mono">zone orange = FVG · trait = maintenant</span>
     </div>
@@ -104,7 +104,7 @@ const REASONS = ['Tendance', 'Contexte H4', 'Dans un FVG H4', 'Liquidité H4 pri
 // le sens lui-même ; `take` = il a choisi le sens du FVG (mesure pré-enregistrée), `side` = son choix. Ordre des cas : a001-a100 puis
 // b001-b050 d'abord (le premier point de lecture), puis le reste.
 const COL = 'answers4', LS = 'blind-answers-v4';
-let setups = [], answers = {}, idx = 0, tf = 15, picked = new Set(), db = null, history = [];
+let setups = [], answers = {}, idx = 0, tf = 4, picked = new Set(), db = null, history = [];
 const $ = (id) => document.getElementById(id);
 
 function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
@@ -173,7 +173,7 @@ async function answer(side) {
     try { await db.collection(COL).doc(s.id).set(rec); $('warn').hidden = true; }
     catch (e) { $('warn').textContent = 'Réponse gardée sur ce téléphone seulement (connexion). Elle sera renvoyée au prochain choix.'; $('warn').hidden = false; }
   }
-  history.push(idx); tf = 15; setTf();
+  history.push(idx); tf = 4; setTf(); // comme lui : le H4 d'abord, puis le M15
   idx = nextUnanswered(idx + 1); render();
 }
 function setTf() { $('tf15').setAttribute('aria-pressed', tf === 15); $('tf4').setAttribute('aria-pressed', tf !== 15); }
