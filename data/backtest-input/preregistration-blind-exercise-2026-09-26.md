@@ -52,3 +52,8 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
   l'autre sens » revient.
   - Sa réponse a001, donnée avec les trois boutons, est gardée : son champ `take` a le même sens.
   - Mesure inchangée.
+- **Entrée après prise de liquidité (27/09, avant lecture)** : Esdras attendait parfois que le prix prenne un sommet ou un creux proche
+  du FVG avant d'entrer. Il a une nouvelle raison à cocher : « J'attends qu'un high/low proche soit pris ».
+  - En descriptif seulement, sur ses « oui » cochés ainsi, je compare l'ordre au bord et une entrée après la prise du creux M15 le plus
+    proche sous la zone (au-dessus pour une vente). Cette entrée se fait au retour dans la zone, avec le même stop et le même objectif.
+  - Le verdict principal ne change pas.
