@@ -111,3 +111,14 @@ modifié.
   - **validation 2019-2022** : lecture unique, R moyen > 0 et t ≥ 2 ;
   - si elle passe, **final 2023-2024 + 2026** : lecture unique, R moyen > 0. 2025 est donné à part.
 - Aucun réglage entre les étapes.
+
+## Résultat S1 (27/09) : ÉCHOUE en validation 2019-2022
+- **Validation** : 354 trades, +0,220 R en moyenne, t 0,92, sous le seuil t ≥ 2. Le final n'est pas lu.
+- **Pourquoi t est si faible** : le résultat tient à quelques trades énormes.
+  - En 2019-2022, les 5 meilleurs font 68,5, 17,2, 13,7, 11,8 et 10,6 R. Sans eux : −43,8 R. Sans les 10 meilleurs : −88,4 R.
+  - En 2011-2018 (source) : +95,7 R au total, mais +3,9 R sans les 5 meilleurs et −66,1 R sans les 10 meilleurs.
+- **Par année** :
+  - 2011-2018 : 2011 +41,3 ; 2012 +13,8 ; 2013 −1,8 ; 2014 +14,4 ; 2015 +43,0 ; 2016 −17,5 ; 2017 −9,0 ; 2018 +11,6 ;
+  - 2019-2022 : 2019 +5,3 ; 2020 +29,9 ; 2021 −29,8 ; 2022 +72,6.
+- **Conclusion** : un profil de loterie. On perd petit à petit, et quelques rares objectifs H4 lointains paient énormément. Ce n'est pas
+  une règle exploitable. Détails : `esdras-method-soir-validation.md`.
