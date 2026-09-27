@@ -1485,5 +1485,21 @@
       "data/backtest-input/eye-rule-explore.md",
       "scripts/runEyeRuleTest.js"
     ]
+  },
+  {
+    "id": "esdras-method-explore-2026-09-27",
+    "title": "Méthode complète d Esdras (sens H4 par PD arrays, BMS M15, objectif sommet H4, échelle 3R, sortie 17 h) : rejetée en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Décrite par Esdras en 3 tours de questions (esdras-method-spec-draft.md), figée avant calcul (preregistration-esdras-method-2026-09-27.md). US100 2011-2018 : C1 (sans stop suiveur) 1342 trades +0,004 R (t 0,05, 14 % gagnants) ; C2 (stop suiveur sous chaque nouveau FVG) -0,081 R ; référence B0 sans sens H4 +0,046 R, donc le sens H4 par prise de PD arrays n ajoute rien. Descriptif seulement : soir +0,145 R (t 1,17) contre matin -0,132 R. Vérification 2025 avant test : 23 % des trades du programme tombent sur un trade d Esdras. Validation et final non lus.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-method-2026-09-27.md",
+      "data/backtest-input/esdras-method-explore.md",
+      "scripts/lib/esdrasMethod.js",
+      "scripts/runEsdrasMethod.js"
+    ]
   }
 ]

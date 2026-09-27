@@ -87,3 +87,10 @@ Sur mars-juillet 2025 :
 
 Aucun bug grossier : le programme trade à un rythme plausible, et un quart de ses trades tombent sur un trade d'Esdras. Rien n'est
 modifié.
+
+## Résultat (27/09) : C1 et C2 REJETÉES dès l'exploration 2011-2018
+- **C1** : 1 342 trades, +0,004 R en moyenne (t 0,05), 14 % de gagnants. Les moitiés font −0,003 et +0,011.
+- **C2** (stop suiveur) : −0,081 R.
+- **B0** (sans sens H4) : +0,046 R. Le sens H4 n'apporte rien.
+- **Descriptif, qui ne décide rien** : soir +0,145 R (t 1,17), matin −0,132 R ; achats +0,093 R, ventes −0,113 R.
+- Détails : `esdras-method-explore.md`. On s'arrête selon le protocole. Validation et final ne sont pas lus.
