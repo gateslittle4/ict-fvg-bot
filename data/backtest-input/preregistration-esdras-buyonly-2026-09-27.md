@@ -31,3 +31,6 @@ Aucun réglage.
 - **T1-A** : 1 558 trades, +0,095 R (t 0,99). Moitiés +0,199 et −0,010. Creux max 72 R. Référence en T1 : +0,031 R.
 - Elles battent leur référence, mais restent très loin du seuil de t. US500 et les autres périodes ne sont pas lues.
 - Détails : `esdras-buyonly-US100-explore.md`.
+
+- **Descriptif ajouté le 27/09, à la demande d'Esdras (« combien depuis le 1er janvier ? »)** : la période 2023-2026 est calculée après
+  le rejet. Elle ne décide rien. Voir `esdras-buyonly-US100-final.md`.

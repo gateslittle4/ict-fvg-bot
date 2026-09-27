@@ -39,3 +39,6 @@ Aucun réglage : 0,25 ATR, la minute suivante et 2 réentrées sont fixés ici.
 - Les deux restent loin du seuil t ≥ 2,5, et même de 2. US500 et les autres périodes ne sont pas lues.
 - Le profil est celui d'une loterie : 10 % de gagnants et des creux de plus de 100 R, soit environ −26 à −29 % à 0,25 % par trade.
 - Détails : `esdras-tight-US100-explore.md`.
+
+- **Descriptif ajouté le 27/09, à la demande d'Esdras (« combien depuis le 1er janvier ? »)** : la période 2023-2026 est calculée après
+  le rejet. Elle ne décide rien. Voir `esdras-tight-US100-final.md`.
