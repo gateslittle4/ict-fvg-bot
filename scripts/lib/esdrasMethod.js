@@ -44,8 +44,11 @@ export function h4Bias(X) {
 }
 
 /** BMS M15 : fermeture au-delà du dernier sommet (creux) M15 confirmé (bougie plus haute que ses deux voisines). [{ t, dir }] */
-export function m15Bms(X) {
-  const { S, b15: b } = X, out = [];
+export function m15Bms(X) { return bmsOf(X.S, X.b15); }
+
+/** Même définition sur n'importe quelles bougies (M3 : Daily). */
+export function bmsOf(S, b) {
+  const out = [];
   let hi = null, lo = null;
   for (let q = 2; q < b.length; q++) {
     const bar = b[q];
@@ -82,7 +85,7 @@ export function entryPlan(z, A, target, dir) {
  * d'entrée ; objectif à partir de la minute suivante ; sortie au marché à exitAt). `updates` : [{ t, stop }] triés (stop suiveur).
  * @returns {{ missed, until } | { entryTime, fill, exitTime, exit, reason, risk, r }}
  */
-export function runOrder(S, { dir, i, entry, stop, target, expiry, exitAt, spread = 0, swap = () => 0, updates = [] }) {
+export function runOrder(S, { dir, i, entry, stop, target, expiry, exitAt, spread = 0, swap = () => 0, updates = [], beAt = null }) {
   const buy = dir > 0;
   let fill = null;
   for (; i < S.n && S.t[i] < expiry; i++) {
@@ -92,13 +95,15 @@ export function runOrder(S, { dir, i, entry, stop, target, expiry, exitAt, sprea
   if (fill === null) return { missed: 'expired', until: expiry };
   if (buy ? fill <= stop : fill >= stop) return { missed: 'stop-crossed', until: S.t[i] };
   const risk = Math.abs(fill - stop), t0 = S.t[i];
-  let sl = stop, u = 0, j = i, exit = null, reason = 'time';
+  let sl = stop, u = 0, j = i, exit = null, reason = 'time', best = 0;
   while (u < updates.length && updates[u].t <= t0) u++;
   for (; j < S.n; j++) {
     if (j > i && S.t[j] >= exitAt) { exit = buy ? S.o[j] : S.o[j] + spread; break; }
     for (; u < updates.length && updates[u].t <= S.t[j]; u++) if (buy ? updates[u].stop > sl : updates[u].stop < sl) sl = updates[u].stop;
-    if (buy ? S.l[j] <= sl : S.h[j] + spread >= sl) { exit = j > i ? (buy ? Math.min(S.o[j], sl) : Math.max(S.o[j] + spread, sl)) : sl; reason = sl === stop ? 'stop' : 'trail'; break; }
+    if (buy ? S.l[j] <= sl : S.h[j] + spread >= sl) { exit = j > i ? (buy ? Math.min(S.o[j], sl) : Math.max(S.o[j] + spread, sl)) : sl; reason = sl === stop ? 'stop' : sl === fill ? 'breakeven' : 'trail'; break; }
     if (j > i && (buy ? S.h[j] >= target : S.l[j] + spread <= target)) { exit = target; reason = 'target'; break; }
+    best = Math.max(best, buy ? S.h[j] - fill : fill - (S.l[j] + spread));
+    if (beAt != null && best >= beAt * risk && (buy ? sl < fill : sl > fill)) sl = fill; // M4 : breakeven, actif la minute suivante
   }
   if (exit === null) { j = S.n - 1; exit = buy ? S.c[j] : S.c[j] + spread; reason = 'end'; }
   const pnl = (buy ? exit - fill : fill - exit) + swap(dir, t0, S.t[j], fill);
@@ -109,8 +114,9 @@ export function runOrder(S, { dir, i, entry, stop, target, expiry, exitAt, sprea
  * Signaux (FVG M15 qualifiés) de la méthode. opts.useBias = false donne la référence B0 (sens = celui du dernier BMS M15).
  * @returns [{ tau, dir, z, A, i, target, plan, expiry, exitAt, win }]
  */
-export function signals(X, bias, bms, { useBias = true } = {}) {
+export function signals(X, bias, bms, { useBias = true, discount = false, daily = null } = {}) {
   const { S, b15, b4h } = X, out = [];
+  let dq = 0, dDir = 0;
   let q = 0, lastBull = -Infinity, lastBear = -Infinity;
   const fv = X.fvg[0].slice().sort((a, c) => a.k - c.k);
   for (const z of fv) {
@@ -125,6 +131,7 @@ export function signals(X, bias, bms, { useBias = true } = {}) {
     let m = -1; { let lo = 0, hi = b4h.length; while (lo < hi) { const x = (lo + hi) >> 1; if (bias[x].t <= tau) lo = x + 1; else hi = x; } m = lo - 1; }
     if (m < 0) continue;
     const st = bias[m];
+    if (daily) { while (dq < daily.length && daily[dq].t <= tau) dDir = daily[dq++].dir; if (dDir !== z.dir) continue; } // M3
     if (useBias) {
       if (st.bias !== z.dir) continue;
       const lastSame = z.dir > 0 ? lastBull : lastBear;
@@ -136,6 +143,11 @@ export function signals(X, bias, bms, { useBias = true } = {}) {
     const levels = (z.dir > 0 ? [...st.highs, ...st.bearFvg] : [...st.lows, ...st.bullFvg]).filter((x) => (z.dir > 0 ? x > ext : x < ext));
     const E = z.dir > 0 ? z.top : z.bot;
     const target = pickTarget(levels, E, z.dir); if (target === null) continue;
+    if (discount) { // M2 : entrée dans la moitié discount (achat) / premium (vente) de la zone extrême depuis le passage -> objectif
+      let x0 = lowerT(S, st.since), ext2 = z.dir > 0 ? Infinity : -Infinity;
+      for (; x0 < i; x0++) ext2 = z.dir > 0 ? Math.min(ext2, S.l[x0]) : Math.max(ext2, S.h[x0]);
+      if (z.dir > 0 ? E > (ext2 + target) / 2 : E < (ext2 + target) / 2) continue;
+    }
     const A = b15[k - 2], plan = entryPlan(z, A, target, z.dir); if (!plan) continue;
     out.push({ tau, dir: z.dir, z, A, i, target, plan, expiry: nextNyTime(tau, WINDOWS[win].expiry), exitAt: nextNyTime(tau, EXIT_MIN), win });
   }
@@ -149,7 +161,7 @@ export function trailUpdates(X, dir) {
 }
 
 /** Exécution : une chose à la fois, au plus 3 trades remplis par jour. opts : { trail, spread(price), swap } */
-export function execute(X, sigs, { trail = false, spread = () => 0, swap = () => 0 } = {}) {
+export function execute(X, sigs, { trail = false, spread = () => 0, swap = () => 0, fixedRR = null, beAt = null } = {}) {
   const { S } = X, trades = [], perDay = new Map();
   const upd = { 1: trail ? trailUpdates(X, 1) : [], '-1': trail ? trailUpdates(X, -1) : [] };
   let busy = -Infinity;
@@ -161,10 +173,11 @@ export function execute(X, sigs, { trail = false, spread = () => 0, swap = () =>
     for (let o = 0; o < s.plan.length; o++) {
       if ((perDay.get(day) || 0) >= MAX_TRADES_PER_DAY) break;
       const { entry, stop } = s.plan[o];
-      const r = runOrder(S, { dir: s.dir, i, entry, stop, target: s.target, expiry: s.expiry, exitAt: s.exitAt, spread: spread(entry), swap, updates: upd[s.dir] });
+      const target = fixedRR ? entry + s.dir * fixedRR * Math.abs(entry - stop) : s.target; // M1 : objectif fixe
+      const r = runOrder(S, { dir: s.dir, i, entry, stop, target, expiry: s.expiry, exitAt: s.exitAt, spread: spread(entry), swap, updates: upd[s.dir], beAt });
       if (r.missed) { busy = Math.max(busy, r.until); break; }
       perDay.set(day, (perDay.get(day) || 0) + 1);
-      trades.push({ ...r, dir: s.dir, tau: s.tau, day, step: o + 1, win: s.win, target: s.target });
+      trades.push({ ...r, dir: s.dir, tau: s.tau, day, step: o + 1, win: s.win, target });
       busy = Math.max(busy, r.exitTime);
       if (r.reason !== 'stop') break; // l'échelle ne continue qu'après un stop
       i = lowerT(S, r.exitTime);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { h4Bias, m15Bms, pickTarget, entryPlan, runOrder } from '../scripts/lib/esdrasMethod.js';
+import { h4Bias, m15Bms, bmsOf, pickTarget, entryPlan, runOrder } from '../scripts/lib/esdrasMethod.js';
 
 const MIN = 60000;
 // bougies fictives : une minute par bougie, i0 = i1 = index
@@ -52,4 +52,17 @@ test('esdrasMethod.runOrder: limit fill, stop checked first in the entry minute,
   assert.equal(r.r, 3);
   const miss = runOrder(S, { dir: 1, i: 0, entry: 99, stop: 98, target: 101, expiry: 10 * MIN, exitAt: Infinity });
   assert.equal(miss.missed, 'target-first');
+});
+
+test('esdrasMethod.runOrder: breakeven at 2R moves the stop to the entry price from the next minute', () => {
+  const S = series([[101, 101, 99.9, 100.5], [100.5, 102.2, 100.4, 102], [102, 102, 99.95, 100], [100, 100, 100, 100]]);
+  const r = runOrder(S, { dir: 1, i: 0, entry: 100, stop: 99, target: 103, expiry: 10 * MIN, exitAt: Infinity, beAt: 2 });
+  assert.equal(r.reason, 'breakeven');
+  assert.equal(r.r, 0);
+});
+
+test('esdrasMethod.bmsOf: works on any bars (bearish close under the last swing low)', () => {
+  const list = [[10, 11, 9, 10], [10, 10.5, 8, 9], [9, 10, 9.5, 9.8], [9.8, 10, 9, 9.5], [9.5, 9.6, 7, 7.5]];
+  const b = bmsOf(series(list), bars(list));
+  assert.deepEqual(b.map((x) => x.dir), [-1]);
 });
