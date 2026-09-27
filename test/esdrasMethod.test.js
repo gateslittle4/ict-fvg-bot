@@ -66,3 +66,10 @@ test('esdrasMethod.bmsOf: works on any bars (bearish close under the last swing 
   const b = bmsOf(series(list), bars(list));
   assert.deepEqual(b.map((x) => x.dir), [-1]);
 });
+
+test('esdrasMethod.runOrder: an infinite buy limit fills at the open plus spread (market re-entry)', () => {
+  const S = series([[100, 100.5, 99.5, 100], [100, 104, 100, 104]]);
+  const r = runOrder(S, { dir: 1, i: 0, entry: Infinity, stop: 99, target: 103, expiry: 10 * MIN, exitAt: Infinity, spread: 0.1 });
+  assert.equal(r.fill, 100.1);
+  assert.equal(r.reason, 'target');
+});
