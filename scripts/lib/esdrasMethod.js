@@ -1,0 +1,174 @@
+// esdrasMethod.js - la méthode d'Esdras telle qu'il la décrit (data/backtest-input/preregistration-esdras-method-2026-09-27.md) :
+// sens H4 par prise de PD arrays (sommets/creux H4 à 1 bougie, FVG H4 vierges), BMS M15, n'importe quel FVG M15 du sens après le BMS
+// (D hors de la zone) entre 7 h-11 h ou 20 h-23 h NY, objectif = niveau H4 opposé le plus proche (le 2e s'il est « proche »), échelle
+// d'entrée pour avoir au moins 3R, annulation à 11 h / 7 h le lendemain, sortie 17 h NY, au plus 3 trades remplis par jour.
+import { nyMin, dayKey, MIN } from './nightLab.js';
+import { nextNyTime } from './eyeRule.js';
+
+export const WINDOWS = [{ from: 420, to: 660, expiry: 660 }, { from: 1200, to: 1380, expiry: 420 }];
+export const EXIT_MIN = 1020, MIN_RR = 3, MAX_TRADES_PER_DAY = 3;
+
+const lowerT = (S, t) => { let lo = 0, hi = S.n; while (lo < hi) { const m = (lo + hi) >> 1; if (S.t[m] < t) lo = m + 1; else hi = m; } return lo; };
+const barEnd = (S, b) => S.t[b.i1] + MIN;
+
+/**
+ * Sens H4 pas à pas. À la fermeture de chaque bougie H4 m : prises (mèche au-delà, fermeture en deçà) et cassures (fermeture au-delà)
+ * des sommets/creux intacts et des FVG H4 vierges connus avant m. Renvoie, pour chaque bougie, { t: fermeture, bias, since, highs,
+ * lows, bearFvg, bullFvg } où highs/bearFvg sont les niveaux au-dessus encore intacts (objectifs d'achat) et lows/bullFvg ceux du dessous.
+ */
+export function h4Bias(X) {
+  const { S, b4h: b } = X, H4F = X.fvg[2];
+  let highs = [], lows = [], bullF = [], bearF = [], f = 0, bias = 0, since = -Infinity;
+  const out = new Array(b.length);
+  for (let m = 0; m < b.length; m++) {
+    const bar = b[m];
+    let bull = false, bear = false;
+    if (m >= 1) {
+      highs = highs.filter((h) => { if (bar.h <= h) return true; if (bar.c <= h) bear = true; else bull = true; return false; });
+      lows = lows.filter((l) => { if (bar.l >= l) return true; if (bar.c >= l) bull = true; else bear = true; return false; });
+      bullF = bullF.filter((z) => { if (bar.l > z.top) return true; if (bar.c >= z.bot) bull = true; else bear = true; return false; });
+      bearF = bearF.filter((z) => { if (bar.h < z.bot) return true; if (bar.c <= z.top) bear = true; else bull = true; return false; });
+      const nb = bull && !bear ? 1 : bear && !bull ? -1 : bias;
+      if (nb !== bias) { bias = nb; since = barEnd(S, bar); }
+    }
+    // sommet / creux de la bougie m-1, confirmé à la fermeture de m ; FVG H4 dont la bougie C est m
+    if (m >= 2) {
+      const p = b[m - 1];
+      if (p.h > b[m - 2].h && p.h > bar.h) highs.push(p.h);
+      if (p.l < b[m - 2].l && p.l < bar.l) lows.push(p.l);
+    }
+    while (f < H4F.length && H4F[f].k <= m) { const z = H4F[f++]; if (z.k === m) (z.dir > 0 ? bullF : bearF).push(z); }
+    out[m] = { t: barEnd(S, bar), bias, since, highs: highs.slice(), lows: lows.slice(), bearFvg: bearF.map((z) => z.bot), bullFvg: bullF.map((z) => z.top) };
+  }
+  return out;
+}
+
+/** BMS M15 : fermeture au-delà du dernier sommet (creux) M15 confirmé (bougie plus haute que ses deux voisines). [{ t, dir }] */
+export function m15Bms(X) {
+  const { S, b15: b } = X, out = [];
+  let hi = null, lo = null;
+  for (let q = 2; q < b.length; q++) {
+    const bar = b[q];
+    if (hi !== null && bar.c > hi) { out.push({ t: barEnd(S, bar), dir: 1 }); hi = null; }
+    if (lo !== null && bar.c < lo) { out.push({ t: barEnd(S, bar), dir: -1 }); lo = null; }
+    const p = b[q - 1];
+    if (p.h > b[q - 2].h && p.h > bar.h) hi = p.h;
+    if (p.l < b[q - 2].l && p.l < bar.l) lo = p.l;
+  }
+  return out;
+}
+
+/** Objectif : niveau le plus proche au-delà de `from` dans le sens `dir` ; le 2e si l'écart 1er→2e < la moitié de from→1er. */
+export function pickTarget(levels, from, dir) {
+  const beyond = levels.filter((x) => (dir > 0 ? x > from : x < from)).sort((a, c) => (dir > 0 ? a - c : c - a));
+  if (!beyond.length) return null;
+  const [t1, t2] = beyond;
+  return t2 !== undefined && Math.abs(t2 - t1) < 0.5 * Math.abs(t1 - from) ? t2 : t1;
+}
+
+/** Échelle d'entrée (section 4) : liste d'ordres [{ entry, stop }] (le 2e seulement après un stop du 1er), ou null. */
+export function entryPlan(z, A, target, dir) {
+  const E = dir > 0 ? z.top : z.bot, M = (z.top + z.bot) / 2, SA = dir > 0 ? A.l : A.h;
+  const rr = (e, s) => (dir > 0 ? (target - e) / (e - s) : (e - target) / (s - e));
+  const ok = (e, s) => (dir > 0 ? e > s : e < s) && rr(e, s) >= MIN_RR;
+  if (ok(E, SA)) return [{ entry: E, stop: SA }];
+  if (ok(E, M)) return ok(M, SA) ? [{ entry: E, stop: M }, { entry: M, stop: SA }] : [{ entry: E, stop: M }];
+  if (ok(M, SA)) return [{ entry: M, stop: SA }];
+  return null;
+}
+
+/**
+ * Un ordre limite puis la position, minute par minute (mêmes conventions que simulate : stop d'abord, y compris dans la minute
+ * d'entrée ; objectif à partir de la minute suivante ; sortie au marché à exitAt). `updates` : [{ t, stop }] triés (stop suiveur).
+ * @returns {{ missed, until } | { entryTime, fill, exitTime, exit, reason, risk, r }}
+ */
+export function runOrder(S, { dir, i, entry, stop, target, expiry, exitAt, spread = 0, swap = () => 0, updates = [] }) {
+  const buy = dir > 0;
+  let fill = null;
+  for (; i < S.n && S.t[i] < expiry; i++) {
+    if (buy ? S.l[i] + spread <= entry : S.h[i] >= entry) { fill = buy ? Math.min(entry, S.o[i] + spread) : Math.max(entry, S.o[i]); break; }
+    if (buy ? S.h[i] >= target : S.l[i] + spread <= target) return { missed: 'target-first', until: S.t[i] };
+  }
+  if (fill === null) return { missed: 'expired', until: expiry };
+  if (buy ? fill <= stop : fill >= stop) return { missed: 'stop-crossed', until: S.t[i] };
+  const risk = Math.abs(fill - stop), t0 = S.t[i];
+  let sl = stop, u = 0, j = i, exit = null, reason = 'time';
+  while (u < updates.length && updates[u].t <= t0) u++;
+  for (; j < S.n; j++) {
+    if (j > i && S.t[j] >= exitAt) { exit = buy ? S.o[j] : S.o[j] + spread; break; }
+    for (; u < updates.length && updates[u].t <= S.t[j]; u++) if (buy ? updates[u].stop > sl : updates[u].stop < sl) sl = updates[u].stop;
+    if (buy ? S.l[j] <= sl : S.h[j] + spread >= sl) { exit = j > i ? (buy ? Math.min(S.o[j], sl) : Math.max(S.o[j] + spread, sl)) : sl; reason = sl === stop ? 'stop' : 'trail'; break; }
+    if (j > i && (buy ? S.h[j] >= target : S.l[j] + spread <= target)) { exit = target; reason = 'target'; break; }
+  }
+  if (exit === null) { j = S.n - 1; exit = buy ? S.c[j] : S.c[j] + spread; reason = 'end'; }
+  const pnl = (buy ? exit - fill : fill - exit) + swap(dir, t0, S.t[j], fill);
+  return { entryTime: t0, fill, exitTime: S.t[j], exit, reason, risk, r: pnl / risk };
+}
+
+/**
+ * Signaux (FVG M15 qualifiés) de la méthode. opts.useBias = false donne la référence B0 (sens = celui du dernier BMS M15).
+ * @returns [{ tau, dir, z, A, i, target, plan, expiry, exitAt, win }]
+ */
+export function signals(X, bias, bms, { useBias = true } = {}) {
+  const { S, b15, b4h } = X, out = [];
+  let q = 0, lastBull = -Infinity, lastBear = -Infinity;
+  const fv = X.fvg[0].slice().sort((a, c) => a.k - c.k);
+  for (const z of fv) {
+    const k = z.k, j = k + 1; if (k < 3 || j >= b15.length - 1) continue;
+    const D = b15[j], tau = barEnd(S, D), nm = nyMin(tau);
+    const win = WINDOWS.findIndex((w) => nm >= w.from && nm < w.to); if (win < 0) continue;
+    if (z.dir > 0 ? D.l <= z.top : D.h >= z.bot) continue; // D touche la zone
+    if (b15[j + 1].t - tau > 5 * MIN) continue; // marché fermé juste après
+    while (q < bms.length && bms[q].t <= tau) { if (bms[q].dir > 0) lastBull = bms[q].t; else lastBear = bms[q].t; q++; }
+    const i = D.i1 + 1;
+    // sens H4 connu à tau : dernière H4 fermée
+    let m = -1; { let lo = 0, hi = b4h.length; while (lo < hi) { const x = (lo + hi) >> 1; if (bias[x].t <= tau) lo = x + 1; else hi = x; } m = lo - 1; }
+    if (m < 0) continue;
+    const st = bias[m];
+    if (useBias) {
+      if (st.bias !== z.dir) continue;
+      const lastSame = z.dir > 0 ? lastBull : lastBear;
+      if (!(lastSame > st.since)) continue; // BMS dans le sens, après le passage
+    } else if (!(z.dir > 0 ? lastBull > lastBear : lastBear > lastBull)) continue;
+    // objectifs encore intacts, y compris depuis la dernière fermeture H4
+    let ext = z.dir > 0 ? -Infinity : Infinity;
+    for (let x = b4h[m].i1 + 1; x < i; x++) ext = z.dir > 0 ? Math.max(ext, S.h[x]) : Math.min(ext, S.l[x]);
+    const levels = (z.dir > 0 ? [...st.highs, ...st.bearFvg] : [...st.lows, ...st.bullFvg]).filter((x) => (z.dir > 0 ? x > ext : x < ext));
+    const E = z.dir > 0 ? z.top : z.bot;
+    const target = pickTarget(levels, E, z.dir); if (target === null) continue;
+    const A = b15[k - 2], plan = entryPlan(z, A, target, z.dir); if (!plan) continue;
+    out.push({ tau, dir: z.dir, z, A, i, target, plan, expiry: nextNyTime(tau, WINDOWS[win].expiry), exitAt: nextNyTime(tau, EXIT_MIN), win });
+  }
+  return out;
+}
+
+/** Stop suiveur : à la fermeture de chaque C d'un FVG M15 du sens, stop sous la mèche de sa bougie A. */
+export function trailUpdates(X, dir) {
+  const { S, b15 } = X;
+  return X.fvg[0].filter((z) => z.dir === dir && z.k >= 2).map((z) => ({ t: barEnd(S, b15[z.k]), stop: dir > 0 ? b15[z.k - 2].l : b15[z.k - 2].h })).sort((a, c) => a.t - c.t);
+}
+
+/** Exécution : une chose à la fois, au plus 3 trades remplis par jour. opts : { trail, spread(price), swap } */
+export function execute(X, sigs, { trail = false, spread = () => 0, swap = () => 0 } = {}) {
+  const { S } = X, trades = [], perDay = new Map();
+  const upd = { 1: trail ? trailUpdates(X, 1) : [], '-1': trail ? trailUpdates(X, -1) : [] };
+  let busy = -Infinity;
+  for (const s of sigs) {
+    if (s.tau < busy) continue;
+    const day = dayKey(s.tau);
+    let i = s.i;
+    busy = s.tau;
+    for (let o = 0; o < s.plan.length; o++) {
+      if ((perDay.get(day) || 0) >= MAX_TRADES_PER_DAY) break;
+      const { entry, stop } = s.plan[o];
+      const r = runOrder(S, { dir: s.dir, i, entry, stop, target: s.target, expiry: s.expiry, exitAt: s.exitAt, spread: spread(entry), swap, updates: upd[s.dir] });
+      if (r.missed) { busy = Math.max(busy, r.until); break; }
+      perDay.set(day, (perDay.get(day) || 0) + 1);
+      trades.push({ ...r, dir: s.dir, tau: s.tau, day, step: o + 1, win: s.win, target: s.target });
+      busy = Math.max(busy, r.exitTime);
+      if (r.reason !== 'stop') break; // l'échelle ne continue qu'après un stop
+      i = lowerT(S, r.exitTime);
+    }
+  }
+  return trades;
+}

@@ -76,3 +76,14 @@ E = haut du FVG, M = milieu du FVG, SA = sous la mèche de la bougie A.
 
 Aucun paramètre n'est ajusté entre les étapes. Si tout échoue, la conclusion est : « la méthode telle que décrite ne tient pas sur ces
 données ».
+
+## Vérification faite le 27/09, avant l'exploration (section 8, aucun R regardé)
+Sur mars-juillet 2025 :
+- **Programme C1** : 147 signaux, 75 trades remplis, soit environ 3 à 4 par semaine.
+- **Ses trades NAS100** : 646, dont 300 dans les fenêtres 7-11 h et 20-23 h.
+- **Ses trades accompagnés d'un trade C1 de même sens à ±30 min** : 22, soit 3 %. Il tradait beaucoup plus souvent.
+- **Trades C1 accompagnés d'un de ses trades** : 17 sur 75, soit 23 %.
+- **Sens H4 du programme identique au sens de son trade** : 57 %.
+
+Aucun bug grossier : le programme trade à un rythme plausible, et un quart de ses trades tombent sur un trade d'Esdras. Rien n'est
+modifié.
