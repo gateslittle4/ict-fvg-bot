@@ -106,3 +106,5 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
   - Le verdict final à 150 exige p < 0,025 (unilatéral) au lieu de 0,05, pour tenir compte de la lecture intermédiaire. Les autres
     conditions ne changent pas : au moins 40 remplis de chaque côté, R moyen des « oui » > 0.
 - **S'il y a moins de 25 ordres remplis d'un côté à la lecture intermédiaire** : pas de décision, il continue.
+- **Lecture intermédiaire faite le 27/09** (`scripts/runBlindInterim.cjs`) : décision « pas assez de remplis, continuer ». Il y a moins
+  de 25 ordres remplis du côté « oui ». Pas d'arrêt pour futilité. Les chiffres ne sont pas écrits ici tant que l'exercice continue.
