@@ -1554,5 +1554,21 @@
       "scripts/runEsdrasReentry.js",
       "scripts/lib/esdrasMethod.js"
     ]
+  },
+  {
+    "id": "esdras-tight-reentry-2026-09-27",
+    "title": "Stop serré (0,25 ATR H1) et réentrée immédiate au marché, sur les signaux de la méthode d Esdras : rejetés en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-tight-2026-09-27.md), calqué sur ses trades 2025 (stops ~18 pts, réentrée ~5 min après le stop au même prix, 3 essais). US100 2011-2018 : T0 stop serré 1178 trades +0,079 R (t 0,74) ; T1 + 2 réentrées immédiates 2686 trades +0,090 R (t 1,16, moitiés +0,156/+0,029, 10 % gagnants, creux max 117 R, +24 R sans les 5 meilleurs). Seuil t >= 2,5 non atteint, rien d autre lu. Profil loterie : positif en moyenne mais non significatif, creux énormes.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-tight-2026-09-27.md",
+      "data/backtest-input/esdras-tight-US100-explore.md",
+      "scripts/runEsdrasTight.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
   }
 ]

@@ -31,3 +31,11 @@ objectif H4, annulation, sortie à 17 h NY, au plus 3 trades remplis par jour.
 3. **En descriptif** : US100 2019-2022 et 2023-2026.
 
 Aucun réglage : 0,25 ATR, la minute suivante et 2 réentrées sont fixés ici.
+
+## Résultat (27/09) : T0 et T1 REJETÉES dès l'exploration US100 2011-2018
+- **T0** (stop serré) : 1 178 trades, +0,079 R (t 0,74), 11 % de gagnants, creux max 105 R. Sans les 5 meilleurs : −56 R.
+- **T1** (+ réentrée immédiate) : 2 686 trades, +0,090 R (t 1,16), 10 % de gagnants, creux max 117 R. Sans les 5 meilleurs : +24 R.
+  - Réentrées seules : 1 674 trades, +0,129 R (t 1,23).
+- Les deux restent loin du seuil t ≥ 2,5, et même de 2. US500 et les autres périodes ne sont pas lues.
+- Le profil est celui d'une loterie : 10 % de gagnants et des creux de plus de 100 R, soit environ −26 à −29 % à 0,25 % par trade.
+- Détails : `esdras-tight-US100-explore.md`.
