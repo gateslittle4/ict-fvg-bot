@@ -122,3 +122,9 @@ modifié.
   - 2019-2022 : 2019 +5,3 ; 2020 +29,9 ; 2021 −29,8 ; 2022 +72,6.
 - **Conclusion** : un profil de loterie. On perd petit à petit, et quelques rares objectifs H4 lointains paient énormément. Ce n'est pas
   une règle exploitable. Détails : `esdras-method-soir-validation.md`.
+
+## « Le matin seulement » (27/09, demande d'Esdras)
+- En 2011-2018, le matin fait déjà −0,132 R sur 682 trades (t −1,37). Il n'y a donc pas d'hypothèse à valider.
+- 2019-2022 est calculé en descriptif seulement : cette période a déjà servi à S1 pour cette famille, et ce chiffre ne décide rien.
+- **Résultat descriptif du matin, 2019-2022** : 397 trades, +0,155 R, t 0,92. Même profil que le soir : positif mais pas distinct du
+  hasard. Fichier : `esdras-method-matin-validation.md`.
