@@ -44,3 +44,11 @@ Aucun réglage entre les étapes.
 - **M1 est la seule modification encourageante** : les deux moitiés sont positives (+0,058 et +0,111 R), elle ne dépend pas des gros
   trades, et elle a 27 % de gagnants. Mais t = 1,56 reste loin du seuil de 2,5, et même de 2. Elle est donc rejetée, comme prévu.
 - Validation et final ne sont pas lus. Détails : `esdras-mods-explore.md`.
+
+## Amendement du 27/09 (écrit AVANT toute lecture de 2019-2026 pour M1) : M1 testée quand même, à la demande d'Esdras
+- **Écart assumé** : M1 a échoué à l'exploration (t 1,56 au lieu de 2,5). Esdras demande quand même de la tester sur 2023-2026.
+- **Coût** : ces années, gardées intactes jusqu'ici, sont lues une fois pour cette famille de règles.
+- **Règle** : M1 exactement comme figée, sans aucun changement.
+- **Critère du final** (2023-2024 + 2026, 2025 à part en descriptif) : M1 **passe seulement si R moyen > 0 ET t ≥ 2**. Elle doit porter
+  seule toute la preuve, puisqu'elle n'a pas passé l'exploration. Le chiffre « R > 0 seul » est aussi donné.
+- **2019-2022** est calculé en même temps, en descriptif. Il ne décide rien.

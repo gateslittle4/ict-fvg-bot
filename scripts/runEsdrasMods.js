@@ -39,7 +39,7 @@ for (const [label, blocks] of [['compté', P.count], ...(P.descriptive ? [['2025
       const v = exploreVerdict(l, P.halves), ok = v.all.n >= 60 && s.mean > 0 && s.t >= 2.5 && v.halves.every((h) => h.sum > 0) && s.mean > C1_EXPLORE;
       verdicts.push(`${k} : ${ok ? 'RETENUE' : 'REJETÉE'} (moitiés ${v.halves.map((h) => sgn(h.mean, 3)).join(' / ')} R ; t ${s.t.toFixed(2)} ; seuil 2,5)`);
     } else if (phase === 'validation') verdicts.push(`${k} : ${s.mean > 0 && s.t >= 2 ? 'PASSE' : 'ÉCHOUE'} (R > 0 et t >= 2)`);
-    else verdicts.push(`${k} : ${s.mean > 0 ? 'PASSE' : 'ÉCHOUE'} (R > 0)`);
+    else verdicts.push(`${k} : ${s.mean > 0 && s.t >= 2 ? 'PASSE' : 'ÉCHOUE'} (amendement du 27/09 : R > 0 ET t >= 2 ; R > 0 seul : ${s.mean > 0 ? 'oui' : 'non'})`);
   }
   log('```');
 }
