@@ -60,7 +60,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <span class="count" id="count">…</span>
   </header>
   <div class="bar"><i id="progress"></i></div>
-  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018, selon ta règle : la bougie C forme le FVG, la bougie D reste hors de la zone. Le graphique s'arrête à la fermeture de D ; la date est cachée. Le sens est donné : ACHAT ou VENTE. Question : <b>tu prends ce trade-là, oui ou non</b> ? Si tu ne le prendrais pas dans ce sens, réponds « Je laisse ». Prends le temps qu'il te faut : mieux vaut 50 cas bien regardés que 150 faits à la va-vite. Tu ne verras pas le résultat.</p>
+  <p class="note">Chaque graphique est un vrai FVG M15 sur US100, tiré au hasard entre 2011 et 2018, selon ta règle : A, B, C forment le FVG ; la bougie juste avant A et la bougie D juste après C ne touchent pas la zone. Le graphique s'arrête à la fermeture de D ; la date est cachée. Le sens est donné : ACHAT ou VENTE. Question : <b>tu prends ce trade-là, oui ou non</b> ? Si tu ne le prendrais pas dans ce sens, réponds « Je laisse ». Prends le temps qu'il te faut : mieux vaut 50 cas bien regardés que 150 faits à la va-vite. Tu ne verras pas le résultat.</p>
 
   <section class="panel" id="card">
     <div class="meta">
@@ -102,7 +102,7 @@ const REASONS = ['Tendance', 'Contexte H4', 'Dans un FVG H4', 'Liquidité H4 pri
 // clé locale : les réponses v3 (collection `answers`) sont gardées mais ne comptent plus. Trois boutons (achat, vente, rien) : il choisit
 // le sens lui-même (retiré : il préfère le sens donné, deux boutons). Ordre des cas : a001-a100 puis
 // b001-b050 d'abord (le premier point de lecture), puis le reste.
-const COL = 'answers4', LS = 'blind-answers-v4';
+const COL = 'answers5', LS = 'blind-answers-v5'; // v5 (27/09) : nouveaux cas, la bougie juste avant A ne touche pas la zone
 let setups = [], answers = {}, idx = 0, tf = 4, picked = new Set(), db = null, history = [];
 const $ = (id) => document.getElementById(id);
 
@@ -188,7 +188,7 @@ async function start() {
   $('tf15').onclick = () => { tf = 15; setTf(); draw(); }; $('tf4').onclick = () => { tf = 4; setTf(); draw(); };
   $('back').onclick = () => { if (history.length) { idx = history.pop(); render(); } };
   window.addEventListener('resize', draw);
-  const all = (await (await fetch('setups.json')).json()).setups, first = (x) => (x.id[0] === 'a' ? +x.id.slice(1) <= 100 : +x.id.slice(1) <= 50);
+  const all = (await (await fetch('setups.json')).json()).setups, first = (x) => (x.id[0] === 'c' ? +x.id.slice(1) <= 100 : +x.id.slice(1) <= 50);
   setups = [...all.filter(first), ...all.filter((x) => !first(x))];
   try { answers = JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { answers = {}; }
   idx = nextUnanswered(0); render();

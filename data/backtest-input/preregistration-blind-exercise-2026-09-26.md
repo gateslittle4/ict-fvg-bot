@@ -57,3 +57,17 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
   - En descriptif seulement, sur ses « oui » cochés ainsi, je compare l'ordre au bord et une entrée après la prise du creux M15 le plus
     proche sous la zone (au-dessus pour une vente). Cette entrée se fait au retour dans la zone, avec le même stop et le même objectif.
   - Le verdict principal ne change pas.
+
+## Amendement du 27/09 (avant toute réponse sur ces cas) — version 5 : nouveaux cas
+- **Règle précisée par Esdras** : la bougie juste avant A ne doit pas toucher la zone, comme la bougie D juste après C. Dans les cas v3,
+  environ la moitié des FVG ne respectaient pas ça (a058, par exemple).
+- **Nouveaux cas** : `setups.json` v5, construits par le même script avec ce filtre en plus. Ce sont 200 cas du matin (`c001`…) et
+  100 du soir (`d001`…), toujours sur 2011-2018, un par jour.
+  - Les résultats mécaniques sont recalculés dans `blind-outcomes.json` v5 ; le v3 reste dans l'historique git.
+- **Les réponses** vont dans la collection `answers5`. Toutes les réponses précédentes (v3 `answers`, v4 `answers4` : 1 réponse) sont
+  écartées.
+- **Mesure, verdict, seuil (100 matin + 50 soir) et descriptifs inchangés.** Cela comprend :
+  - l'échauffement : 50 premières réponses contre les suivantes ;
+  - la prise de liquidité ;
+  - la taille du FVG ;
+  - le rang.

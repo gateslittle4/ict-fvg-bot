@@ -15,7 +15,7 @@ import { eng } from './lib/m1Data.js';
 // (dans la v1, 3 cas sur 4 étaient des FVG tout juste formés, dont ses 7 premières réponses : ils sont retirés) ; graphique dézoomé
 // (160 bougies M15 = 40 h, 42 H4 = 7 jours). Lots : m001-m200 le matin 3 h-11 h NY (sortie mécanique 11 h), e001-e100 le soir
 // 19 h-23 h NY (ses heures du soir, sortie 3 h NY). Nouveaux identifiants : les réponses de la v1 (s001…) ne comptent pas.
-const SYM = 'US100', M15N = 160, H4N = 42, MINAGE = 2;
+const SYM = 'US100', M15N = 160, H4N = 42, MINAGE = 2, LEFT = 1;
 const S = loadPhase(SYM, 'explore'), X = buildContext(S);
 const quals = qualifications(X);
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -26,6 +26,13 @@ const setups = [], outcomes = [], usedDays = new Set();
 // zone, ou sous la mèche de la bougie A (celle qui fait le bas d'un FVG haussier / le haut d'un baissier). Objectifs 2, 3 et 4R ;
 // ordre annulé si l'objectif est touché avant, ou à l'heure de sortie (11 h NY le matin, 3 h NY le soir). Identifiants a001… (matin)
 // et b001… (soir) : les réponses des versions précédentes ne comptent pas.
+// Version 5 (27/09, règle d'Esdras, schéma haussier) : A forme le bas du FVG, B le FVG, C le haut. Comme D (juste après C) ne doit pas
+// toucher la zone, la bougie juste AVANT A ne doit pas la toucher non plus (miroir de D). LEFT = 1. Identifiants c001… et d001….
+function touchedBefore(z, k) {
+  const { b15 } = X;
+  for (let m = k - 3; m >= Math.max(0, k - 2 - LEFT); m--) if (b15[m].h >= z.bot && b15[m].l <= z.top) return true;
+  return false;
+}
 function build({ n, win, exit, seed, prefix }) {
   const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
   const { b15 } = X, inWin = (m) => m >= win.fromMin && m < win.toMin;
@@ -36,6 +43,7 @@ function build({ n, win, exit, seed, prefix }) {
     if (tau < eng(2011, 1) || tau >= eng(2019)) continue;
     if (!inWin(nyMin(b15[k].t + 15 * MIN)) || !inWin(nyMin(tau))) continue;
     if (z.dir > 0 ? D.l <= z.top : D.h >= z.bot) continue; // D touche la zone : pas valide
+    if (touchedBefore(z, k)) continue; // une bougie avant A traverse déjà la zone : pas valide (v5)
     if (b15[j + 1].t - tau > 5 * MIN) continue; // marché fermé juste après
     opps.push({ j, tau, nm: nyMin(tau), dir: z.dir, k, age: 1, where: 'beyond', z });
   }
@@ -73,10 +81,10 @@ function build({ n, win, exit, seed, prefix }) {
   return made;
 }
 const MORNING = { fromMin: 180, toMin: 660 }, EVENING = { fromMin: 1140, toMin: 1380 };
-build({ n: 200, win: MORNING, exit: 660, seed: 26092040, prefix: 'a' });
-build({ n: 100, win: EVENING, exit: 180, seed: 26092041, prefix: 'b' });
+build({ n: 200, win: MORNING, exit: 660, seed: 27092040, prefix: 'c' });
+build({ n: 100, win: EVENING, exit: 180, seed: 27092041, prefix: 'd' });
 fs.mkdirSync('data/blind', { recursive: true });
-fs.writeFileSync('data/blind/setups.json', JSON.stringify({ symbol: SYM, version: 3, note: 'FVG M15 US100 2011-2018 (bougie D hors de la zone), dates masquées, graphique arrêté à la fermeture de D', setups }));
-fs.writeFileSync('data/backtest-input/blind-outcomes.json', JSON.stringify({ version: 3, note: 'Résultats mécaniques des cas de l\'exercice à l\'aveugle (limite au bord, stop sous la zone ou sous la mèche de A, 2/3/4R, annulé si objectif avant) — NE PAS montrer à Esdras avant ses réponses', outcomes }));
+fs.writeFileSync('data/blind/setups.json', JSON.stringify({ symbol: SYM, version: 5, note: 'FVG M15 US100 2011-2018 (aucune bougie des 4 h avant A dans la zone, bougie D hors de la zone), dates masquées, graphique arrêté à la fermeture de D', setups }));
+fs.writeFileSync('data/backtest-input/blind-outcomes.json', JSON.stringify({ version: 5, note: 'Résultats mécaniques des cas de l\'exercice à l\'aveugle (limite au bord, stop sous la zone ou sous la mèche de A, 2/3/4R, annulé si objectif avant) — NE PAS montrer à Esdras avant ses réponses', outcomes }));
 for (const k of ['zone_3R', 'meche_3R']) { const f = outcomes.map((x) => x.r[k]), got = f.filter((x) => x.r !== undefined); console.log(`${k} : ${got.length} remplis sur ${f.length}, moyenne ${(got.reduce((a, x) => a + x.r, 0) / got.length).toFixed(3)} R`); }
 console.log(`${setups.length} cas, taille ${(fs.statSync('data/blind/setups.json').size / 1024).toFixed(0)} Ko`);
