@@ -91,3 +91,18 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
   « J'aurais pris l'autre sens », je mesure le mouvement du prix entre la fermeture de D et l'heure de sortie, en ATR H1, compté dans le
   sens inverse du FVG. Je le compare à ses autres « Je laisse » et à l'ensemble des cas. Le chiffre est aussi donné avec la raison
   « Liquidité prise + BMS » quand elle est cochée. Le verdict principal ne change pas.
+
+## Amendement du 27/09 (écrit AVANT toute lecture des résultats) — lecture intermédiaire pour ne pas gaspiller son temps
+- **Pourquoi** : Esdras ne veut pas remplir 39 cas de plus si rien n'en sortira. Le matin est déjà au complet : 110 achats repris.
+- **Lecture intermédiaire** : maintenant, sur ses 110 réponses d'achat du matin (`answers6`, ids a…), avec la mesure principale (`meche_3R`,
+  ordres remplis, écart oui − non, permutation unilatérale sur 10 000 tirages).
+- **Arrêt pour futilité** : on arrête l'exercice si l'une de ces conditions est vraie :
+  - l'écart oui − non est ≤ 0 ;
+  - le R moyen de ses « oui » est ≤ 0.
+
+  Le verdict est alors « l'œil n'ajoute rien de démontré sur les achats du matin ». Tous les chiffres lui sont donnés.
+- **Sinon, il continue jusqu'à 150.**
+  - Pendant ce temps, on ne lui donne pas les chiffres intermédiaires, seulement « continue ».
+  - Le verdict final à 150 exige p < 0,025 (unilatéral) au lieu de 0,05, pour tenir compte de la lecture intermédiaire. Les autres
+    conditions ne changent pas : au moins 40 remplis de chaque côté, R moyen des « oui » > 0.
+- **S'il y a moins de 25 ordres remplis d'un côté à la lecture intermédiaire** : pas de décision, il continue.
