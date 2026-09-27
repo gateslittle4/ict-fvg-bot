@@ -1521,5 +1521,22 @@
       "data/backtest-input/esdras-mods-validation.md",
       "data/backtest-input/esdras-mods-final.md"
     ]
+  },
+  {
+    "id": "esdras-winners-sweep-2026-09-27",
+    "title": "Profil des gagnants de la méthode d Esdras et piste « sens par prise de liquidité H4 » (SW) : rien de solide, SW échoue hors échantillon (US500)",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Profil des gagnants C1 US100 2011-2018 (esdras-winners-US100-explore.md) : ~50 tranches, aucun écart solide (max t 2,7 sur 70 trades à 10 h). Piste choisie pour sa cohérence avec le discours d Esdras : sens H4 déclenché par une prise de liquidité (+0,174 R, t 1,84 sur US100 2011-2018). Pré-enregistrée puis testée sur US500 (jamais utilisé pour cette méthode), toutes périodes : SW 943 trades -0,009 R (t -0,10) contre C1 -0,061 R : ÉCHOUE. US100 descriptif : +0,390 R 2019-2022, +0,088 R 2023-2026. Bug corrigé en route : les deux ordres d une même échelle partageaient la même fiche de caractéristiques.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/esdras-winners-US100-explore.md",
+      "data/backtest-input/preregistration-esdras-sweep-us500-2026-09-27.md",
+      "scripts/runEsdrasWinners.js",
+      "scripts/runEsdrasSweep.js"
+    ]
   }
 ]

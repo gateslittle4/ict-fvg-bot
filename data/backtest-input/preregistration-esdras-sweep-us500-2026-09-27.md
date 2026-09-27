@@ -23,3 +23,15 @@ Elle est choisie parce qu'elle rejoint ce qu'Esdras répète, « la prise de liq
 - **En descriptif, qui ne décide rien** : SW sur US100 2019-2022 et 2023-2026. Ces années ont déjà été lues pour cette famille.
 
 Aucun réglage. Si SW échoue sur US500, la piste est abandonnée.
+
+## Résultat (27/09) : SW ÉCHOUE sur US500
+| US500 | C1 | SW |
+|---|---|---|
+| 2011-2018 | 1 202 trades, −0,007 R | 495 trades, +0,082 R |
+| 2019-2022 | 725 trades, −0,134 R | 265 trades, −0,200 R |
+| 2023-2024 + 2026 | 469 trades, −0,084 R | 183 trades, +0,019 R |
+| **Total** | **2 396 trades, −0,061 R (t −1,04)** | **943 trades, −0,009 R (t −0,10)** |
+
+- **US500 en 2025**, en descriptif : SW 58 trades, −0,080 R.
+- **US100 en descriptif** (années déjà lues) : SW +0,390 R en 2019-2022 (t 1,28) et +0,088 R en 2023-2026 (t 0,40).
+- **Verdict** : SW perd moins que C1 sur US500, mais reste à zéro (R ≤ 0, t −0,10). La piste est abandonnée.
