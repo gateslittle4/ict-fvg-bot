@@ -194,7 +194,12 @@ if (momentum) {
 function executeMomentumEvent(ev, t) {
   const sym = ev.symbol; const M = mData[sym]; const j = lower(M.t, M.n, t);
   // Prix d'exécution : l'ouverture de la minute t dans les M1 de A/B (le premier tick après la décision, en live).
-  if (j >= M.n || M.t[j] - t > 5 * MIN) return; // pas de cotation dans les 5 minutes : marché fermé
+  if (j >= M.n || M.t[j] - t > 5 * MIN) {
+    // Les barres M1 que le bot construit pour A/B s'arrêtent à 15:59 NY : la sortie de clôture (16:00) n'a pas de minute suivante. Sans ce
+    // repli, la position restait ouverte dans le rejeu et bloquait les jours suivants (vu le 27/09). On sort au dernier cours connu.
+    if (ev.type === 'exit' && j > 0 && t - M.t[j - 1] <= 5 * MIN) { const held = managed.get(sym); if (held && held.source === ev.strategy) closePosition(held, M.c[j - 1], t, ev.reason === 'close' ? 'close' : 'signal'); }
+    return; // pas de cotation dans les 5 minutes : marché fermé
+  }
   const bid = M.o[j];
   const held = managed.get(sym);
   if (ev.type === 'exit') { if (held && held.source === ev.strategy) closePosition(held, bid, t, ev.reason === 'close' ? 'close' : 'signal'); return; }
