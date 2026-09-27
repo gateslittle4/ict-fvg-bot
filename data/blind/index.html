@@ -197,7 +197,7 @@ async function start() {
   idx = nextUnanswered(0); render();
   $('count').textContent = 'chargement de tes réponses…';
   db = window.claude?.use ? await window.claude.use('db') : null;
-  if (!db) { $('warn').textContent = 'Réponses gardées sur ce téléphone seulement : Claude ne pourra pas les lire. Ouvre la page depuis claude.ai.'; $('warn').hidden = false; return; }
+  if (!db) { $('warn').textContent = 'Réponses gardées sur ce téléphone seulement : Claude ne pourra pas les lire. Ouvre la page depuis claude.ai.'; $('warn').hidden = false; render(); return; }
   const remote = new Set();
   try { const snap = await db.collection(COL).limit(1000).get(); for (const d of snap.docs) { answers[d.id] = d.data(); remote.add(d.id); } }
   catch (e) { $('warn').textContent = 'Impossible de lire tes réponses enregistrées (connexion). Recharge la page.'; $('warn').hidden = false; }
