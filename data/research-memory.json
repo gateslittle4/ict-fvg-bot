@@ -1570,5 +1570,20 @@
       "scripts/runEsdrasTight.js",
       "scripts/lib/esdrasMethod.js"
     ]
+  },
+  {
+    "id": "esdras-buyonly-2026-09-27",
+    "title": "Méthode d Esdras en achats seulement (C1-A, T1-A stop serré + réentrées) : rejetée en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-buyonly-2026-09-27.md), référence sans sens H4 pour isoler la dérive haussière. US100 2011-2018 : C1-A 769 trades +0,098 R (t 0,89, -20 R sans les 5 meilleurs) contre B0-A +0,068 ; T1-A 1558 trades +0,095 R (t 0,99, moitiés +0,199/-0,010, creux 72 R) contre +0,031. Bat la référence mais loin de t >= 2,5 ; rien d autre lu.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-buyonly-2026-09-27.md",
+      "data/backtest-input/esdras-buyonly-US100-explore.md",
+      "scripts/runEsdrasBuyOnly.js"
+    ]
   }
 ]

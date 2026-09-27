@@ -25,3 +25,9 @@ simple dérive :
 3. **En descriptif** : US100 2019-2022 et 2023-2026.
 
 Aucun réglage.
+
+## Résultat (27/09) : C1-A et T1-A REJETÉES dès l'exploration US100 2011-2018
+- **C1-A** : 769 trades, +0,098 R (t 0,89). Moitiés +0,170 et +0,027. Sans les 5 meilleurs : −20 R. Référence B0-A : +0,068 R.
+- **T1-A** : 1 558 trades, +0,095 R (t 0,99). Moitiés +0,199 et −0,010. Creux max 72 R. Référence en T1 : +0,031 R.
+- Elles battent leur référence, mais restent très loin du seuil de t. US500 et les autres périodes ne sont pas lues.
+- Détails : `esdras-buyonly-US100-explore.md`.
