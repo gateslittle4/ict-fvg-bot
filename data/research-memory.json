@@ -1470,5 +1470,20 @@
       "scripts/buildBlindSetups.js",
       "scripts/runBlindInterim.cjs"
     ]
+  },
+  {
+    "id": "eye-rule-explore-2026-09-27",
+    "title": "Règle tirée de l œil d Esdras (FVG M15 haussier vierge, >= 0,25 ATR H1, 7-11 h NY, limite au bord, stop mèche A, 3R) : rejetée en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistrée (preregistration-eye-rule-2026-09-27.md) à partir des 21 « oui » remplis de l exercice à l aveugle. Exploration US100 2011-2018 : 281 trades, -0,040 R (t -0,48), deux moitiés négatives ; référence sans filtres (990 trades) -0,016 R ; variantes 0,10 ATR, 1er FVG du jour, vierge seul, taille seule toutes négatives ; miroir vendeur ~0. Les filtres « FVG vierge » et « taille » n apportent rien sur l ensemble des FVG. Validation et final non lus. Conclusion : ce qui ressortait de ses choix sur 21 trades était du bruit, ou tient à quelque chose que ces filtres ne capturent pas.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-eye-rule-2026-09-27.md",
+      "data/backtest-input/eye-rule-explore.md",
+      "scripts/runEyeRuleTest.js"
+    ]
   }
 ]

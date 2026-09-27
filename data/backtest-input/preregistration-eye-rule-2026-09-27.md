@@ -36,3 +36,10 @@ matin. Cette règle a été trouvée sur 21 trades seulement : elle doit donc pa
    en descriptif.
 
 Si une étape échoue, on s'arrête, sans ajuster les paramètres. La conclusion est alors : « la règle tirée de l'œil ne tient pas ».
+
+## Résultat (27/09) : REJETÉE dès l'exploration
+- **Règle** : 281 trades, −0,040 R en moyenne (t −0,48), deux moitiés négatives.
+- **Référence** : −0,016 R.
+- **Variantes** (0,10 ATR ; 1er FVG du jour ; vierge seul ; taille seule) : toutes négatives.
+- Détails : `eye-rule-explore.md`. Selon le protocole, on s'arrête là : la validation et le final ne sont pas lus. Les années 2019-2026
+  restent intactes pour cette famille de règles.
