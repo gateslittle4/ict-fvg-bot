@@ -44,3 +44,6 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
   - `take` = vrai seulement s'il choisit le sens du FVG. C'est la mesure principale, inchangée.
   - Choisir le sens inverse compte comme « non » pour ce trade. Ce choix (`side`) est analysé en descriptif seulement.
 - **Ordre d'affichage** : a001-a100 et b001-b050 d'abord, pour atteindre le premier point de lecture ; puis le reste.
+- **Échauffement (27/09, avant toute réponse v4)** : Esdras tradait en 2025 et craint d'avoir perdu la main. En descriptif, je
+  sépare ses 50 premières réponses v4 des suivantes (même mesure). Si l'écart grandit avec le temps, c'est de la rouille, pas une
+  absence d'œil. Le verdict principal ne change pas.
