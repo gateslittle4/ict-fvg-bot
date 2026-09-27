@@ -87,3 +87,7 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
   - Mesure, verdict et seuils de remplissage inchangés.
 - **Nouveaux descriptifs** : séparation selon que la bougie juste avant A touche la zone ou non (règle précisée v5).
 - **Raisons ajoutées** : « Liquidité prise + BMS » et « Higher highs / lower lows ». En descriptif, comme les autres raisons.
+- **Trades contraires (27/09, avant lecture)** : Esdras changeait parfois de sens après un BMS. En descriptif, sur ses « Je laisse » cochés
+  « J'aurais pris l'autre sens », je mesure le mouvement du prix entre la fermeture de D et l'heure de sortie, en ATR H1, compté dans le
+  sens inverse du FVG. Je le compare à ses autres « Je laisse » et à l'ensemble des cas. Le chiffre est aussi donné avec la raison
+  « Liquidité prise + BMS » quand elle est cochée. Le verdict principal ne change pas.
