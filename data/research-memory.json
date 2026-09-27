@@ -1585,5 +1585,21 @@
       "data/backtest-input/esdras-buyonly-US100-explore.md",
       "scripts/runEsdrasBuyOnly.js"
     ]
+  },
+  {
+    "id": "esdras-leftfvg-2026-09-27",
+    "title": "Schéma des captures d Esdras (FVG M15 vers le FVG opposé non testé à gauche, + FVG H4, tendance H4, liquidité puis BMS) : rejeté en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-leftfvg-2026-09-27.md). US100 2011-2018 : LD0 1629 trades +0,040 R (t 0,56, -47 R sans les 5 meilleurs) ; LD3 (trois confirmations) 20 trades -0,784 R ; seules : FVG H4 +0,086 (t 0,85), tendance H4 +0,051, liquidité+BMS +0,015. Avant le test, la direction « vers le FVG non testé à gauche » ne séparait pas non plus ses trades 2025 gagnants des perdants une fois ses 5 plus gros trades retirés (son profit 2025 : +1311 $, -1104 $ sans les 5 meilleurs).",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-leftfvg-2026-09-27.md",
+      "data/backtest-input/esdras-left-US100-explore.md",
+      "scripts/runEsdrasLeft.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
   }
 ]

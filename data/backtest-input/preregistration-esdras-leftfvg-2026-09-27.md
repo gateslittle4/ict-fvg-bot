@@ -41,3 +41,15 @@ Deux candidates : LD0 et LD3. LDa, LDb et LDc (chaque confirmation seule) sont d
 3. **En descriptif** : US100 2019-2022 et 2023-2026.
 
 Aucun réglage : 8 bougies, 192, 16, 32 et « plus bas de la veille » sont fixés ici.
+
+## Résultat (27/09) : LD0 et LD3 REJETÉES dès l'exploration US100 2011-2018
+| | Trades | R moyen | t | Sans les 5 meilleurs |
+|---|---|---|---|---|
+| **LD0** (FVG M15 vers le FVG à gauche) | 1 629 | +0,040 | 0,56 | −47 R |
+| **LD3** (+ FVG H4 + tendance H4 + liquidité puis BMS) | 20 | −0,784 | −3,09 | −16 R |
+| LDa (+ FVG H4, descriptif) | 751 | +0,086 | 0,85 | −16 R |
+| LDb (+ tendance H4, descriptif) | 470 | +0,051 | 0,38 | −51 R |
+| LDc (+ liquidité puis BMS, descriptif) | 460 | +0,015 | 0,12 | −64 R |
+
+- **LD3** : les trois confirmations ensemble, avec au moins 3R jusqu'à un FVG à gauche proche, n'arrivent que 20 fois en 8 ans.
+- US500 et les autres périodes ne sont pas lus. Détails : `esdras-left-US100-explore.md`.
