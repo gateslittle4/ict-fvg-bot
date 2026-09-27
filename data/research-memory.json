@@ -1454,5 +1454,21 @@
       "scripts/runNightLabSweep.js",
       "src/backtest/labRegistry.js"
     ]
+  },
+  {
+    "id": "blind-eye-exercise-2026-09-27",
+    "title": "Exercice à l aveugle (œil d Esdras sur des FVG M15 US100 2011-2018) : non concluant, tendance favorable",
+    "date": "2026-09-27",
+    "status": "inconclusive",
+    "summary": "110 achats du matin répondus à l aveugle (v3). Ses « oui » remplis : +0,67 R (21) ; ses « non » : +0,12 R (41) ; écart +0,55 R, p = 0,12 (permutation). Le minimum pré-enregistré de 40 remplis n est pas atteint : verdict NON CONCLUANT. Esdras a arrêté (plus assez de temps). En descriptif : les « oui » battent les « non » sur les 6 exécutions ; ses « oui » sur FVG vierges (bougie avant A hors zone) +1,05 R contre +0,05 R sur FVG collés ; FVG < 0,1 ATR H1 mauvais pour lui. Règle candidate (vierge + taille >= 0,1-0,25 ATR + 7-11 h NY) à explorer sur 2011-2018 puis tester une fois sur 2023-2026. Leçons : afficher le sens en gros (confusion vente/achat) ; ne compter que les ordres remplis demande beaucoup de réponses.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/blind-exercise-result-2026-09-27.md",
+      "data/backtest-input/preregistration-blind-exercise-2026-09-26.md",
+      "scripts/buildBlindSetups.js",
+      "scripts/runBlindInterim.cjs"
+    ]
   }
 ]
