@@ -47,3 +47,8 @@ seule fois sur 2023-2026, années gardées intactes (jamais lues par la recherch
 - **Échauffement (27/09, avant toute réponse v4)** : Esdras tradait en 2025 et craint d'avoir perdu la main. En descriptif, je
   sépare ses 50 premières réponses v4 des suivantes (même mesure). Si l'écart grandit avec le temps, c'est de la rouille, pas une
   absence d'œil. Le verdict principal ne change pas.
+- **Retour aux deux boutons (27/09, après 1 seule réponse v4, sans résultat lu)** : Esdras préfère que le sens soit donné. La page
+  affiche en gros ACHAT ou VENTE, avec deux boutons, « J'achète » ou « Je vends », et « Je laisse ». La raison « J'aurais pris
+  l'autre sens » revient.
+  - Sa réponse a001, donnée avec les trois boutons, est gardée : son champ `take` a le même sens.
+  - Mesure inchangée.
