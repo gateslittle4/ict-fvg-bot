@@ -30,3 +30,17 @@ Cinq candidates, donc des critères plus stricts contre le hasard des essais mul
 3. **Final 2023-2024 + 2026**, lecture unique : R moyen > 0. L'année 2025 est donnée à part.
 
 Aucun réglage entre les étapes.
+
+## Résultat (27/09) : les 5 modifications sont REJETÉES en exploration 2011-2018
+| | Trades | R moyen | t | Sans les 5 meilleurs |
+|---|---|---|---|---|
+| C1 (base) | 1 342 | +0,004 | 0,05 | −91,2 R |
+| M1 (3R fixe) | 1 059 | **+0,086** | 1,56 | +70,1 R |
+| M2 (discount) | 769 | +0,003 | 0,03 | −85,3 R |
+| M3 (Daily) | 728 | −0,042 | −0,40 | −124,8 R |
+| M4 (breakeven 2R) | 1 327 | −0,039 | −0,56 | −148,4 R |
+| M5 (tout) | 289 | +0,035 | 0,36 | −6,4 R |
+
+- **M1 est la seule modification encourageante** : les deux moitiés sont positives (+0,058 et +0,111 R), elle ne dépend pas des gros
+  trades, et elle a 27 % de gagnants. Mais t = 1,56 reste loin du seuil de 2,5, et même de 2. Elle est donc rejetée, comme prévu.
+- Validation et final ne sont pas lus. Détails : `esdras-mods-explore.md`.

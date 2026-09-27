@@ -1503,5 +1503,21 @@
       "data/backtest-input/esdras-method-soir-validation.md",
       "data/backtest-input/esdras-method-soir-explore.md"
     ]
+  },
+  {
+    "id": "esdras-method-mods-explore-2026-09-27",
+    "title": "5 modifications de la méthode d Esdras (3R fixe, discount/premium, accord Daily, breakeven 2R, tout) : toutes rejetées en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-method-mods-2026-09-27.md, seuil t >= 2,5 pour 5 essais). US100 2011-2018 : M1 objectif fixe 3R +0,086 R (t 1,56, moitiés +0,058/+0,111, +70 R sans les 5 meilleurs, 27 % gagnants) = la seule encourageante mais non significative ; M2 discount +0,003 ; M3 accord Daily -0,042 ; M4 breakeven 2R -0,039 ; M5 tout +0,035 (289 trades). Base C1 +0,004 R. Le sens Daily et le discount/premium n ajoutent rien ; l objectif H4 lointain crée l effet loterie, un objectif fixe 3R l enlève sans créer d avantage prouvé.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-method-mods-2026-09-27.md",
+      "data/backtest-input/esdras-mods-explore.md",
+      "scripts/runEsdrasMods.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
   }
 ]
