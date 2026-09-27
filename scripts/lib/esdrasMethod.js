@@ -232,3 +232,52 @@ export function execute(X, sigs, { trail = false, spread = () => 0, swap = () =>
   }
   return trades;
 }
+
+/**
+ * LD (preregistration-esdras-leftfvg-2026-09-27.md) : FVG M15 (D hors zone, fenêtres 7-11 h / 20-23 h) vers le FVG M15 opposé non testé
+ * « à gauche » le plus proche (formé 8 à 192 bougies avant C, jamais touché jusqu'à D) ; objectif = son bord proche. Confirmations
+ * facultatives : (a) le prix est entré dans un FVG H4 du sens encore valide dans les 16 dernières bougies M15 ; (b) dernier BMS H4 dans
+ * le sens ; (c) prise du plus bas (haut) de la veille puis BMS M15 du sens dans les 32 dernières bougies. Entrée : échelle 3R de entryPlan.
+ */
+export function signalsLeft(X, { a = false, b = false, c = false } = {}) {
+  const { S, b15, b4h, bD } = X, out = [];
+  const f15 = X.fvg[0].slice().sort((p, q) => p.k - q.k), f4 = X.fvg[2];
+  const h4b = b ? bmsOf(S, b4h) : [], m15b = c ? bmsOf(S, b15) : [];
+  const dayIdx = new Map(); for (let d = 0; d < bD.length; d++) dayIdx.set(dayKey(bD[d].t), d);
+  const firstK = (k) => { let lo = 0, hi = f15.length; while (lo < hi) { const m = (lo + hi) >> 1; if (f15[m].k < k) lo = m + 1; else hi = m; } return lo; };
+  let hq = 0, hDir = 0;
+  for (const z of f15) {
+    const k = z.k, j = k + 1; if (k < 34 || j >= b15.length - 1) continue;
+    const D = b15[j], tau = barEnd(S, D), nm = nyMin(tau);
+    const win = WINDOWS.findIndex((w) => nm >= w.from && nm < w.to); if (win < 0) continue;
+    if (z.dir > 0 ? D.l <= z.top : D.h >= z.bot) continue;
+    if (b15[j + 1].t - tau > 5 * MIN) continue;
+    const dir = z.dir, E = dir > 0 ? z.top : z.bot, i = D.i1 + 1;
+    while (hq < h4b.length && h4b[hq].t <= tau) hDir = h4b[hq++].dir;
+    // objectif : FVG opposé non testé à gauche le plus proche dans le sens du trade
+    let target = null;
+    for (let q = firstK(k - 192); q < f15.length && f15[q].k <= k - 8; q++) {
+      const y = f15[q]; if (y.dir !== -dir || y.touch <= j) continue;
+      const lvl = dir > 0 ? y.bot : y.top;
+      if ((dir > 0 ? lvl > E : lvl < E) && (target === null || (dir > 0 ? lvl < target : lvl > target))) target = lvl;
+    }
+    if (target === null) continue;
+    if (a) { // (a) entré dans un FVG H4 du sens encore valide
+      const h = lastDoneBar(b4h, i);
+      let lo = Infinity, hi = -Infinity; for (let m = j - 15; m <= j; m++) { lo = Math.min(lo, b15[m].l); hi = Math.max(hi, b15[m].h); }
+      const ok = f4.some((y) => y.dir === dir && y.k < h && y.k > h - 400 && y.dead > h && (dir > 0 ? lo <= y.top && D.c > y.bot : hi >= y.bot && D.c < y.top));
+      if (!ok) continue;
+    }
+    if (b && hDir !== dir) continue; // (b) tendance H4
+    if (c) { // (c) prise du plus bas (haut) de la veille puis BMS M15 du sens
+      const d = dayIdx.get(dayKey(tau)), prev = d > 0 ? bD[d - 1] : null; if (!prev) continue;
+      let sw = -1; for (let m = j - 31; m <= j; m++) if (dir > 0 ? b15[m].l < prev.l : b15[m].h > prev.h) { sw = m; break; }
+      if (sw < 0) continue;
+      const tSw = barEnd(S, b15[sw]);
+      if (!m15b.some((x) => x.dir === dir && x.t > tSw && x.t <= tau)) continue;
+    }
+    const A = b15[k - 2], plan = entryPlan(z, A, target, dir); if (!plan) continue;
+    out.push({ tau, dir, z, A, i, target, plan, atr: null, expiry: nextNyTime(tau, WINDOWS[win].expiry), exitAt: nextNyTime(tau, EXIT_MIN), win, f: {} });
+  }
+  return out;
+}
