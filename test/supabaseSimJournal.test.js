@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toJournalRow, saveSimJournal } from '../src/dataSources/supabaseSimJournal.js';
+import { toJournalRow, saveSimJournal, toShotRow, saveSimShot } from '../src/dataSources/supabaseSimJournal.js';
 
 const body = { session: 'abcd1234-ef', blind: true, pairs: [{ id: 'US100', symbol: 'US100' }], entries: [{ kind: 'skip' }, { kind: 'trade' }] };
 
@@ -29,4 +29,16 @@ test('supabaseSimJournal.saveSimJournal: upserts on the session; 503 without Sup
   assert.equal(calls[0].t, 'bot_sim_journal');
   assert.deepEqual(calls[0].opts, { onConflict: 'session' });
   assert.equal((await saveSimJournal(null, body)).status, 503);
+});
+
+test('supabaseSimJournal.toShotRow / saveSimShot: one JPEG per (session, key), bad input refused', async () => {
+  const shot = { session: 'abcd1234-ef', key: '1724682600-0', image: 'data:image/jpeg;base64,AAAA' };
+  assert.deepEqual(toShotRow(shot).row, shot);
+  assert.ok(toShotRow({ ...shot, image: 'javascript:alert(1)' }).error);
+  assert.ok(toShotRow({ ...shot, key: 'a b' }).error);
+  const calls = [];
+  const client = { from: (t) => ({ upsert: async (row, opts) => { calls.push({ t, opts }); return { error: null }; } }) };
+  assert.equal((await saveSimShot(client, shot)).ok, true);
+  assert.deepEqual(calls[0], { t: 'bot_sim_shots', opts: { onConflict: 'session,key' } });
+  assert.equal((await saveSimShot(null, shot)).status, 503);
 });
