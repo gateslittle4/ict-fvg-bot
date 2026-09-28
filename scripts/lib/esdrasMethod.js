@@ -397,7 +397,10 @@ export function wideZones(b) {
 // le prix change de direction ») : { minBodyAtr, reversal } - la jambe du BMS (du bout de la jambe à la bougie q qui clôture au-delà)
 // contient une bougie du sens dont le corps fait au moins minBodyAtr ATR M15 ; reversal (facultatif) : le BMS précédent allait dans l'autre
 // sens. Sur ses trades, la grosse bougie est tantôt celle qui casse (21/06/2017, 27/09/2026), tantôt celle juste avant (27/06/2018).
-export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minTargetPct = 0.001, rungs = 3, legBars = 48, minZonePct = 0, minRiskAtr = 0, maxEntryAtr = Infinity, bigBms = null } = {}) {
+// lastStop (quiz, 2026-09-28) : 'leg' = dernier stop au bout de la jambe (règle testée) ; 'edge' = juste au-delà du bord lointain de la
+// dernière zone (+ edgeBufAtr ATR), comme Esdras (« stop juste au-dessus du FVG ») - sinon, avec une seule zone, le stop au bout de la
+// jambe écartait des setups qu'il prend (US100 à l'aveugle, J6 11h45).
+export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minTargetPct = 0.001, rungs = 3, legBars = 48, minZonePct = 0, minRiskAtr = 0, maxEntryAtr = Infinity, bigBms = null, lastStop = 'leg', edgeBufAtr = 0.1 } = {}) {
   const { S, b15 } = X, out = [];
   const f15 = X.fvg[0].slice().sort((p, q) => p.k - q.k), zones = wideZones(b15);
   const maxH = sparse(b15.map((b) => b.h), Math.max), minL = sparse(b15.map((b) => b.l), Math.min);
@@ -450,7 +453,8 @@ export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minT
     targets.sort((a, c) => (dir > 0 ? a - c : c - a));
     const plan = [];
     for (let r = 0; r < Math.min(rungs, merged.length); r++) {
-      const entry = near(merged[r]), stop = r + 1 < merged.length && r + 1 < rungs ? near(merged[r + 1]) : legEnd;
+      const far = (z) => (dir > 0 ? z.bot - edgeBufAtr * atr : z.top + edgeBufAtr * atr);
+      const entry = near(merged[r]), stop = r + 1 < merged.length && r + 1 < rungs ? near(merged[r + 1]) : lastStop === 'edge' ? far(merged[r]) : legEnd;
       if (!(dir > 0 ? stop < entry : stop > entry)) break;
       if (minRiskAtr > 0 && !(Math.abs(entry - stop) >= minRiskAtr * atr)) break;
       plan.push({ entry, stop });
