@@ -751,7 +751,7 @@ window.closeEverything = () => { if (!acct) return; tryAction({ k: 'closeAll' })
 // ---------------------------------------------------------------- order ticket, in prices, drawn on the chart (Forex Tester style)
 const ticket = { armed: false, side: 'buy', type: 'market', price: null, sl: null, tp: null, rr: 3 };
 let pickField = null;
-const WHY = ['Tendance H4', 'Dans un FVG H4', 'Liquidité H4 prise', 'Liquidité prise + BMS', 'Higher highs / lower lows', 'FVG M15 propre', 'FVG vierge à gauche', 'Belle impulsion', 'Bonne heure', 'News', 'Réentrée', 'Trop loin', 'Impulsion faible', 'Mauvaise heure', 'Contre la tendance', 'Autre'];
+const WHY = ['Tendance H4', 'Dans un FVG H4', 'Liquidité H4 prise', 'Liquidité prise + BMS', 'Higher highs / lower lows', 'FVG M15 propre', 'FVG à gauche', 'Belle impulsion', 'Bonne heure', 'News', 'Réentrée', 'Trop loin', 'Impulsion faible', 'Mauvaise heure', 'Contre la tendance', 'Autre'];
 $('t-why').innerHTML = WHY.map((w) => `<label><input type="checkbox" value="${w}" />${w}</label>`).join('');
 const readWhy = () => [...document.querySelectorAll('#t-why input:checked')].map((x) => x.value);
 const clearWhy = () => { document.querySelectorAll('#t-why input').forEach((x) => { x.checked = false; }); $('t-note').value = ''; };
