@@ -23,6 +23,7 @@ import { buildHealthReport } from './healthReport.js';
 import { fetchPerformanceBySymbol, createTradeLogClient } from './dataSources/supabaseTradeLog.js';
 import { getStrategySwitches, setStrategySwitches } from './strategySwitches.js';
 import { getKillSwitchState, setKillSwitchOverride, refreshKillSwitch } from './killSwitch.js';
+import { saveSimJournal, listSimJournals } from './dataSources/supabaseSimJournal.js';
 import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
@@ -48,7 +49,9 @@ import { getRecentAlerts } from './alertHistory.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
-app.use(express.json());
+// the simulator's backtest journal can exceed the default 100 kB (drawings with every decision): its own, larger limit below
+const jsonBody = express.json();
+app.use((req, res, next) => (req.path === '/api/sim-journal' ? next() : jsonBody(req, res, next)));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 // Lightweight Charts (TradingView's own open-source charting library) is
 // served from OUR origin rather than a CDN on purpose: the dashboard is
@@ -246,6 +249,18 @@ app.post('/api/admin/kill-switch', async (req, res) => {
   const { leg, enabled } = req.body || {};
   const result = await setKillSwitchOverride(switchClient(), leg, enabled);
   res.status(result.ok ? 200 : 400).json(result);
+});
+
+// 2026-09-28 - journal des backtests manuels du simulateur (public/simulateur.html) : une ligne par séance, avec le code administrateur.
+app.post('/api/sim-journal', express.json({ limit: '4mb' }), async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const result = await saveSimJournal(switchClient(), req.body);
+  res.status(result.ok ? 200 : result.status).json(result);
+});
+app.get('/api/sim-journal', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const result = await listSimJournals(switchClient(), { limit: Number(req.query.limit) || 20 });
+  res.status(result.ok ? 200 : result.status).json(result);
 });
 
 app.get('/api/admin/accounts', async (req, res) => {

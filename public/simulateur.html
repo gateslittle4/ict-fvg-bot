@@ -112,6 +112,37 @@
   .kpis small { display: block; color: var(--muted); font-size: 9px; text-transform: uppercase; }
   .modebox { border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 8px; margin-bottom: 8px; background: var(--bg-inset); }
   .locked { opacity: .45; pointer-events: none; }
+  /* 2026-09-28 - Esdras : « comme Forex Tester » : grand graphique, ticket d'ordre en prix, dessins, raccourcis clavier, journal */
+  #chart { height: max(440px, 64vh); }
+  #draw-layer { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: hidden; }
+  #draw-layer.drawing { pointer-events: all; cursor: crosshair; touch-action: none; }
+  #draw-layer .drw { pointer-events: all; cursor: move; }
+  #draw-layer.drawing .drw { pointer-events: none; }
+  #draw-layer .hdl { pointer-events: all; cursor: nwse-resize; }
+  #draw-layer.dragging { pointer-events: all; }
+  #draw-layer.erase .drw { pointer-events: all; cursor: not-allowed; }
+  #draw-layer.erase .drw:hover { opacity: 0.45; }
+  #draw-toolbar input[type=color] { width: 26px; height: 22px; border: 0; padding: 0; background: transparent; cursor: pointer; }
+  .draw-hint { font-size: 11px; color: var(--muted); flex: 1 1 200px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb kbd, .keys kbd { font-family: var(--mono); font-size: 9.5px; border: 1px solid var(--panel-border-strong); border-radius: 2px; padding: 0 3px; margin-left: 3px; color: var(--muted); }
+  .tb.active kbd { color: #05070a; border-color: #05070a; }
+  .keys { font-size: 11px; color: var(--muted); line-height: 1.9; margin-top: 6px; }
+  .keys kbd { margin: 0 2px 0 8px; color: var(--text); }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin-bottom: 7px; }
+  .seg button { background: var(--bg-inset); border: 1px solid var(--panel-border-strong); color: var(--text); border-radius: var(--radius); padding: 7px 4px; cursor: pointer; font-weight: 600; }
+  .seg button.on { background: var(--blue); border-color: var(--blue); color: #05070a; }
+  .seg button.on.side-buy { background: var(--green); border-color: var(--green); }
+  .seg button.on.side-sell { background: var(--red); border-color: var(--red); }
+  .inline { display: flex; gap: 4px; } .inline input { flex: 1 1 auto; min-width: 0; }
+  .pick.on { background: var(--amber); color: #05070a; }
+  .quick { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 7px; }
+  .quick .mini.on { background: var(--blue); color: #05070a; border-color: var(--blue); }
+  .ticket-sum { font-family: var(--mono); font-size: 11.5px; line-height: 1.6; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 6px 8px; margin-bottom: 8px; }
+  #t-send { width: 100%; font-size: 14px; }
+  .why-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+  .why-list label { font-size: 11px; border: 1px solid var(--panel-border-strong); border-radius: 10px; padding: 2px 8px; cursor: pointer; color: var(--muted); user-select: none; }
+  .why-list input { display: none; }
+  .why-list label:has(input:checked) { background: var(--blue); border-color: var(--blue); color: #05070a; }
   @media (max-width: 600px) { #chart { height: 360px; } body { padding: 12px 16px; } }
 </style>
 </head>
@@ -147,6 +178,10 @@
       <span class="meta" id="sim-botfull-note" style="flex:1 1 260px;">Charge d'un coup toutes les paires que le bot trade et ses 8 mécanismes, et le fait jouer seul : tu vois le solde évoluer en direct.</span>
       <div class="form-field" style="flex:0 0 auto;min-width:170px;"><label for="sim-range">Période</label><select id="sim-range"><option value="custom">Dates ci-dessus</option><option value="real">7 derniers mois RÉELS (données du broker, fév.→sept. 2026)</option><option value="7">7 derniers mois de l'historique (jusqu'à fin 2025)</option><option value="3">3 derniers mois</option><option value="1">Dernier mois</option></select></div>
     </div>
+    <div class="modebox" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
+      <label class="check" style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="sim-blind" /> <strong>🙈 Backtest à l'aveugle</strong></label>
+      <span class="meta" style="flex:1 1 260px;">Période tirée au hasard, dates cachées (tu vois « J3 mar. 09:30 » : le jour du rejeu, le jour de la semaine et l'heure de New York), aucun signal du bot affiché. Décoche après coup pour voir les vraies dates.</span>
+    </div>
     <details>
       <summary style="cursor:pointer;font-size:13px;"><strong>Stratégies affichées</strong> <span class="meta" id="sim-strat-count"></span></summary>
       <p class="hint">« Les 8 du bot » = les mécanismes que le bot trade réellement sur cette paire, avec ses réglages (objectif, sens autorisé). Tu peux en plus cocher n'importe quelle stratégie du Labo (réglages par défaut). Les stratégies qui n'existent pas sur cette paire sont signalées, jamais inventées.</p>
@@ -180,17 +215,17 @@
   <div class="layout">
     <div>
       <div class="card">
-        <div class="toolbar">
+        <div class="toolbar" id="main-toolbar">
           <div class="grp" id="tf-grp" title="M1 et M5 : seulement pour les jeux importés avec le M1 conservé">
             <button class="tb" data-tf="60">M1</button><button class="tb" data-tf="300">M5</button><button class="tb active" data-tf="900">M15</button><button class="tb" data-tf="1800">M30</button><button class="tb" data-tf="3600">H1</button><button class="tb" data-tf="7200">H2</button><button class="tb" data-tf="14400">H4</button><button class="tb" data-tf="21600">H6</button><button class="tb" data-tf="43200">H12</button><button class="tb" data-tf="86400">D1</button><button class="tb" data-tf="604800">W1</button>
           </div>
           <div class="grp" title="Retour en arrière : la simulation revient exactement à cet instant">
             <button class="tb" onclick="restart()" title="Retour au début">⏮ début</button>
-            <button class="tb" data-back="1440">◀ 1 j</button><button class="tb" data-back="240">◀ 4 h</button><button class="tb" data-back="60">◀ 1 h</button><button class="tb" data-back="15">◀ 1 bougie</button>
+            <button class="tb" data-back="1440">◀ 1 j</button><button class="tb" data-back="240">◀ 4 h</button><button class="tb" data-back="60">◀ 1 h</button><button class="tb" data-back="15" title="Touche ←">◀ 1 bougie</button>
           </div>
           <div class="grp">
-            <button class="tb" id="btn-play" onclick="togglePlay()" title="Lecture / pause">▶ Lecture</button>
-            <button class="tb" onclick="stepBars(1)" title="Une bougie M15">+1 bougie</button>
+            <button class="tb" id="btn-play" onclick="togglePlay()" title="Lecture / pause (Espace)">▶ Lecture</button>
+            <button class="tb" onclick="stepBars(1)" title="Une bougie de base (touche →)">+1 bougie</button>
             <button class="tb" onclick="stepMinutes(60)">+1 h</button>
             <button class="tb" onclick="stepMinutes(240)">+4 h</button>
             <button class="tb" onclick="stepMinutes(1440)">+1 jour</button>
@@ -208,7 +243,25 @@
           <div class="clock" id="clock">—</div>
         </div>
         <div class="pairtabs" id="pair-tabs"></div>
-        <div id="chart-wrap"><div id="chart"></div><div id="chart-empty">Choisis une paire et une date, puis « Charger ».</div></div>
+        <div class="toolbar" id="draw-toolbar">
+          <div class="grp">
+            <button class="tb active" data-tool="cursor" title="Curseur : déplacer / zoomer, sélectionner un dessin">↖<kbd>C</kbd></button>
+            <button class="tb" data-tool="rect" title="Rectangle (zone, FVG) : clique-glisse d'un coin à l'autre">▭<kbd>R</kbd></button>
+            <button class="tb" data-tool="trend" title="Ligne de tendance : clique-glisse">╱<kbd>L</kbd></button>
+            <button class="tb" data-tool="hline" title="Ligne horizontale : clique sur un prix">―<kbd>H</kbd></button>
+            <button class="tb" data-tool="vline" title="Ligne verticale : clique sur une heure">│<kbd>V</kbd></button>
+            <button class="tb" data-tool="fib" title="Fibonacci (0 · 0,5 · 0,618 · 0,705 · 0,79 · 1) : clique-glisse du début à la fin du mouvement">Fib<kbd>F</kbd></button>
+            <button class="tb" data-tool="text" title="Texte : clique où écrire">T<kbd>T</kbd></button>
+            <button class="tb" data-tool="erase" title="Gomme : touche un dessin pour l'effacer">⌫<kbd>E</kbd></button>
+          </div>
+          <div class="grp">
+            <input type="color" id="draw-color" value="#e8b339" title="Couleur des prochains dessins (et du dessin sélectionné)" />
+            <button class="tb" id="draw-undo" title="Annuler le dernier dessin (Ctrl+Z)">↶</button>
+            <button class="tb" id="draw-clear" title="Effacer tous les dessins de cette paire">🗑</button>
+          </div>
+          <span class="draw-hint" id="draw-hint"></span>
+        </div>
+        <div id="chart-wrap"><div id="chart"></div><svg id="draw-layer" xmlns="http://www.w3.org/2000/svg"></svg><div id="chart-empty">Choisis une paire et une date, puis « Charger ».</div></div>
         <div class="meta" id="chart-legend" style="margin-top:6px;"></div>
         <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;"><strong>Sessions sur le graphique</strong> <span class="meta" id="session-note"></span></summary>
           <label class="check" style="display:flex;gap:8px;align-items:center;font-size:12px;margin:6px 0;"><input type="checkbox" id="toggle-sessions" checked /> Afficher les sessions (M15 à H1)</label>
@@ -216,7 +269,13 @@
           <button type="button" class="btn-ghost" id="session-reset" style="margin-top:4px;">Réinitialiser les sessions</button>
         </details>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;"><select id="add-pair" style="width:auto;max-width:100%;"></select><button type="button" class="btn-ghost" onclick="addPair()">＋ Ajouter cette paire</button> <span class="meta" id="add-msg"></span></div>
-        <div class="meta" style="margin-top:6px;">Astuce : glisse les lignes de stop (rouge), d'objectif (verte) ou d'ordre en attente directement sur le graphique.</div>
+        <details id="kbd-help" style="margin-top:6px;" open><summary style="cursor:pointer;font-size:12.5px;"><strong>⌨ Raccourcis clavier</strong> <span class="meta">(touche ? pour afficher / cacher)</span></summary>
+          <div class="keys"><kbd>Espace</kbd> lecture / pause <kbd>→</kbd> bougie suivante <kbd>Maj →</kbd> +1 h <kbd>←</kbd> une bougie en arrière <kbd>Maj ←</kbd> −1 h <kbd>↑</kbd><kbd>↓</kbd> vitesse
+            <kbd>1</kbd>…<kbd>8</kbd> M1 · M5 · M15 · M30 · H1 · H4 · D1 · W1<br>
+            <kbd>B</kbd> préparer un achat <kbd>S</kbd> préparer une vente <kbd>Entrée</kbd> envoyer l'ordre <kbd>J</kbd> je laisse ce setup <kbd>Échap</kbd> annuler (ticket, outil, sélection)<br>
+            <kbd>C</kbd> curseur <kbd>R</kbd> rectangle <kbd>L</kbd> ligne <kbd>H</kbd> horizontale <kbd>V</kbd> verticale <kbd>F</kbd> Fibonacci <kbd>T</kbd> texte <kbd>E</kbd> gomme <kbd>Suppr</kbd> effacer le dessin sélectionné <kbd>Ctrl Z</kbd> annuler le dernier dessin</div>
+          <div class="meta" style="margin-top:4px;">Sur le graphique : glisse les lignes Entrée / SL / TP du ticket avant d'envoyer, puis celles de tes positions et ordres en attente pour les modifier.</div>
+        </details>
       </div>
       <div class="card"><h2>Signaux des stratégies <span class="meta" id="sig-summary"></span></h2><div id="sig-list" style="max-height:260px;overflow:auto;"></div></div>
       <div class="card"><h2>Annonces (news)</h2><div id="news-list" class="meta">—</div></div>
@@ -249,29 +308,38 @@
         </div>
         <button class="btn-ghost" style="width:100%;margin-bottom:8px;" onclick="resetAccount()">Remettre le compte à zéro</button>
         <div id="manual-box">
-        <div class="fld"><label for="o-type">Type d'ordre</label><select id="o-type"><option value="market">Au marché</option><option value="limit">Limite</option><option value="stop">Stop</option></select></div>
-        <div class="fld" id="o-price-wrap" hidden><label for="o-price">Prix de l'ordre</label><input type="number" id="o-price" step="any" /></div>
+        <div class="seg" id="t-side"><button type="button" class="side-buy" data-side="buy" title="Touche B">▲ Achat <kbd>B</kbd></button><button type="button" class="side-sell" data-side="sell" title="Touche S">▼ Vente <kbd>S</kbd></button></div>
+        <div class="seg" id="t-type"><button type="button" data-type="market" class="on">Au marché</button><button type="button" data-type="limit">Limite</button><button type="button" data-type="stop">Stop</button></div>
+        <div class="fld" id="t-price-wrap" hidden><label for="t-price">Prix d'entrée</label><div class="inline"><input type="number" id="t-price" step="any" /><button type="button" class="mini pick" data-pick="price" title="Puis clique sur le graphique au prix voulu">🎯</button></div></div>
         <div class="row2">
-          <div class="fld"><label for="o-sl">Stop (distance en points)</label><input type="number" id="o-sl" step="any" min="0" /></div>
-          <div class="fld"><label for="o-tp">Objectif (distance)</label><input type="number" id="o-tp" step="any" min="0" /></div>
+          <div class="fld"><label for="t-sl">Stop loss (prix)</label><div class="inline"><input type="number" id="t-sl" step="any" /><button type="button" class="mini pick" data-pick="sl" title="Puis clique sur le graphique au prix voulu">🎯</button></div></div>
+          <div class="fld"><label for="t-tp">Take profit (prix)</label><div class="inline"><input type="number" id="t-tp" step="any" /><button type="button" class="mini pick" data-pick="tp" title="Puis clique sur le graphique au prix voulu">🎯</button></div></div>
         </div>
-        <div class="row2">
-          <div class="fld"><label for="o-rr">…ou objectif en R:R</label><input type="number" id="o-rr" step="any" min="0" placeholder="ex. 3" /></div>
-          <div class="fld"><label for="o-trail">Stop suiveur (distance)</label><input type="number" id="o-trail" step="any" min="0" /></div>
-        </div>
+        <div class="fld"><label>Objectif en R (suit le stop)</label><div class="quick" id="t-rr"><button type="button" class="mini" data-rr="1">1R</button><button type="button" class="mini" data-rr="2">2R</button><button type="button" class="mini on" data-rr="3">3R</button><button type="button" class="mini" data-rr="4">4R</button><button type="button" class="mini" data-rr="5">5R</button><button type="button" class="mini" data-rr="0">libre</button></div></div>
         <div class="row2">
           <div class="fld"><label for="o-mode">Taille</label><select id="o-mode"><option value="risk">Risque en % du solde</option><option value="lots">Lots</option><option value="units">Unités</option></select></div>
           <div class="fld"><label for="o-size" id="o-size-l">Risque (%)</label><input type="number" id="o-size" value="1" step="any" min="0" /></div>
         </div>
-        <div class="ord-side"><button class="buy" id="btn-buy" onclick="order('buy')" disabled>ACHETER</button><button class="sell" id="btn-sell" onclick="order('sell')" disabled>VENDRE</button></div>
-        <div class="meta" id="o-msg"></div>
-        <button class="btn-ghost" style="width:100%;margin-top:6px;" onclick="closeEverything()">Tout fermer</button>
+        <div class="quick" id="t-risk"><button type="button" class="mini" data-risk="0.1">0,1 %</button><button type="button" class="mini" data-risk="0.25">0,25 %</button><button type="button" class="mini" data-risk="0.5">0,5 %</button><button type="button" class="mini on" data-risk="1">1 %</button><button type="button" class="mini" data-risk="2">2 %</button></div>
+        <div class="fld"><label for="o-trail">Stop suiveur (distance, optionnel)</label><input type="number" id="o-trail" step="any" min="0" /></div>
+        <div class="ticket-sum" id="t-sum"></div>
+        <button type="button" class="buy" id="t-send" onclick="sendTicket()" disabled>ENVOYER L'ORDRE</button>
+        <div class="row2" style="margin-top:6px;"><button type="button" class="btn-ghost" onclick="clearTicket()">Effacer le ticket <kbd>Échap</kbd></button><button type="button" class="btn-ghost" onclick="closeEverything()">Tout fermer</button></div>
+        <div class="fld" style="margin-top:10px;"><label>Pourquoi ? (va dans ton journal avec l'ordre ou le « je laisse »)</label><div class="why-list" id="t-why"></div><input type="text" id="t-note" placeholder="Note libre (optionnel)" autocomplete="off" /></div>
+        <button type="button" class="btn-ghost" style="width:100%;" onclick="skipSetup()">✋ Je laisse ce setup <kbd>J</kbd></button>
+        <div class="meta" id="o-msg" style="margin-top:6px;"></div>
         </div>
       </div>
       
 <div class="card"><h2>Positions et ordres</h2><div id="pos-list" class="meta">Aucune.</div></div>
       <div class="card"><h2>Résultats <span class="meta" id="res-summary"></span></h2><div id="strat-res" style="margin-bottom:8px;"></div><div id="hist-list" style="max-height:220px;overflow:auto;" class="meta">—</div></div>
-      <div class="card"><h2>Journal</h2><div id="log" class="log"></div></div>
+      <div class="card"><h2>Journal de backtest <span class="meta" id="bt-sum"></span></h2>
+        <p class="hint">Chaque ordre que tu envoies et chaque setup que tu laisses, avec l'heure exacte, les prix, tes raisons et tes dessins. Gardé dans ce navigateur ; « Envoyer à Claude » le range sur le serveur pour que je puisse l'analyser (automatique ensuite, si le token est rempli).</p>
+        <div id="bt-list" style="max-height:260px;overflow:auto;" class="meta">—</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center;"><button type="button" class="btn-ghost" onclick="copyJournal()">📋 Copier</button><button type="button" class="btn-ghost" onclick="downloadJournal()">⬇ Télécharger</button><input type="password" id="bt-token" placeholder="Token admin" autocomplete="off" style="flex:1 1 110px;width:auto;" /><button type="button" class="run-btn" onclick="sendJournal(true)">📤 Envoyer à Claude</button></div>
+        <div class="meta" id="bt-msg" style="margin-top:4px;"></div>
+      </div>
+      <div class="card"><h2>Journal des événements</h2><div id="log" class="log"></div></div>
     </div>
   </div>
   <p class="hint">Limites à connaître : en M15 un stop et un objectif touchés dans la même bougie donnent le stop (importe en M1 pour trancher) ; les annonces nommées couvrent 2019-2025 (CPI, emplois, Fed, PIB, PCE ; BCE et ventes au détail seulement depuis 2024) ; les jeux importés sont stockés temporairement (effacés au redéploiement) ; le retour en arrière rejoue la simulation depuis un point de reprise, sans approximation.</p>
@@ -290,8 +358,14 @@ const decimalsFor = (p) => (Math.abs(p) >= 1000 ? 1 : Math.abs(p) >= 100 ? 2 : M
 const px = (n) => fmt(n, decimalsFor(n));
 const sgn = (v, d = 2) => `${v >= 0 ? '+' : ''}${fmt(v, d)}`;
 const nyOpts = { timeZone: 'America/New_York' };
-const nyText = (sec) => new Date(sec * 1000).toLocaleString('fr-FR', { ...nyOpts, weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' NY';
-const nyShort = (sec) => new Date(sec * 1000).toLocaleString('fr-FR', { ...nyOpts, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+// Backtest à l'aveugle : les dates deviennent « J3 mar. 09:30 » (jour du rejeu depuis le départ, jour de la semaine, heure NY).
+let blind = false, blindDay0 = 0;
+const WD = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+const hhmm = (sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { ...nyOpts, hour: '2-digit', minute: '2-digit' });
+function blindDay(sec) { const p = nyParts(sec * 1000), d = Date.UTC(p.y, p.m0, p.d); return `J${Math.round((d - blindDay0) / 86400000) + 1} ${WD[new Date(d).getUTCDay()]}`; }
+const nyText = (sec) => (blind ? `${blindDay(sec)} ${hhmm(sec)} NY` : new Date(sec * 1000).toLocaleString('fr-FR', { ...nyOpts, weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' NY');
+const nyShort = (sec) => (blind ? `${blindDay(sec)} ${hhmm(sec)}` : new Date(sec * 1000).toLocaleString('fr-FR', { ...nyOpts, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }));
+const tickFmt = (time, type) => (blind ? (type >= 3 ? hhmm(time) : blindDay(time)) : null);
 const DAY = 86400;
 
 // ---------------------------------------------------------------- state
@@ -307,7 +381,9 @@ let actions = [], snaps = [], userMarkers = {};
 let cfg = { mode: 'manual', risk: 1, guard: false, bt: false, flat: 'off' };
 let tfSec = 900;
 let tfLast = null;
+let tfBars = [];              // bars shown on the chart (the drawing layer maps time <-> x with them)
 let playing = false, timer = null, speed = 6;
+let sessionId = null;
 let silent = false;           // true while a rewind silently re-simulates
 let strategyLabels = {};
 let priceLines = [], dragLines = [], drag = null;
@@ -333,7 +409,7 @@ const chart = LW.createChart($('chart'), {
   layout: { background: { color: '#0e141b' }, textColor: '#8b98a5', attributionLogo: false },
   grid: { vertLines: { color: '#1c2530' }, horzLines: { color: '#1c2530' } },
   rightPriceScale: { borderColor: '#202b37', autoScale: true },
-  timeScale: { borderColor: '#202b37', timeVisible: true, secondsVisible: false, rightOffset: 8 },
+  timeScale: { borderColor: '#202b37', timeVisible: true, secondsVisible: false, rightOffset: 8, tickMarkFormatter: tickFmt },
   crosshair: { mode: 0 },
   localization: { locale: 'fr-FR', timeFormatter: (ts) => nyShort(ts) + ' NY' },
   autoSize: true,
@@ -590,7 +666,12 @@ function applyAction(a) {
   const p = a.pairId ? P[a.pairId] : null;
   switch (a.k) {
     case 'cfg': cfg = { ...a.cfg }; syncCfgUi(); return null;
-    case 'place': return placeOrder(p, a.side, a.o);
+    case 'place': {
+      const res = placeOrder(p, a.side, a.o), filled = acct.positions.includes(res);
+      if (a.why) journalAdd(a, p, { kind: 'trade', id: res.id, pending: !filled, type: a.o.type, entry: filled ? res.entry : res.price, sl: res.sl, tp: res.tp, units: res.units });
+      return res;
+    }
+    case 'skip': journalAdd(a, p, { kind: 'skip', type: a.type ?? null, entry: a.entry, sl: a.sl, tp: a.tp }); return null;
     case 'take': return takeTrade(p, a.key, a.o);
     case 'close': B.closePosition(acct, a.id, { bid: bidOf(P[posSymbol(a.id)]), time: now, fraction: a.frac }); marker(P[posSymbolOrLast(a)], { sec: now, pos: 'aboveBar', shape: 'circle', color: '#ffffff', text: 'Toi' }); return null;
     case 'be': B.breakEven(acct, a.id); return null;
@@ -601,6 +682,7 @@ function applyAction(a) {
     default: throw new Error(`Action inconnue: ${a.k}`);
   }
 }
+function journalAdd(a, p, x) { (acct.journal ||= []).push({ ...x, side: a.side || null, pair: p.id, symbol: p.symbol, sec: now, bid: bidOf(p), why: a.why || [], note: a.note || '', draw: a.draw || [], tf: a.tf ?? null, view: a.view ?? null }); }
 const posSymbol = (id) => (acct.positions.find((p) => p.id === id) || {}).symbol;
 const posSymbolOrLast = (a) => a.pairId || active;
 const pendSymbol = (id) => (acct.pending.find((o) => o.id === id) || {}).symbol;
@@ -608,15 +690,15 @@ function orderGeometry(p, side, o) {
   const spread = p.spread;
   const marketNow = side === 'buy' ? bidOf(p) + spread : bidOf(p);
   const entry = o.type === 'market' ? marketNow : o.price;
-  const sl = o.slDist > 0 ? (side === 'buy' ? entry - o.slDist : entry + o.slDist) : null;
+  const sl = o.slPx != null ? o.slPx : o.slDist > 0 ? (side === 'buy' ? entry - o.slDist : entry + o.slDist) : null;
   const tpD = o.tpDist > 0 ? o.tpDist : (o.rr > 0 && o.slDist > 0 ? o.rr * o.slDist : 0);
-  const tp = tpD > 0 ? (side === 'buy' ? entry + tpD : entry - tpD) : null;
+  const tp = o.tpPx != null ? o.tpPx : tpD > 0 ? (side === 'buy' ? entry + tpD : entry - tpD) : null;
   return { entry, sl, tp };
 }
 function sizeUnits(p, o, entry, sl) {
   if (o.mode === 'lots') return o.size * (o.contract > 0 ? o.contract : p.contract);
   if (o.mode === 'units') return o.size;
-  if (!(o.slDist > 0)) throw new Error('Pour dimensionner au risque, indique la distance du stop.');
+  if (sl == null) throw new Error('Pour dimensionner au risque, place un stop loss.');
   return B.sizeFromRisk({ balance: acct.balance, riskPct: o.size, entry, stop: sl, rate: acct.rates[p.id] ?? 1 });
 }
 function placeOrder(p, side, o) {
@@ -641,11 +723,10 @@ function takeTrade(p, key, o) {
 }
 function readOrder() {
   const v = (id) => Number($(id).value);
-  return { slDist: v('o-sl') || 0, tpDist: v('o-tp') || 0, rr: v('o-rr') || 0, trail: v('o-trail') || 0, mode: $('o-mode').value, size: v('o-size'), contract: v('o-contract') || 0, type: $('o-type').value, price: v('o-price') };
+  return { type: ticket.type, price: ticket.price, slPx: ticket.sl, tpPx: ticket.tp, trail: v('o-trail') || 0, mode: $('o-mode').value, size: v('o-size'), contract: v('o-contract') || 0 };
 }
 const orderMsg = (t, bad) => { $('o-msg').innerHTML = t ? `<span class="${bad ? 'loss' : 'win'}">${t}</span>` : ''; };
-function tryAction(a) { try { doAction(a); orderMsg(''); } catch (err) { orderMsg(err.message, true); } redraw(); }
-window.order = (side) => { if (cfg.mode === 'auto') return; tryAction({ k: 'place', pairId: active, side, o: readOrder() }); };
+function tryAction(a) { let ok = false; try { doAction(a); orderMsg(''); ok = true; } catch (err) { orderMsg(err.message, true); } redraw(); return ok; }
 window.takeSignal = (key) => { if (cfg.mode === 'auto') return; const o = readOrder(); tryAction({ k: 'take', pairId: active, key, o: { mode: o.mode, size: o.size, contract: o.contract } }); };
 window.closeOne = (id, frac) => tryAction({ k: 'close', id, frac, pairId: posSymbol(id) });
 window.beOne = (id) => tryAction({ k: 'be', id });
@@ -653,6 +734,115 @@ window.cancelOne = (id) => tryAction({ k: 'cancel', id });
 window.moveStop = (id) => { const pos = acct.positions.find((x) => x.id === id); const v = prompt('Nouveau stop (prix) :', pos.sl ?? ''); if (v === null) return; tryAction({ k: 'modify', id, patch: { sl: v === '' ? null : Number(v) } }); };
 window.moveTarget = (id) => { const pos = acct.positions.find((x) => x.id === id); const v = prompt('Nouvel objectif (prix) :', pos.tp ?? ''); if (v === null) return; tryAction({ k: 'modify', id, patch: { tp: v === '' ? null : Number(v) } }); };
 window.closeEverything = () => { if (!acct) return; tryAction({ k: 'closeAll' }); log('Tout fermé.', 'info'); };
+
+// ---------------------------------------------------------------- order ticket, in prices, drawn on the chart (Forex Tester style)
+const ticket = { armed: false, side: 'buy', type: 'market', price: null, sl: null, tp: null, rr: 3 };
+let pickField = null;
+const WHY = ['Tendance H4', 'Dans un FVG H4', 'Liquidité H4 prise', 'Liquidité prise + BMS', 'Higher highs / lower lows', 'FVG M15 propre', 'FVG vierge à gauche', 'Belle impulsion', 'Bonne heure', 'News', 'Réentrée', 'Trop loin', 'Impulsion faible', 'Mauvaise heure', 'Contre la tendance', 'Autre'];
+$('t-why').innerHTML = WHY.map((w) => `<label><input type="checkbox" value="${w}" />${w}</label>`).join('');
+const readWhy = () => [...document.querySelectorAll('#t-why input:checked')].map((x) => x.value);
+const clearWhy = () => { document.querySelectorAll('#t-why input').forEach((x) => { x.checked = false; }); $('t-note').value = ''; };
+const tkEntry = () => { const p = act(); if (!p || p.cur < 0) return null; return ticket.type === 'market' ? (ticket.side === 'buy' ? bidOf(p) + p.spread : bidOf(p)) : ticket.price; };
+const stopOk = (e, sl) => sl != null && e != null && (ticket.side === 'buy' ? sl < e : sl > e);
+function tkApplyRR() {
+  const e = tkEntry();
+  if (ticket.rr > 0 && stopOk(e, ticket.sl)) ticket.tp = ticket.side === 'buy' ? e + ticket.rr * (e - ticket.sl) : e - ticket.rr * (ticket.sl - e);
+}
+// first proposal: beyond the lowest low (buy) / highest high (sell) of the last 5 bars shown - then drag the line where you want it
+function suggestStop() {
+  const p = act(), e = tkEntry(); if (!p || e == null || !tfBars.length) return;
+  const recent = tfBars.slice(-5), lo = Math.min(...recent.map((b) => b.low)), hi = Math.max(...recent.map((b) => b.high));
+  const pad = (hi - lo) * 0.1 || e * 0.0005;
+  ticket.sl = ticket.side === 'buy' ? Math.min(lo, e) - pad : Math.max(hi, e) + pad;
+}
+function armSide(side) {
+  if (!acct || cfg.mode === 'auto') return;
+  ticket.side = side; ticket.armed = true;
+  const p = act();
+  if (ticket.type !== 'market' && ticket.price == null) ticket.price = bidOf(p);
+  if (!stopOk(tkEntry(), ticket.sl)) suggestStop();
+  tkApplyRR(); syncTicketUi(); renderLines();
+}
+window.armSide = armSide;
+window.clearTicket = () => { Object.assign(ticket, { armed: false, price: null, sl: null, tp: null }); pickField = null; syncTicketUi(); renderLines(); };
+function tkMoney(price) {
+  // P&L (in account dollars) if the ticket's order fills and later exits at `price`
+  const p = act(), e = tkEntry(); if (!p || e == null || price == null) return null;
+  let units; try { units = sizeUnits(p, readOrder(), e, ticket.sl); } catch { return null; }
+  return (ticket.side === 'buy' ? price - e : e - price) * units * (acct.rates[p.id] ?? 1);
+}
+function ticketSummary() {
+  const p = act();
+  if (!p || !acct) return '<span class="meta">Charge une simulation d\'abord.</span>';
+  if (!ticket.armed) return '<span class="meta">Appuie sur <b>B</b> (achat) ou <b>S</b> (vente) : les lignes Entrée, Stop et Objectif apparaissent sur le graphique. Glisse-les où tu veux, puis <b>Entrée</b> pour envoyer.</span>';
+  const e = tkEntry(); let units = null, err = '';
+  try { units = sizeUnits(p, readOrder(), e, ticket.sl); } catch (x) { err = x.message; }
+  if (!err && ticket.sl != null && !stopOk(e, ticket.sl)) err = `Le stop doit être ${ticket.side === 'buy' ? 'sous' : 'au-dessus de'} l'entrée.`;
+  const risk = tkMoney(ticket.sl), gain = tkMoney(ticket.tp), dist = ticket.sl != null && e != null ? Math.abs(e - ticket.sl) : null;
+  const rr = dist && ticket.tp != null ? Math.abs(ticket.tp - e) / dist : null;
+  return `${ticket.side === 'buy' ? '▲ Achat' : '▼ Vente'} ${ticket.type === 'market' ? 'au marché' : ticket.type === 'limit' ? 'limite' : 'stop'} à ${e != null ? px(e) : '—'} · ${units ? fmt(units / (p.contract || 1), 2) + ' lot' : '—'}`
+    + `<br>Stop ${ticket.sl != null ? `${px(ticket.sl)} (${fmt(dist, decimalsFor(e))} pts)${risk != null ? ` · risque <span class="loss">${sgn(risk)} $ (${fmt((-risk / acct.balance) * 100, 2)} %)</span>` : ''}` : '<span class="loss">aucun</span>'}`
+    + `<br>Objectif ${ticket.tp != null ? `${px(ticket.tp)}${gain != null ? ` · <span class="win">${sgn(gain)} $</span>` : ''}${rr ? ` · ${fmt(rr, 2)}R` : ''}` : 'aucun'}${err ? `<br><span class="loss">${err}</span>` : ''}`;
+}
+function syncTicketUi() {
+  const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v == null ? '' : Number(v.toFixed(decimalsFor(v) + 1)); };
+  set('t-price', ticket.price); set('t-sl', ticket.sl); set('t-tp', ticket.tp);
+  document.querySelectorAll('#t-side button').forEach((b) => b.classList.toggle('on', ticket.armed && b.dataset.side === ticket.side));
+  document.querySelectorAll('#t-type button').forEach((b) => b.classList.toggle('on', b.dataset.type === ticket.type));
+  document.querySelectorAll('#t-rr button').forEach((b) => b.classList.toggle('on', Number(b.dataset.rr) === (ticket.rr || 0)));
+  document.querySelectorAll('#t-risk button').forEach((b) => b.classList.toggle('on', Number(b.dataset.risk) === Number($('o-size').value)));
+  document.querySelectorAll('.pick').forEach((b) => b.classList.toggle('on', b.dataset.pick === pickField));
+  $('t-price-wrap').hidden = ticket.type === 'market';
+  const btn = $('t-send');
+  btn.className = ticket.side === 'sell' ? 'sell' : 'buy';
+  btn.textContent = ticket.armed ? `${ticket.side === 'buy' ? 'ACHETER' : 'VENDRE'} ${ticket.type === 'market' ? 'AU MARCHÉ' : ticket.type === 'limit' ? '(LIMITE)' : '(STOP)'} ⏎` : 'ENVOYER L\'ORDRE ⏎';
+  $('t-sum').innerHTML = ticketSummary();
+}
+// what was on screen when the decision was taken: the timeframe and the visible window (real times)
+const lookingAt = () => { const r = chart.timeScale().getVisibleLogicalRange(); const t = (l) => (tfBars.length && l != null ? tfBars[Math.max(0, Math.min(tfBars.length - 1, Math.round(l)))].time : null); return { tf: tfSec, view: r ? { from: t(r.from), to: t(r.to) } : null }; };
+window.sendTicket = () => {
+  if (!acct || cfg.mode === 'auto') return;
+  if (!ticket.armed) { orderMsg('Choisis d\'abord Achat ou Vente (touches B / S).', true); return; }
+  if (tryAction({ k: 'place', pairId: active, side: ticket.side, o: readOrder(), why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt() })) { clearTicket(); clearWhy(); }
+};
+window.skipSetup = () => {
+  if (!acct || cfg.mode === 'auto') return;
+  const on = ticket.armed;
+  if (tryAction({ k: 'skip', pairId: active, side: on ? ticket.side : null, type: on ? ticket.type : null, entry: on ? tkEntry() : null, sl: on ? ticket.sl : null, tp: on ? ticket.tp : null, why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt() })) {
+    log('Setup laissé : noté dans ton journal de backtest.', 'info'); clearTicket(); clearWhy();
+  }
+};
+$('t-side').addEventListener('click', (e) => { const b = e.target.closest('[data-side]'); if (b) armSide(b.dataset.side); });
+$('t-type').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-type]'); if (!b) return;
+  ticket.type = b.dataset.type;
+  if (ticket.type !== 'market' && ticket.price == null && act() && act().cur >= 0) ticket.price = bidOf(act());
+  if (ticket.armed) tkApplyRR();
+  syncTicketUi(); renderLines();
+});
+$('t-rr').addEventListener('click', (e) => { const b = e.target.closest('[data-rr]'); if (!b) return; ticket.rr = Number(b.dataset.rr) || null; tkApplyRR(); syncTicketUi(); renderLines(); });
+$('t-risk').addEventListener('click', (e) => { const b = e.target.closest('[data-risk]'); if (!b) return; $('o-mode').value = 'risk'; $('o-size-l').textContent = 'Risque (%)'; $('o-size').value = b.dataset.risk; syncTicketUi(); renderLines(); });
+for (const [id, key] of [['t-price', 'price'], ['t-sl', 'sl'], ['t-tp', 'tp']]) $(id).addEventListener('input', () => {
+  const v = $(id).value.trim(); ticket[key] = v === '' ? null : Number(v); ticket.armed = true;
+  if (key === 'tp') ticket.rr = null; else tkApplyRR();
+  syncTicketUi(); renderLines();
+});
+for (const id of ['o-size', 'o-trail', 'o-contract']) $(id).addEventListener('input', () => { syncTicketUi(); renderLines(); });
+document.querySelectorAll('.pick').forEach((b) => b.addEventListener('click', () => { pickField = pickField === b.dataset.pick ? null : b.dataset.pick; orderMsg(pickField ? 'Clique sur le graphique au prix voulu (Échap pour annuler).' : ''); syncTicketUi(); }));
+chart.subscribeClick((param) => {
+  if (!pickField || !param.point || !acct) return;
+  const price = series.coordinateToPrice(param.point.y); if (price == null) return;
+  ticket[pickField] = price; ticket.armed = true;
+  if (pickField === 'tp') ticket.rr = null; else tkApplyRR();
+  pickField = null; orderMsg(''); syncTicketUi(); renderLines();
+});
+function setTicketFromDrag(kind, price) {
+  if (kind === 'tk-price') ticket.price = price;
+  if (kind === 'tk-sl') ticket.sl = price;
+  if (kind === 'tk-tp') { ticket.tp = price; ticket.rr = null; }
+  if (kind !== 'tk-tp') tkApplyRR();
+  syncTicketUi();
+}
 
 // ---------------------------------------------------------------- mode
 function syncCfgUi() {
@@ -666,8 +856,7 @@ function syncCfgUi() {
 }
 function cfgFromUi() { return { mode: $('mode').value, risk: Math.min(10, Math.max(0.05, Number($('auto-risk').value) || 1)), guard: $('auto-guard').checked, bt: $('auto-bt').checked, flat: $('auto-flat').value }; }
 for (const id of ['mode', 'auto-risk', 'auto-guard', 'auto-bt', 'auto-flat']) $(id).addEventListener('change', () => { if (!acct) { cfg = cfgFromUi(); syncCfgUi(); return; } doAction({ k: 'cfg', cfg: cfgFromUi() }); redraw(); });
-$('o-type').addEventListener('change', () => { $('o-price-wrap').hidden = $('o-type').value === 'market'; });
-$('o-mode').addEventListener('change', () => { const m = $('o-mode').value; $('o-size-l').textContent = m === 'risk' ? 'Risque (%)' : m === 'lots' ? 'Lots' : 'Unités'; $('o-size').value = m === 'risk' ? 1 : m === 'lots' ? 0.1 : 1; });
+$('o-mode').addEventListener('change', () => { const m = $('o-mode').value; $('o-size-l').textContent = m === 'risk' ? 'Risque (%)' : m === 'lots' ? 'Lots' : 'Unités'; $('o-size').value = m === 'risk' ? 1 : m === 'lots' ? 0.1 : 1; $('t-risk').style.display = m === 'risk' ? 'flex' : 'none'; syncTicketUi(); });
 $('o-contract').addEventListener('change', () => { const p = act(); if (p) p.contract = Number($('o-contract').value) || p.instrument.contractSize; });
 $('o-spread').addEventListener('change', () => { const p = act(); if (p) { p.spread = Number($('o-spread').value) || 0; acct.spreads[p.id] = p.spread; } });
 
@@ -679,13 +868,13 @@ function timeframeData(p) {
     if (last && last.time === key) { last.high = Math.max(last.high, b.h); last.low = Math.min(last.low, b.l); last.close = b.c; }
     else { last = { time: key, open: b.o, high: b.h, low: b.l, close: b.c }; out.push(last); }
   }
-  tfLast = last;
+  tfLast = last; tfBars = out;
   return out;
 }
 function pushBar(p, i) {
   const b = p.base[i]; const key = snap(b.t);
   if (tfLast && tfLast.time === key) { tfLast.high = Math.max(tfLast.high, b.h); tfLast.low = Math.min(tfLast.low, b.l); tfLast.close = b.c; }
-  else tfLast = { time: key, open: b.o, high: b.h, low: b.l, close: b.c };
+  else { tfLast = { time: key, open: b.o, high: b.h, low: b.l, close: b.c }; tfBars.push(tfLast); }
   series.update({ ...tfLast });
 }
 const tfCount = (p) => { const set = new Set(); for (let i = 0; i <= p.cur; i++) set.add(snap(p.base[i].t)); return set.size; };
@@ -696,7 +885,7 @@ window.zoomChart = (f) => { const r = chart.timeScale().getVisibleLogicalRange()
 const eqChart = LW.createChart($('eq-chart'), {
   layout: { background: { color: '#0e141b' }, textColor: '#8b98a5', attributionLogo: false },
   grid: { vertLines: { color: '#1c2530' }, horzLines: { color: '#1c2530' } },
-  rightPriceScale: { borderColor: '#202b37' }, timeScale: { borderColor: '#202b37', timeVisible: true, secondsVisible: false },
+  rightPriceScale: { borderColor: '#202b37' }, timeScale: { borderColor: '#202b37', timeVisible: true, secondsVisible: false, tickMarkFormatter: tickFmt },
   localization: { locale: 'fr-FR', timeFormatter: (ts) => nyShort(ts) + ' NY' }, autoSize: true,
   handleScroll: false, handleScale: false,
 });
@@ -734,7 +923,10 @@ function redraw({ resetView = false } = {}) {
   markersApi.setMarkers(mk);
   const news = data && $('sim-news').checked ? data.news.filter((n) => n.sec <= t) : [];
   overlay.set(drawn, news, tfLast ? tfLast.time : null);
+  if (ticket.armed) tkApplyRR();
   drawEquity(resetView); renderLines(); renderPanel(); renderSignals(); renderNews(); renderTabs(); redrawSessions();
+  syncTicketUi(); renderJournal();
+  if (p.symbol !== drawingsSym) loadDrawings(); else renderDrawings();
   $('clock').innerHTML = `<strong>${nyText(t)}</strong> · M${master().baseMin} · bougie ${master().cur + 1}/${master().base.length}`;
 }
 
@@ -744,17 +936,28 @@ function renderLines() {
   if (!acct || !act()) return;
   const id = active;
   const add = (price, color, title, dash = 0, info = null) => { if (price == null) return; const line = series.createPriceLine({ price, color, lineWidth: 1, lineStyle: dash, axisLabelVisible: true, title }); priceLines.push(line); if (info) dragLines.push({ ...info, price, line }); };
+  const sp = act().spread;
+  const at = (pos, price) => (price == null ? '' : ` ${sgn(B.positionPnl(acct, pos, pos.side === 'buy' ? price : price - sp), 0)} $`);
   for (const p of acct.positions.filter((x) => x.symbol === id)) {
     const who = p.tag ? shortName(p.tag) : '';
-    add(p.entry, '#ffffff', `#${p.id} ${p.side === 'buy' ? '▲' : '▼'} ${who}`); add(p.sl, '#ff5c5f', `SL #${p.id}`, 2, { id: p.id, kind: 'sl' }); add(p.tp, '#2fd480', `TP #${p.id}`, 2, { id: p.id, kind: 'tp' });
+    add(p.entry, '#ffffff', `#${p.id} ${p.side === 'buy' ? '▲' : '▼'} ${who}`); add(p.sl, '#ff5c5f', `SL #${p.id}${at(p, p.sl)}`, 2, { id: p.id, kind: 'sl' }); add(p.tp, '#2fd480', `TP #${p.id}${at(p, p.tp)}`, 2, { id: p.id, kind: 'tp' });
   }
-  for (const o of acct.pending.filter((x) => x.symbol === id)) add(o.price, '#e8b339', `${o.type} #${o.id}`, 1, { id: o.id, kind: 'pending' });
+  for (const o of acct.pending.filter((x) => x.symbol === id)) {
+    add(o.price, '#e8b339', `${o.side === 'buy' ? '▲' : '▼'} ${o.type === 'limit' ? 'limite' : 'stop'} #${o.id}`, 1, { id: o.id, kind: 'pending' });
+    add(o.sl, 'rgba(255,92,95,0.6)', `SL #${o.id}`, 2); add(o.tp, 'rgba(47,212,128,0.6)', `TP #${o.id}`, 2);
+  }
+  if (ticket.armed && cfg.mode !== 'auto') {
+    const money = (x) => { const m = tkMoney(x); return m == null ? '' : ` ${sgn(m, 0)} $`; };
+    if (ticket.type !== 'market') add(ticket.price, '#e8b339', `Entrée ${ticket.type === 'limit' ? 'limite' : 'stop'} (ticket)`, 0, { kind: 'tk-price' });
+    add(ticket.sl, '#ff5c5f', `SL ticket${money(ticket.sl)}`, 0, { kind: 'tk-sl' });
+    add(ticket.tp, '#2fd480', `TP ticket${money(ticket.tp)}`, 0, { kind: 'tk-tp' });
+  }
 }
 function openPnl(p) { return B.positionPnl(acct, p, bidOf(P[p.symbol])); }
 function renderPanel() {
   const has = !!acct && !!act() && act().cur >= 0;
   const auto = cfg.mode === 'auto';
-  $('btn-buy').disabled = !has || auto; $('btn-sell').disabled = !has || auto;
+  $('t-send').disabled = !has || auto;
   if (!has) return;
   const p = act();
   const bids = bidsMap();
@@ -821,7 +1024,7 @@ function renderNews() {
   const t = now;
   if (!data.news.length) { $('news-list').innerHTML = data.newsCoverage ? `Aucune annonce dans cette période (les annonces connues couvrent ${new Date(data.newsCoverage.from).getUTCFullYear()}–${new Date(data.newsCoverage.to).getUTCFullYear()} seulement).` : '—'; return; }
   const past = data.news.filter((n) => n.sec <= t).slice(-4), next = data.news.filter((n) => n.sec > t).slice(0, 3);
-  const row = (n, cls) => `<div class="${cls}">📰 <strong>${n.label}</strong> — ${n.name} · ${nyShort(n.sec)} NY</div>`;
+  const row = (n, cls) => `<div class="${cls}">📰 <strong>${n.label}</strong>${blind ? '' : ` — ${n.name}`} · ${nyShort(n.sec)} NY</div>`;
   $('news-list').innerHTML = (next.length ? '<div>À venir :</div>' + next.map((n) => row(n, 'win')).join('') : '') + (past.length ? '<div style="margin-top:6px;">Passées :</div>' + past.map((n) => row(n, '')).join('') : '');
 }
 
@@ -848,7 +1051,7 @@ window.jumpNext = (kind) => {
   redraw();
 };
 window.restart = () => { if (acct) rewindTo(startStep); };
-document.querySelector('.toolbar').addEventListener('click', (e) => { const b = e.target.closest('[data-back]'); if (!b || !acct) return; rewindTo(master().cur - Math.max(1, Math.round(Number(b.dataset.back) / master().baseMin))); });
+$('main-toolbar').addEventListener('click', (e) => { const b = e.target.closest('[data-back]'); if (!b || !acct) return; rewindTo(master().cur - Math.max(1, Math.round(Number(b.dataset.back) / master().baseMin))); });
 $('tf-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-tf]'); if (!b || b.disabled) return; tfSec = Number(b.dataset.tf); document.querySelectorAll('#tf-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); if (acct) { redraw({ resetView: true }); fitChart(); } });
 $('speed-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; speed = Number(b.dataset.speed); document.querySelectorAll('#speed-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); });
 
@@ -857,13 +1060,14 @@ const chartEl = $('chart');
 const yOf = (e) => e.clientY - chartEl.getBoundingClientRect().top;
 function hitLine(y) { let best = null, bd = 7; for (const d of dragLines) { const yy = series.priceToCoordinate(d.price); if (yy !== null && Math.abs(yy - y) < bd) { bd = Math.abs(yy - y); best = d; } } return best; }
 chartEl.addEventListener('pointerdown', (e) => { if (e.button !== 0 || !acct || cfg.mode === 'auto' && false) return; const hit = hitLine(yOf(e)); if (!hit) return; drag = hit; e.stopPropagation(); e.preventDefault(); chart.applyOptions({ handleScroll: false, handleScale: false }); chartEl.setPointerCapture?.(e.pointerId); }, true);
-chartEl.addEventListener('pointermove', (e) => { if (drag) { const price = series.coordinateToPrice(yOf(e)); if (price !== null) drag.line.applyOptions({ price }); e.stopPropagation(); return; } chartEl.style.cursor = hitLine(yOf(e)) ? 'ns-resize' : ''; }, true);
+chartEl.addEventListener('pointermove', (e) => { if (drag) { const price = series.coordinateToPrice(yOf(e)); if (price !== null) { drag.line.applyOptions({ price }); if (drag.kind.startsWith('tk-')) setTicketFromDrag(drag.kind, price); } e.stopPropagation(); return; } chartEl.style.cursor = hitLine(yOf(e)) ? 'ns-resize' : ''; }, true);
 chartEl.addEventListener('pointerup', (e) => {
   if (!drag) return; e.stopPropagation();
   const d = drag; drag = null; chart.applyOptions({ handleScroll: true, handleScale: true });
   const price = series.coordinateToPrice(yOf(e));
   if (price === null) { redraw(); return; }
   const rounded = Number(price.toFixed(decimalsFor(price) + 1));
+  if (d.kind.startsWith('tk-')) { setTicketFromDrag(d.kind, rounded); renderLines(); return; }
   if (d.kind === 'pending') tryAction({ k: 'movePending', id: d.id, price: rounded });
   else tryAction({ k: 'modify', id: d.id, patch: d.kind === 'sl' ? { sl: rounded } : { tp: rounded } });
 }, true);
@@ -874,6 +1078,8 @@ function initSimulation() {
   const m = master();
   const balance = Number($('sim-balance').value) || 10000;
   acct = B.createAccount({ balance });
+  acct.journal = []; // manual trades and skipped setups, with the reasons (part of the account: a rewind rolls it back too)
+  sessionId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
   for (const id of order) { acct.spreads[id] = P[id].spread; acct.rates[id] = 1; }
   autoState = A.createAutoState();
   actions = []; snaps = []; userMarkers = {};
@@ -882,6 +1088,7 @@ function initSimulation() {
   m.cur = startIdx; startStep = startIdx; now = m.base[startIdx].t;
   for (const id of order.slice(1)) P[id].cur = curFromTime(P[id], now);
   for (const id of order) acct.rates[id] = rateFor(P[id], now);
+  { const q = nyParts(now * 1000); blindDay0 = Date.UTC(q.y, q.m0, q.d); } // J1 = the day the replay starts on
   snapEvery = Math.max(32, Math.ceil(m.base.length / 400));
   takeSnapshot();
 }
@@ -897,6 +1104,12 @@ function requestBody(random) {
   let symbol = $('sim-symbol').value, extras = [...document.querySelectorAll('#sim-extras input:checked')].map((b) => b.value);
   const ids = [...document.querySelectorAll('#sim-strats input:checked')].map((b) => b.value);
   if ($('sim-botall').checked) ids.unshift('bot-all');
+  if ($('sim-blind').checked) {
+    // blind backtest: nothing from the bot on the chart, a random window, one pair
+    ids.length = 0; extras = [];
+    if ($('sim-botfull').checked) throw new Error('À l\'aveugle, décoche « Tout le bot en une option ».');
+    if (range !== 'custom') throw new Error('À l\'aveugle, laisse la période sur « Dates ci-dessus » : la période est tirée au hasard.');
+  }
   if ($('sim-botfull').checked) {
     // every pair the bot really trades (at least one of its 8 mechanisms), the main pair first
     const pool = range === 'real' ? meta.realSymbols : meta.symbols;
@@ -913,7 +1126,7 @@ function requestBody(random) {
   }
   const body = { symbol, extraSymbols: extras, days, strategyIds: ids, news: $('sim-news').checked, baseMinutes: $('sim-botfull').checked ? 15 : Number($('sim-base').value) };
   if (range !== 'custom') body.from = '9999-12-31'; // clamped by the server to the last window that fits: the END of the data
-  else if (!random && from) body.from = from;
+  else if (!random && !$('sim-blind').checked && from) body.from = from;
   return body;
 }
 async function fetchReplay(body) {
@@ -950,9 +1163,12 @@ window.loadReplay = async (random) => {
       P[pd.id] = initPair(pd, startSec); order.push(pd.id);
     }
     active = order[0];
-    $('sim-from').value = new Date(d.window.from).toISOString().slice(0, 10);
-    $('sim-to').value = new Date(d.window.to).toISOString().slice(0, 10);
+    blind = $('sim-blind').checked;
+    $('sim-from').value = blind ? '' : new Date(d.window.from).toISOString().slice(0, 10);
+    $('sim-to').value = blind ? '' : new Date(d.window.to).toISOString().slice(0, 10);
+    if (blind) $('mode').value = 'manual';
     initSimulation();
+    clearTicket();
     $('chart-empty').hidden = true;
     const p = P[active];
     tfSec = Math.max(tfSec, p.baseMin * 60);
@@ -960,7 +1176,8 @@ window.loadReplay = async (random) => {
     redraw({ resetView: true }); fitChart();
     const nTr = order.reduce((s, id) => s + P[id].trades.length, 0);
     const na = order.flatMap((id) => P[id].notApplicable.map((x) => `${strategyLabels[x] || x} (${label(P[id])})`));
-    $('sim-msg').innerHTML = `Période chargée : ${nyText(startSec)} → ${nyText(Math.floor(d.window.to / 1000))} · ${order.length} paire(s), ${nTr} signal(aux) de stratégies, ${d.news.length} annonce(s). Le rejeu démarre à la date de début ; ce qui précède est du contexte.${na.length ? ` Non applicable (ignoré) : ${[...new Set(na)].join(', ')}.` : ''}${notes.length ? ` <span class="loss">${notes.join(' — ')}</span>` : ''}`;
+    if (blind) $('sim-msg').innerHTML = `🙈 Période tirée au hasard, dates cachées : ${order.length} paire, ${Math.round(data.days)} jours. Le rejeu démarre à J1 ; ce qui précède est du contexte. Bon backtest !${notes.length ? ` <span class="loss">${notes.join(' — ')}</span>` : ''}`;
+    else $('sim-msg').innerHTML = `Période chargée : ${nyText(startSec)} → ${nyText(Math.floor(d.window.to / 1000))} · ${order.length} paire(s), ${nTr} signal(aux) de stratégies, ${d.news.length} annonce(s). Le rejeu démarre à la date de début ; ce qui précède est du contexte.${na.length ? ` Non applicable (ignoré) : ${[...new Set(na)].join(', ')}.` : ''}${notes.length ? ` <span class="loss">${notes.join(' — ')}</span>` : ''}`;
     $('chart-legend').innerHTML = [...new Set(order.flatMap((id) => P[id].trades.map((x) => x.strategyId)))].map((id) => `<span class="chip" style="background:${colorOf(id)}">${shortName(id)}</span>`).join('') + '↑↓ entrée · zone rouge = risque, zone verte = objectif · ● résultat une fois terminé';
     fillAddPair();
   } catch (err) { $('sim-msg').innerHTML = `<span class="loss">Erreur : ${err.message}</span>`; }
@@ -1013,6 +1230,13 @@ async function loadMeta(prefer) {
 const symbolOfSelection = () => { const v = $('sim-symbol').value; const c = (meta.customDatasets || []).find((d) => d.id === v); return c ? c.symbol : v; };
 function updateBotWhich() { const list = meta.replay.botMechanisms[symbolOfSelection()] || []; $('sim-bot-which').textContent = list.length ? `— sur ${symbolOfSelection()} : ${list.map((m) => m.label).join(', ')}` : `— le bot ne trade aucun de ses 8 mécanismes sur ${symbolOfSelection()}`; }
 $('sim-symbol').addEventListener('change', updateBotWhich);
+$('sim-blind').addEventListener('change', () => {
+  if (!acct) return;
+  blind = $('sim-blind').checked; // after the session: uncheck to see the real dates
+  chart.timeScale().applyOptions({ tickMarkFormatter: tickFmt }); eqChart.timeScale().applyOptions({ tickMarkFormatter: tickFmt });
+  if (!blind && data) { $('sim-from').value = new Date(data.window.from).toISOString().slice(0, 10); $('sim-to').value = new Date(data.window.to).toISOString().slice(0, 10); $('sim-msg').textContent = `Vraies dates : ${nyText(startSec)} → ${nyText(Math.floor(data.window.to / 1000))}`; }
+  redraw();
+});
 $('sim-botfull').addEventListener('change', () => { const on = $('sim-botfull').checked; for (const id of ['sim-symbol', 'sim-base']) $(id).disabled = on; $('sim-extras').style.opacity = on ? .4 : 1; if (on) { $('mode').value = 'auto'; $('sim-range').value = 'real'; } });
 function countStrats() { const extra = document.querySelectorAll('#sim-strats input:checked').length; $('sim-strat-count').textContent = `— ${$('sim-botall').checked ? 'les 8 du bot' : 'bot désactivé'}${extra ? ` + ${extra} du Labo` : ''}`; const ex = document.querySelectorAll('#sim-extras input:checked').length; $('sim-extra-count').textContent = ex ? `— ${ex} choisie(s)` : ''; }
 document.addEventListener('change', (e) => { if (e.target.closest('#sim-strats, #sim-botall, #sim-extras')) { if (e.target.closest('#sim-extras') && document.querySelectorAll('#sim-extras input:checked').length > 3) { e.target.checked = false; } countStrats(); } });
@@ -1054,8 +1278,280 @@ window.importFiles = async () => {
   if (ok) { await loadMeta(`custom:${name}`); impLog(`Jeu « ${name} » sélectionné dans la liste des paires — clique « Charger ».`); }
 };
 
+// ---------------------------------------------------------------- drawing tools (ported from chart.html) - stored per symbol, in real time + price
+const DRAW_KEY = (sym) => `apexfvg_sim_drawings_${sym}`;
+const DRAW_HINTS = {
+  cursor: 'Clique un dessin pour le sélectionner : glisse-le, tire ses poignées, Suppr pour l\'effacer', rect: 'Clique-glisse pour tracer le rectangle', trend: 'Clique-glisse pour tracer la ligne', hline: 'Clique sur le prix voulu',
+  vline: 'Clique sur l\'heure voulue', fib: 'Clique-glisse du début à la fin du mouvement (0 = fin, 1 = début)', text: 'Clique où écrire le texte', erase: 'Touche un dessin pour l\'effacer',
+};
+const FIB = [0, 0.5, 0.618, 0.705, 0.79, 1];
+const layer = $('draw-layer');
+let drawTool = 'cursor', drawings = [], drawingsSym = null, drawDraft = null, selectedIdx = -1, dragState = null;
+const shown = (d) => !(d.at > now); // a drawing made later in the replay disappears when you rewind before it
+function loadDrawings() {
+  const p = act(); drawingsSym = p ? p.symbol : null; selectedIdx = -1;
+  try { drawings = JSON.parse(localStorage.getItem(DRAW_KEY(drawingsSym)) || '[]'); } catch { drawings = []; }
+  if (!Array.isArray(drawings)) drawings = [];
+  renderDrawings();
+}
+function saveDrawings() { if (drawingsSym) try { localStorage.setItem(DRAW_KEY(drawingsSym), JSON.stringify(drawings)); } catch { /* private window: not kept */ } }
+const drawingsNow = () => drawings.filter(shown).slice(-40).map((d) => ({ ...d }));
+function timeToX(t) {
+  const n = tfBars.length; if (!n || !Number.isFinite(t)) return null;
+  let logical;
+  if (t <= tfBars[0].time) logical = (t - tfBars[0].time) / tfSec;
+  else if (t >= tfBars[n - 1].time) logical = n - 1 + (t - tfBars[n - 1].time) / tfSec;
+  else { let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tfBars[m].time <= t) lo = m; else hi = m; } logical = lo + (t - tfBars[lo].time) / (tfBars[hi].time - tfBars[lo].time); }
+  return chart.timeScale().logicalToCoordinate(logical);
+}
+function xToTime(x) {
+  const n = tfBars.length; if (!n) return null;
+  const logical = chart.timeScale().coordinateToLogical(x); if (logical == null) return null;
+  if (logical <= 0) return tfBars[0].time + logical * tfSec;
+  if (logical >= n - 1) return tfBars[n - 1].time + (logical - (n - 1)) * tfSec;
+  const i = Math.floor(logical); return tfBars[i].time + (logical - i) * (tfBars[i + 1].time - tfBars[i].time);
+}
+const priceToY = (p) => (Number.isFinite(p) ? series.priceToCoordinate(p) : null);
+const escSvg = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function hexToRgba(hex, a) { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return `rgba(232,179,57,${a})`; const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+function handlesSvg(d) {
+  const pts = d.type === 'rect' ? [['t1', 'p1'], ['t2', 'p1'], ['t1', 'p2'], ['t2', 'p2']] : d.type === 'trend' || d.type === 'fib' ? [['t1', 'p1'], ['t2', 'p2']] : [];
+  return pts.map(([tk, pk]) => { const x = timeToX(d[tk]), y = priceToY(d[pk]); return x === null || y === null ? '' : `<circle class="hdl" data-t="${tk}" data-p="${pk}" cx="${x}" cy="${y}" r="6" fill="#0e141b" stroke="#ffffff" stroke-width="2" />`; }).join('');
+}
+function drawingSvg(d, idx) {
+  const c = d.color || '#e8b339', attr = `class="drw" data-idx="${idx}"`, W = layer.clientWidth || 1000, H = layer.clientHeight || 480;
+  const x1 = timeToX(d.t1), x2 = timeToX(d.t2), y1 = priceToY(d.p1), y2 = priceToY(d.p2);
+  if (d.type === 'rect') {
+    if ([x1, x2, y1, y2].some((v) => v === null)) return '';
+    return `<rect ${attr} x="${Math.min(x1, x2)}" y="${Math.min(y1, y2)}" width="${Math.abs(x2 - x1)}" height="${Math.abs(y2 - y1)}" fill="${hexToRgba(c, 0.16)}" stroke="${c}" stroke-width="1.5" />`;
+  }
+  if (d.type === 'trend') {
+    if ([x1, x2, y1, y2].some((v) => v === null)) return '';
+    return `<g ${attr}><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="transparent" stroke-width="12" /><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="2" /></g>`;
+  }
+  if (d.type === 'hline') {
+    if (y1 === null) return '';
+    return `<g ${attr}><line x1="0" y1="${y1}" x2="${W}" y2="${y1}" stroke="transparent" stroke-width="12" /><line x1="0" y1="${y1}" x2="${W}" y2="${y1}" stroke="${c}" stroke-width="1.5" /><text x="6" y="${y1 - 4}" fill="${c}" font-size="11" font-family="monospace">${escSvg(px(d.p1))}</text></g>`;
+  }
+  if (d.type === 'vline') {
+    if (x1 === null) return '';
+    return `<g ${attr}><line x1="${x1}" y1="0" x2="${x1}" y2="${H}" stroke="transparent" stroke-width="12" /><line x1="${x1}" y1="0" x2="${x1}" y2="${H}" stroke="${c}" stroke-width="1.5" stroke-dasharray="4,3" /></g>`;
+  }
+  if (d.type === 'fib') {
+    if (x1 === null || x2 === null) return '';
+    const xa = Math.min(x1, x2), xb = Math.max(x1, x2);
+    let g = `<g ${attr}>`;
+    if (y1 !== null && y2 !== null) g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="1" stroke-dasharray="2,3" opacity="0.6" />`;
+    for (const lv of FIB) {
+      const price = d.p2 - (d.p2 - d.p1) * lv, y = priceToY(price); if (y === null) continue;
+      g += `<line x1="${xa}" y1="${y}" x2="${xb}" y2="${y}" stroke="transparent" stroke-width="10" /><line x1="${xa}" y1="${y}" x2="${xb}" y2="${y}" stroke="${c}" stroke-width="1" ${lv === 0 || lv === 1 ? '' : 'stroke-dasharray="4,3"'} /><text x="${xb + 3}" y="${y + 4}" fill="${c}" font-size="10" font-family="monospace">${lv} · ${escSvg(px(price))}</text>`;
+    }
+    return g + '</g>';
+  }
+  if (d.type === 'text') {
+    if (x1 === null || y1 === null) return '';
+    return `<text ${attr} x="${x1}" y="${y1}" fill="${c}" font-size="13" font-weight="700" paint-order="stroke" stroke="rgba(0,0,0,0.55)" stroke-width="3">${escSvg(d.text || '')}</text>`;
+  }
+  return '';
+}
+function renderDrawings() {
+  if (!tfBars.length) { layer.innerHTML = ''; return; }
+  const parts = drawings.map((d, i) => (shown(d) ? drawingSvg(d, i) : ''));
+  if (drawDraft) parts.push(drawingSvg(drawDraft, -1));
+  const sel = selectedIdx >= 0 && drawings[selectedIdx] && shown(drawings[selectedIdx]) ? drawings[selectedIdx] : null;
+  layer.innerHTML = parts.join('') + (sel ? handlesSvg(sel) : '');
+  if (sel) { const el = layer.querySelector(`.drw[data-idx="${selectedIdx}"]`); if (el) el.setAttribute('filter', 'drop-shadow(0 0 3px #ffffff)'); }
+}
+function setDrawTool(tool) {
+  drawTool = tool;
+  document.querySelectorAll('#draw-toolbar [data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
+  const drawing = !['cursor', 'erase'].includes(tool);
+  layer.classList.toggle('drawing', drawing); layer.classList.toggle('erase', tool === 'erase');
+  chart.applyOptions({ handleScroll: !drawing, handleScale: !drawing });
+  $('draw-hint').textContent = DRAW_HINTS[tool] || '';
+}
+const undoDrawing = () => { const i = drawings.map(shown).lastIndexOf(true); if (i < 0) return; drawings.splice(i, 1); selectedIdx = -1; saveDrawings(); renderDrawings(); };
+const deleteSelected = () => { if (selectedIdx < 0) return; drawings.splice(selectedIdx, 1); selectedIdx = -1; saveDrawings(); renderDrawings(); };
+document.querySelectorAll('#draw-toolbar [data-tool]').forEach((b) => b.addEventListener('click', () => setDrawTool(b.dataset.tool)));
+$('draw-undo').addEventListener('click', undoDrawing);
+$('draw-clear').addEventListener('click', () => { if (drawings.length && confirm(`Effacer les ${drawings.length} dessin(s) de ${drawingsSym} ?`)) { drawings = []; selectedIdx = -1; saveDrawings(); renderDrawings(); } });
+$('draw-color').addEventListener('input', (e) => { if (selectedIdx >= 0 && drawings[selectedIdx]) { drawings[selectedIdx].color = e.target.value; saveDrawings(); renderDrawings(); } });
+{
+  const color = () => $('draw-color').value;
+  const point = (e) => { const r = layer.getBoundingClientRect(); return { t: xToTime(e.clientX - r.left), p: series.coordinateToPrice(e.clientY - r.top) }; };
+  const add = (d) => { drawings.push({ ...d, at: now, color: color() }); saveDrawings(); renderDrawings(); };
+  layer.addEventListener('pointerdown', (e) => {
+    if (!acct) return;
+    if (drawTool === 'erase') { const hit = e.target.closest?.('.drw'); const idx = hit ? Number(hit.dataset.idx) : -1; if (idx >= 0) { drawings.splice(idx, 1); selectedIdx = -1; saveDrawings(); renderDrawings(); } return; }
+    if (drawTool === 'cursor') {
+      const hdl = e.target.closest?.('.hdl'), hit = e.target.closest?.('.drw');
+      if (!hdl && !hit) return;
+      const idx = hdl ? selectedIdx : Number(hit.dataset.idx);
+      if (!(idx >= 0) || !drawings[idx]) return;
+      const pt = point(e); if (pt.t === null || pt.p === null) return;
+      e.preventDefault(); e.stopPropagation();
+      selectedIdx = idx; $('draw-color').value = drawings[idx].color || '#e8b339';
+      dragState = { idx, handle: hdl ? { t: hdl.dataset.t, p: hdl.dataset.p } : null, start: pt, orig: { ...drawings[idx] } };
+      layer.classList.add('dragging'); chart.applyOptions({ handleScroll: false, handleScale: false });
+      renderDrawings(); return;
+    }
+    const pt = point(e); if (pt.t === null || pt.p === null) return;
+    e.preventDefault();
+    if (drawTool === 'hline') { add({ type: 'hline', p1: pt.p }); setDrawTool('cursor'); return; }
+    if (drawTool === 'vline') { add({ type: 'vline', t1: pt.t }); setDrawTool('cursor'); return; }
+    if (drawTool === 'text') { const text = prompt('Texte à afficher sur le graphique :'); if (text && text.trim()) add({ type: 'text', t1: pt.t, p1: pt.p, text: text.trim().slice(0, 80) }); setDrawTool('cursor'); return; }
+    layer.setPointerCapture?.(e.pointerId);
+    drawDraft = { type: drawTool, t1: pt.t, p1: pt.p, t2: pt.t, p2: pt.p, color: color() };
+    renderDrawings();
+  });
+  layer.addEventListener('pointermove', (e) => { if (!drawDraft) return; const pt = point(e); if (pt.t === null || pt.p === null) return; drawDraft.t2 = pt.t; drawDraft.p2 = pt.p; renderDrawings(); });
+  window.addEventListener('pointermove', (e) => {
+    if (!dragState) return;
+    const pt = point(e), d = drawings[dragState.idx], o = dragState.orig;
+    if (pt.t === null || pt.p === null || !d) return;
+    if (dragState.handle) { d[dragState.handle.t] = pt.t; d[dragState.handle.p] = pt.p; }
+    else { const dt = pt.t - dragState.start.t, dp = pt.p - dragState.start.p; for (const k of ['t1', 't2']) if (Number.isFinite(o[k])) d[k] = o[k] + dt; for (const k of ['p1', 'p2']) if (Number.isFinite(o[k])) d[k] = o[k] + dp; }
+    renderDrawings();
+  });
+  window.addEventListener('pointerup', () => { if (!dragState) return; dragState = null; layer.classList.remove('dragging'); chart.applyOptions({ handleScroll: true, handleScale: true }); saveDrawings(); renderDrawings(); });
+  const finish = () => {
+    if (!drawDraft) return;
+    const d = drawDraft; drawDraft = null;
+    const a = [timeToX(d.t1), timeToX(d.t2), priceToY(d.p1), priceToY(d.p2)];
+    if (!a.includes(null) && Math.hypot(a[1] - a[0], a[3] - a[2]) > 4) { drawings.push({ ...d, at: now }); selectedIdx = drawings.length - 1; saveDrawings(); }
+    renderDrawings(); setDrawTool('cursor');
+  };
+  layer.addEventListener('pointerup', finish);
+  layer.addEventListener('pointercancel', () => { drawDraft = null; renderDrawings(); });
+  chart.subscribeClick(() => { if (selectedIdx >= 0 && !dragState) { selectedIdx = -1; renderDrawings(); } });
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => renderDrawings());
+  window.addEventListener('resize', () => renderDrawings());
+  setInterval(() => { if (drawings.length || drawDraft) renderDrawings(); }, 400); // the price scale rescales by itself
+  setDrawTool('cursor');
+}
+
+// ---------------------------------------------------------------- keyboard (Forex Tester style)
+const TF_KEYS = { 1: 60, 2: 300, 3: 900, 4: 1800, 5: 3600, 6: 14400, 7: 86400, 8: 604800 };
+const TOOL_KEYS = { c: 'cursor', r: 'rect', l: 'trend', h: 'hline', v: 'vline', f: 'fib', t: 'text', e: 'erase' };
+function changeSpeed(dir) {
+  const list = [...document.querySelectorAll('#speed-grp [data-speed]')], i = list.findIndex((b) => b.classList.contains('active'));
+  const next = list[Math.max(0, Math.min(list.length - 1, i + dir))]; if (next) next.click();
+}
+document.addEventListener('keydown', (e) => {
+  // only fields you type in block the shortcuts (a checked reason or a clicked button must not)
+  const el = document.activeElement, typing = !!el && ((el.tagName === 'INPUT' && !/^(checkbox|radio|button|color|range)$/.test(el.type)) || /^(TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+  if (e.key === 'Escape') {
+    if (typing) el.blur();
+    if (drawDraft || drawTool !== 'cursor') { drawDraft = null; setDrawTool('cursor'); renderDrawings(); }
+    else if (pickField) { pickField = null; orderMsg(''); syncTicketUi(); }
+    else if (ticket.armed) clearTicket();
+    else if (selectedIdx >= 0) { selectedIdx = -1; renderDrawings(); }
+    return;
+  }
+  if (typing) { if (e.key === 'Enter' && el.closest('#manual-box') && el.id !== 't-note') { e.preventDefault(); el.blur(); sendTicket(); } return; }
+  if (e.ctrlKey || e.metaKey) { if (e.key.toLowerCase() === 'z') { e.preventDefault(); undoDrawing(); } return; }
+  if (e.altKey) return;
+  const k = e.key, low = k.toLowerCase();
+  if (k === ' ') { e.preventDefault(); el?.blur?.(); togglePlay(); return; }
+  if (k === 'ArrowRight') { e.preventDefault(); if (e.shiftKey) stepMinutes(60); else stepBars(1); return; }
+  if (k === 'ArrowLeft') { e.preventDefault(); if (acct) rewindTo(master().cur - (e.shiftKey ? Math.max(1, Math.round(60 / master().baseMin)) : 1)); return; }
+  if (k === 'ArrowUp' || k === 'ArrowDown') { e.preventDefault(); changeSpeed(k === 'ArrowUp' ? 1 : -1); return; }
+  if (k === 'Enter') { e.preventDefault(); sendTicket(); return; }
+  if (k === 'Delete' || k === 'Backspace') { if (selectedIdx >= 0) { e.preventDefault(); deleteSelected(); } return; }
+  if (k === '?') { $('kbd-help').open = !$('kbd-help').open; return; }
+  if (TF_KEYS[k]) { const b = document.querySelector(`#tf-grp [data-tf="${TF_KEYS[k]}"]`); if (b && !b.disabled) b.click(); return; }
+  if (low === 'b') return armSide('buy');
+  if (low === 's') return armSide('sell');
+  if (low === 'j') return skipSetup();
+  if (TOOL_KEYS[low] && acct) setDrawTool(TOOL_KEYS[low]);
+});
+
+// ---------------------------------------------------------------- backtest journal (manual trades + skipped setups) - export for Claude
+const JOURNAL_KEY = 'apexfvg_sim_journals';
+try { $('bt-token').value = localStorage.getItem(TOKEN_KEY) || ''; } catch {}
+const btMsg = (t, bad) => { $('bt-msg').innerHTML = t ? `<span class="${bad ? 'loss' : 'win'}">${t}</span>` : ''; };
+function journalRows() {
+  if (!acct) return [];
+  return (acct.journal || []).map((j) => {
+    const r = { ...j, exits: [], status: j.kind === 'skip' ? 'laissé' : '' };
+    if (j.kind !== 'trade') return r;
+    const posId = j.pending ? (acct.positions.find((x) => x.orderId === j.id) || acct.history.find((h) => h.orderId === j.id) || {}).id : j.id;
+    if (posId == null) { r.status = acct.pending.some((o) => o.id === j.id) ? 'en attente' : 'annulé'; return r; }
+    const open = acct.positions.find((x) => x.id === posId);
+    r.exits = acct.history.filter((h) => h.id === posId);
+    const first = r.exits[0] || open;
+    if (first) { r.fillSec = first.openTime; r.fill = first.entry; }
+    r.pnl = r.exits.reduce((s, h) => s + h.pnl, 0);
+    const u = r.exits.reduce((s, h) => s + h.units, 0);
+    r.r = r.exits.length && r.exits.every((h) => h.r != null) ? r.exits.reduce((s, h) => s + h.r * h.units, 0) / u : null; // partial closes weighted by size
+    r.status = open ? 'ouvert' : 'fermé';
+    if (open) r.float = openPnl(open);
+    return r;
+  });
+}
+function journalExport() {
+  const iso = (sec) => (sec == null ? null : new Date(sec * 1000).toISOString());
+  return {
+    app: 'apexfvg-simulateur', version: 1, session: sessionId, exportedAt: new Date().toISOString(), blind,
+    baseMinutes: master()?.baseMin ?? null, window: data ? { from: new Date(data.window.from).toISOString(), to: new Date(data.window.to).toISOString() } : null,
+    pairs: order.map((id) => ({ id, symbol: P[id].symbol, spread: P[id].spread })), startBalance: acct?.startBalance ?? null, balance: acct?.balance ?? null, now: iso(now),
+    entries: journalRows().map((r) => ({
+      kind: r.kind, pair: r.pair, symbol: r.symbol, side: r.side, type: r.type ?? null, decidedAt: iso(r.sec), bid: r.bid, entry: r.entry ?? null, sl: r.sl ?? null, tp: r.tp ?? null, units: r.units ?? null,
+      why: r.why, note: r.note, status: r.status, fillAt: iso(r.fillSec), fill: r.fill ?? null,
+      exits: r.exits.map((h) => ({ at: iso(h.closeTime), price: h.exit, reason: h.reason, pnl: h.pnl, r: h.r })), pnl: r.pnl ?? null, r: r.r ?? null,
+      drawings: r.draw.map((d) => ({ ...d, t1: iso(d.t1), t2: iso(d.t2), at: iso(d.at) })),
+      timeframe: r.tf ? tfName(r.tf) : null, view: r.view ? { from: iso(r.view.from), to: iso(r.view.to) } : null,
+    })),
+    // trade management, in order: stop / target moves, break-even, partial or full closes, cancelled orders
+    management: actions.filter((a) => ['modify', 'be', 'close', 'cancel', 'movePending', 'closeAll'].includes(a.k)).map((a) => ({ k: a.k, at: iso(master()?.base[a.step]?.t), id: a.id ?? null, patch: a.patch ?? null, price: a.price ?? null, fraction: a.frac ?? null })),
+  };
+}
+const tfName = (sec) => ({ 60: 'M1', 300: 'M5', 900: 'M15', 1800: 'M30', 3600: 'H1', 7200: 'H2', 14400: 'H4', 21600: 'H6', 43200: 'H12', 86400: 'D1', 604800: 'W1' }[sec] || `${sec}s`);
+let journalSig = '', sendTimer = null;
+function renderJournal() {
+  if (!acct) return;
+  const rows = journalRows();
+  const closed = rows.filter((r) => r.status === 'fermé'), wins = closed.filter((r) => r.pnl > 0).length, totR = closed.reduce((s, r) => s + (r.r || 0), 0);
+  $('bt-sum').textContent = rows.length ? `— ${closed.length} trade(s) fermé(s), ${closed.length ? fmt((wins / closed.length) * 100, 0) : 0} % gagnants, ${sgn(totR, 1)}R · ${rows.filter((r) => r.kind === 'skip').length} laissé(s)` : '';
+  $('bt-list').innerHTML = rows.length ? `<table class="tbl"><thead><tr><th>Quand</th><th>Sens</th><th>Entrée</th><th>SL</th><th>TP</th><th>État</th><th>R</th><th>Pourquoi</th></tr></thead><tbody>${[...rows].reverse().map((r) => `<tr>
+    <td>${nyShort(r.sec)}</td><td>${r.kind === 'skip' ? '✋' : ''}${r.side === 'buy' ? '▲' : r.side === 'sell' ? '▼' : '—'}</td><td>${r.entry != null ? px(r.entry) : '—'}</td><td>${r.sl != null ? px(r.sl) : '—'}</td><td>${r.tp != null ? px(r.tp) : '—'}</td>
+    <td>${r.status}${r.status === 'ouvert' ? ` <span class="${r.float >= 0 ? 'win' : 'loss'}">${sgn(r.float, 0)}</span>` : ''}</td><td>${r.r != null ? `<span class="${r.r >= 0 ? 'win' : 'loss'}">${sgn(r.r, 2)}</span>` : '—'}</td>
+    <td>${escSvg([...r.why, r.note].filter(Boolean).join(', ')) || '—'}</td></tr>`).join('')}</tbody></table>` : 'Rien encore : envoie un ordre ou « ✋ Je laisse » un setup.';
+  const sig = `${sessionId}|${actions.length}|${rows.length}|${closed.length}|${rows.filter((r) => r.status === 'ouvert').length}|${rows.filter((r) => r.status === 'en attente').length}`;
+  if (sig === journalSig || !rows.length) return;
+  journalSig = sig;
+  try { const all = JSON.parse(localStorage.getItem(JOURNAL_KEY) || '{}'); all[sessionId] = journalExport(); const keys = Object.keys(all); for (const k of keys.slice(0, Math.max(0, keys.length - 20))) delete all[k]; localStorage.setItem(JOURNAL_KEY, JSON.stringify(all)); } catch { /* full or private: the copy / download buttons still work */ }
+  if ($('bt-token').value.trim()) { clearTimeout(sendTimer); sendTimer = setTimeout(() => sendJournal(false), 4000); }
+}
+window.copyJournal = async () => {
+  if (!acct) return;
+  const text = JSON.stringify(journalExport(), null, 1);
+  try { await navigator.clipboard.writeText(text); btMsg('Journal copié : colle-le dans la conversation avec Claude.'); } catch { btMsg('Copie refusée par le navigateur : utilise « Télécharger ».', true); }
+};
+window.downloadJournal = () => {
+  if (!acct) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(journalExport(), null, 1)], { type: 'application/json' }));
+  a.download = `backtest-${(order[0] || 'sim').replace(/[^\w-]/g, '')}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+async function sendJournal(manual) {
+  if (!acct || !(acct.journal || []).length) { if (manual) btMsg('Rien à envoyer pour le moment.', true); return; }
+  const token = $('bt-token').value.trim();
+  if (!token) { if (manual) btMsg('Mets ton token admin (le même que pour « Comptes » ou l\'import).', true); return; }
+  try { localStorage.setItem(TOKEN_KEY, token); } catch {}
+  try {
+    const res = await fetch('/api/sim-journal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-token': token }, body: JSON.stringify(journalExport()) });
+    const b = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(res.status === 403 ? 'token admin invalide' : b.error || `erreur ${res.status}`);
+    btMsg(`Envoyé à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} (${acct.journal.length} entrée(s)).`);
+  } catch (e) { btMsg(`Envoi impossible : ${e.message}. Le journal reste dans ce navigateur (Copier / Télécharger).`, true); }
+}
+window.sendJournal = sendJournal;
+syncTicketUi();
+
 // read-only handle for automated browser tests (module scope is not global)
-window.__sim = { get acct() { return acct; }, get P() { return P; }, get order() { return order; }, get now() { return now; }, get cfg() { return cfg; }, get actions() { return actions; }, get snaps() { return snaps; }, get auto() { return autoState; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, get master() { return master(); }, price: (x) => series.priceToCoordinate(x) };
+window.__sim = { get ticket() { return ticket; }, get drawings() { return drawings; }, journalExport, get acct() { return acct; }, get P() { return P; }, get order() { return order; }, get now() { return now; }, get cfg() { return cfg; }, get actions() { return actions; }, get snaps() { return snaps; }, get auto() { return autoState; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, get master() { return master(); }, price: (x) => series.priceToCoordinate(x) };
 $('sim-from').value = '';
 countStrats();
 syncCfgUi();
