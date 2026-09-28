@@ -691,7 +691,7 @@ app.post('/api/lab/replay', async (req, res) => {
       const seen = new Set(), last = new Map();
       const fresh = (x) => { const k = `${x.dir}|${x.plan[0].entry}`, p = last.get(k); if (p !== undefined && x.tau - p < 86400000) return false; last.set(k, x.tau); return true; };
       return signalsLY(buildContext(S), { minZonePct: 0.0002, minRiskAtr: 0.3, maxEntryAtr: 3 }).filter((x) => x.tau >= out.window.from && x.tau <= out.window.to && !seen.has(x.tau) && seen.add(x.tau) && fresh(x)).map((x) => ({
-        sec: Math.floor((x.tau + OFFSET) / 1000), dir: x.dir, plan: x.plan, targets: x.targets.slice(0, 3),
+        sec: Math.floor((x.tau + OFFSET) / 1000), dir: x.dir, plan: x.plan, targets: x.targets.slice(0, 3), zones: x.f.zoneList,
       }));
     }
 

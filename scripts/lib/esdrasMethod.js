@@ -393,15 +393,27 @@ export function wideZones(b) {
 // Options du mode quiz du Simulateur (2026-09-28, Esdras : « les entrées sont très loin du prix ») : minZonePct (hauteur minimale d'une
 // zone, en part du prix), minRiskAtr (stop d'au moins x ATR M15), maxEntryAtr (1re entrée à au plus x ATR M15 du prix à la pose).
 // Par défaut elles sont neutres : la règle testée (preregistration-esdras-ly) reste la même.
-export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minTargetPct = 0.001, rungs = 3, legBars = 48, minZonePct = 0, minRiskAtr = 0, maxEntryAtr = Infinity } = {}) {
+// bigBms (2026-09-28, Esdras : « un gros BMS c'est une grosse bougie qui casse, qui clôture au-delà, pas seulement la mèche ; surtout quand
+// le prix change de direction ») : { minBodyAtr, reversal } - la jambe du BMS (du bout de la jambe à la bougie q qui clôture au-delà)
+// contient une bougie du sens dont le corps fait au moins minBodyAtr ATR M15 ; reversal (facultatif) : le BMS précédent allait dans l'autre
+// sens. Sur ses trades, la grosse bougie est tantôt celle qui casse (21/06/2017, 27/09/2026), tantôt celle juste avant (27/06/2018).
+export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minTargetPct = 0.001, rungs = 3, legBars = 48, minZonePct = 0, minRiskAtr = 0, maxEntryAtr = Infinity, bigBms = null } = {}) {
   const { S, b15 } = X, out = [];
   const f15 = X.fvg[0].slice().sort((p, q) => p.k - q.k), zones = wideZones(b15);
   const maxH = sparse(b15.map((b) => b.h), Math.max), minL = sparse(b15.map((b) => b.l), Math.min);
   const firstK = (arr, k) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].k < k) lo = m + 1; else hi = m; } return lo; };
+  let prevDir = 0;
   for (const { q, dir } of bmsIdx(b15)) {
+    const wasDir = prevDir; prevDir = dir;
     const jc = q + 1; if (jc + 1 >= b15.length) continue;
     // bout de la jambe
     let L = q; for (let m = Math.max(0, q - legBars); m <= q; m++) if (dir > 0 ? b15[m].l < b15[L].l : b15[m].h > b15[L].h) L = m;
+    if (bigBms) {
+      const a = X.atr15[q]; if (!(a > 0)) continue;
+      let big = 0; for (let m = L; m <= q; m++) { const bd = (b15[m].c - b15[m].o) * dir; if (bd > big) big = bd; }
+      if (big < bigBms.minBodyAtr * a) continue;
+      if (bigBms.reversal && wasDir !== -dir) continue;
+    }
     const legEnd = dir > 0 ? b15[L].l : b15[L].h;
     // pose de l'ordre
     const t0 = barEnd(S, b15[jc]);
@@ -446,7 +458,7 @@ export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minT
     if (!plan.length) continue;
     const ok = targets.some((t) => Math.abs(t - plan[0].entry) / Math.abs(plan[0].entry - plan[0].stop) >= minRR);
     if (!ok) continue;
-    out.push({ tau, dir, i: b15[jp].i1 + 1, plan, targets, minRR, expiry: tau + expiryH * 3600000, exitAt: nextNyTime(tau, EXIT_MIN), win, f: { q, zones: merged.length } });
+    out.push({ tau, dir, i: b15[jp].i1 + 1, plan, targets, minRR, expiry: tau + expiryH * 3600000, exitAt: nextNyTime(tau, EXIT_MIN), win, f: { q, zones: merged.length, zoneList: merged.slice(0, plan.length).map((z) => ({ bot: z.bot, top: z.top })) } });
   }
   return out.sort((a, c) => a.tau - c.tau);
 }

@@ -1668,5 +1668,21 @@
       "data/backtest-input/esdras-magnet-far-US500-validation.md",
       "scripts/runEsdrasMagnet.js"
     ]
+  },
+  {
+    "id": "esdras-ly-big-2026-09-28",
+    "title": "Version échelle avec gros BMS (jambe avec une bougie de corps ≥ 1 ATR) : rejetée en exploration",
+    "date": "2026-09-28",
+    "status": "rejected",
+    "summary": "Pré-enregistrée (preregistration-esdras-ly-big-2026-09-28.md). US100 2011-2018 : LY-G 2376 trades -0,111 R (t -2,16), LY-GQ (avec les réglages du quiz) 1610 trades -0,100 R (t -1,97). Le gros BMS n'améliore rien. Les 2e entrées (réentrées après un stop) restent le point le plus perdant (-0,28 et -0,26 R) ; les 3e entrées sont positives mais trop rares pour conclure (+0,27 R sur 128, +0,38 R sur 47).",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-ly-big-2026-09-28.md",
+      "data/backtest-input/esdras-ly-big-US100-explore.md",
+      "scripts/runEsdrasLY.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
   }
 ]
