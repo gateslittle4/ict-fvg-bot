@@ -350,6 +350,7 @@
         <div id="bt-list" style="max-height:260px;overflow:auto;" class="meta">—</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center;"><button type="button" class="btn-ghost" onclick="copyJournal()">📋 Copier</button><button type="button" class="btn-ghost" onclick="downloadJournal()">⬇ Télécharger</button><input type="password" id="bt-token" placeholder="Token admin" autocomplete="off" style="flex:1 1 110px;width:auto;" /><button type="button" class="run-btn" onclick="sendJournal(true)">📤 Envoyer à Claude</button></div>
         <div class="meta" id="bt-msg" style="margin-top:4px;"></div>
+        <div id="bt-token-warn" style="margin-top:6px;color:var(--amber);font-weight:700;font-size:12px;" hidden>⚠ Token admin vide : ton journal (trades, « je laisse », réponses au quiz) reste dans ce navigateur et ne m'arrive pas. Remplis-le une fois ici.</div>
       </div>
       <div class="card"><h2>Journal des événements</h2><div id="log" class="log"></div></div>
     </div>
@@ -1290,11 +1291,12 @@ window.loadReplay = async (random, override = null) => {
     tfSec = Math.max(tfSec, p.baseMin * 60);
     document.querySelectorAll('#tf-grp .tb').forEach((x) => { x.disabled = Number(x.dataset.tf) < p.baseMin * 60; x.classList.toggle('active', Number(x.dataset.tf) === tfSec); });
     if (resuming) { restoreSession(resuming); resuming = null; }
+    const quizNote = !body.quiz ? '' : master().baseMin !== 15 ? ' <span class="loss">🎯 Quiz indisponible : choisis la précision M15.</span>' : ` <strong>🎯 Quiz actif : ${master().quiz.length} setup(s) dans la période</strong> (le rejeu s'arrêtera sur chacun).`;
     redraw({ resetView: true }); fitChart();
     const nTr = order.reduce((s, id) => s + P[id].trades.length, 0);
     const na = order.flatMap((id) => P[id].notApplicable.map((x) => `${strategyLabels[x] || x} (${label(P[id])})`));
-    if (blind) $('sim-msg').innerHTML = `🙈 Période tirée au hasard, dates cachées : ${order.length} paire, ${Math.round(data.days)} jours. Le rejeu démarre à J1 ; ce qui précède est du contexte. Bon backtest !${notes.length ? ` <span class="loss">${notes.join(' — ')}</span>` : ''}`;
-    else $('sim-msg').innerHTML = `Période chargée : ${nyText(startSec)} → ${nyText(Math.floor(d.window.to / 1000))} · ${order.length} paire(s), ${nTr} signal(aux) de stratégies, ${d.news.length} annonce(s). Le rejeu démarre à la date de début ; ce qui précède est du contexte.${na.length ? ` Non applicable (ignoré) : ${[...new Set(na)].join(', ')}.` : ''}${notes.length ? ` <span class="loss">${notes.join(' — ')}</span>` : ''}`;
+    if (blind) $('sim-msg').innerHTML = `🙈 Période tirée au hasard, dates cachées : ${order.length} paire, ${Math.round(data.days)} jours. Le rejeu démarre à J1 ; ce qui précède est du contexte. Bon backtest !${quizNote}${notes.length ? ` <span class="loss">${notes.join(' — ')}</span>` : ''}`;
+    else $('sim-msg').innerHTML = `Période chargée : ${nyText(startSec)} → ${nyText(Math.floor(d.window.to / 1000))} · ${order.length} paire(s), ${nTr} signal(aux) de stratégies, ${d.news.length} annonce(s). Le rejeu démarre à la date de début ; ce qui précède est du contexte.${quizNote}${na.length ? ` Non applicable (ignoré) : ${[...new Set(na)].join(', ')}.` : ''}${notes.length ? ` <span class="loss">${notes.join(' — ')}</span>` : ''}`;
     $('chart-legend').innerHTML = [...new Set(order.flatMap((id) => P[id].trades.map((x) => x.strategyId)))].map((id) => `<span class="chip" style="background:${colorOf(id)}">${shortName(id)}</span>`).join('') + '↑↓ entrée · zone rouge = risque, zone verte = objectif · ● résultat une fois terminé';
     fillAddPair();
   } catch (err) { $('sim-msg').innerHTML = `<span class="loss">Erreur : ${err.message}</span>`; }
@@ -1749,6 +1751,14 @@ function restoreSession(r) {
   quizPending = null; checkQuiz();
   log('Séance reprise là où tu l\'avais laissée.', 'info');
 }
+
+// réglages gardés d'une visite à l'autre (Esdras sur téléphone : la case du quiz se décochait à chaque rechargement)
+const PREFS_KEY = 'apexfvg_sim_prefs', PREF_IDS = ['sim-blind', 'sim-quiz', 'sim-context', 'sim-base'];
+try { const pr = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); for (const id of PREF_IDS) if (pr[id] !== undefined && $(id)) { if ($(id).type === 'checkbox') $(id).checked = pr[id]; else $(id).value = pr[id]; } } catch {}
+for (const id of PREF_IDS) $(id)?.addEventListener('change', () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(Object.fromEntries(PREF_IDS.map((x) => [x, $(x).type === 'checkbox' ? $(x).checked : $(x).value])))); } catch {} });
+// avertissement si le token manque : sans lui le journal n'arrive pas au serveur
+function syncTokenWarn() { $('bt-token-warn').hidden = !!$('bt-token').value.trim(); }
+$('bt-token').addEventListener('input', syncTokenWarn); syncTokenWarn();
 
 loadMeta().then(offerResume).catch((e) => { $('sim-msg').innerHTML = `<span class="loss">Erreur de chargement : ${e.message}</span>`; });
 </script>
