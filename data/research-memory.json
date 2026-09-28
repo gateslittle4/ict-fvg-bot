@@ -1617,5 +1617,21 @@
       "scripts/runEsdrasLX.js",
       "scripts/lib/esdrasMethod.js"
     ]
+  },
+  {
+    "id": "esdras-ly-2026-09-28",
+    "title": "Version échelle LY d Esdras (zones au sens large / volume imbalance, stop au bord de la zone suivante, 3 entrées, objectifs en chaîne) : rejetée en exploration",
+    "date": "2026-09-28",
+    "status": "rejected",
+    "summary": "Pré-enregistrée (preregistration-esdras-ly-2026-09-28.md) après calibrage : reproduit au centime son achat du 21/06/2017 (entrée 2 5717,23, stop 5710,98, +3,08R) et sa réentrée du 20/06/2017. US100 2011-2018 : 2675 trades, -0,085 R (t -1,69), 16 % de gagnants, moitiés -0,152 / -0,023 ; entrée 1 -0,050 R (1933), entrée 2 -0,267 R (627, t -2,93 : les réentrées mécaniques perdent), entrée 3 +0,314 R (115, t 1,02, bruit). Ses trades choisis à l'aveugle : +7,4 R sur 6 ; l'écart viendrait de sa sélection, à mesurer par le mode quiz ou 30 à 50 trades à l'aveugle.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-ly-2026-09-28.md",
+      "data/backtest-input/esdras-ly-US100-explore.md",
+      "scripts/runEsdrasLY.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
   }
 ]
