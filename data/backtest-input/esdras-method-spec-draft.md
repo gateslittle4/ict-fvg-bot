@@ -65,3 +65,12 @@ Réponses d'Esdras du 27/09, pour préparer un test fidèle de sa méthode.
 - **Stop suiveur (6)** : tester les deux versions.
 - **Ordre du soir (7)** : annulé le lendemain à 7 h NY.
 - **Trade inverse (8)** : seulement si le BMS et le retournement sont flagrants ou grands.
+
+## Précisions d'Esdras, 28/09/2026 (après le schéma LD rejeté)
+
+Données après coup, sur un trade qu'il aurait pris le dimanche 27/09 au soir (US100, vérifié sur les bougies M15 du compte) : vente dans le FVG M15 baissier formé à l'ouverture du dimanche (18h15 NY, 30 610 – 30 670), après un gros BMS baissier ; remplissage à 19h45 ; objectif, le FVG M15 haussier de jeudi 24/09 (≈ 30 310 – 30 415), atteint à 23h30 (≈ 2,8R) puis à 2h15 le lundi (≈ 3,4R).
+
+- Le FVG visé à gauche **n'a pas besoin d'être vierge** : une mèche peut y être entrée (ici jeudi à 14h), la partie encore vide reste l'objectif. Le moteur `signalsLeft` exigeait un FVG jamais touché.
+- L'ouverture du dimanche soir (18h NY) fait partie de ses moments de trade ; les fenêtres codées (7h-11h et 20h-23h NY) ne la couvraient pas.
+- Un gros BMS dans le sens du trade est une raison de le prendre.
+- Il se rappelle sa stratégie petit à petit : ces règles viennent d'un seul exemple et ne doivent pas être figées avant d'avoir des dizaines de cas du journal de backtest du simulateur (table `bot_sim_journal`), puis un pré-enregistrement.
