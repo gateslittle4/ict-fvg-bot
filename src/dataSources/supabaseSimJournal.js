@@ -13,6 +13,13 @@
 //     payload jsonb not null
 //   );
 //   alter table public.bot_sim_journal enable row level security;
+//
+// Captures du graphique (une par ordre, « je laisse » ou trade manqué), à part pour que le journal reste léger :
+//   create table public.bot_sim_shots (
+//     session text not null, key text not null, created_at timestamptz not null default now(), image text not null,
+//     primary key (session, key)
+//   );
+//   alter table public.bot_sim_shots enable row level security;
 
 const TABLE = 'bot_sim_journal';
 export const MAX_ENTRIES = 3000;
@@ -41,4 +48,26 @@ export async function listSimJournals(client, { limit = 20 } = {}) {
   const { data, error } = await client.from(TABLE).select('session, created_at, updated_at, blind, symbols, entries').order('updated_at', { ascending: false }).limit(Math.min(100, Math.max(1, limit)));
   if (error) return { ok: false, status: 502, error: error.message };
   return { ok: true, journals: data };
+}
+
+const SHOTS = 'bot_sim_shots';
+export const MAX_SHOT_CHARS = 3_000_000; // a JPEG data URL, ~2 MB of picture at most
+
+/** Checks one chart picture sent by the simulator; returns the row to store or an error message. */
+export function toShotRow(body) {
+  if (!body || typeof body !== 'object') return { error: 'corps manquant' };
+  if (typeof body.session !== 'string' || !/^[\w-]{8,64}$/.test(body.session)) return { error: 'séance invalide' };
+  if (typeof body.key !== 'string' || !/^[\w.:-]{1,80}$/.test(body.key)) return { error: 'clé invalide' };
+  if (typeof body.image !== 'string' || !/^data:image\/(jpeg|png);base64,/.test(body.image)) return { error: 'image invalide' };
+  if (body.image.length > MAX_SHOT_CHARS) return { error: 'image trop lourde' };
+  return { row: { session: body.session, key: body.key, image: body.image } };
+}
+
+export async function saveSimShot(client, body) {
+  if (!client) return { ok: false, status: 503, error: 'Supabase non configuré sur le serveur' };
+  const { row, error } = toShotRow(body);
+  if (error) return { ok: false, status: 400, error };
+  const { error: dbError } = await client.from(SHOTS).upsert(row, { onConflict: 'session,key' });
+  if (dbError) return { ok: false, status: 502, error: dbError.message };
+  return { ok: true, session: row.session, key: row.key };
 }

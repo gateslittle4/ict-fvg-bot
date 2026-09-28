@@ -23,7 +23,7 @@ import { buildHealthReport } from './healthReport.js';
 import { fetchPerformanceBySymbol, createTradeLogClient } from './dataSources/supabaseTradeLog.js';
 import { getStrategySwitches, setStrategySwitches } from './strategySwitches.js';
 import { getKillSwitchState, setKillSwitchOverride, refreshKillSwitch } from './killSwitch.js';
-import { saveSimJournal, listSimJournals } from './dataSources/supabaseSimJournal.js';
+import { saveSimJournal, listSimJournals, saveSimShot } from './dataSources/supabaseSimJournal.js';
 import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
@@ -51,7 +51,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 // the simulator's backtest journal can exceed the default 100 kB (drawings with every decision): its own, larger limit below
 const jsonBody = express.json();
-app.use((req, res, next) => (req.path === '/api/sim-journal' ? next() : jsonBody(req, res, next)));
+app.use((req, res, next) => (req.path === '/api/sim-journal' || req.path === '/api/sim-journal/shot' ? next() : jsonBody(req, res, next)));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 // Lightweight Charts (TradingView's own open-source charting library) is
 // served from OUR origin rather than a CDN on purpose: the dashboard is
@@ -255,6 +255,11 @@ app.post('/api/admin/kill-switch', async (req, res) => {
 app.post('/api/sim-journal', express.json({ limit: '4mb' }), async (req, res) => {
   if (!requireAdminToken(req, res)) return;
   const result = await saveSimJournal(switchClient(), req.body);
+  res.status(result.ok ? 200 : result.status).json(result);
+});
+app.post('/api/sim-journal/shot', express.json({ limit: '4mb' }), async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const result = await saveSimShot(switchClient(), req.body);
   res.status(result.ok ? 200 : result.status).json(result);
 });
 app.get('/api/sim-journal', async (req, res) => {

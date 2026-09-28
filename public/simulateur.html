@@ -273,7 +273,7 @@
         <details id="kbd-help" style="margin-top:6px;" open><summary style="cursor:pointer;font-size:12.5px;"><strong>⌨ Raccourcis clavier</strong> <span class="meta">(touche ? pour afficher / cacher)</span></summary>
           <div class="keys"><kbd>Espace</kbd> lecture / pause <kbd>→</kbd> bougie suivante <kbd>Maj →</kbd> +1 h <kbd>←</kbd> une bougie en arrière <kbd>Maj ←</kbd> −1 h <kbd>↑</kbd><kbd>↓</kbd> vitesse
             <kbd>1</kbd>…<kbd>8</kbd> M1 · M5 · M15 · M30 · H1 · H4 · D1 · W1<br>
-            <kbd>B</kbd> (ou <kbd>A</kbd>) préparer un achat <kbd>V</kbd> préparer une vente <kbd>Entrée</kbd> envoyer l'ordre <kbd>J</kbd> je laisse ce setup <kbd>Échap</kbd> annuler (ticket, outil, sélection)<br>
+            <kbd>B</kbd> (ou <kbd>A</kbd>) préparer un achat <kbd>V</kbd> préparer une vente <kbd>Entrée</kbd> envoyer l'ordre <kbd>J</kbd> je laisse ce setup <kbd>M</kbd> trade manqué (déjà passé) <kbd>Échap</kbd> annuler (ticket, outil, sélection)<br>
             <kbd>C</kbd> curseur <kbd>R</kbd> rectangle <kbd>S</kbd> ligne de tendance <kbd>L</kbd> (ou <kbd>H</kbd>) ligne horizontale <kbd>I</kbd> verticale <kbd>F</kbd> Fibonacci <kbd>T</kbd> texte <kbd>E</kbd> gomme <kbd>Suppr</kbd> effacer le dessin sélectionné <kbd>Ctrl Z</kbd> annuler le dernier dessin</div>
           <div class="meta" style="margin-top:4px;">Sur le graphique : glisse les lignes Entrée / SL / TP du ticket avant d'envoyer, puis celles de tes positions et ordres en attente pour les modifier.</div>
         </details>
@@ -327,7 +327,7 @@
         <button type="button" class="buy" id="t-send" onclick="sendTicket()" disabled>ENVOYER L'ORDRE</button>
         <div class="row2" style="margin-top:6px;"><button type="button" class="btn-ghost" onclick="clearTicket()">Effacer le ticket <kbd>Échap</kbd></button><button type="button" class="btn-ghost" onclick="closeEverything()">Tout fermer</button></div>
         <div class="fld" style="margin-top:10px;"><label>Pourquoi ? (va dans ton journal avec l'ordre ou le « je laisse »)</label><div class="why-list" id="t-why"></div><input type="text" id="t-note" placeholder="Note libre (optionnel)" autocomplete="off" /></div>
-        <button type="button" class="btn-ghost" style="width:100%;" onclick="skipSetup()">✋ Je laisse ce setup <kbd>J</kbd></button>
+        <div class="row2"><button type="button" class="btn-ghost" onclick="skipSetup()" title="Setup vu mais pas pris : noté avec une capture">✋ Je laisse <kbd>J</kbd></button><button type="button" class="btn-ghost" onclick="missedTrade()" title="Le setup est déjà passé et tu n'as pas eu le temps : prépare le ticket (B / V, Limite) avec l'entrée, le SL et le TP où tu serais entré, puis M">📸 Trade manqué <kbd>M</kbd></button></div>
         <div class="meta" id="o-msg" style="margin-top:6px;"></div>
         </div>
       </div>
@@ -684,7 +684,7 @@ function applyAction(a) {
       if (a.why) journalAdd(a, p, { kind: 'trade', id: res.id, pending: !filled, type: a.o.type, entry: filled ? res.entry : res.price, sl: res.sl, tp: res.tp, units: res.units });
       return res;
     }
-    case 'skip': journalAdd(a, p, { kind: 'skip', type: a.type ?? null, entry: a.entry, sl: a.sl, tp: a.tp }); return null;
+    case 'skip': journalAdd(a, p, { kind: a.missed ? 'missed' : 'skip', type: a.type ?? null, entry: a.entry, sl: a.sl, tp: a.tp }); return null;
     case 'take': return takeTrade(p, a.key, a.o);
     case 'close': B.closePosition(acct, a.id, { bid: bidOf(P[posSymbol(a.id)]), time: now, fraction: a.frac }); marker(P[posSymbolOrLast(a)], { sec: now, pos: 'aboveBar', shape: 'circle', color: '#ffffff', text: 'Toi' }); return null;
     case 'be': B.breakEven(acct, a.id); return null;
@@ -695,7 +695,7 @@ function applyAction(a) {
     default: throw new Error(`Action inconnue: ${a.k}`);
   }
 }
-function journalAdd(a, p, x) { (acct.journal ||= []).push({ ...x, side: a.side || null, pair: p.id, symbol: p.symbol, sec: now, bid: bidOf(p), why: a.why || [], note: a.note || '', draw: a.draw || [], tf: a.tf ?? null, view: a.view ?? null }); }
+function journalAdd(a, p, x) { (acct.journal ||= []).push({ ...x, side: a.side || null, pair: p.id, symbol: p.symbol, sec: now, bid: bidOf(p), why: a.why || [], note: a.note || '', draw: a.draw || [], tf: a.tf ?? null, view: a.view ?? null, shot: a.shot ?? null }); }
 const posSymbol = (id) => (acct.positions.find((p) => p.id === id) || {}).symbol;
 const posSymbolOrLast = (a) => a.pairId || active;
 const pendSymbol = (id) => (acct.pending.find((o) => o.id === id) || {}).symbol;
@@ -813,18 +813,33 @@ function syncTicketUi() {
 }
 // what was on screen when the decision was taken: the timeframe and the visible window (real times)
 const lookingAt = () => { const r = chart.timeScale().getVisibleLogicalRange(); const t = (l) => (tfBars.length && l != null ? tfBars[Math.max(0, Math.min(tfBars.length - 1, Math.round(l)))].time : null); return { tf: tfSec, view: r ? { from: t(r.from), to: t(r.to) } : null }; };
-window.sendTicket = () => {
-  if (!acct || cfg.mode === 'auto') return;
+// 2026-09-28 (Esdras) : a picture of the chart (candles, ticket lines, drawings) goes with every order, every « je laisse » and every
+// missed trade - taken BEFORE the action, so it shows exactly what was on screen when the decision was taken
+let busy = false;
+window.sendTicket = async () => {
+  if (!acct || cfg.mode === 'auto' || busy) return;
   if (!ticket.armed) { orderMsg('Choisis d\'abord Achat ou Vente (touches B / V).', true); return; }
-  if (tryAction({ k: 'place', pairId: active, side: ticket.side, o: readOrder(), why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt() })) { clearTicket(); clearWhy(); }
+  busy = true;
+  try {
+    const shot = await captureChart(`${ticket.side === 'buy' ? 'ACHAT' : 'VENTE'} ${ticket.type === 'market' ? 'au marché' : ticket.type}`);
+    if (tryAction({ k: 'place', pairId: active, side: ticket.side, o: readOrder(), why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt(), shot })) { keepShot(shot); clearTicket(); clearWhy(); }
+  } finally { busy = false; }
 };
-window.skipSetup = () => {
-  if (!acct || cfg.mode === 'auto') return;
+async function noteSetup(missed) {
+  if (!acct || cfg.mode === 'auto' || busy) return;
   const on = ticket.armed;
-  if (tryAction({ k: 'skip', pairId: active, side: on ? ticket.side : null, type: on ? ticket.type : null, entry: on ? tkEntry() : null, sl: on ? ticket.sl : null, tp: on ? ticket.tp : null, why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt() })) {
-    log('Setup laissé : noté dans ton journal de backtest.', 'info'); clearTicket(); clearWhy();
-  }
-};
+  if (missed && !on) { orderMsg('Trade manqué : appuie d\'abord sur B ou V et place les lignes Entrée / SL / TP où tu serais entré (Limite pour une entrée passée), puis M.', true); return; }
+  busy = true;
+  try {
+    const shot = await captureChart(missed ? `TRADE MANQUÉ ${ticket.side === 'buy' ? 'achat' : 'vente'}` : 'JE LAISSE');
+    const entry = on ? (ticket.type === 'market' ? tkEntry() : ticket.price) : null;
+    if (tryAction({ k: 'skip', missed, pairId: active, side: on ? ticket.side : null, type: on ? ticket.type : null, entry, sl: on ? ticket.sl : null, tp: on ? ticket.tp : null, why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt(), shot })) {
+      keepShot(shot); log(missed ? 'Trade manqué noté dans ton journal, avec la capture.' : 'Setup laissé : noté dans ton journal de backtest.', 'info'); clearTicket(); clearWhy();
+    }
+  } finally { busy = false; }
+}
+window.skipSetup = () => noteSetup(false);
+window.missedTrade = () => noteSetup(true);
 $('t-side').addEventListener('click', (e) => { const b = e.target.closest('[data-side]'); if (b) armSide(b.dataset.side); });
 $('t-type').addEventListener('click', (e) => {
   const b = e.target.closest('[data-type]'); if (!b) return;
@@ -893,8 +908,8 @@ function pushBar(p, i) {
   else { tfLast = { time: key, open: b.o, high: b.h, low: b.l, close: b.c }; tfBars.push(tfLast); }
   series.update({ ...tfLast });
 }
-const tfCount = (p) => { const set = new Set(); for (let i = 0; i <= p.cur; i++) set.add(snap(p.base[i].t)); return set.size; };
-function fitChart() { const p = act(); if (!p) return; const n = tfCount(p); if (n < 140) chart.timeScale().fitContent(); else chart.timeScale().setVisibleLogicalRange({ from: n - 140, to: n + 8 }); }
+// counted on the bars really in the chart (capped at MAX_TF_BARS): counting the whole history pushed the view past the last bar
+function fitChart() { const p = act(); if (!p) return; const n = tfBars.length; if (n < 140) chart.timeScale().fitContent(); else chart.timeScale().setVisibleLogicalRange({ from: n - 140, to: n + 8 }); }
 window.fitChart = fitChart;
 window.zoomChart = (f) => { const r = chart.timeScale().getVisibleLogicalRange(); if (!r) return; chart.timeScale().setVisibleLogicalRange({ from: r.to - (r.to - r.from) * f, to: r.to }); };
 
@@ -1487,8 +1502,37 @@ document.addEventListener('keydown', (e) => {
   if (low === 'b' || low === 'a') return armSide('buy');
   if (low === 'v') return armSide('sell');
   if (low === 'j') return skipSetup();
+  if (low === 'm') return missedTrade();
   if (TOOL_KEYS[low] && acct) setDrawTool(TOOL_KEYS[low]);
 });
+
+// ---------------------------------------------------------------- chart pictures for the journal
+const shots = new Map(), shotsSent = new Set(); // key -> JPEG data URL (kept out of the account: snapshots would copy them)
+const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+async function captureChart(title) {
+  try {
+    const base = chart.takeScreenshot(), W = base.width, H = base.height, top = Math.round(26 * (W / Math.max(1, $('chart').clientWidth)));
+    const out = document.createElement('canvas'); out.width = W; out.height = H + top;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#0e141b'; ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(base, 0, top);
+    try { // the drawings live in an SVG layer above the chart: paint it on top
+      const svg = layer.cloneNode(true);
+      svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); svg.setAttribute('width', layer.clientWidth); svg.setAttribute('height', layer.clientHeight);
+      const img = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg)));
+      ctx.drawImage(img, 0, top, W, H);
+    } catch { /* picture without the drawings */ }
+    ctx.fillStyle = '#eaf0f6'; ctx.font = `bold ${Math.round(top * 0.55)}px ui-monospace, Menlo, Consolas, monospace`; ctx.textBaseline = 'middle';
+    ctx.fillText(`${act() ? label(act()) : ''} · ${tfName(tfSec)} · ${nyText(now)} · ${title}`, Math.round(top * 0.4), top / 2);
+    let c = out; // at most 1400 px wide, JPEG: ~100-200 kB
+    if (W > 1400) { c = document.createElement('canvas'); c.width = 1400; c.height = Math.round(out.height * (1400 / W)); c.getContext('2d').drawImage(out, 0, 0, c.width, c.height); }
+    const key = `${now}-${(acct.journal || []).length}`;
+    shots.set(key, c.toDataURL('image/jpeg', 0.8));
+    return key;
+  } catch { return null; }
+}
+const keepShot = (key) => { if (key && $('bt-token').value.trim()) { clearTimeout(sendTimer); sendTimer = setTimeout(() => sendJournal(false), 1500); } };
+window.openShot = (key) => { const src = shots.get(key); if (!src) return; const w = window.open(''); if (w) w.document.write(`<title>Capture</title><body style="margin:0;background:#05070a"><img src="${src}" style="max-width:100%"></body>`); };
 
 // ---------------------------------------------------------------- backtest journal (manual trades + skipped setups) - export for Claude
 const JOURNAL_KEY = 'apexfvg_sim_journals';
@@ -1497,7 +1541,7 @@ const btMsg = (t, bad) => { $('bt-msg').innerHTML = t ? `<span class="${bad ? 'l
 function journalRows() {
   if (!acct) return [];
   return (acct.journal || []).map((j) => {
-    const r = { ...j, exits: [], status: j.kind === 'skip' ? 'laissé' : '' };
+    const r = { ...j, exits: [], status: j.kind === 'skip' ? 'laissé' : j.kind === 'missed' ? 'manqué' : '' };
     if (j.kind !== 'trade') return r;
     const posId = j.pending ? (acct.positions.find((x) => x.orderId === j.id) || acct.history.find((h) => h.orderId === j.id) || {}).id : j.id;
     if (posId == null) { r.status = acct.pending.some((o) => o.id === j.id) ? 'en attente' : 'annulé'; return r; }
@@ -1524,7 +1568,7 @@ function journalExport() {
       why: r.why, note: r.note, status: r.status, fillAt: iso(r.fillSec), fill: r.fill ?? null,
       exits: r.exits.map((h) => ({ at: iso(h.closeTime), price: h.exit, reason: h.reason, pnl: h.pnl, r: h.r })), pnl: r.pnl ?? null, r: r.r ?? null,
       drawings: r.draw.map((d) => ({ ...d, t1: iso(d.t1), t2: iso(d.t2), at: iso(d.at) })),
-      timeframe: r.tf ? tfName(r.tf) : null, view: r.view ? { from: iso(r.view.from), to: iso(r.view.to) } : null,
+      shot: r.shot ?? null, timeframe: r.tf ? tfName(r.tf) : null, view: r.view ? { from: iso(r.view.from), to: iso(r.view.to) } : null,
     })),
     // trade management, in order: stop / target moves, break-even, partial or full closes, cancelled orders
     management: actions.filter((a) => ['modify', 'be', 'close', 'cancel', 'movePending', 'closeAll'].includes(a.k)).map((a) => ({ k: a.k, at: iso(master()?.base[a.step]?.t), id: a.id ?? null, patch: a.patch ?? null, price: a.price ?? null, fraction: a.frac ?? null })),
@@ -1536,9 +1580,9 @@ function renderJournal() {
   if (!acct) return;
   const rows = journalRows();
   const closed = rows.filter((r) => r.status === 'fermé'), wins = closed.filter((r) => r.pnl > 0).length, totR = closed.reduce((s, r) => s + (r.r || 0), 0);
-  $('bt-sum').textContent = rows.length ? `— ${closed.length} trade(s) fermé(s), ${closed.length ? fmt((wins / closed.length) * 100, 0) : 0} % gagnants, ${sgn(totR, 1)}R · ${rows.filter((r) => r.kind === 'skip').length} laissé(s)` : '';
+  $('bt-sum').textContent = rows.length ? `— ${closed.length} trade(s) fermé(s), ${closed.length ? fmt((wins / closed.length) * 100, 0) : 0} % gagnants, ${sgn(totR, 1)}R · ${rows.filter((r) => r.kind === 'skip').length} laissé(s) · ${rows.filter((r) => r.kind === 'missed').length} manqué(s)` : '';
   $('bt-list').innerHTML = rows.length ? `<table class="tbl"><thead><tr><th>Quand</th><th>Sens</th><th>Entrée</th><th>SL</th><th>TP</th><th>État</th><th>R</th><th>Pourquoi</th></tr></thead><tbody>${[...rows].reverse().map((r) => `<tr>
-    <td>${nyShort(r.sec)}</td><td>${r.kind === 'skip' ? '✋' : ''}${r.side === 'buy' ? '▲' : r.side === 'sell' ? '▼' : '—'}</td><td>${r.entry != null ? px(r.entry) : '—'}</td><td>${r.sl != null ? px(r.sl) : '—'}</td><td>${r.tp != null ? px(r.tp) : '—'}</td>
+    <td>${nyShort(r.sec)}${r.shot && shots.has(r.shot) ? ` <a href="#" onclick="openShot('${r.shot}');return false;" title="Voir la capture">📷</a>` : ''}</td><td>${r.kind === 'skip' ? '✋' : r.kind === 'missed' ? '📸' : ''}${r.side === 'buy' ? '▲' : r.side === 'sell' ? '▼' : '—'}</td><td>${r.entry != null ? px(r.entry) : '—'}</td><td>${r.sl != null ? px(r.sl) : '—'}</td><td>${r.tp != null ? px(r.tp) : '—'}</td>
     <td>${r.status}${r.status === 'ouvert' ? ` <span class="${r.float >= 0 ? 'win' : 'loss'}">${sgn(r.float, 0)}</span>` : ''}</td><td>${r.r != null ? `<span class="${r.r >= 0 ? 'win' : 'loss'}">${sgn(r.r, 2)}</span>` : '—'}</td>
     <td>${escSvg([...r.why, r.note].filter(Boolean).join(', ')) || '—'}</td></tr>`).join('')}</tbody></table>` : 'Rien encore : envoie un ordre ou « ✋ Je laisse » un setup.';
   const sig = `${sessionId}|${actions.length}|${rows.length}|${closed.length}|${rows.filter((r) => r.status === 'ouvert').length}|${rows.filter((r) => r.status === 'en attente').length}`;
@@ -1555,7 +1599,7 @@ window.copyJournal = async () => {
 window.downloadJournal = () => {
   if (!acct) return;
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(journalExport(), null, 1)], { type: 'application/json' }));
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ ...journalExport(), screenshots: Object.fromEntries(shots) }, null, 1)], { type: 'application/json' }));
   a.download = `backtest-${(order[0] || 'sim').replace(/[^\w-]/g, '')}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`;
   a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 };
@@ -1568,14 +1612,20 @@ async function sendJournal(manual) {
     const res = await fetch('/api/sim-journal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-token': token }, body: JSON.stringify(journalExport()) });
     const b = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(res.status === 403 ? 'token admin invalide' : b.error || `erreur ${res.status}`);
-    btMsg(`Envoyé à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} (${acct.journal.length} entrée(s)).`);
+    let pics = 0;
+    for (const [key, image] of shots) {
+      if (shotsSent.has(key)) continue;
+      const r2 = await fetch('/api/sim-journal/shot', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-token': token }, body: JSON.stringify({ session: sessionId, key, image }) });
+      if (r2.ok) { shotsSent.add(key); pics++; }
+    }
+    btMsg(`Envoyé à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} (${acct.journal.length} entrée(s)${pics ? `, ${pics} capture(s)` : ''}).`);
   } catch (e) { btMsg(`Envoi impossible : ${e.message}. Le journal reste dans ce navigateur (Copier / Télécharger).`, true); }
 }
 window.sendJournal = sendJournal;
 syncTicketUi();
 
 // read-only handle for automated browser tests (module scope is not global)
-window.__sim = { get ticket() { return ticket; }, get drawings() { return drawings; }, journalExport, get acct() { return acct; }, get P() { return P; }, get order() { return order; }, get now() { return now; }, get cfg() { return cfg; }, get actions() { return actions; }, get snaps() { return snaps; }, get auto() { return autoState; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, get master() { return master(); }, price: (x) => series.priceToCoordinate(x) };
+window.__sim = { get shots() { return shots; }, get ticket() { return ticket; }, get drawings() { return drawings; }, journalExport, get acct() { return acct; }, get P() { return P; }, get order() { return order; }, get now() { return now; }, get cfg() { return cfg; }, get actions() { return actions; }, get snaps() { return snaps; }, get auto() { return autoState; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, get master() { return master(); }, price: (x) => series.priceToCoordinate(x) };
 $('sim-from').value = '';
 countStrats();
 syncCfgUi();
