@@ -139,6 +139,12 @@
   .quick .mini.on { background: var(--blue); color: #05070a; border-color: var(--blue); }
   .ticket-sum { font-family: var(--mono); font-size: 11.5px; line-height: 1.6; background: var(--bg-inset); border: 1px solid var(--panel-border); border-radius: var(--radius); padding: 6px 8px; margin-bottom: 8px; }
   #t-send { width: 100%; font-size: 14px; }
+  /* 2026-09-28 (Esdras : « mets le pourquoi en dessous de la charte ») : sous le graphique, orange tant qu'un ordre prêt n'a aucune raison */
+  .why-box { border: 1px solid var(--panel-border); border-radius: var(--radius); background: var(--bg-inset); padding: 8px 10px; margin-top: 8px; }
+  .why-box .why-head { font-size: 12.5px; margin-bottom: 6px; }
+  .why-box .why-warn { display: none; color: var(--amber); font-weight: 700; font-size: 12px; margin-left: 6px; }
+  .why-box.need { border-color: var(--amber); }
+  .why-box.need .why-warn { display: inline; }
   .why-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
   .why-list label { font-size: 11px; border: 1px solid var(--panel-border-strong); border-radius: 10px; padding: 2px 8px; cursor: pointer; color: var(--muted); user-select: none; }
   .why-list input { display: none; }
@@ -263,6 +269,7 @@
           <span class="draw-hint" id="draw-hint"></span>
         </div>
         <div id="chart-wrap"><div id="chart"></div><svg id="draw-layer" xmlns="http://www.w3.org/2000/svg"></svg><div id="chart-empty">Choisis une paire et une date, puis « Charger ».</div></div>
+        <div class="why-box" id="why-box"><div class="why-head"><strong>Pourquoi ?</strong> <span class="meta">coche tes raisons avant d'envoyer (Entrée), de laisser (J) ou de noter un trade manqué (M) ; elles vont dans ton journal</span> <span class="why-warn">⚠ aucune raison cochée</span></div><div class="why-list" id="t-why"></div><input type="text" id="t-note" placeholder="Note libre (optionnel) : ce qui t'a fait prendre ou laisser le trade" autocomplete="off" /></div>
         <div class="meta" id="chart-legend" style="margin-top:6px;"></div>
         <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;"><strong>Sessions sur le graphique</strong> <span class="meta" id="session-note"></span></summary>
           <label class="check" style="display:flex;gap:8px;align-items:center;font-size:12px;margin:6px 0;"><input type="checkbox" id="toggle-sessions" checked /> Afficher les sessions (M15 à H1)</label>
@@ -326,7 +333,6 @@
         <div class="ticket-sum" id="t-sum"></div>
         <button type="button" class="buy" id="t-send" onclick="sendTicket()" disabled>ENVOYER L'ORDRE</button>
         <div class="row2" style="margin-top:6px;"><button type="button" class="btn-ghost" onclick="clearTicket()">Effacer le ticket <kbd>Échap</kbd></button><button type="button" class="btn-ghost" onclick="closeEverything()">Tout fermer</button></div>
-        <div class="fld" style="margin-top:10px;"><label>Pourquoi ? (va dans ton journal avec l'ordre ou le « je laisse »)</label><div class="why-list" id="t-why"></div><input type="text" id="t-note" placeholder="Note libre (optionnel)" autocomplete="off" /></div>
         <div class="row2"><button type="button" class="btn-ghost" onclick="skipSetup()" title="Setup vu mais pas pris : noté avec une capture">✋ Je laisse <kbd>J</kbd></button><button type="button" class="btn-ghost" onclick="missedTrade()" title="Le setup est déjà passé et tu n'as pas eu le temps : prépare le ticket (B / V, Limite) avec l'entrée, le SL et le TP où tu serais entré, puis M">📸 Trade manqué <kbd>M</kbd></button></div>
         <div class="meta" id="o-msg" style="margin-top:6px;"></div>
         </div>
@@ -810,7 +816,11 @@ function syncTicketUi() {
   btn.className = ticket.side === 'sell' ? 'sell' : 'buy';
   btn.textContent = ticket.armed ? `${ticket.side === 'buy' ? 'ACHETER' : 'VENDRE'} ${ticket.type === 'market' ? 'AU MARCHÉ' : ticket.type === 'limit' ? '(LIMITE)' : '(STOP)'} ⏎` : 'ENVOYER L\'ORDRE ⏎';
   $('t-sum').innerHTML = ticketSummary();
+  syncWhyBox();
 }
+function syncWhyBox() { $('why-box').classList.toggle('need', ticket.armed && !readWhy().length && !$('t-note').value.trim()); }
+$('t-why').addEventListener('change', syncWhyBox);
+$('t-note').addEventListener('input', syncWhyBox);
 // what was on screen when the decision was taken: the timeframe and the visible window (real times)
 const lookingAt = () => { const r = chart.timeScale().getVisibleLogicalRange(); const t = (l) => (tfBars.length && l != null ? tfBars[Math.max(0, Math.min(tfBars.length - 1, Math.round(l)))].time : null); return { tf: tfSec, view: r ? { from: t(r.from), to: t(r.to) } : null }; };
 // 2026-09-28 (Esdras) : a picture of the chart (candles, ticket lines, drawings) goes with every order, every « je laisse » and every
