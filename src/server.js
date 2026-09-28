@@ -686,8 +686,11 @@ app.post('/api/lab/replay', async (req, res) => {
       if (base !== 15 || out.candles.length < 400) return [];
       const c = out.candles, f = (k) => Float64Array.from(c, (r) => r[k]);
       const S = { t: f(0), o: f(1), h: f(2), l: f(3), c: f(4), n: c.length };
-      const seen = new Set();
-      return signalsLY(buildContext(S)).filter((x) => x.tau >= out.window.from && x.tau <= out.window.to && !seen.has(x.tau) && seen.add(x.tau)).map((x) => ({
+      // réglages du quiz : zones d'au moins 0,02 % du prix, stop d'au moins 0,3 ATR M15, 1re entrée à au plus 3 ATR du prix ; un même
+      // setup (même sens, même 1re entrée) n'est reposé qu'après 24 h
+      const seen = new Set(), last = new Map();
+      const fresh = (x) => { const k = `${x.dir}|${x.plan[0].entry}`, p = last.get(k); if (p !== undefined && x.tau - p < 86400000) return false; last.set(k, x.tau); return true; };
+      return signalsLY(buildContext(S), { minZonePct: 0.0002, minRiskAtr: 0.3, maxEntryAtr: 3 }).filter((x) => x.tau >= out.window.from && x.tau <= out.window.to && !seen.has(x.tau) && seen.add(x.tau) && fresh(x)).map((x) => ({
         sec: Math.floor((x.tau + OFFSET) / 1000), dir: x.dir, plan: x.plan, targets: x.targets.slice(0, 3),
       }));
     }
