@@ -238,8 +238,8 @@
             <button class="tb" onclick="jumpNext('signal')" title="Avance jusqu'au prochain signal d'une stratégie affichée">→ signal</button>
             <button class="tb" onclick="jumpNext('news')" title="Avance jusqu'à la prochaine annonce">→ news</button>
           </div>
-          <div class="grp" id="speed-grp">
-            <button class="tb" data-speed="2">×1</button><button class="tb active" data-speed="6">×3</button><button class="tb" data-speed="20">×10</button><button class="tb" data-speed="60">×30</button><button class="tb" data-speed="240">×100</button><button class="tb" data-speed="800">×300</button>
+          <div class="grp" id="speed-grp" title="Vitesse de lecture, en bougies M15 par seconde (touches ↑ / ↓)">
+            <button class="tb" data-speed="0.25" title="Une bougie M15 toutes les 4 secondes">1 / 4 s</button><button class="tb" data-speed="0.5" title="Une bougie M15 toutes les 2 secondes">1 / 2 s</button><button class="tb active" data-speed="1" title="Une bougie M15 par seconde">1 / s</button><button class="tb" data-speed="2">2 / s</button><button class="tb" data-speed="4">4 / s</button><button class="tb" data-speed="12">12 / s</button><button class="tb" data-speed="40">40 / s</button><button class="tb" data-speed="200">200 / s</button>
           </div>
           <div class="clock" id="clock">—</div>
         </div>
@@ -387,7 +387,7 @@ let tfSec = 900;
 let tfLast = null;
 let tfBars = [];
 const MAX_TF_BARS = 6000;              // bars shown on the chart (the drawing layer maps time <-> x with them)
-let playing = false, timer = null, speed = 6;
+let playing = false, timer = null, speed = 1; // M15 candles per second (2026-09-28, Esdras : « c'est un peu trop rapide »)
 let sessionId = null;
 let silent = false;           // true while a rewind silently re-simulates
 let strategyLabels = {};
@@ -1051,12 +1051,18 @@ window.togglePlay = () => {
   if (!acct) return;
   if (playing) return stopPlay();
   playing = true; $('btn-play').textContent = '⏸ Pause';
+  startTimer();
+};
+// slow speeds: one base candle per tick, the tick stretched (up to 4 s); fast speeds: 4 ticks a second, several candles per tick
+function startTimer() {
+  clearInterval(timer);
+  const perSec = speed * (15 / master().baseMin); // base candles per second (an M1 replay keeps the same pace of time)
+  const every = perSec <= 4 ? 1000 / perSec : 250, n = perSec <= 4 ? 1 : Math.round(perSec / 4);
   timer = setInterval(() => {
-    const n = Math.max(1, Math.round((speed / 4) * (15 / master().baseMin)));
     for (let i = 0; i < n; i++) if (!advanceOne()) { stopPlay(); log('Fin de la période chargée.', 'info'); break; }
     redraw();
-  }, 250);
-};
+  }, every);
+}
 window.stepBars = (n) => { if (!acct) return; stopPlay(); for (let i = 0; i < n && advanceOne(); i++); redraw(); if (master().cur >= master().base.length - 1) log('Fin de la période chargée.', 'info'); };
 window.stepMinutes = (m) => window.stepBars(Math.max(1, Math.round(m / master().baseMin)));
 window.jumpNext = (kind) => {
@@ -1070,7 +1076,7 @@ window.jumpNext = (kind) => {
 window.restart = () => { if (acct) rewindTo(startStep); };
 $('main-toolbar').addEventListener('click', (e) => { const b = e.target.closest('[data-back]'); if (!b || !acct) return; rewindTo(master().cur - Math.max(1, Math.round(Number(b.dataset.back) / master().baseMin))); });
 $('tf-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-tf]'); if (!b || b.disabled) return; tfSec = Number(b.dataset.tf); document.querySelectorAll('#tf-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); if (acct) { redraw({ resetView: true }); fitChart(); } });
-$('speed-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; speed = Number(b.dataset.speed); document.querySelectorAll('#speed-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); });
+$('speed-grp').addEventListener('click', (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; speed = Number(b.dataset.speed); document.querySelectorAll('#speed-grp .tb').forEach((x) => x.classList.toggle('active', x === b)); if (playing) startTimer(); });
 
 // drag the stop / target / pending lines with the mouse
 const chartEl = $('chart');
