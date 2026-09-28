@@ -145,6 +145,9 @@
   .why-box .why-warn { display: none; color: var(--amber); font-weight: 700; font-size: 12px; margin-left: 6px; }
   .why-box.need { border-color: var(--amber); }
   .why-box.need .why-warn { display: inline; }
+  /* 2026-09-28 : mode quiz (arrêt sur chaque setup de la règle) */
+  .quiz-banner { border: 1px solid var(--blue); background: rgba(76,158,255,0.10); border-radius: var(--radius); padding: 8px 10px; margin: 0 0 8px; font-size: 12.5px; line-height: 1.6; }
+  .quiz-banner.nudge { border-color: var(--amber); background: rgba(232,179,57,0.12); }
   .why-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
   .why-list label { font-size: 11px; border: 1px solid var(--panel-border-strong); border-radius: 10px; padding: 2px 8px; cursor: pointer; color: var(--muted); user-select: none; }
   .why-list input { display: none; }
@@ -187,7 +190,8 @@
     </div>
     <div class="modebox" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
       <label class="check" style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="sim-blind" /> <strong>🙈 Backtest à l'aveugle</strong></label>
-      <span class="meta" style="flex:1 1 260px;">Période tirée au hasard, dates cachées (tu vois « J3 mar. 09:30 » : le jour du rejeu, le jour de la semaine et l'heure de New York), aucun signal du bot affiché. Décoche après coup pour voir les vraies dates.</span>
+      <label class="check" style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="sim-quiz" /> <strong>🎯 Mode quiz</strong></label>
+      <span class="meta" style="flex:1 1 260px;">Quiz : le rejeu s'arrête sur chaque setup de ta règle (FVG à gauche + BMS + zones d'entrée) trouvé par le programme ; tu dis si tu le prends (B / V puis Entrée) ou pourquoi tu le laisses (J). À l'aveugle : période tirée au hasard, dates cachées (tu vois « J3 mar. 09:30 » : le jour du rejeu, le jour de la semaine et l'heure de New York), aucun signal du bot affiché. Décoche après coup pour voir les vraies dates.</span>
     </div>
     <details>
       <summary style="cursor:pointer;font-size:13px;"><strong>Stratégies affichées</strong> <span class="meta" id="sim-strat-count"></span></summary>
@@ -268,6 +272,7 @@
           </div>
           <span class="draw-hint" id="draw-hint"></span>
         </div>
+        <div id="quiz-banner" class="quiz-banner" hidden></div>
         <div id="chart-wrap"><div id="chart"></div><svg id="draw-layer" xmlns="http://www.w3.org/2000/svg"></svg><div id="chart-empty">Choisis une paire et une date, puis « Charger ».</div></div>
         <div class="why-box" id="why-box"><div class="why-head"><strong>Pourquoi ?</strong> <span class="meta">coche tes raisons avant d'envoyer (Entrée), de laisser (J) ou de noter un trade manqué (M) ; elles vont dans ton journal</span> <span class="why-warn">⚠ aucune raison cochée</span></div><div class="why-list" id="t-why"></div><input type="text" id="t-note" placeholder="Note libre (optionnel) : ce qui t'a fait prendre ou laisser le trade" autocomplete="off" /></div>
         <div class="meta" id="chart-legend" style="margin-top:6px;"></div>
@@ -570,6 +575,7 @@ function initPair(pd, fromSec) {
   };
   for (const t of p.trades) { const d = Math.abs(t.entryPrice - t.stopPrice); t.netR = d > 0 ? t.rMultiple - p.spread / d : t.rMultiple; } // the project's own convention: spread paid once, as spread / stop distance
   p.byKey = new Map(p.trades.map((t) => [A.tradeKey(p.id, t), t]));
+  p.quiz = (pd.quiz || []).map((q, x) => ({ ...q, id: x })).sort((a, b) => a.sec - b.sec);
   return p;
 }
 const label = (p) => (p.dataset && p.dataset.name ? p.dataset.name : String(p.id).replace(/^real:/, ''));
@@ -663,6 +669,7 @@ function rewindTo(targetStep) {
   const drop = m.cur - targetStep;
   silent = true;
   restoreSnapshot(s);
+  quizPending = null; quizNudged = false; showQuiz();
   replayActionsAt(s.step);
   while (m.cur < targetStep && advanceOne()) replayActionsAt(m.cur);
   silent = false;
@@ -687,10 +694,12 @@ function applyAction(a) {
     case 'cfg': cfg = { ...a.cfg }; syncCfgUi(); return null;
     case 'place': {
       const res = placeOrder(p, a.side, a.o), filled = acct.positions.includes(res);
+      if (a.quiz != null) (acct.quizDone ||= []).push(a.quiz);
       if (a.why) journalAdd(a, p, { kind: 'trade', id: res.id, pending: !filled, type: a.o.type, entry: filled ? res.entry : res.price, sl: res.sl, tp: res.tp, units: res.units });
       return res;
     }
-    case 'skip': journalAdd(a, p, { kind: a.missed ? 'missed' : 'skip', type: a.type ?? null, entry: a.entry, sl: a.sl, tp: a.tp }); return null;
+    case 'skip': if (a.quiz != null) (acct.quizDone ||= []).push(a.quiz); journalAdd(a, p, { kind: a.missed ? 'missed' : 'skip', type: a.type ?? null, entry: a.entry, sl: a.sl, tp: a.tp }); return null;
+    case 'quizIgnore': (acct.quizDone ||= []).push(a.quiz); journalAdd(a, p, { kind: 'ignored' }); return null;
     case 'take': return takeTrade(p, a.key, a.o);
     case 'close': B.closePosition(acct, a.id, { bid: bidOf(P[posSymbol(a.id)]), time: now, fraction: a.frac }); marker(P[posSymbolOrLast(a)], { sec: now, pos: 'aboveBar', shape: 'circle', color: '#ffffff', text: 'Toi' }); return null;
     case 'be': B.breakEven(acct, a.id); return null;
@@ -701,7 +710,7 @@ function applyAction(a) {
     default: throw new Error(`Action inconnue: ${a.k}`);
   }
 }
-function journalAdd(a, p, x) { (acct.journal ||= []).push({ ...x, side: a.side || null, pair: p.id, symbol: p.symbol, sec: now, bid: bidOf(p), why: a.why || [], note: a.note || '', draw: a.draw || [], tf: a.tf ?? null, view: a.view ?? null, shot: a.shot ?? null }); }
+function journalAdd(a, p, x) { (acct.journal ||= []).push({ ...x, side: a.side || null, pair: p.id, symbol: p.symbol, sec: now, bid: bidOf(p), why: a.why || [], note: a.note || '', draw: a.draw || [], tf: a.tf ?? null, view: a.view ?? null, shot: a.shot ?? null, quiz: a.quiz ?? null }); }
 const posSymbol = (id) => (acct.positions.find((p) => p.id === id) || {}).symbol;
 const posSymbolOrLast = (a) => a.pairId || active;
 const pendSymbol = (id) => (acct.pending.find((o) => o.id === id) || {}).symbol;
@@ -832,7 +841,7 @@ window.sendTicket = async () => {
   busy = true;
   try {
     const shot = await captureChart(`${ticket.side === 'buy' ? 'ACHAT' : 'VENTE'} ${ticket.type === 'market' ? 'au marché' : ticket.type}`);
-    if (tryAction({ k: 'place', pairId: active, side: ticket.side, o: readOrder(), why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt(), shot })) { keepShot(shot); clearTicket(); clearWhy(); }
+    if (tryAction({ k: 'place', pairId: active, side: ticket.side, o: readOrder(), why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt(), shot, quiz: quizPending ? quizPending.id : null })) { keepShot(shot); clearTicket(); clearWhy(); quizAnswered(); }
   } finally { busy = false; }
 };
 async function noteSetup(missed) {
@@ -843,8 +852,8 @@ async function noteSetup(missed) {
   try {
     const shot = await captureChart(missed ? `TRADE MANQUÉ ${ticket.side === 'buy' ? 'achat' : 'vente'}` : 'JE LAISSE');
     const entry = on ? (ticket.type === 'market' ? tkEntry() : ticket.price) : null;
-    if (tryAction({ k: 'skip', missed, pairId: active, side: on ? ticket.side : null, type: on ? ticket.type : null, entry, sl: on ? ticket.sl : null, tp: on ? ticket.tp : null, why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt(), shot })) {
-      keepShot(shot); log(missed ? 'Trade manqué noté dans ton journal, avec la capture.' : 'Setup laissé : noté dans ton journal de backtest.', 'info'); clearTicket(); clearWhy();
+    if (tryAction({ k: 'skip', missed, pairId: active, side: on ? ticket.side : quizPending ? (quizPending.dir > 0 ? 'buy' : 'sell') : null, type: on ? ticket.type : null, entry, sl: on ? ticket.sl : null, tp: on ? ticket.tp : null, why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt(), shot, quiz: quizPending ? quizPending.id : null })) {
+      keepShot(shot); quizAnswered(); log(missed ? 'Trade manqué noté dans ton journal, avec la capture.' : 'Setup laissé : noté dans ton journal de backtest.', 'info'); clearTicket(); clearWhy();
     }
   } finally { busy = false; }
 }
@@ -988,6 +997,10 @@ function renderLines() {
     add(o.price, '#e8b339', `${o.side === 'buy' ? '▲' : '▼'} ${o.type === 'limit' ? 'limite' : 'stop'} #${o.id}`, 1, { id: o.id, kind: 'pending' });
     add(o.sl, 'rgba(255,92,95,0.6)', `SL #${o.id}`, 2); add(o.tp, 'rgba(47,212,128,0.6)', `TP #${o.id}`, 2);
   }
+  if (quizPending && id === order[0]) {
+    quizPending.plan.forEach((z, k) => add(z.entry, '#4c9eff', `Zone ${k + 1} (règle)`, 1));
+    quizPending.targets.forEach((t, k) => add(t, '#a78bfa', `Objectif ${k + 1} (règle)`, 1));
+  }
   if (ticket.armed && cfg.mode !== 'auto') {
     const money = (x) => { const m = tkMoney(x); return m == null ? '' : ` ${sgn(m, 0)} $`; };
     if (ticket.type !== 'market') add(ticket.price, '#e8b339', `Entrée ${ticket.type === 'limit' ? 'limite' : 'stop'} (ticket)`, 0, { kind: 'tk-price' });
@@ -1070,11 +1083,41 @@ function renderNews() {
   $('news-list').innerHTML = (next.length ? '<div>À venir :</div>' + next.map((n) => row(n, 'win')).join('') : '') + (past.length ? '<div style="margin-top:6px;">Passées :</div>' + past.map((n) => row(n, '')).join('') : '');
 }
 
+// ---------------------------------------------------------------- quiz : arrêt sur chaque setup de la règle (signalsLY côté serveur)
+let quizPending = null, quizNudged = false;
+function checkQuiz() {
+  const p = master();
+  if (silent || quizPending || !p || !p.quiz || !p.quiz.length || !acct) return false;
+  const done = acct.quizDone || [];
+  const q = p.quiz.find((x) => x.sec - 60 <= now && !done.includes(x.id)); // connu à la clôture de la bougie qui le confirme
+  if (!q) return false;
+  quizPending = q; quizNudged = false; stopPlay(); showQuiz();
+  return true;
+}
+function showQuiz() {
+  const el = $('quiz-banner'); if (!el) return;
+  if (!quizPending) { el.hidden = true; return; }
+  const q = quizPending, side = q.dir > 0 ? 'ACHAT' : 'VENTE';
+  el.hidden = false; el.classList.toggle('nudge', quizNudged);
+  el.innerHTML = `🎯 <strong>Setup de la règle : ${side}</strong> · zones d'entrée ${q.plan.map((z, k) => `${k + 1}) ${px(z.entry)}`).join(' · ')} · objectif${q.targets.length > 1 ? 's' : ''} ${q.targets.map((t) => px(t)).join(', ')} <span class="meta">(lignes bleues et violettes sur le graphique)</span><br>`
+    + `<strong>Tu le prendrais ?</strong> ${q.dir > 0 ? 'B' : 'V'} → place <em>tes</em> lignes → Entrée · <strong>J</strong> = je laisse (coche pourquoi en dessous) · <strong>M</strong> = trade manqué`
+    + (quizNudged ? '<br><span style="color:var(--amber);font-weight:700;">Réponds d\'abord (B / V puis Entrée, ou J). Avancer encore une fois le compte comme « ignoré ».</span>' : '');
+}
+function quizAnswered() { if (!quizPending) return; quizPending = null; quizNudged = false; showQuiz(); renderLines(); }
+// avancer sans répondre : un premier rappel, puis le setup est noté « ignoré »
+function quizGate() {
+  if (!quizPending) return false;
+  if (!quizNudged) { quizNudged = true; showQuiz(); return true; }
+  tryAction({ k: 'quizIgnore', pairId: order[0], side: quizPending.dir > 0 ? 'buy' : 'sell', quiz: quizPending.id, why: [], note: '' });
+  quizAnswered(); return false;
+}
+
 // ---------------------------------------------------------------- controls
 function stopPlay() { playing = false; clearInterval(timer); $('btn-play').textContent = '▶ Lecture'; }
 window.togglePlay = () => {
   if (!acct) return;
   if (playing) return stopPlay();
+  if (quizGate()) return;
   playing = true; $('btn-play').textContent = '⏸ Pause';
   startTimer();
 };
@@ -1084,18 +1127,19 @@ function startTimer() {
   const perSec = speed * (15 / master().baseMin); // base candles per second (an M1 replay keeps the same pace of time)
   const every = perSec <= 4 ? 1000 / perSec : 250, n = perSec <= 4 ? 1 : Math.round(perSec / 4);
   timer = setInterval(() => {
-    for (let i = 0; i < n; i++) if (!advanceOne()) { stopPlay(); log('Fin de la période chargée.', 'info'); break; }
+    for (let i = 0; i < n; i++) { if (!advanceOne()) { stopPlay(); log('Fin de la période chargée.', 'info'); break; } if (checkQuiz()) break; }
     redraw();
   }, every);
 }
-window.stepBars = (n) => { if (!acct) return; stopPlay(); for (let i = 0; i < n && advanceOne(); i++); redraw(); if (master().cur >= master().base.length - 1) log('Fin de la période chargée.', 'info'); };
+window.stepBars = (n) => { if (!acct) return; stopPlay(); if (quizGate()) return; for (let i = 0; i < n; i++) { if (!advanceOne() || checkQuiz()) break; } redraw(); if (master().cur >= master().base.length - 1) log('Fin de la période chargée.', 'info'); };
 window.stepMinutes = (m) => window.stepBars(Math.max(1, Math.round(m / master().baseMin)));
 window.jumpNext = (kind) => {
   if (!acct) return; stopPlay();
   const all = kind === 'signal' ? order.flatMap((id) => P[id].trades.map((x) => x.entrySec)) : data.news.map((n) => n.sec);
   const target = all.filter((s) => s > now).sort((a, b) => a - b)[0];
   if (target === undefined) { log(kind === 'signal' ? 'Plus aucun signal dans la période chargée.' : 'Plus aucune annonce dans la période chargée.', 'info'); return; }
-  while (now < target && advanceOne());
+  if (quizGate()) return;
+  while (now < target && advanceOne() && !checkQuiz());
   redraw();
 };
 window.restart = () => { if (acct) rewindTo(startStep); };
@@ -1126,6 +1170,7 @@ function initSimulation() {
   const m = master();
   const balance = Number($('sim-balance').value) || 10000;
   acct = B.createAccount({ balance });
+  acct.quizDone = []; quizPending = null; showQuiz();
   acct.journal = []; // manual trades and skipped setups, with the reasons (part of the account: a rewind rolls it back too)
   sessionId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
   for (const id of order) { acct.spreads[id] = P[id].spread; acct.rates[id] = 1; }
@@ -1172,7 +1217,7 @@ function requestBody(random) {
     if (!(meta.realSymbols || []).includes(real(symbol))) throw new Error(`Pas de données réelles pour ${symbol} (seulement ${(meta.realSymbols || []).join(', ')}).`);
     symbol = `real:${real(symbol)}`; extras = extras.filter((x) => meta.realSymbols.includes(x)).map((x) => `real:${x}`);
   }
-  const body = { symbol, extraSymbols: extras, days, strategyIds: ids, news: $('sim-news').checked, baseMinutes: $('sim-botfull').checked ? 15 : Number($('sim-base').value), contextDays: Number($('sim-context').value) };
+  const body = { symbol, extraSymbols: extras, days, strategyIds: ids, news: $('sim-news').checked, baseMinutes: $('sim-botfull').checked ? 15 : Number($('sim-base').value), contextDays: Number($('sim-context').value), quiz: $('sim-quiz').checked };
   if (range !== 'custom') body.from = '9999-12-31'; // clamped by the server to the last window that fits: the END of the data
   else if (!random && !$('sim-blind').checked && from) body.from = from;
   return body;
@@ -1551,7 +1596,7 @@ const btMsg = (t, bad) => { $('bt-msg').innerHTML = t ? `<span class="${bad ? 'l
 function journalRows() {
   if (!acct) return [];
   return (acct.journal || []).map((j) => {
-    const r = { ...j, exits: [], status: j.kind === 'skip' ? 'laissé' : j.kind === 'missed' ? 'manqué' : '' };
+    const r = { ...j, exits: [], status: j.kind === 'skip' ? 'laissé' : j.kind === 'missed' ? 'manqué' : j.kind === 'ignored' ? 'ignoré' : '' };
     if (j.kind !== 'trade') return r;
     const posId = j.pending ? (acct.positions.find((x) => x.orderId === j.id) || acct.history.find((h) => h.orderId === j.id) || {}).id : j.id;
     if (posId == null) { r.status = acct.pending.some((o) => o.id === j.id) ? 'en attente' : 'annulé'; return r; }
@@ -1578,9 +1623,11 @@ function journalExport() {
       why: r.why, note: r.note, status: r.status, fillAt: iso(r.fillSec), fill: r.fill ?? null,
       exits: r.exits.map((h) => ({ at: iso(h.closeTime), price: h.exit, reason: h.reason, pnl: h.pnl, r: h.r })), pnl: r.pnl ?? null, r: r.r ?? null,
       drawings: r.draw.map((d) => ({ ...d, t1: iso(d.t1), t2: iso(d.t2), at: iso(d.at) })),
-      shot: r.shot ?? null, timeframe: r.tf ? tfName(r.tf) : null, view: r.view ? { from: iso(r.view.from), to: iso(r.view.to) } : null,
+      shot: r.shot ?? null, quiz: r.quiz ?? null, timeframe: r.tf ? tfName(r.tf) : null, view: r.view ? { from: iso(r.view.from), to: iso(r.view.to) } : null,
     })),
     // trade management, in order: stop / target moves, break-even, partial or full closes, cancelled orders
+    // every quiz setup reached so far, answered or not (the rule's own plan, to compare with the decisions)
+    quizzes: (master()?.quiz || []).filter((q) => q.sec - 60 <= now).map((q) => ({ id: q.id, at: iso(q.sec), dir: q.dir, plan: q.plan, targets: q.targets, answered: (acct?.quizDone || []).includes(q.id) })),
     management: actions.filter((a) => ['modify', 'be', 'close', 'cancel', 'movePending', 'closeAll'].includes(a.k)).map((a) => ({ k: a.k, at: iso(master()?.base[a.step]?.t), id: a.id ?? null, patch: a.patch ?? null, price: a.price ?? null, fraction: a.frac ?? null })),
   };
 }
@@ -1592,7 +1639,7 @@ function renderJournal() {
   const closed = rows.filter((r) => r.status === 'fermé'), wins = closed.filter((r) => r.pnl > 0).length, totR = closed.reduce((s, r) => s + (r.r || 0), 0);
   $('bt-sum').textContent = rows.length ? `— ${closed.length} trade(s) fermé(s), ${closed.length ? fmt((wins / closed.length) * 100, 0) : 0} % gagnants, ${sgn(totR, 1)}R · ${rows.filter((r) => r.kind === 'skip').length} laissé(s) · ${rows.filter((r) => r.kind === 'missed').length} manqué(s)` : '';
   $('bt-list').innerHTML = rows.length ? `<table class="tbl"><thead><tr><th>Quand</th><th>Sens</th><th>Entrée</th><th>SL</th><th>TP</th><th>État</th><th>R</th><th>Pourquoi</th></tr></thead><tbody>${[...rows].reverse().map((r) => `<tr>
-    <td>${nyShort(r.sec)}${r.shot && shots.has(r.shot) ? ` <a href="#" onclick="openShot('${r.shot}');return false;" title="Voir la capture">📷</a>` : ''}</td><td>${r.kind === 'skip' ? '✋' : r.kind === 'missed' ? '📸' : ''}${r.side === 'buy' ? '▲' : r.side === 'sell' ? '▼' : '—'}</td><td>${r.entry != null ? px(r.entry) : '—'}</td><td>${r.sl != null ? px(r.sl) : '—'}</td><td>${r.tp != null ? px(r.tp) : '—'}</td>
+    <td>${nyShort(r.sec)}${r.shot && shots.has(r.shot) ? ` <a href="#" onclick="openShot('${r.shot}');return false;" title="Voir la capture">📷</a>` : ''}</td><td>${r.kind === 'skip' ? '✋' : r.kind === 'missed' ? '📸' : r.kind === 'ignored' ? '⏭' : ''}${r.quiz != null ? '🎯' : ''}${r.side === 'buy' ? '▲' : r.side === 'sell' ? '▼' : '—'}</td><td>${r.entry != null ? px(r.entry) : '—'}</td><td>${r.sl != null ? px(r.sl) : '—'}</td><td>${r.tp != null ? px(r.tp) : '—'}</td>
     <td>${r.status}${r.status === 'ouvert' ? ` <span class="${r.float >= 0 ? 'win' : 'loss'}">${sgn(r.float, 0)}</span>` : ''}</td><td>${r.r != null ? `<span class="${r.r >= 0 ? 'win' : 'loss'}">${sgn(r.r, 2)}</span>` : '—'}</td>
     <td>${escSvg([...r.why, r.note].filter(Boolean).join(', ')) || '—'}</td></tr>`).join('')}</tbody></table>` : 'Rien encore : envoie un ordre ou « ✋ Je laisse » un setup.';
   const sig = `${sessionId}|${actions.length}|${rows.length}|${closed.length}|${rows.filter((r) => r.status === 'ouvert').length}|${rows.filter((r) => r.status === 'en attente').length}`;
@@ -1635,7 +1682,7 @@ window.sendJournal = sendJournal;
 syncTicketUi();
 
 // read-only handle for automated browser tests (module scope is not global)
-window.__sim = { get shots() { return shots; }, get ticket() { return ticket; }, get drawings() { return drawings; }, journalExport, get acct() { return acct; }, get P() { return P; }, get order() { return order; }, get now() { return now; }, get cfg() { return cfg; }, get actions() { return actions; }, get snaps() { return snaps; }, get auto() { return autoState; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, get master() { return master(); }, price: (x) => series.priceToCoordinate(x) };
+window.__sim = { get quizPending() { return quizPending; }, get shots() { return shots; }, get ticket() { return ticket; }, get drawings() { return drawings; }, journalExport, get acct() { return acct; }, get P() { return P; }, get order() { return order; }, get now() { return now; }, get cfg() { return cfg; }, get actions() { return actions; }, get snaps() { return snaps; }, get auto() { return autoState; }, get dragLines() { return dragLines; }, get bands() { return sessionsPrim.bands; }, get master() { return master(); }, price: (x) => series.priceToCoordinate(x) };
 $('sim-from').value = '';
 countStrats();
 syncCfgUi();

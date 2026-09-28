@@ -24,6 +24,8 @@ import { fetchPerformanceBySymbol, createTradeLogClient } from './dataSources/su
 import { getStrategySwitches, setStrategySwitches } from './strategySwitches.js';
 import { getKillSwitchState, setKillSwitchOverride, refreshKillSwitch } from './killSwitch.js';
 import { saveSimJournal, listSimJournals, saveSimShot } from './dataSources/supabaseSimJournal.js';
+import { buildContext } from '../scripts/lib/fvgContext.js';
+import { signalsLY } from '../scripts/lib/esdrasMethod.js';
 import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
 import { DEFAULT_SPREADS } from './backtest/transactionCosts.js';
 import { FIXED_EST_TO_UTC_OFFSET_MS } from './backtest/nySession.js';
@@ -674,8 +676,20 @@ app.post('/api/lab/replay', async (req, res) => {
           candles: out.candles.map(([t, o, h, l, c]) => [Math.floor((t + OFFSET) / 1000), o, h, l, c]),
           trades: out.trades.map((t) => ({ ...t, entryTime: t.entryTime + OFFSET, exitTime: t.exitTime + OFFSET })),
           notApplicable: out.notApplicable,
+          quiz: body.quiz ? quizSignals(out, base) : null,
         },
       };
+    }
+    // 2026-09-28 (Esdras) : mode quiz du Simulateur - les setups de sa règle « version échelle » (signalsLY) dans la fenêtre, pour arrêter
+    // le rejeu sur chacun et lui demander s'il le prend ; heure réelle, en secondes. Calculé sur les bougies M15 du rejeu seulement.
+    function quizSignals(out, base) {
+      if (base !== 15 || out.candles.length < 400) return [];
+      const c = out.candles, f = (k) => Float64Array.from(c, (r) => r[k]);
+      const S = { t: f(0), o: f(1), h: f(2), l: f(3), c: f(4), n: c.length };
+      const seen = new Set();
+      return signalsLY(buildContext(S)).filter((x) => x.tau >= out.window.from && x.tau <= out.window.to && !seen.has(x.tau) && seen.add(x.tau)).map((x) => ({
+        sec: Math.floor((x.tau + OFFSET) / 1000), dir: x.dir, plan: x.plan, targets: x.targets.slice(0, 3),
+      }));
     }
 
     const first = await loadPair(body.symbol, { fromEng: fromEngine, strict: true });
