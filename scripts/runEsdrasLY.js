@@ -12,7 +12,8 @@ const mode = process.argv[2] || 'match', SYM = 'US100';
 const OFF = 5 * 3600000; // heure du moteur (EST fixe) -> UTC réel
 const ny = (t) => new Date(t + OFF).toLocaleString('fr-FR', { timeZone: 'America/New_York', weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const opts = { spread: (p) => spreadAt(SYM, p), swap: swapCost(SYM) };
-const VARIANTS = { LY: {} };
+const QUIZ = { minZonePct: 0.0002, minRiskAtr: 0.3, maxEntryAtr: 3 };
+const VARIANTS = process.argv.includes('--big') ? { 'LY-G': { bigBms: { minBodyAtr: 1 } }, 'LY-GQ': { ...QUIZ, bigBms: { minBodyAtr: 1 } } } : { LY: {} };
 
 if (mode === 'match') {
   // mêmes bougies M15 que le simulateur (data/backtest-input/US100.csv, heure du moteur), et bougies du compte en direct si fournies
@@ -46,6 +47,7 @@ if (mode === 'match') {
     out[k] = c.map((t) => ({ t: t.entryTime, r: t.r }));
   }
   lines.push('```');
-  fs.writeFileSync(`data/backtest-input/esdras-ly-${SYM}-${mode}.md`, lines.join('\n') + '\n');
-  fs.writeFileSync(`data/backtest-input/esdras-ly-${SYM}-${mode}.json`, JSON.stringify(out));
+  const SUF = process.argv.includes('--big') ? '-big' : '';
+  fs.writeFileSync(`data/backtest-input/esdras-ly${SUF}-${SYM}-${mode}.md`, lines.join('\n') + '\n');
+  fs.writeFileSync(`data/backtest-input/esdras-ly${SUF}-${SYM}-${mode}.json`, JSON.stringify(out));
 }
