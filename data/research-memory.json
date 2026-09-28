@@ -1633,5 +1633,40 @@
       "scripts/runEsdrasLY.js",
       "scripts/lib/esdrasMethod.js"
     ]
+  },
+  {
+    "id": "esdras-magnet-2026-09-28",
+    "title": "Le FVG 15 min à gauche est-il un aimant ? Non en général ; piste pour les FVG lointains (≥ 4 ATR)",
+    "date": "2026-09-28",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-magnet-2026-09-28.md). US100 2011-2018, 25 375 BMS dont 13 664 avec un FVG à gauche : atteint en 24 h 67,5 % contre 65,8 % pour un niveau quelconque à la même distance (en ATR) ; écart moyen par jour -0,81 point (t -1,32) ; 8 h : -1,11 point (t -2,21). Descriptif : FVG proches (0-2 ATR) 89,0 % contre 90,1 %, 2-4 ATR 67,0 % contre 67,0 %, 4-8 ATR 50,2 % contre 46,2 %, ≥ 8 ATR 27,3 % contre 18,3 % (piste non testée : peut venir d'un retour à la moyenne après un grand mouvement, à contrôler).",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-magnet-2026-09-28.md",
+      "data/backtest-input/esdras-magnet-US100-explore.md",
+      "scripts/runEsdrasMagnet.js"
+    ]
+  },
+  {
+    "id": "esdras-magnet-far-2026-09-28",
+    "title": "Aimant des FVG 15 min à gauche lointains (≥ 4 ATR) : petit effet confirmé en validation US100 et US500, non confirmé en finale",
+    "date": "2026-09-28",
+    "status": "inconclusive",
+    "summary": "Pré-enregistré (preregistration-esdras-magnet-far-2026-09-28.md). Écart d'atteinte en 24 h entre un FVG à gauche à ≥ 4 ATR et un niveau quelconque à la même distance, contrôlé par la taille du mouvement récent (quintiles de l'écart à l'extrême opposé des 96 bougies). US100 2011-2018 : brut +8,8 points (t 7,9), contrôlé +1,9 (t 1,7). US100 2019-2022 : brut +11,9 (t 6,8), contrôlé +6,6 (t 3,8), CONFIRMÉ. US500 2011-2018 : contrôlé +3,5 (t 2,9) ; US500 2019-2022 : contrôlé +4,5 (t 2,6). US100 finale 2023-2024 + 2026 : brut +7,3 (t 3,8), contrôlé +1,6 (t 0,8), NON CONFIRMÉ. Lecture : l'essentiel de l'avantage brut est du retour à la moyenne après un grand mouvement ; il reste un petit effet propre au FVG (+2 à +6 points), plus faible ces dernières années. C'est une probabilité d'atteinte, pas une stratégie rentable.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-magnet-far-2026-09-28.md",
+      "data/backtest-input/esdras-magnet-far-US100-explore.md",
+      "data/backtest-input/esdras-magnet-far-US100-validation.md",
+      "data/backtest-input/esdras-magnet-far-US100-final.md",
+      "data/backtest-input/esdras-magnet-far-US500-explore.md",
+      "data/backtest-input/esdras-magnet-far-US500-validation.md",
+      "scripts/runEsdrasMagnet.js"
+    ]
   }
 ]

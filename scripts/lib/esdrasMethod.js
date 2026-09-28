@@ -390,7 +390,10 @@ export function wideZones(b) {
   }
   return out;
 }
-export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minTargetPct = 0.001, rungs = 3, legBars = 48 } = {}) {
+// Options du mode quiz du Simulateur (2026-09-28, Esdras : « les entrées sont très loin du prix ») : minZonePct (hauteur minimale d'une
+// zone, en part du prix), minRiskAtr (stop d'au moins x ATR M15), maxEntryAtr (1re entrée à au plus x ATR M15 du prix à la pose).
+// Par défaut elles sont neutres : la règle testée (preregistration-esdras-ly) reste la même.
+export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minTargetPct = 0.001, rungs = 3, legBars = 48, minZonePct = 0, minRiskAtr = 0, maxEntryAtr = Infinity } = {}) {
   const { S, b15 } = X, out = [];
   const f15 = X.fvg[0].slice().sort((p, q) => p.k - q.k), zones = wideZones(b15);
   const maxH = sparse(b15.map((b) => b.h), Math.max), minL = sparse(b15.map((b) => b.l), Math.min);
@@ -413,7 +416,7 @@ export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minT
     // zones de la jambe encore vierges à la pose, fusionnées, de la plus proche à la plus lointaine
     let zs = [];
     for (let x = firstK(zones, L + 1); x < zones.length && zones[x].k <= jc; x++) {
-      const z = zones[x]; if (z.dir !== dir) continue;
+      const z = zones[x]; if (z.dir !== dir || z.top - z.bot < minZonePct * b15[q].c) continue;
       if (dir > 0 ? z.bot <= legEnd : z.top >= legEnd) continue;
       if (z.k + 1 <= jp) { if (dir > 0 ? minL(z.k + 1, jp) <= z.top : maxH(z.k + 1, jp) >= z.bot) continue; }
       zs.push({ bot: z.bot, top: z.top, k: z.k });
@@ -422,7 +425,8 @@ export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minT
     const merged = [];
     for (const z of zs) { const p = merged[merged.length - 1]; if (p && (dir > 0 ? z.top >= p.bot : z.bot <= p.top)) { p.bot = Math.min(p.bot, z.bot); p.top = Math.max(p.top, z.top); } else merged.push({ ...z }); }
     if (!merged.length) continue;
-    const near = (z) => (dir > 0 ? z.top : z.bot);
+    const near = (z) => (dir > 0 ? z.top : z.bot), atr = X.atr15[jp] || 0;
+    if (maxEntryAtr < Infinity && !(atr > 0 && Math.abs(b15[jp].c - near(merged[0])) <= maxEntryAtr * atr)) continue;
     // objectifs à gauche, du plus proche au plus lointain
     const E0 = near(merged[0]), targets = [];
     for (let x = firstK(f15, q - lookback); x < f15.length && f15[x].k < q; x++) {
@@ -436,6 +440,7 @@ export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minT
     for (let r = 0; r < Math.min(rungs, merged.length); r++) {
       const entry = near(merged[r]), stop = r + 1 < merged.length && r + 1 < rungs ? near(merged[r + 1]) : legEnd;
       if (!(dir > 0 ? stop < entry : stop > entry)) break;
+      if (minRiskAtr > 0 && !(Math.abs(entry - stop) >= minRiskAtr * atr)) break;
       plan.push({ entry, stop });
     }
     if (!plan.length) continue;
