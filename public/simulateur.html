@@ -147,6 +147,10 @@
   .why-box.need .why-warn { display: inline; }
   /* 2026-09-28 : mode quiz (arrêt sur chaque setup de la règle) */
   .quiz-banner { border: 1px solid var(--blue); background: rgba(76,158,255,0.10); border-radius: var(--radius); padding: 8px 10px; margin: 0 0 8px; font-size: 12.5px; line-height: 1.6; }
+  .quiz-banner .quiz-btn { padding: 6px 12px; margin: 4px 4px 2px 0; font-size: 13px; font-weight: 700; border-radius: var(--radius); cursor: pointer; }
+  .quiz-banner .quiz-yes { border: 1px solid transparent; color: #fff; }
+  .quiz-banner .quiz-yes.buy { background: var(--green); }
+  .quiz-banner .quiz-yes.sell { background: var(--red); }
   .quiz-banner.nudge { border-color: var(--amber); background: rgba(232,179,57,0.12); }
   .why-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
   .why-list label { font-size: 11px; border: 1px solid var(--panel-border-strong); border-radius: 10px; padding: 2px 8px; cursor: pointer; color: var(--muted); user-select: none; }
@@ -1124,9 +1128,17 @@ function showQuiz() {
   const q = quizPending, side = q.dir > 0 ? 'ACHAT' : 'VENTE';
   el.hidden = false; el.classList.toggle('nudge', quizNudged);
   el.innerHTML = `🎯 <strong>Setup de la règle : ${side}</strong> · zones d'entrée ${q.plan.map((z, k) => `${k + 1}) ${px(z.entry)}`).join(' · ')} · objectif${q.targets.length > 1 ? 's' : ''} ${q.targets.map((t) => px(t)).join(', ')} <span class="meta">(bandes bleues = zones, lignes violettes = objectifs)</span><br>`
-    + `<strong>Tu le prendrais ?</strong> ${q.dir > 0 ? 'B' : 'V'} → place <em>tes</em> lignes → Entrée · <strong>J</strong> = je laisse (coche pourquoi en dessous) · <strong>M</strong> = trade manqué`
+    + `<strong>Tu le prendrais ?</strong> <button type="button" class="quiz-btn quiz-yes ${q.dir > 0 ? 'buy' : 'sell'}" onclick="quizYes()">✅ Oui, je le prends</button> <button type="button" class="btn-ghost quiz-btn" onclick="skipSetup()">✋ Non, je laisse</button><br>`
+    + `<span class="meta">Oui → le ticket s'arme (${side}) : place <em>tes</em> lignes Entrée / SL / TP puis « ENVOYER L'ORDRE ». Non → coche d'abord le pourquoi sous le graphique. Clavier : ${q.dir > 0 ? 'B' : 'V'} puis Entrée · J = je laisse · M = trade manqué</span>`
     + (quizNudged ? '<br><span style="color:var(--amber);font-weight:700;">Réponds d\'abord (B / V puis Entrée, ou J). Avancer encore une fois le compte comme « ignoré ».</span>' : '');
 }
+// bouton « Oui » du quiz (téléphone : pas de clavier) : arme le ticket dans le sens du setup et descend jusqu'au ticket
+window.quizYes = () => {
+  if (!quizPending) return;
+  armSide(quizPending.dir > 0 ? 'buy' : 'sell');
+  orderMsg('Ticket armé : ajuste Entrée / SL / TP (glisse les lignes ou 🎯), coche le pourquoi, puis « ENVOYER L\'ORDRE ».');
+  $('t-sum').scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
 function quizAnswered() { if (!quizPending) return; quizPending = null; quizNudged = false; showQuiz(); renderLines(); }
 // avancer sans répondre : un premier rappel, puis le setup est noté « ignoré »
 function quizGate() {
