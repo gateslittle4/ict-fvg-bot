@@ -74,3 +74,10 @@ Données après coup, sur un trade qu'il aurait pris le dimanche 27/09 au soir (
 - L'ouverture du dimanche soir (18h NY) fait partie de ses moments de trade ; les fenêtres codées (7h-11h et 20h-23h NY) ne la couvraient pas.
 - Un gros BMS dans le sens du trade est une raison de le prendre.
 - Il se rappelle sa stratégie petit à petit : ces règles viennent d'un seul exemple et ne doivent pas être figées avant d'avoir des dizaines de cas du journal de backtest du simulateur (table `bot_sim_journal`), puis un pré-enregistrement.
+
+### Premier trade du journal de backtest (simulateur à l'aveugle, 28/09/2026) : US100, lundi 26/08/2024
+
+Vente à 10h30 NY sur la bougie qui monte dans le FVG M15 baissier du matin (19 713 – 19 737), stop au-dessus de sa mèche (19 728,7), objectif 19 603 dans le FVG haussier de vendredi à gauche (19 599 – 19 629) : +1,74R à 11h00. Précisions d'Esdras :
+1. **Entrée dès que le prix touche le FVG baissier** (ordre limite au bord), sans attendre la clôture de la bougie. Dans le simulateur il était entré au marché à la clôture.
+2. La zone du bas est un **FVG haussier à gauche de la veille** (vendredi).
+3. **Choix de l'objectif** : le plus haut de vendredi (19 823, liquidité intacte) était l'aimant naturel, mais **aucun FVG haussier n'a tenu pour y mener le prix** ; il en conclut que le prix cherche plutôt le FVG haussier à gauche, en dessous. Autrement dit, l'échec des FVG d'un sens désigne l'objectif de l'autre sens.
