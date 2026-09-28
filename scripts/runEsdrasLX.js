@@ -17,7 +17,8 @@ if (mode === 'match') {
   // mêmes bougies M15 que le simulateur (data/backtest-input/US100.csv, heure du moteur), et bougies du compte en direct si fournies
   const fromCsv = (a, b) => { const rows = fs.readFileSync('data/backtest-input/US100.csv', 'utf8').split('\n').slice(1).map((l) => l.split(',').map(Number)).filter((r) => r[0] >= a && r[0] < b);
     const f = (k) => Float64Array.from(rows, (r) => r[k]); return { t: f(0), o: f(1), h: f(2), l: f(3), c: f(4), n: rows.length }; };
-  const cases = [['séance du 25-27/06/2018', fromCsv(Date.parse('2018-06-11') - OFF, Date.parse('2018-06-29') - OFF), Date.parse('2018-06-25T00:00:00Z') - OFF, Date.parse('2018-06-28T00:00:00Z') - OFF]];
+  const cases = [['séance du 25-27/06/2018', fromCsv(Date.parse('2018-06-11') - OFF, Date.parse('2018-06-29') - OFF), Date.parse('2018-06-25T00:00:00Z') - OFF, Date.parse('2018-06-28T00:00:00Z') - OFF],
+    ['séance du 19-21/06/2017', fromCsv(Date.parse('2017-06-05') - OFF, Date.parse('2017-06-23') - OFF), Date.parse('2017-06-19T00:00:00Z') - OFF, Date.parse('2017-06-22T00:00:00Z') - OFF]];
   if (process.argv[3]) { const c = JSON.parse(fs.readFileSync(process.argv[3], 'utf8')).candles; const f = (k) => Float64Array.from(c, (x) => x[k]);
     cases.push(['compte en direct, 24-28/09/2026', { t: Float64Array.from(c, (x) => x.time - OFF), o: f('open'), h: f('high'), l: f('low'), c: f('close'), n: c.length }, Date.parse('2026-09-24T00:00:00Z') - OFF, Date.parse('2026-09-29T00:00:00Z') - OFF]); }
   for (const [name, S, from, to] of cases) {
