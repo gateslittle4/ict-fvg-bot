@@ -29,6 +29,7 @@ import { MANAGED_SOURCES, entryBlockReason, momentumEntryBlockReason, momentumOr
 import { IntradayMomentumEngine } from '../src/intradayMomentumEngine.js';
 import { CONFIG } from '../src/config.js';
 import { OFF, eng, loadM1, toM15, lower, refPrice, swapPerUnit } from './lib/m1Data.js';
+import { weekendCloseAt } from './lib/weekendClose.js';
 
 const SRC = process.argv[2];
 if (SRC === 'summary') { summary(); process.exit(0); }
@@ -39,7 +40,10 @@ const FROM = process.env.FROM_DATE ? Date.parse(process.env.FROM_DATE) - OFF : p
 const TO = process.argv[5] ? eng(Number(process.argv[5])) : Infinity;
 // SB_RR=<n> : RRR du Silver Bullet remplacé (preregistration-silverbullet-rr-2026-09-24.md), fichiers séparés.
 const SB_RR = process.env.SB_RR ? Number(process.env.SB_RR) : null;
-const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}${process.env.SPREAD_MULT != null ? `-spread${process.env.SPREAD_MULT}` : ''}${SB_RR ? `-sbrr${SB_RR}` : ''}`;
+// WEEKEND_CLOSE=1 : vendredi 16:45 New York, positions du combo fermées (RSI(2), A, B exceptées) et plus d'entrée du combo jusqu'au
+// dimanche (preregistration-weekend-close-2026-09-25.md), fichiers séparés.
+const WEEKEND_CLOSE = process.env.WEEKEND_CLOSE === '1';
+const TAG = `${SRC}-${process.argv[4] ?? 'debut'}-${process.argv[5] ?? 'fin'}${process.env.SPREAD_MULT != null ? `-spread${process.env.SPREAD_MULT}` : ''}${SB_RR ? `-sbrr${SB_RR}` : ''}${WEEKEND_CLOSE ? '-weekendclose' : ''}`;
 const START_BALANCE = 10000;
 const WARMUP_BARS = 8640; // ce que le live demande au démarrage (90 jours de M15)
 const DAILY = 'rsi2-daily';
@@ -96,7 +100,12 @@ function closePosition(p, exitBid, exitTime, reason) {
   balance += pnl;
   guardrail.recordTrade({ pnl, time: exitTime + OFF, balanceAfter: balance, symbol: p.sym });
   if (MANAGED_SOURCES.has(p.source)) { if (managed.get(p.sym) === p) managed.delete(p.sym); } else engine.clearBelievedPosition(p.sym, p.signalId);
-  trades.push({ symbol: p.sym, source: p.source, direction: p.dir, entryTime: p.fillTime, exitTime, r: Math.round((pnl / p.risk) * 1e4) / 1e4, pnl: Math.round(pnl * 100) / 100, balance: Math.round(balance * 100) / 100, reason });
+  // Prix (pour le Simulateur du site) : entrée au bid (un achat paie bid + spread), stop/objectif tels qu'envoyés, sortie au prix d'exécution.
+  const q = (x) => (x == null ? null : Math.round(x * 1e5) / 1e5);
+  trades.push({ symbol: p.sym, source: p.source, direction: p.dir, entryTime: p.fillTime, exitTime, r: Math.round((pnl / p.risk) * 1e4) / 1e4, pnl: Math.round(pnl * 100) / 100, balance: Math.round(balance * 100) / 100, reason,
+    entryPrice: q(p.dir === 'bullish' ? p.fill - s : p.fill), stopPrice: q(p.sl), targetPrice: q(p.tp), exitPrice: q(exitPx),
+    // pire perte latente pendant la vie du trade, en R (sans le swap) : bid le plus bas pour un achat, ask le plus haut pour une vente
+    mae: Math.round(Math.min(0, pnl / p.risk, ((p.worst == null ? 0 : p.dir === 'bullish' ? p.worst - p.fill : p.fill - (p.worst + s)) * p.units) / p.risk) * 1e4) / 1e4 });
   open.splice(open.indexOf(p), 1);
 }
 
@@ -116,13 +125,17 @@ function runExits(until) {
           let exitBid;
           if (stopHit) exitBid = bull ? Math.min(S.o[i], p.sl) : Math.max(S.o[i], p.sl - s); // gap à travers le stop : sortie à l'ouverture
           else exitBid = bull ? Math.max(S.o[i], p.tp) : Math.min(S.o[i], p.tp - s);
-          if (!best || S.t[i] < best.time) best = { p, time: S.t[i], exitBid, reason: stopHit ? 'stop' : 'target' };
+          // pire prix atteint (MAE) : au stop, la sortie ; à l'objectif, le pire de la minute compte aussi (prudent)
+          const worst = stopHit ? exitBid : bull ? S.l[i] : S.h[i];
+          if (!best || S.t[i] < best.time) best = { p, time: S.t[i], exitBid, reason: stopHit ? 'stop' : 'target', worst };
           break;
         }
+        p.worst = p.worst == null ? (bull ? S.l[i] : S.h[i]) : bull ? Math.min(p.worst, S.l[i]) : Math.max(p.worst, S.h[i]);
         p.cursor = i + 1;
       }
     }
     if (!best) return;
+    const bw = best.p.dir === 'bullish'; best.p.worst = best.p.worst == null ? best.worst : bw ? Math.min(best.p.worst, best.worst) : Math.max(best.p.worst, best.worst);
     closePosition(best.p, best.exitBid, best.time, best.reason);
   }
 }
@@ -181,10 +194,16 @@ if (momentum) {
 function executeMomentumEvent(ev, t) {
   const sym = ev.symbol; const M = mData[sym]; const j = lower(M.t, M.n, t);
   // Prix d'exécution : l'ouverture de la minute t dans les M1 de A/B (le premier tick après la décision, en live).
-  if (j >= M.n || M.t[j] - t > 5 * MIN) return; // pas de cotation dans les 5 minutes : marché fermé
+  if (j >= M.n || M.t[j] - t > 5 * MIN) {
+    // Les barres M1 que le bot construit pour A/B s'arrêtent à 15:59 NY : la sortie de clôture (16:00) n'a pas de minute suivante. Sans ce
+    // repli, la position restait ouverte dans le rejeu et bloquait les jours suivants (vu le 27/09). On sort au dernier cours connu.
+    if (ev.type === 'exit' && j > 0 && t - M.t[j - 1] <= 5 * MIN) { const held = managed.get(sym); if (held && held.source === ev.strategy) closePosition(held, M.c[j - 1], t, ev.reason === 'close' ? 'close' : 'signal'); }
+    return; // pas de cotation dans les 5 minutes : marché fermé
+  }
   const bid = M.o[j];
   const held = managed.get(sym);
   if (ev.type === 'exit') { if (held && held.source === ev.strategy) closePosition(held, bid, t, ev.reason === 'close' ? 'close' : 'signal'); return; }
+  if (t >= TO) return; // après la fin de la tranche : sorties seulement
   const blocked = momentumEntryBlockReason({ heldBy: heldBy(sym), comboHolds: Boolean(engine.getOpenPosition(sym)), guardrailOk: guardrail.canTakeNewTrade(t + OFF, sym) })
     ?? entryBlockReason({ source: ev.strategy, heldBy: heldBy(sym), legAllowed: legAllowed(ev.strategy, sym) });
   if (blocked) { if (process.env.DEBUG_EVENTS) console.log(`  [A/B] ${new Date(t + OFF).toISOString().slice(0, 16)} ${ev.strategy} ${sym} ${ev.side} BLOQUÉ: ${blocked}`); return; }
@@ -210,18 +229,32 @@ function feedMomentum(until, inclusive) {
 
 // Boucle : toutes les bougies M15 après le préchauffage, dans l'ordre du temps (tous symboles).
 const idx = {}; for (const s of SYMS) idx[s] = lower(data[s].m15.map((c) => c.time), data[s].m15.length, firstLive);
-const times = [...new Set(SYMS.flatMap((s) => data[s].m15.slice(idx[s]).map((c) => c.time)))].filter((t) => t < TO).sort((a, b) => a - b);
+const times = [...new Set(SYMS.flatMap((s) => data[s].m15.slice(idx[s]).map((c) => c.time)))].sort((a, b) => a - b);
 let lastLog = Date.now();
 const MAX_BARS = Number(process.env.MAX_BARS || Infinity); // profilage : s'arrêter après N horodatages
 let nBars = 0;
-for (const T of times) {
+for (let ti = 0; ti < times.length; ti++) {
+  const T = times[ti];
   if (++nBars > MAX_BARS) break;
+  // Après la fin de la tranche : plus aucune entrée, on continue seulement jusqu'à la sortie normale des positions encore ouvertes
+  // (durée max, signal de sortie RSI(2)). Avant le 2026-09-25, runExits(Infinity) ne voyait que stop/objectif : un RSI(2) ouvert le
+  // 29/12/2016 (sans objectif) a couru jusqu'au stop de mars 2020 (-9 R).
+  const pastEnd = T >= TO;
+  if (pastEnd && open.length === 0) break;
   feedMomentum(T, false); // A/B : minutes finies avant T (en live, le combo traite sa bougie avant A/B à la même minute)
   runExits(T);
   // Balayage des positions « crues » sans position réelle (_clearStaleBeliefsAgainstBroker, toutes les 5 min en live, donc
   // avant la bougie suivante) : un signal validé puis refusé (exclusion RSI(2), taille nulle...) ne bloque pas le symbole.
   // Absent jusqu'au 2026-09-23 : la croyance restait coincée pour des mois (Divergence US500 bloquée « netting » dès juillet).
   for (const s of SYMS) { const b = engine.getOpenPosition(s); if (b && !open.some((p) => p.sym === s)) engine.clearBelievedPosition(s, b.id); }
+  const weekendLock = WEEKEND_CLOSE && weekendCloseAt(T, times[ti + 1] ?? Infinity);
+  if (weekendLock) {
+    for (const p of open.filter((x) => !MANAGED_SOURCES.has(x.source))) {
+      const S = data[p.sym].m1; const i = lower(S.t, S.n, T);
+      if (i < S.n && S.t[i] < T + 15 * MIN) closePosition(p, S.o[i], S.t[i], 'weekend');
+      else if (i > 0) closePosition(p, S.c[i - 1], S.t[i - 1], 'weekend'); // plus de cotation de la paire à cette heure : sa dernière
+    }
+  }
   for (const sym of SYMS) {
     const bars = data[sym].m15; const k = idx[sym];
     if (k >= bars.length || bars[k].time !== T) continue;
@@ -246,6 +279,7 @@ for (const T of times) {
       if (process.env.DEBUG_EVENTS && e.type === 'validated') console.log(`  [signal] ${new Date(now).toISOString().slice(0, 16)} ${e.source} ${e.symbol ?? sym} ${e.direction} ${e.blockedReason ? 'BLOQUÉ: ' + e.blockedReason : 'pris'}${heldBy(e.symbol ?? sym) ? ` (${heldBy(e.symbol ?? sym)} tient ${e.symbol ?? sym})` : ''}`);
       if (e.type === 'validated' && !e.blockedReason) {
         if (e.source === 'fvg') continue; // retiré du live
+        if (weekendLock || pastEnd) continue;
         const esym = e.symbol ?? sym; // une Divergence peut concerner l'autre jambe de la paire (routée comme le live)
         if (entryBlockReason({ source: e.source, heldBy: heldBy(esym), legAllowed: legAllowed(e.source, esym) })) continue; // même règle que _handleAutoExecuteEntry
         openPosition(esym, e.source, e.id, e.direction, e.entryPrice, e.stopPrice, e.targetPrice, T);
@@ -257,7 +291,7 @@ for (const T of times) {
     if (sym === 'US500') {
       if (k > 0) daily.updateFormingBar(bars[k - 1]);
       for (const ev of daily.ingest(stub)) {
-        if (ev.event === 'entry' && guardrail.canTakeNewTrade(now, 'US500') && !entryBlockReason({ source: DAILY, heldBy: heldBy('US500'), legAllowed: legAllowed(DAILY, 'US500') })) {
+        if (ev.event === 'entry' && !pastEnd && guardrail.canTakeNewTrade(now, 'US500') && !entryBlockReason({ source: DAILY, heldBy: heldBy('US500'), legAllowed: legAllowed(DAILY, 'US500') })) {
           openPosition('US500', DAILY, null, 'bullish', ev.price, ev.stopPrice, null, T);
         } else if (ev.event === 'exit' && ev.detail !== 'stop' && managed.get('US500')?.source === DAILY) {
           const S = data.US500.m1; const i = lower(S.t, S.n, T);

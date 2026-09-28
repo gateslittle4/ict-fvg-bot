@@ -6992,3 +6992,79 @@ Esdras a montré le FVG du 24/09 (30 280–30 287, bougies 9:15/9:30/9:45 NY) ; 
 - **Un seul moteur** (étape 1 de la demande d'Esdras) : `src/execution/entryPolicy.js` (place tenue par RSI(2)/A/B, filet, contrôles A/B, plan d'ordre A/B, protection spread, plafond de lots) appelé par le bot ET par `runLiveReplay.js` ; A/B rejoués sur les vraies M1 (`m1End`), `NO_AB=1` reproduit l'ancien rejeu à l'identique (270 trades 2026 vérifiés), `STOPPED_LEGS`. Rejeu 2026 du compte entier (combo + A/B, 0,3 %) : 467 trades, −16,5 R (A −25,5 R, B −3,4 R, combo +12,5 R car A/B prennent des places).
 - **Étape 2 faite** : `cTraderDataSource.js` (3 386 lignes) découpé sans changement de comportement - il garde la connexion (démarrage, symboles, solde, notifications, 654 lignes) ; `src/dataSources/ctrader/` : `shared.js` (constantes et fonctions pures, réexportées), `marketData.js`, `execution.js`, `reconciliation.js`, `tradeHistory.js`, `managedStrategies.js` (méthodes rattachées par `Object.assign(CTraderDataSource.prototype, ...)`). Vérifié : les 41 méthodes identiques au caractère près, ESLint sans variable indéfinie ni import inutile, 1176 tests, serveur local démarré.
 - **Déployé le 2026-09-24 23:25 UTC** (19:25 NY, `dep-daqr2qvlot8c73ed3k2g`, `d5bde90`, aucune position ni ordre en attente) : `[kill-switch] 9 jambes suivies ; arrêtées : silverbullet US500`, RSI(2) préchauffé, A/B préchauffés (24 séances), `connected and live`. `/api/kill-switch` et `/api/momentum-bars` (9 404 barres US100) répondent. À surveiller : premier trade après ce déploiement (chemin d'exécution déplacé dans `ctrader/execution.js`).
+
+## 2026-09-26 — FVG entré par ordre STOP (idée de Gemini) : pré-enregistré, amendé avant calcul, ÉCHEC
+
+Pré-enregistrement `docs/PREREG_STOP_ORDER.md` (`c3936e7`, texte de Gemini + précisions), verdict amendé AVANT calcul (`67b0464`) : le
+verdict d'origine (10 trades, test ≥ 30 % du train) ne demandait aucune solidité statistique ; remplacé par le critère du projet
+(≥ 60 trades, t ≥ 2,6, deux moitiés positives, test > 0). `scripts/runStopOrderEntryStudy.js` → `data/backtest-input/stop-order-entry-study.md`.
+
+- **STOP (US100 + US500)** : entraînement 1738 trades, 17 % gagnants, −138,5 R, t −1,54 (2010-2016 −94,4 R ; 2017-2022 −44,1 R) → **ÉCHEC**.
+  Test −63,4 R ; 2026 −97,2 R. Ancien verdict (pour mémoire) : rejeté aussi.
+- Les 161 signaux US100 2023-2025 jamais repris par le LIMIT (204 le 23/09 avec l'ancien code de remplissage) sont tous pris par le
+  STOP, mais pour +67,8 R seulement (+225,7 R au premier contact) ; sur les autres signaux, l'entrée plus haute coûte davantage.
+- **Bug corrigé pendant l'étude** (`scripts/lib/stopOrderEntry.js`, colonne limite seulement) : un LIMIT rempli au-delà du stop de
+  protection (bougie de signal clôturée sous le stop) sortait « au stop » avec un faux +1 R (37 % de « gagnants » à 1:5). Maintenant
+  sans trade (`stop-crossed`), test ajouté. Le verdict STOP n'en dépend pas.
+- Conclusion : l'avantage apparent du FVG au premier contact n'est récupéré par aucune exécution réelle testée (LIMIT, LIMIT posé
+  avant le contact, STOP). Rien changé dans le bot (FVG toujours hors live).
+
+## 2026-09-26 — Étape 0 « le robot ne gagne qu'en marché agité » (échange Gemini) : l'hypothèse TOMBE
+
+Règle commitée avant lecture (`423e134`, en-tête de `scripts/runVolRegimeStep0.js`) : hypothèse retenue seulement si, dans CHAQUE moitié
+de l'entraînement, le R moyen en régime calme (ATR14 / moyenne 100 des ATR14 < 0,8, mesuré avant le jour d'entrée) est ≤ 0 ET celui des
+autres trades > 0. Rejeu fidèle du bot complet (combo + A + B + RSI(2)) régénéré le 26/09 (`data/live-replay/hist-*.json`, calcul local,
+~40 min, laptop surchauffé : les prochains calculs lourds se font en ligne). Résultat `data/backtest-input/vol-regime-step0.md` :
+- 2011-2016 : calme −0,072 R/trade (852) ; normal + agité +0,108 (2 398, t 2,43) → conforme.
+- 2017-2022 : calme **+0,054** R/trade (963) ; normal + agité +0,160 (2 091, t 3,50) → **non conforme** → l'hypothèse tombe, pas de filtre.
+- Le calme est toujours le régime le plus faible (écart ≈ 0,1-0,2 R/trade), mais pas perdant dans les deux moitiés.
+- **2026 n'est pas une année calme** : 15 % (US100) / 26 % (US500) de jours calmes, contre 23-33 % sur 2011-2025 ; 72-80 % de jours
+  normaux. Le calme n'explique donc pas les pertes de 2026.
+- Remarque : le bot complet (avec A/B) fait t 2,43 et 3,50 hors calme sur 2011-2022, mais A/B ont été validées sur ces mêmes années.
+
+## 2026-09-26 — Analyse exploratoire des trades réels d'Esdras (GoatFunded 83486, 664 trades, mars-juillet 2025)
+
+Compte FINANCÉ 10 000 $ (80 %), plus haut 12 236 $ (+22,4 %), perdu le 30/07/2025 sur la perte journalière (4 ventes, −290 $, 0,38-0,45 lot)
+alors qu'il était à +8,6 %. Taille médiane des positions : 0,08 lot en avril (+1 941 $) → 0,34 en juillet (−1 059 $). Données brutes hors du
+dépôt (scratchpad de la session). Recalage : heure affichée = New York ; écart de prix recalculé par jour (base des contrats à terme).
+- **Test pré-enregistré « repli dans la tendance le matin »** (`0ab3fd8`) : ÉCHEC (entraînement −270,8 R, t −2,36 ; même 2025 −36,4 R).
+- **Exploratoire (N = points / ATR H1)** : solide — 11 h-18 h NY perdant (≈ −2 250 $) ; entrées près d'un FVG M15 formé 1 h 15-6 h plus
+  tôt : +4 062 $ (hors 11 h-18 h +4 291 $, 111 trades, positif chaque mois). Mais la même règle appliquée à toutes les occurrences sur la
+  même période ≈ 0 (t < 1,1) : c'est SON choix parmi ces FVG qui gagnait, non codable en l'état. Heure d'entrée pas meilleure que le hasard
+  (placebo ± 90 min) ; le sens gagnant vient surtout de la hausse 2025. Perdants coupés en 8 min (28 % repartent ensuite à +2 N).
+- Rien à pré-enregistrer. Pistes : règles personnelles (rien après 11 h, risque fixe, FVG « vieillis » plutôt que frais) ; éventuel mode
+  « assistant » (alertes FVG M15 vieillis 3 h-11 h NY, décision humaine, exécution et coupure à 11 h par le bot) — non construit.
+
+## 2026-09-26 (nuit, 04:45-05:45 UTC) — Recherche de nuit avec années cachées : RIEN ne tient ; 2023-2026 intact
+
+Demande d'Esdras avant de dormir : pistes secondaires, années cachées pour un vrai test en avant, « teste tout ce qui peut l'être ».
+- **Protocole** : `data/backtest-input/preregistration-nuit-2026-09-26.md`.
+  - Commit `2708c32`, puis amendements `a9e8869` (placebo obligatoire, piste « limite ») et `884ba94` (second tour réglé en M1).
+  - Exploration libre sur 2011-2018 seulement : `loadPhase` coupe les données au 31/12/2018.
+  - Validation 2019-2022 lue une seule fois (`NIGHT_PHASE=validation`), avec des règles figées avant (`18d04a9`, `fa2a5dd`).
+  - Final 2023-2024 + 2026 réservé aux survivants : **jamais lu, rien n'a survécu**.
+- **Résultat** : environ 2 160 variantes, 11 règles figées, **les 11 rejetées en validation**.
+  - FVG vieilli 9 h 30-11 h US100 : −0,08 à −0,10 R.
+  - Or Londres : t 0,53.
+  - Écart d'ouverture de 9 h 30 US100 : +0,078 R, t 1,50.
+  - Lundi acheteur US100 : +0,307 R, t 1,80.
+  - Weekly Sweep du Labo : −0,007 R.
+- **Le profil des choix d'Esdras en 2025** (données personnelles dans le scratchpad) :
+  - il prenait les FVG vieillis les plus jeunes, avec la tendance 20 jours, avec les 4 h en faveur (modèle AUC 0,72) ;
+  - ses choix battent ceux qu'il a laissés de +0,16 R en sortie mécanique, mais ce n'est pas prouvé ;
+  - le modèle de ses choix, appliqué mécaniquement sur 2011-2018, donne +0,04 à +0,05 R (t ≈ 1-1,4).
+- **Pièges de méthode trouvés** :
+  1. Ordres limite FVG : ils doivent être en concurrence (le premier rempli gagne). Sinon l'ordre du plus vieux signal est pris même
+     s'il se remplit après un autre. C'est corrigé dans `scripts/lib/eyeRule.js`.
+  2. Placebo : un ordre limite posé au hasard à la même distance bat le FVG frais 20 fois sur 20. Le niveau du FVG n'apporte rien.
+  3. **Le Labo du site est faux pour les stops serrés** : ses moteurs ne vérifient pas le stop dans la bougie d'entrée. Anchored VWAP
+     fait +1,64 R au règlement M15 et −0,31 R en M1. **Non corrigé dans le site**, décision d'Esdras (research-memory
+     `labo-entry-candle-stop-bug-2026-09-26`).
+- **Outils** (testés) : `scripts/lib/nightLab.js`, `fvgContext.js`, `eyeRule.js`, `dipRule.js`, `nightFvgGrid.js`,
+  `nightQuantGrid.js` ; scripts `runNight*.js` et `buildNightFrozenRules.js`. Rapport pour Esdras :
+  `data/backtest-input/night-report-2026-09-26.md`.
+- **Suite proposée** (rien de décidé) :
+  - exercice à l'aveugle : environ 150-200 FVG vieillis au hasard, graphique coupé, il répond oui ou non ; on compare ; le test final se
+    fera une fois sur 2023-2026, gardé intact exprès ;
+  - mode discipline : risque fixe, rien après 11 h, arrêt journalier ;
+  - correctif du Labo.

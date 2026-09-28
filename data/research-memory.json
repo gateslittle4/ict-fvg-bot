@@ -1236,5 +1236,370 @@
       "scripts/runNyOpenSweepFvgVariants.js",
       "data/backtest-input/ny-open-sweep-fvg-variants.md"
     ]
+  },
+  {
+    "id": "prereg-market-maker-model-2026-09-25",
+    "title": "Market Maker Buy / Sell Model (ICT), version mécanique : rejeté (strict = non concluant, amendement = échec)",
+    "date": "2026-09-25",
+    "status": "rejected",
+    "summary": "Écrit avant tout calcul (Esdras : « prends ta définition »). Consolidation de départ 12 H1 ≤ 1,5 ATR ; sortie en 24 H1 ; descente ≥ 3 ATR avec un plus bas fractal H1 balayé ; MSS M15 ; FVG de déplacement ; LIMIT au bord du FVG 4 h ; stop plus bas extrême ; cible OCL (≥ 2R) ; sortie à 5 jours. US100 + US500 réunis. Critère projet (≥ 60 trades, t ≥ 2, deux moitiés positives, test 2023-2025 > 0). Texte : data/backtest-input/preregistration-market-maker-model-2026-09-25.md. RÉSULTAT (scripts/runMarketMakerModelStudy.js -> data/backtest-input/market-maker-model-study.md) : 22 trades à l'entraînement (US100 10, US500 12), +4,3 R, t 0,39 ; 2011-2016 +7,9 R, 2017-2022 -3,6 R ; test 2023-2025 5 trades -1,5 R ; 2026 aucun -> NON CONCLUANT (< 60). Goulot : la règle 1 (12 H1 dans 1,5 ATR) ne trouve que ~35 consolidations en 12 ans par paire. Ni validé ni réfuté ; toute version plus large exige un nouveau pré-enregistrement (les R de cette version ont été vus). AMENDEMENT (69ce4e2, figé avant calcul, seuil choisi sur la fréquence seule) : consolidation 12 H1 dans 4 ATR -> 404 trades à l'entraînement, 19 % gagnants, cible moyenne 5,7 R, +16,0 R, +0,039 R/trade, t 0,31 (2011-2016 +14,6 R, 2017-2022 +1,3 R) -> ÉCHEC à l'entraînement. Test 2023-2025 : 103 trades +3,3 R ; 2026 : 24 trades -19,1 R. Gagne à peine plus souvent que le hasard (~15 % pour une cible à 5,7 R). data/backtest-input/market-maker-model-amendment-study.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "H1/M15",
+    "files": [
+      "data/backtest-input/preregistration-market-maker-model-2026-09-25.md",
+      "data/backtest-input/market-maker-model-study.md",
+      "scripts/runMarketMakerModelStudy.js",
+      "scripts/lib/marketMakerModel.js",
+      "data/backtest-input/preregistration-market-maker-model-amendment-2026-09-25.md",
+      "data/backtest-input/market-maker-model-amendment-study.md"
+    ]
+  },
+  {
+    "id": "prereg-mean-reversion-ibs-3down-2026-09-25",
+    "title": "Retour à la moyenne journalier : IBS VALIDÉ (candidat, mode alerte avant réel) ; 3 baisses de suite rejeté",
+    "date": "2026-09-25",
+    "status": "validated-research",
+    "summary": "Écrit avant tout calcul. Bougies 17:00-17:00 temps moteur, décision à la clôture, exécution à l'ouverture suivante, achats seulement au-dessus de la moyenne 200 jours, stop 3 ATR(14), swap du courtier. IBS < 0,2 -> sortie IBS > 0,8 / 10 jours ; 3 clôtures en baisse -> sortie première clôture en hausse / 10 jours. US100 + US500 réunis par règle ; ≥ 60 trades, t ≥ 2,2 (2 hypothèses), deux moitiés positives, test 2023-2025 > 0. Texte : data/backtest-input/preregistration-mean-reversion-ibs-3down-2026-09-25.md. RÉSULTAT (scripts/runMeanReversionStudy.js -> data/backtest-input/mean-reversion-ibs-3down-study.md) : IBS entraînement 547 trades, 71 % gagnants, +32,8 R, +0,060 R/trade, t 3,42, 2011-2016 +8,9 R, 2017-2022 +23,9 R ; test 2023-2025 170 trades +13,9 R (t 2,99) ; 2026 41 trades +3,1 R -> CANDIDATE. 11 années positives sur 16, pire baisse 4,7 R ; en argent petit : +16 % en 15,5 ans à 0,3 % de risque, +63 % à 1 % (pire baisse 4,7 %). 3 baisses de suite : t 1,89, 2017-2022 −1,0 R -> ÉCHEC. Décision d'Esdras requise (mode alerte, chevauchement avec RSI(2) sur US500).",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "D1",
+    "files": [
+      "data/backtest-input/preregistration-mean-reversion-ibs-3down-2026-09-25.md",
+      "data/backtest-input/mean-reversion-ibs-3down-study.md",
+      "scripts/runMeanReversionStudy.js",
+      "scripts/lib/meanReversion.js"
+    ]
+  },
+  {
+    "id": "orb-hold-next-day-2026-09-25",
+    "title": "A (ORB 5 min US100) gardée jusqu'à la clôture du lendemain : NON RETENUE",
+    "date": "2026-09-25",
+    "status": "rejected",
+    "summary": "Pré-enregistré avant calcul (a16fda0). Même entrée/stop/objectif 10R, la position ouverte à 15:59 est gardée la nuit (stop et objectif surveillés toutes heures, swap compté) et fermée à 15:59 le lendemain. Concerne 862 trades sur 4013. Entraînement : +533,8 R contre +450,4 R (écart +83,4 R) MAIS 2011-2016 −47,5 R (2017-2022 +130,9 R) -> critère non rempli ; test 2023-2025 −2,8 R ; 2026 +4,2 R. Gagnants 23 % -> 16 %. Gain concentré sur le marché haussier 2017-2022 (effet de tenue longue, pas du momentum d'ouverture). A reste fermée à 15:59. data/backtest-input/orb-hold-next-day-study.md.",
+    "markets": [
+      "US100"
+    ],
+    "timeframe": "M1",
+    "files": [
+      "data/backtest-input/preregistration-orb-hold-next-day-2026-09-25.md",
+      "data/backtest-input/orb-hold-next-day-study.md",
+      "scripts/lib/orbHold.js",
+      "scripts/runOrbHoldNextDayStudy.js"
+    ]
+  },
+  {
+    "id": "sma200-direction-filter-2026-09-25",
+    "title": "Filtre de sens par la moyenne 200 jours sur le combo : NON RETENU",
+    "date": "2026-09-25",
+    "status": "rejected",
+    "summary": "Pré-enregistré (820d08b). Achats gardés seulement au-dessus de la moyenne 200 jours, ventes seulement en dessous (trades du rejeu fidèle filtrés). Trades retirés : 2011-2016 +41,5 R (634), 2017-2022 +92,0 R (810) -> ils GAGNAIENT à l'entraînement -> non retenu. Test 2023-2025 : retirés −28,6 R (le filtre aurait aidé), 2026 −6,6 R. Les stratégies du combo sont surtout des retournements : les trades à contre-tendance font partie de leur avantage (Divergence US500 achats sous la moyenne +58,6 R, ventes Silver Bullet US500 +39,1 R et Weekly Sweep +33,5 R au-dessus). Même inversion de régime que achats/ventes (ventes +105 R en 2011-2022, −47 R depuis 2023). data/backtest-input/sma200-direction-filter-study.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "D1 filtre / M15 trades",
+    "files": [
+      "data/backtest-input/preregistration-sma200-direction-filter-2026-09-25.md",
+      "data/backtest-input/sma200-direction-filter-study.md",
+      "scripts/runSma200DirectionFilterStudy.js"
+    ]
+  },
+  {
+    "id": "volatility-sizing-2026-09-25",
+    "title": "Taille réduite de moitié en marché agité : NON RETENU",
+    "date": "2026-09-25",
+    "status": "rejected",
+    "summary": "Pré-enregistré (53c1cca). Risque x0,5 quand ATR(14) journalier / moyenne 100 > 1,5. Ratio R total / pire baisse : 2011-2016 0,36 -> 0,13, 2017-2022 8,38 -> 6,85 -> non retenu. Le combo gagne SURTOUT en marché agité à l'entraînement (+0,365 R/trade sur 393 trades contre +0,054 ailleurs ; Divergence, Weekly Sweep, NWOG ~+0,6 R/trade). Test 2023-2025 : agités -0,009 R/trade (76 trades), la règle aurait à peine aidé (0,33 -> 0,36). 2026 : 7 trades agités seulement. Même constat que l'ancienne étude : c'est le marché calme qui est faible, pas l'agité. data/backtest-input/volatility-sizing-study.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "D1 régime / trades du rejeu fidèle",
+    "files": [
+      "data/backtest-input/preregistration-volatility-sizing-2026-09-25.md",
+      "data/backtest-input/volatility-sizing-study.md",
+      "scripts/runVolatilitySizingStudy.js"
+    ]
+  },
+  {
+    "id": "weekend-close-2026-09-25",
+    "title": "Fermer les positions intraday avant le week-end : NON RETENU",
+    "date": "2026-09-25",
+    "status": "rejected",
+    "summary": "Pré-enregistré (ab9d220), amendement déclaré (8316278 : le 1er calcul ne fermait qu'environ la moitié des week-ends, données arrêtées avant 16:45). Vendredi 16:45 NY (ou dernière bougie du vendredi), fermeture du combo sauf RSI(2). Réussite FTMO 1-Step (départ chaque lundi, 0,5 %) : 2011-2016 49 -> 50 %, 2017-2022 77 -> 71 % -> NON RETENU. R : 2011-16 +30 -> +53, 2017-22 +296 -> +213, test 2023-25 +21.6 -> +47.8 (réussite 42 -> 42 %), 2026 -13.3 -> +12.7. Pire trade 2017-22 -6.6 -> -2.2, 2026 -9.5 -> -1.2. 298 trades fermés le vendredi valaient +230 R à la fermeture : en 2017-2022 les positions gardées le week-end rapportaient en moyenne (Divergence surtout). La règle coupe les queues mais aussi du gain. Vu en passant : le trade RSI(2) de 2016-12-29 à 2020-03-22 (-9 R) du rejeu, bug déjà connu. data/backtest-input/weekend-close-study.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15 / rejeu fidèle",
+    "files": [
+      "data/backtest-input/preregistration-weekend-close-2026-09-25.md",
+      "data/backtest-input/weekend-close-study.md",
+      "scripts/runWeekendCloseStudy.js",
+      "scripts/lib/weekendClose.js",
+      "scripts/lib/ftmoChallenge.js"
+    ]
+  },
+  {
+    "id": "ftmo-open-losses-2026-09-26",
+    "title": "Simulation FTMO avec pertes latentes (critique externe) : effet faible",
+    "date": "2026-09-26",
+    "status": "methodology-fix",
+    "summary": "Critique de Gemini : FTMO mesure l'équité, la simulation ne comptait que le solde réalisé. Le rejeu note désormais la pire perte en cours de chaque trade (mae). Bot complet (combo + A + B), départ chaque lundi, 0,5 % : réussite 52 % (réalisé) / 52 % (pire perte réelle) / 48 % (tout au stop). Au plus 3 positions ouvertes, gagnants à -0,35 R en moyenne avant de gagner. La perte du jour 3 % n'est presque jamais la cause d'échec ; c'est la perte max suiveuse. Premier chiffre « tout au stop » (40 %) faux : erreur d'arrondi, corrigé 49 % (combo seul). Descriptif : bot complet à 0,3 % = 67 % de réussite (médiane 4 mois), à 0,5 % = 52 %. data/backtest-input/ftmo-worst-case-check.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M1 rejeu fidèle",
+    "files": [
+      "data/backtest-input/ftmo-worst-case-check.md",
+      "scripts/runFtmoWorstCaseCheck.js",
+      "scripts/lib/ftmoChallenge.js"
+    ]
+  },
+  {
+    "id": "prereg-stop-order-fvg-2026-09-26",
+    "title": "FVG entré par ordre STOP (idée de Gemini) : rejeté",
+    "date": "2026-09-26",
+    "status": "rejected",
+    "summary": "Pré-enregistré avant calcul (docs/PREREG_STOP_ORDER.md, c3936e7) puis verdict amendé avant calcul (67b0464 : critère du projet, >= 60 trades, t >= 2,6, deux moitiés positives, test > 0). Signaux FVG de production US100 + US500 (1:5) ; ordre STOP posé à la clôture de la bougie de signal au bord de la zone + 1 tick, annulé à 16 h NY, stop de protection inchangé, objectif 5 x risque réel ; spread + swap, commission 0 (vérifiée). RÉSULTAT (scripts/runStopOrderEntryStudy.js -> data/backtest-input/stop-order-entry-study.md) : entraînement 1738 trades, 17 % gagnants, -138,5 R, t -1,54 ; 2010-2016 -94,4 R, 2017-2022 -44,1 R -> ÉCHEC. Test 2023-2025 -63,4 R (600 trades) ; 2026 -97,2 R (146 trades). Les 161 signaux US100 2023-2025 jamais repris par le LIMIT (204 le 23/09, autre code de remplissage) sont TOUS pris par le STOP, pour +67,8 R seulement (+225,7 R au premier contact) ; les autres signaux, pris plus haut qu à la limite, perdent davantage. Correctif pendant l étude (colonne limite seulement, pas le verdict) : un LIMIT rempli au-delà du stop comptait un faux +1 R. Conclusion : l avantage apparent du FVG au premier contact ne se récupère par aucune exécution réelle testée (LIMIT, LIMIT posé avant, STOP).",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15/M1",
+    "files": [
+      "docs/PREREG_STOP_ORDER.md",
+      "scripts/runStopOrderEntryStudy.js",
+      "scripts/lib/stopOrderEntry.js",
+      "data/backtest-input/stop-order-entry-study.md"
+    ]
+  },
+  {
+    "id": "esdras-pullback-2026-09-26",
+    "title": "Repli dans la tendance le matin (tiré des trades réels d'Esdras) : ÉCHEC",
+    "date": "2026-09-26",
+    "status": "rejected",
+    "summary": "Pré-enregistré (0ab3fd8). Hypothèse tirée de l'historique réel GoatFunded 83486 (664 trades mars-juillet 2025 : trades contre la dernière heure +2 885 $, dans le sens -1 572 $ ; 11 h-18 h -2 249 $). Règle mécanique US100 : clôtures M15 03 h-10 h 45 NY, 4 h dans un sens et dernière heure dans l'autre, pas à l'extrême du range du jour, stop 1 ATR H1, objectif 3R, sortie 4 h, 3 trades/jour max. Entraînement 2011-2022 : 6 386 trades, -0,042 R/trade, t -2,36, deux moitiés négatives -> ÉCHEC. Test 2023-2024 -44,5 R ; 2025 (année de l'idée) -36,4 R ; 2026 +14,0 R. US500 contrôle : -44 R entraînement. Même 2025 est négatif : l'avantage d'Esdras en 2025 ne venait pas de cette règle grossière (sélection des replis et sorties manuelles). data/backtest-input/esdras-pullback-study.md.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15 signal / M1 exécution",
+    "files": [
+      "data/backtest-input/preregistration-esdras-pullback-2026-09-26.md",
+      "data/backtest-input/esdras-pullback-study.md",
+      "scripts/runEsdrasPullbackStudy.js",
+      "scripts/lib/pullbackRule.js"
+    ]
+  },
+  {
+    "id": "esdras-manual-trades-analysis-2026-09-26",
+    "title": "Analyse exploratoire des 646 trades NAS100 réels d'Esdras (GoatFunded 83486, mars-juillet 2025)",
+    "date": "2026-09-26",
+    "status": "inconclusive",
+    "summary": "Exploratoire (pas un test). Recalage vérifié : heures affichées = heure de New York (UTC-4 dès le 9 mars) ; écart de prix plateforme - courtier variable (avril +12, juillet -16 pts, base des contrats à terme) recalculé par jour : 611/646 entrées dans la bonne bougie M1 (± 3 pts). Unité N = points / ATR H1. SOLIDE (deux moitiés, sans avril, IC 90 % hors 0) : 11 h-12 h -0,23 N/trade et 12 h-18 h -0,08 (≈ -2 250 $) ; entrées près d'un FVG M15 du sens formé il y a 5 à 24 bougies : +0,29 N/trade (149 trades, +4 062 $ ; hors 11 h-18 h +0,41, 111 trades, +4 291 $ ; positif chaque mois ; +1 665 $ sans les 5 meilleurs) ; FVG frais (0-4 bougies) perdants. MAIS la même règle appliquée mécaniquement à toutes les occurrences, sur la même période, fait ≈ 0 (+0,01 à +0,06 N/trade, t < 1,1) : l'avantage venait de son choix parmi ces FVG, pas du setup. Placebo : heure d'entrée pas meilleure qu'au hasard (± 90 min) ; sens : surtout la hausse de 2025 (ses ventes perdent à 1-4 h hors setup). Sorties : 59 % du meilleur mouvement capté ; perdants coupés en 8 min (médiane) à -0,29 N, 28 % repartent ensuite à +2 N. Réentrées (essai 2+) positives, essai 1 négatif. Pas de signe de tilt. Aucune règle à pré-enregistrer (version mécanique ≈ 0 sur la période même). Données personnelles hors du dépôt.",
+    "markets": [
+      "US100"
+    ],
+    "timeframe": "M15 / M1",
+    "files": []
+  },
+  {
+    "id": "night-research-hidden-years-2026-09-26",
+    "title": "Recherche de nuit : copier les FVG d'Esdras + pistes secondaires, années cachées (2019-2022 lu une fois, 2023-2026 intact) : RIEN ne tient",
+    "date": "2026-09-26",
+    "status": "rejected",
+    "summary": "Pré-enregistré (2708c32, amendements a9e8869 / 884ba94, règles figées 18d04a9 et fa2a5dd). Exploration libre 2011-2018 seulement (données coupées au 31/12/2018 par le code), validation 2019-2022 lue une fois (R moyen > 0 et t >= 2), final 2023-2024 + 2026 réservé aux survivants. ~2 160 variantes : A = profil des choix d'Esdras en 2025 (180 FVG M15 vieillis dans sa fenêtre active, 54 pris ; il prenait les plus jeunes, avec la tendance 20 j, 4 h en faveur ; modèle AUC 0,72 ; ses choix +0,144 R vs laissés -0,018 R en sortie mécanique, écart non prouvé, IC 90 % -0,19 à +0,62), B = FVG M15 mécaniques (864 variantes, placebo obligatoire : le FVG frais + limite ne bat pas un ordre posé au hasard à la même distance), C = gestion (réentrée après stop), D = pistes quantitatives (limite au creux, écart d'ouverture 9h30, jour de la semaine, 1 196 variantes), second tour = 22 stratégies du Labo réglées en M1. 11 règles figées ; validation 2019-2022 : toutes rejetées (FVG vieilli 9h30-11h US100 -0,08 à -0,10 R ; or Londres +0,026 t 0,53 ; écart d'ouverture +0,078 t 1,50 ; lundi acheteur +0,307 t 1,80 ; Weekly Sweep US100 -0,007). Final non lu : 2023-2026 intact. Rapport : data/backtest-input/night-report-2026-09-26.md.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 signal / M1 exécution",
+    "files": [
+      "data/backtest-input/preregistration-nuit-2026-09-26.md",
+      "data/backtest-input/night-report-2026-09-26.md",
+      "data/backtest-input/night-validation.md",
+      "data/backtest-input/night-lab-validation.md",
+      "data/backtest-input/night-frozen-rules.json",
+      "scripts/runNightHidden.js",
+      "scripts/lib/nightLab.js",
+      "scripts/lib/fvgContext.js",
+      "scripts/lib/eyeRule.js",
+      "scripts/lib/dipRule.js"
+    ]
+  },
+  {
+    "id": "labo-entry-candle-stop-bug-2026-09-26",
+    "title": "Le Labo du site (22 moteurs) ne vérifie pas le stop dans la bougie d'entrée : résultats gonflés pour les stops serrés",
+    "date": "2026-09-26",
+    "status": "methodology-fix",
+    "summary": "Trouvé pendant la recherche de nuit : les moteurs du Labo (src/backtest/*.js enregistrés dans labRegistry.js) résolvent une position seulement quand i > entryIndex (ex. anchoredVwap.js), comme le bug entry-candle-stop-bug corrigé autrefois dans le moteur principal. Rejoués en M1 (entrée à l'ouverture de la bougie, stop et objectif du moteur), 2011-2018 : Anchored VWAP XAUUSD +1,642 R/trade au règlement M15 contre -0,312 R en M1 ; US100 +1,789 contre -0,057 ; Midnight Open, CBDR et Judas Swing aussi surestimés. Le Labo du site affiche donc des chiffres faux pour ces stratégies. PAS ENCORE CORRIGÉ dans le site (décision d'Esdras) : correctif possible = vérifier le stop dans la bougie d'entrée ou rejouer en M1. Comparaison : data/backtest-input/night-lab-explore.md vs night-lab-explore-m15.md.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "files": [
+      "data/backtest-input/night-lab-explore.md",
+      "data/backtest-input/night-lab-explore-m15.md",
+      "scripts/runNightLabSweep.js",
+      "src/backtest/labRegistry.js"
+    ]
+  },
+  {
+    "id": "blind-eye-exercise-2026-09-27",
+    "title": "Exercice à l aveugle (œil d Esdras sur des FVG M15 US100 2011-2018) : non concluant, tendance favorable",
+    "date": "2026-09-27",
+    "status": "inconclusive",
+    "summary": "110 achats du matin répondus à l aveugle (v3). Ses « oui » remplis : +0,67 R (21) ; ses « non » : +0,12 R (41) ; écart +0,55 R, p = 0,12 (permutation). Le minimum pré-enregistré de 40 remplis n est pas atteint : verdict NON CONCLUANT. Esdras a arrêté (plus assez de temps). En descriptif : les « oui » battent les « non » sur les 6 exécutions ; ses « oui » sur FVG vierges (bougie avant A hors zone) +1,05 R contre +0,05 R sur FVG collés ; FVG < 0,1 ATR H1 mauvais pour lui. Règle candidate (vierge + taille >= 0,1-0,25 ATR + 7-11 h NY) à explorer sur 2011-2018 puis tester une fois sur 2023-2026. Leçons : afficher le sens en gros (confusion vente/achat) ; ne compter que les ordres remplis demande beaucoup de réponses.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/blind-exercise-result-2026-09-27.md",
+      "data/backtest-input/preregistration-blind-exercise-2026-09-26.md",
+      "scripts/buildBlindSetups.js",
+      "scripts/runBlindInterim.cjs"
+    ]
+  },
+  {
+    "id": "eye-rule-explore-2026-09-27",
+    "title": "Règle tirée de l œil d Esdras (FVG M15 haussier vierge, >= 0,25 ATR H1, 7-11 h NY, limite au bord, stop mèche A, 3R) : rejetée en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistrée (preregistration-eye-rule-2026-09-27.md) à partir des 21 « oui » remplis de l exercice à l aveugle. Exploration US100 2011-2018 : 281 trades, -0,040 R (t -0,48), deux moitiés négatives ; référence sans filtres (990 trades) -0,016 R ; variantes 0,10 ATR, 1er FVG du jour, vierge seul, taille seule toutes négatives ; miroir vendeur ~0. Les filtres « FVG vierge » et « taille » n apportent rien sur l ensemble des FVG. Validation et final non lus. Conclusion : ce qui ressortait de ses choix sur 21 trades était du bruit, ou tient à quelque chose que ces filtres ne capturent pas.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-eye-rule-2026-09-27.md",
+      "data/backtest-input/eye-rule-explore.md",
+      "scripts/runEyeRuleTest.js"
+    ]
+  },
+  {
+    "id": "esdras-method-explore-2026-09-27",
+    "title": "Méthode complète d Esdras (sens H4 par PD arrays, BMS M15, objectif sommet H4, échelle 3R, sortie 17 h) : rejetée en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Décrite par Esdras en 3 tours de questions (esdras-method-spec-draft.md), figée avant calcul (preregistration-esdras-method-2026-09-27.md). US100 2011-2018 : C1 (sans stop suiveur) 1342 trades +0,004 R (t 0,05, 14 % gagnants) ; C2 (stop suiveur sous chaque nouveau FVG) -0,081 R ; référence B0 sans sens H4 +0,046 R, donc le sens H4 par prise de PD arrays n ajoute rien. Descriptif seulement : soir +0,145 R (t 1,17) contre matin -0,132 R. Vérification 2025 avant test : 23 % des trades du programme tombent sur un trade d Esdras. Validation et final non lus. Ajout S1 « soir seulement » (demande d Esdras, figé avant lecture) : validation 2019-2022 354 trades +0,220 R mais t 0,92 : ÉCHOUE ; résultat porté par quelques trades énormes (sans les 5 meilleurs : -43,8 R en 2019-2022, +3,9 R en 2011-2018). Profil loterie, final non lu.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-method-2026-09-27.md",
+      "data/backtest-input/esdras-method-explore.md",
+      "scripts/lib/esdrasMethod.js",
+      "scripts/runEsdrasMethod.js",
+      "data/backtest-input/esdras-method-soir-validation.md",
+      "data/backtest-input/esdras-method-soir-explore.md"
+    ]
+  },
+  {
+    "id": "esdras-method-mods-explore-2026-09-27",
+    "title": "5 modifications de la méthode d Esdras (3R fixe, discount/premium, accord Daily, breakeven 2R, tout) : toutes rejetées en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-method-mods-2026-09-27.md, seuil t >= 2,5 pour 5 essais). US100 2011-2018 : M1 objectif fixe 3R +0,086 R (t 1,56, moitiés +0,058/+0,111, +70 R sans les 5 meilleurs, 27 % gagnants) = la seule encourageante mais non significative ; M2 discount +0,003 ; M3 accord Daily -0,042 ; M4 breakeven 2R -0,039 ; M5 tout +0,035 (289 trades). Base C1 +0,004 R. Le sens Daily et le discount/premium n ajoutent rien ; l objectif H4 lointain crée l effet loterie, un objectif fixe 3R l enlève sans créer d avantage prouvé. M1 testée quand même sur 2023-2026 à la demande d Esdras (amendement, critère R > 0 et t >= 2) : final 349 trades -0,040 R (t -0,45) : ÉCHOUE ; 2019-2022 +0,098 R (t 1,26) ; 2025 -0,126 R. Les années 2023-2026 ont été lues une fois pour cette famille.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-method-mods-2026-09-27.md",
+      "data/backtest-input/esdras-mods-explore.md",
+      "scripts/runEsdrasMods.js",
+      "scripts/lib/esdrasMethod.js",
+      "data/backtest-input/esdras-mods-validation.md",
+      "data/backtest-input/esdras-mods-final.md"
+    ]
+  },
+  {
+    "id": "esdras-winners-sweep-2026-09-27",
+    "title": "Profil des gagnants de la méthode d Esdras et piste « sens par prise de liquidité H4 » (SW) : rien de solide, SW échoue hors échantillon (US500)",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Profil des gagnants C1 US100 2011-2018 (esdras-winners-US100-explore.md) : ~50 tranches, aucun écart solide (max t 2,7 sur 70 trades à 10 h). Piste choisie pour sa cohérence avec le discours d Esdras : sens H4 déclenché par une prise de liquidité (+0,174 R, t 1,84 sur US100 2011-2018). Pré-enregistrée puis testée sur US500 (jamais utilisé pour cette méthode), toutes périodes : SW 943 trades -0,009 R (t -0,10) contre C1 -0,061 R : ÉCHOUE. US100 descriptif : +0,390 R 2019-2022, +0,088 R 2023-2026. Bug corrigé en route : les deux ordres d une même échelle partageaient la même fiche de caractéristiques.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/esdras-winners-US100-explore.md",
+      "data/backtest-input/preregistration-esdras-sweep-us500-2026-09-27.md",
+      "scripts/runEsdrasWinners.js",
+      "scripts/runEsdrasSweep.js"
+    ]
+  },
+  {
+    "id": "esdras-reentry-2026-09-27",
+    "title": "Réentrées rapides après une perte (méthode d Esdras, nouveau FVG M15 dans les 90 min, même objectif H4) : rejetées en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-reentry-2026-09-27.md). US100 2011-2018 : 88 réentrées, -0,055 R (t -0,21), moitiés +0,276 / -0,274 ; C1+RE -0,007 R contre C1 +0,004 R. Rejeté, rien d autre lu. Ses vraies réentrées de 2025 sont différentes (quelques minutes après le stop, presque au même prix, stops ~18 pts, sans nouveau FVG M15) et leur gain tient aux 5 meilleures : une règle « réentrée immédiate, même distance de stop » serait une autre hypothèse, non testée.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-reentry-2026-09-27.md",
+      "data/backtest-input/esdras-reentry-US100-explore.md",
+      "scripts/runEsdrasReentry.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
+  },
+  {
+    "id": "esdras-tight-reentry-2026-09-27",
+    "title": "Stop serré (0,25 ATR H1) et réentrée immédiate au marché, sur les signaux de la méthode d Esdras : rejetés en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-tight-2026-09-27.md), calqué sur ses trades 2025 (stops ~18 pts, réentrée ~5 min après le stop au même prix, 3 essais). US100 2011-2018 : T0 stop serré 1178 trades +0,079 R (t 0,74) ; T1 + 2 réentrées immédiates 2686 trades +0,090 R (t 1,16, moitiés +0,156/+0,029, 10 % gagnants, creux max 117 R, +24 R sans les 5 meilleurs). Seuil t >= 2,5 non atteint, rien d autre lu. Profil loterie : positif en moyenne mais non significatif, creux énormes.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-tight-2026-09-27.md",
+      "data/backtest-input/esdras-tight-US100-explore.md",
+      "scripts/runEsdrasTight.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
+  },
+  {
+    "id": "esdras-buyonly-2026-09-27",
+    "title": "Méthode d Esdras en achats seulement (C1-A, T1-A stop serré + réentrées) : rejetée en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-buyonly-2026-09-27.md), référence sans sens H4 pour isoler la dérive haussière. US100 2011-2018 : C1-A 769 trades +0,098 R (t 0,89, -20 R sans les 5 meilleurs) contre B0-A +0,068 ; T1-A 1558 trades +0,095 R (t 0,99, moitiés +0,199/-0,010, creux 72 R) contre +0,031. Bat la référence mais loin de t >= 2,5 ; rien d autre lu.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-buyonly-2026-09-27.md",
+      "data/backtest-input/esdras-buyonly-US100-explore.md",
+      "scripts/runEsdrasBuyOnly.js"
+    ]
+  },
+  {
+    "id": "esdras-leftfvg-2026-09-27",
+    "title": "Schéma des captures d Esdras (FVG M15 vers le FVG opposé non testé à gauche, + FVG H4, tendance H4, liquidité puis BMS) : rejeté en exploration",
+    "date": "2026-09-27",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-leftfvg-2026-09-27.md). US100 2011-2018 : LD0 1629 trades +0,040 R (t 0,56, -47 R sans les 5 meilleurs) ; LD3 (trois confirmations) 20 trades -0,784 R ; seules : FVG H4 +0,086 (t 0,85), tendance H4 +0,051, liquidité+BMS +0,015. Avant le test, la direction « vers le FVG non testé à gauche » ne séparait pas non plus ses trades 2025 gagnants des perdants une fois ses 5 plus gros trades retirés (son profit 2025 : +1311 $, -1104 $ sans les 5 meilleurs).",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-leftfvg-2026-09-27.md",
+      "data/backtest-input/esdras-left-US100-explore.md",
+      "scripts/runEsdrasLeft.js",
+      "scripts/lib/esdrasMethod.js"
+    ]
   }
 ]

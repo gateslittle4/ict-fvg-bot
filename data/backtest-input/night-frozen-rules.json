@@ -1,0 +1,157 @@
+{
+ "frozenAt": "2026-09-26T05:16:42.507Z",
+ "note": "Règles figées avant toute lecture de 2019 et après (preregistration-nuit-2026-09-26.md). Ne pas modifier.",
+ "rules": [
+  {
+   "id": "A1",
+   "kind": "fvg",
+   "label": "FVG M15 âge 5-12, 9h30-11h, 4 h en faveur, marché, stop derrière la zone, 3R",
+   "sym": "US100",
+   "window": "âge 5-12, 9h30-11h",
+   "filter": "4 h en faveur",
+   "mgmt": "marché, stop derrière la zone, 3R",
+   "explore": {
+    "n": 684,
+    "mean": 0.16281175587475039,
+    "t": 2.4895090598766147
+   }
+  },
+  {
+   "id": "A2",
+   "kind": "fvg",
+   "label": "FVG M15 âge 5-12, 3h-9h30, tendance 20 j, marché, stop 1 ATR, 2R",
+   "sym": "XAUUSD",
+   "window": "âge 5-12, 3h-9h30",
+   "filter": "tendance 20 j",
+   "mgmt": "marché, stop 1 ATR, 2R",
+   "explore": {
+    "n": 1636,
+    "mean": 0.08338905531340214,
+    "t": 2.4101655933277826
+   }
+  },
+  {
+   "id": "B1",
+   "kind": "fvg",
+   "label": "FVG M15 âge 5-12, 9h30-11h, aucun, marché, stop derrière la zone, 3R",
+   "sym": "US100",
+   "window": "âge 5-12, 9h30-11h",
+   "filter": "aucun",
+   "mgmt": "marché, stop derrière la zone, 3R",
+   "explore": {
+    "n": 842,
+    "mean": 0.13339304805437438,
+    "t": 2.263838383552365
+   }
+  },
+  {
+   "id": "C1",
+   "kind": "fvg",
+   "label": "FVG M15 âge 5-12, 9h30-11h, aucun, marché, stop derrière la zone, 3R + réentrée sur le même FVG après un stop",
+   "sym": "US100",
+   "window": "âge 5-12, 9h30-11h",
+   "filter": "aucun",
+   "mgmt": "marché, stop derrière la zone, 3R",
+   "explore": {
+    "n": 974,
+    "mean": 0.16196392974218668,
+    "t": 2.936770075660201
+   },
+   "reentry": true
+  },
+  {
+   "id": "C2",
+   "kind": "fvg",
+   "label": "FVG M15 âge 5-12, 9h30-11h, 4 h en faveur, marché, stop derrière la zone, 3R + réentrée sur le même FVG après un stop",
+   "sym": "US100",
+   "window": "âge 5-12, 9h30-11h",
+   "filter": "4 h en faveur",
+   "mgmt": "marché, stop derrière la zone, 3R",
+   "explore": {
+    "n": 776,
+    "mean": 0.17162125136579526,
+    "t": 2.7890852154781625
+   },
+   "reentry": true
+  },
+  {
+   "id": "D1a",
+   "kind": "dip",
+   "label": "Limite au creux nuit 18h-3h, sortie 3h, 0.25 ATR, 2R, achat, au marché après le toucher",
+   "sym": "US100",
+   "window": "nuit 18h-3h, sortie 3h",
+   "d": 0.25,
+   "rr": 2,
+   "dirsArr": [
+    1
+   ],
+   "exec": "market",
+   "explore": {
+    "n": 2342,
+    "mean": 0.0661302980966357,
+    "t": 4.182856933230442
+   }
+  },
+  {
+   "id": "D1b",
+   "kind": "dip",
+   "label": "Limite au creux 3h-9h30, sortie 9h30, 0.5 ATR, 1R, achat, au marché après le toucher",
+   "sym": "US100",
+   "window": "3h-9h30, sortie 9h30",
+   "d": 0.5,
+   "rr": 1,
+   "dirsArr": [
+    1
+   ],
+   "exec": "market",
+   "explore": {
+    "n": 5374,
+    "mean": 0.04665911610397849,
+    "t": 3.680669054103644
+   }
+  },
+  {
+   "id": "D2a",
+   "kind": "gap",
+   "label": "Écart d'ouverture 9h30 écart >= 0.5 ATR, sortie 11h, les deux",
+   "sym": "US100",
+   "g": 0.5,
+   "exitMin": 660,
+   "dirsArr": [
+    1,
+    -1
+   ],
+   "explore": {
+    "n": 1586,
+    "mean": 0.1412382809365872,
+    "t": 3.4846230476305564
+   }
+  },
+  {
+   "id": "D3a",
+   "kind": "weekday",
+   "label": "Lundi : achat 9h31 -> 16h, stop 1 ATR",
+   "sym": "US100",
+   "dow": 1,
+   "dir": 1,
+   "explore": {
+    "n": 408,
+    "mean": 0.3796843757665652,
+    "t": 2.9402392381057303
+   }
+  },
+  {
+   "id": "D3b",
+   "kind": "weekday",
+   "label": "Mardi : achat 9h31 -> 16h, stop 1 ATR",
+   "sym": "US100",
+   "dow": 2,
+   "dir": 1,
+   "explore": {
+    "n": 412,
+    "mean": 0.3903458422173258,
+    "t": 2.6007500784281836
+   }
+  }
+ ]
+}

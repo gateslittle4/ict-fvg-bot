@@ -1,0 +1,87 @@
+<title>Règle d'entrée FVG</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #f3f5f4; --panel: #ffffff; --ink: #14201c; --muted: #5f6f69; --line: #d9e0dd;
+  --bull: #138a76; --bear: #c94a3d; --zone: rgba(214, 150, 20, 0.22); --zone-edge: #b87e0b; --ok: #138a76; --no: #c94a3d;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1513; --panel: #151f1c; --ink: #e6efeb; --muted: #93a39d; --line: #26332f;
+    --bull: #34c2a8; --bear: #ef6f61; --zone: rgba(240, 180, 50, 0.20); --zone-edge: #e0a93a; --ok: #34c2a8; --no: #ef6f61;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1513; --panel: #151f1c; --ink: #e6efeb; --muted: #93a39d; --line: #26332f;
+  --bull: #34c2a8; --bear: #ef6f61; --zone: rgba(240, 180, 50, 0.20); --zone-edge: #e0a93a; --ok: #34c2a8; --no: #ef6f61;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: Archivo, system-ui, sans-serif; font-size: 15px; }
+.wrap { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 32px; display: flex; flex-direction: column; gap: 14px; }
+h1 { font-size: 21px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 16px; margin: 0; display: flex; align-items: center; gap: 8px; }
+.tag { font-size: 12px; font-weight: 800; padding: 2px 9px; border-radius: 999px; color: #fff; }
+.tag.ok { background: var(--ok); } .tag.no { background: var(--no); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+svg { width: 100%; height: auto; display: block; }
+svg text { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; fill: var(--ink); }
+svg .muted { fill: var(--muted); }
+ol { margin: 0; padding-left: 20px; line-height: 1.55; max-width: 65ch; }
+p { margin: 0; line-height: 1.55; max-width: 65ch; }
+.q { color: var(--muted); font-size: 14px; }
+</style>
+
+<div class="wrap">
+  <h1>Ta règle, telle que je l'ai comprise (FVG haussier)</h1>
+
+  <section class="panel">
+    <h2><span class="tag ok">valide</span> Le prix laisse une bougie d'écart avant de revenir</h2>
+    <svg viewBox="0 0 520 260" role="img" aria-label="Schéma d'un FVG valide">
+      <rect x="150" y="118" width="360" height="22" fill="var(--zone)" stroke="var(--zone-edge)" stroke-dasharray="4 3"/>
+      <text x="505" y="112" text-anchor="end" class="muted">zone FVG</text>
+      <!-- A -->
+      <line x1="60" y1="140" x2="60" y2="210" stroke="var(--bear)" stroke-width="2"/><rect x="48" y="160" width="24" height="36" fill="var(--bear)"/>
+      <!-- B impulsion -->
+      <line x1="120" y1="60" x2="120" y2="170" stroke="var(--bull)" stroke-width="2"/><rect x="108" y="70" width="24" height="92" fill="var(--bull)"/>
+      <!-- C -->
+      <line x1="180" y1="40" x2="180" y2="118" stroke="var(--bull)" stroke-width="2"/><rect x="168" y="50" width="24" height="50" fill="var(--bull)"/>
+      <!-- D reste dehors -->
+      <line x1="240" y1="36" x2="240" y2="104" stroke="var(--bear)" stroke-width="2"/><rect x="228" y="46" width="24" height="44" fill="var(--bear)"/>
+      <!-- E entre -->
+      <line x1="300" y1="80" x2="300" y2="136" stroke="var(--bear)" stroke-width="2"/><rect x="288" y="90" width="24" height="36" fill="var(--bear)"/>
+      <circle cx="300" cy="120" r="6" fill="none" stroke="var(--ink)" stroke-width="2"/>
+      <text x="60" y="232" text-anchor="middle">A</text>
+      <text x="120" y="232" text-anchor="middle">B</text><text x="180" y="232" text-anchor="middle">C</text>
+      <text x="240" y="232" text-anchor="middle">D</text><text x="300" y="232" text-anchor="middle">E</text>
+      <text x="120" y="252" text-anchor="middle" class="muted">impulsion</text>
+      <text x="240" y="252" text-anchor="middle" class="muted">reste dehors</text>
+      <text x="318" y="112" class="muted">entrée</text>
+    </svg>
+    <ol>
+      <li><b>A, B, C</b> : la bougie C finit de se former. Le trou entre le haut de A et le bas de C est le FVG.</li>
+      <li><b>D</b> : la bougie suivante se forme <b>sans toucher la zone</b>. Elle reste au-dessus.</li>
+      <li><b>E</b> ou une bougie d'après : seulement maintenant le prix a le droit d'entrer dans la zone. C'est là que tu entres.</li>
+    </ol>
+  </section>
+
+  <section class="panel">
+    <h2><span class="tag no">pas valide</span> La bougie juste après C touche déjà la zone</h2>
+    <svg viewBox="0 0 520 220" role="img" aria-label="Schéma d'un FVG non valide">
+      <rect x="150" y="98" width="360" height="22" fill="var(--zone)" stroke="var(--zone-edge)" stroke-dasharray="4 3"/>
+      <line x1="60" y1="120" x2="60" y2="190" stroke="var(--bear)" stroke-width="2"/><rect x="48" y="140" width="24" height="36" fill="var(--bear)"/>
+      <line x1="120" y1="40" x2="120" y2="150" stroke="var(--bull)" stroke-width="2"/><rect x="108" y="50" width="24" height="92" fill="var(--bull)"/>
+      <line x1="180" y1="20" x2="180" y2="98" stroke="var(--bull)" stroke-width="2"/><rect x="168" y="30" width="24" height="50" fill="var(--bull)"/>
+      <line x1="240" y1="30" x2="240" y2="116" stroke="var(--bear)" stroke-width="2"/><rect x="228" y="40" width="24" height="60" fill="var(--bear)"/>
+      <line x1="226" y1="108" x2="254" y2="124" stroke="var(--no)" stroke-width="3"/><line x1="254" y1="108" x2="226" y2="124" stroke="var(--no)" stroke-width="3"/>
+      <text x="60" y="210" text-anchor="middle">A</text><text x="120" y="210" text-anchor="middle">B</text><text x="180" y="210" text-anchor="middle">C</text>
+      <text x="240" y="210" text-anchor="middle">D</text><text x="268" y="92" class="muted">D entre tout de suite : on ne prend pas</text>
+    </svg>
+    <p>Pour un FVG baissier, c'est l'inverse : D reste en dessous de la zone, puis E remonte dedans et tu vends.</p>
+  </section>
+
+  <section class="panel">
+    <p class="q">Ce que je changerai dans l'exercice si c'est bien ça : le graphique s'arrête à la fermeture de D, avec la zone encore intacte. La question devient « Tu poses ton ordre sur ce FVG ? ». Si le prix ne revient jamais dans la zone, le trade ne se fait pas.</p>
+  </section>
+</div>
