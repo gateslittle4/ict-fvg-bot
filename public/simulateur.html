@@ -436,7 +436,7 @@ const WEEK = 604800, MONDAY_OFFSET = 4 * DAY; // the epoch is a Thursday: weekly
 const snap = (sec) => (tfSec === WEEK ? Math.floor((sec - MONDAY_OFFSET) / WEEK) * WEEK + MONDAY_OFFSET : Math.floor(sec / tfSec) * tfSec);
 
 class OverlayPrimitive {
-  constructor() { this.trades = []; this.news = []; this.chart = null; this.series = null; this.req = null; this.lastBar = null;
+  constructor() { this.trades = []; this.news = []; this.bands = []; this.chart = null; this.series = null; this.req = null; this.lastBar = null;
     this.pv = [{ zOrder: () => 'bottom', renderer: () => ({ draw: (t) => this.draw(t) }) }]; }
   attached({ chart: c, series: s, requestUpdate }) { this.chart = c; this.series = s; this.req = requestUpdate; }
   detached() { this.chart = null; this.series = null; }
@@ -460,6 +460,14 @@ class OverlayPrimitive {
         if (yT !== null) { ctx.fillStyle = 'rgba(47,212,128,0.16)'; ctx.fillRect(left, Math.min(yE, yT) * vr, right - left, Math.abs(yT - yE) * vr); }
         ctx.strokeStyle = 'rgba(200,210,220,0.55)'; ctx.setLineDash([4 * hr, 3 * hr]); ctx.lineWidth = hr;
         ctx.beginPath(); ctx.moveTo(left, yE * vr); ctx.lineTo(right, yE * vr); ctx.stroke(); ctx.setLineDash([]);
+      }
+      // quiz : zones d'entrée de la règle, en bandes transparentes sur toute la largeur
+      for (const b of this.bands) {
+        const y1 = this.series.priceToCoordinate(b.top), y2 = this.series.priceToCoordinate(b.bot);
+        if (y1 === null || y2 === null) continue;
+        const top = Math.min(y1, y2) * vr, h = Math.max(2, Math.abs(y2 - y1) * vr);
+        ctx.fillStyle = 'rgba(76,158,255,0.18)'; ctx.fillRect(0, top, W, h);
+        ctx.strokeStyle = 'rgba(76,158,255,0.8)'; ctx.lineWidth = hr; ctx.strokeRect(0, top, W, h);
       }
       ctx.font = `${Math.round(10 * hr)}px ui-monospace, Menlo, Consolas, monospace`;
       for (const n of this.news) {
@@ -973,7 +981,9 @@ function redraw({ resetView = false } = {}) {
   const firstShown = tfBars.length ? tfBars[0].time : 0;
   markersApi.setMarkers(mk.filter((m) => m.time >= firstShown));
   const news = data && $('sim-news').checked ? data.news.filter((n) => n.sec <= t) : [];
+  overlay.bands = quizPending && p.id === order[0] ? (quizPending.zones || quizPending.plan.map((z) => ({ bot: z.entry, top: z.entry }))) : [];
   overlay.set(drawn, news, tfLast ? tfLast.time : null);
+  if (quizFocus) { quizFocus = false; focusQuiz(); }
   if (ticket.armed) tkApplyRR();
   drawEquity(resetView); renderLines(); renderPanel(); renderSignals(); renderNews(); renderTabs(); redrawSessions();
   syncTicketUi(); renderJournal();
@@ -998,8 +1008,8 @@ function renderLines() {
     add(o.sl, 'rgba(255,92,95,0.6)', `SL #${o.id}`, 2); add(o.tp, 'rgba(47,212,128,0.6)', `TP #${o.id}`, 2);
   }
   if (quizPending && id === order[0]) {
-    quizPending.plan.forEach((z, k) => add(z.entry, '#4c9eff', `Zone ${k + 1} (règle)`, 1));
-    quizPending.targets.forEach((t, k) => add(t, '#a78bfa', `Objectif ${k + 1} (règle)`, 1));
+    quizPending.plan.forEach((z, k) => add(z.entry, '#4c9eff', `Z${k + 1}`, 1));
+    quizPending.targets.forEach((t, k) => add(t, '#a78bfa', `Obj ${k + 1}`, 1));
   }
   if (ticket.armed && cfg.mode !== 'auto') {
     const money = (x) => { const m = tkMoney(x); return m == null ? '' : ` ${sgn(m, 0)} $`; };
@@ -1084,14 +1094,26 @@ function renderNews() {
 }
 
 // ---------------------------------------------------------------- quiz : arrêt sur chaque setup de la règle (signalsLY côté serveur)
-let quizPending = null, quizNudged = false;
+let quizPending = null, quizNudged = false, quizFocus = false;
+// à l'arrêt du quiz : dernière bougie vers le milieu (contexte à gauche, place à droite pour les étiquettes) et échelle de prix qui
+// inclut les zones et le premier objectif
+function focusQuiz() {
+  const n = tfBars.length; if (!n) return;
+  chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 60), to: n + 35 });
+}
+series.applyOptions({ autoscaleInfoProvider: (orig) => {
+  const r = orig();
+  if (!r || !quizPending || active !== order[0]) return r;
+  const lv = [...(quizPending.zones || []).flatMap((z) => [z.bot, z.top]), ...quizPending.plan.map((z) => z.entry), quizPending.targets[0]].filter(Number.isFinite);
+  return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...lv), maxValue: Math.max(r.priceRange.maxValue, ...lv) } };
+} });
 function checkQuiz() {
   const p = master();
   if (silent || quizPending || !p || !p.quiz || !p.quiz.length || !acct) return false;
   const done = acct.quizDone || [];
   const q = p.quiz.find((x) => x.sec - 60 <= now && !done.includes(x.id)); // connu à la clôture de la bougie qui le confirme
   if (!q) return false;
-  quizPending = q; quizNudged = false; stopPlay(); showQuiz();
+  quizPending = q; quizNudged = false; quizFocus = true; stopPlay(); showQuiz();
   return true;
 }
 function showQuiz() {
@@ -1099,7 +1121,7 @@ function showQuiz() {
   if (!quizPending) { el.hidden = true; return; }
   const q = quizPending, side = q.dir > 0 ? 'ACHAT' : 'VENTE';
   el.hidden = false; el.classList.toggle('nudge', quizNudged);
-  el.innerHTML = `🎯 <strong>Setup de la règle : ${side}</strong> · zones d'entrée ${q.plan.map((z, k) => `${k + 1}) ${px(z.entry)}`).join(' · ')} · objectif${q.targets.length > 1 ? 's' : ''} ${q.targets.map((t) => px(t)).join(', ')} <span class="meta">(lignes bleues et violettes sur le graphique)</span><br>`
+  el.innerHTML = `🎯 <strong>Setup de la règle : ${side}</strong> · zones d'entrée ${q.plan.map((z, k) => `${k + 1}) ${px(z.entry)}`).join(' · ')} · objectif${q.targets.length > 1 ? 's' : ''} ${q.targets.map((t) => px(t)).join(', ')} <span class="meta">(bandes bleues = zones, lignes violettes = objectifs)</span><br>`
     + `<strong>Tu le prendrais ?</strong> ${q.dir > 0 ? 'B' : 'V'} → place <em>tes</em> lignes → Entrée · <strong>J</strong> = je laisse (coche pourquoi en dessous) · <strong>M</strong> = trade manqué`
     + (quizNudged ? '<br><span style="color:var(--amber);font-weight:700;">Réponds d\'abord (B / V puis Entrée, ou J). Avancer encore une fois le compte comme « ignoré ».</span>' : '');
 }

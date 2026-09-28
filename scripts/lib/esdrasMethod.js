@@ -458,7 +458,7 @@ export function signalsLY(X, { lookback = 288, expiryH = 8, minRR = MIN_RR, minT
     if (!plan.length) continue;
     const ok = targets.some((t) => Math.abs(t - plan[0].entry) / Math.abs(plan[0].entry - plan[0].stop) >= minRR);
     if (!ok) continue;
-    out.push({ tau, dir, i: b15[jp].i1 + 1, plan, targets, minRR, expiry: tau + expiryH * 3600000, exitAt: nextNyTime(tau, EXIT_MIN), win, f: { q, zones: merged.length } });
+    out.push({ tau, dir, i: b15[jp].i1 + 1, plan, targets, minRR, expiry: tau + expiryH * 3600000, exitAt: nextNyTime(tau, EXIT_MIN), win, f: { q, zones: merged.length, zoneList: merged.slice(0, plan.length).map((z) => ({ bot: z.bot, top: z.top })) } });
   }
   return out.sort((a, c) => a.tau - c.tau);
 }
