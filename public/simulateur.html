@@ -167,6 +167,7 @@
       <div class="form-field"><label for="sim-from">Date de départ</label><input type="date" id="sim-from" /></div>
       <div class="form-field"><label for="sim-to">Date de fin</label><input type="date" id="sim-to" /></div>
       <div class="form-field" style="min-width:120px;"><label for="sim-balance">Solde de départ</label><input type="number" id="sim-balance" value="10000" min="100" step="100" /></div>
+      <div class="form-field" style="min-width:150px;"><label for="sim-context">Historique avant le départ</label><select id="sim-context" title="Tout l'historique en H4, D1 et W1 ; environ 1 an en H1 et 2 mois en M15 (au-delà le graphique deviendrait lent)"><option value="0">4 jours</option><option value="30">1 mois</option><option value="90">3 mois</option><option value="182" selected>6 mois</option><option value="365">1 an</option><option value="730">2 ans</option></select></div>
       <div class="form-field"><label for="sim-base">Précision du rejeu</label><select id="sim-base"><option value="15">M15 (toutes les paires)</option><option value="5">M5 (jeux importés en M1)</option><option value="1">M1 (jeux importés en M1, 30 j max)</option></select></div>
       <div class="form-field" style="flex:0 0 auto;min-width:0;display:flex;gap:6px;">
         <button type="button" class="run-btn" id="sim-load" onclick="loadReplay(false)">Charger</button>
@@ -247,9 +248,9 @@
           <div class="grp">
             <button class="tb active" data-tool="cursor" title="Curseur : déplacer / zoomer, sélectionner un dessin">↖<kbd>C</kbd></button>
             <button class="tb" data-tool="rect" title="Rectangle (zone, FVG) : clique-glisse d'un coin à l'autre">▭<kbd>R</kbd></button>
-            <button class="tb" data-tool="trend" title="Ligne de tendance : clique-glisse">╱<kbd>L</kbd></button>
-            <button class="tb" data-tool="hline" title="Ligne horizontale : clique sur un prix">―<kbd>H</kbd></button>
-            <button class="tb" data-tool="vline" title="Ligne verticale : clique sur une heure">│<kbd>V</kbd></button>
+            <button class="tb" data-tool="trend" title="Ligne de tendance : clique-glisse">╱<kbd>S</kbd></button>
+            <button class="tb" data-tool="hline" title="Ligne horizontale (droite) : clique sur un prix">―<kbd>L</kbd></button>
+            <button class="tb" data-tool="vline" title="Ligne verticale : clique sur une heure">│<kbd>I</kbd></button>
             <button class="tb" data-tool="fib" title="Fibonacci (0 · 0,5 · 0,618 · 0,705 · 0,79 · 1) : clique-glisse du début à la fin du mouvement">Fib<kbd>F</kbd></button>
             <button class="tb" data-tool="text" title="Texte : clique où écrire">T<kbd>T</kbd></button>
             <button class="tb" data-tool="erase" title="Gomme : touche un dessin pour l'effacer">⌫<kbd>E</kbd></button>
@@ -272,8 +273,8 @@
         <details id="kbd-help" style="margin-top:6px;" open><summary style="cursor:pointer;font-size:12.5px;"><strong>⌨ Raccourcis clavier</strong> <span class="meta">(touche ? pour afficher / cacher)</span></summary>
           <div class="keys"><kbd>Espace</kbd> lecture / pause <kbd>→</kbd> bougie suivante <kbd>Maj →</kbd> +1 h <kbd>←</kbd> une bougie en arrière <kbd>Maj ←</kbd> −1 h <kbd>↑</kbd><kbd>↓</kbd> vitesse
             <kbd>1</kbd>…<kbd>8</kbd> M1 · M5 · M15 · M30 · H1 · H4 · D1 · W1<br>
-            <kbd>B</kbd> préparer un achat <kbd>S</kbd> préparer une vente <kbd>Entrée</kbd> envoyer l'ordre <kbd>J</kbd> je laisse ce setup <kbd>Échap</kbd> annuler (ticket, outil, sélection)<br>
-            <kbd>C</kbd> curseur <kbd>R</kbd> rectangle <kbd>L</kbd> ligne <kbd>H</kbd> horizontale <kbd>V</kbd> verticale <kbd>F</kbd> Fibonacci <kbd>T</kbd> texte <kbd>E</kbd> gomme <kbd>Suppr</kbd> effacer le dessin sélectionné <kbd>Ctrl Z</kbd> annuler le dernier dessin</div>
+            <kbd>B</kbd> (ou <kbd>A</kbd>) préparer un achat <kbd>V</kbd> préparer une vente <kbd>Entrée</kbd> envoyer l'ordre <kbd>J</kbd> je laisse ce setup <kbd>Échap</kbd> annuler (ticket, outil, sélection)<br>
+            <kbd>C</kbd> curseur <kbd>R</kbd> rectangle <kbd>S</kbd> ligne de tendance <kbd>L</kbd> (ou <kbd>H</kbd>) ligne horizontale <kbd>I</kbd> verticale <kbd>F</kbd> Fibonacci <kbd>T</kbd> texte <kbd>E</kbd> gomme <kbd>Suppr</kbd> effacer le dessin sélectionné <kbd>Ctrl Z</kbd> annuler le dernier dessin</div>
           <div class="meta" style="margin-top:4px;">Sur le graphique : glisse les lignes Entrée / SL / TP du ticket avant d'envoyer, puis celles de tes positions et ordres en attente pour les modifier.</div>
         </details>
       </div>
@@ -308,7 +309,7 @@
         </div>
         <button class="btn-ghost" style="width:100%;margin-bottom:8px;" onclick="resetAccount()">Remettre le compte à zéro</button>
         <div id="manual-box">
-        <div class="seg" id="t-side"><button type="button" class="side-buy" data-side="buy" title="Touche B">▲ Achat <kbd>B</kbd></button><button type="button" class="side-sell" data-side="sell" title="Touche S">▼ Vente <kbd>S</kbd></button></div>
+        <div class="seg" id="t-side"><button type="button" class="side-buy" data-side="buy" title="Touche B">▲ Achat <kbd>B</kbd></button><button type="button" class="side-sell" data-side="sell" title="Touche V">▼ Vente <kbd>V</kbd></button></div>
         <div class="seg" id="t-type"><button type="button" data-type="market" class="on">Au marché</button><button type="button" data-type="limit">Limite</button><button type="button" data-type="stop">Stop</button></div>
         <div class="fld" id="t-price-wrap" hidden><label for="t-price">Prix d'entrée</label><div class="inline"><input type="number" id="t-price" step="any" /><button type="button" class="mini pick" data-pick="price" title="Puis clique sur le graphique au prix voulu">🎯</button></div></div>
         <div class="row2">
@@ -361,8 +362,11 @@ const nyOpts = { timeZone: 'America/New_York' };
 // Backtest à l'aveugle : les dates deviennent « J3 mar. 09:30 » (jour du rejeu depuis le départ, jour de la semaine, heure NY).
 let blind = false, blindDay0 = 0;
 const WD = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
-const hhmm = (sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { ...nyOpts, hour: '2-digit', minute: '2-digit' });
-function blindDay(sec) { const p = nyParts(sec * 1000), d = Date.UTC(p.y, p.m0, p.d); return `J${Math.round((d - blindDay0) / 86400000) + 1} ${WD[new Date(d).getUTCDay()]}`; }
+// memoized: the chart asks for these labels for thousands of tick marks at every candle, and Intl formatting is slow
+const memo = (f) => { const m = new Map(); return (sec) => { let v = m.get(sec); if (v === undefined) { if (m.size > 200000) m.clear(); v = f(sec); m.set(sec, v); } return v; }; };
+const hhmm = memo((sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { ...nyOpts, hour: '2-digit', minute: '2-digit' }));
+const nyDayUtc = memo((sec) => { const p = nyParts(sec * 1000); return Date.UTC(p.y, p.m0, p.d); });
+function blindDay(sec) { const d = nyDayUtc(sec); return `J${Math.round((d - blindDay0) / 86400000) + 1} ${WD[new Date(d).getUTCDay()]}`; }
 const nyText = (sec) => (blind ? `${blindDay(sec)} ${hhmm(sec)} NY` : new Date(sec * 1000).toLocaleString('fr-FR', { ...nyOpts, weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' NY');
 const nyShort = (sec) => (blind ? `${blindDay(sec)} ${hhmm(sec)}` : new Date(sec * 1000).toLocaleString('fr-FR', { ...nyOpts, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }));
 const tickFmt = (time, type) => (blind ? (type >= 3 ? hhmm(time) : blindDay(time)) : null);
@@ -381,7 +385,8 @@ let actions = [], snaps = [], userMarkers = {};
 let cfg = { mode: 'manual', risk: 1, guard: false, bt: false, flat: 'off' };
 let tfSec = 900;
 let tfLast = null;
-let tfBars = [];              // bars shown on the chart (the drawing layer maps time <-> x with them)
+let tfBars = [];
+const MAX_TF_BARS = 6000;              // bars shown on the chart (the drawing layer maps time <-> x with them)
 let playing = false, timer = null, speed = 6;
 let sessionId = null;
 let silent = false;           // true while a rewind silently re-simulates
@@ -469,23 +474,31 @@ const sessionOn = (k) => sessionState.master && sessionState.enabled[k] !== fals
 const sessionHours = (d) => ({ ...d, ...(sessionState.hours[d.key] || {}) });
 const nyParts = (() => { const f = new Intl.DateTimeFormat('en-US', { ...nyOpts, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); return (ms) => { const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value])); return { y: +p.year, m0: +p.month - 1, d: +p.day, minutes: +p.hour * 60 + +p.minute }; }; })();
 function nyLocalToUtcMs(y, m0, d, hourFloat) { const minutes = Math.round(hourFloat * 60); const guess = Date.UTC(y, m0, d) + minutes * 60000 + 5 * 3600000; const g = nyParts(guess); return guess + ((Date.UTC(y, m0, d) / 60000 + minutes) - (Date.UTC(g.y, g.m0, g.d) / 60000 + g.minutes)) * 60000; }
+// The bands of the whole loaded file are computed once (per pair, timeframe and session settings) - recomputing them for every
+// day at every candle made each step slow with months of history - then cut at the current candle.
+let sessionCache = { key: null, bands: [] };
 function computeSessionBands() {
   const p = act();
   if (!p || p.cur < 0 || !sessionState.master || tfSec > 3600) return [];
-  const first = nyParts(p.base[0].t * 1000), lastMs = p.base[p.cur].t * 1000, bands = [];
-  const idx = (ms) => { let lo = 0, hi = p.cur + 1; while (lo < hi) { const m = (lo + hi) >> 1; if (p.base[m].t * 1000 >= ms) hi = m; else lo = m + 1; } return lo; };
-  for (let dayMs = Date.UTC(first.y, first.m0, first.d); dayMs <= lastMs + 86400000; dayMs += 86400000) {
-    const day = new Date(dayMs);
-    for (const b of sessionDefs) {
-      if (!sessionOn(b.key)) continue;
-      const def = sessionHours(b);
-      const i0 = idx(nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.startHour));
-      const i1 = idx(nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.endHour)) - 1;
-      if (i0 > i1 || i0 > p.cur) continue;
-      bands.push({ key: def.key, label: def.label, startSec: snap(p.base[i0].t), endSec: snap(p.base[Math.min(i1, p.cur)].t) });
+  const key = `${p.id}|${p.base.length}|${tfSec}|${JSON.stringify(sessionState)}|${sessionDefs.length}`;
+  if (sessionCache.key !== key) {
+    const first = nyParts(p.base[0].t * 1000), lastMs = p.base[p.base.length - 1].t * 1000, all = [], n = p.base.length;
+    const idx = (ms) => { let lo = 0, hi = n; while (lo < hi) { const m = (lo + hi) >> 1; if (p.base[m].t * 1000 >= ms) hi = m; else lo = m + 1; } return lo; };
+    for (let dayMs = Date.UTC(first.y, first.m0, first.d); dayMs <= lastMs + 86400000; dayMs += 86400000) {
+      const day = new Date(dayMs);
+      for (const b of sessionDefs) {
+        if (!sessionOn(b.key)) continue;
+        const def = sessionHours(b);
+        const i0 = idx(nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.startHour));
+        const i1 = idx(nyLocalToUtcMs(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), def.endHour)) - 1;
+        if (i0 <= i1 && i0 < n) all.push({ key: def.key, label: def.label, i0, i1 });
+      }
     }
+    sessionCache = { key, bands: all };
   }
-  return bands;
+  const out = [];
+  for (const b of sessionCache.bands) { if (b.i0 > p.cur) continue; out.push({ key: b.key, label: b.label, startSec: snap(p.base[b.i0].t), endSec: snap(p.base[Math.min(b.i1, p.cur)].t) }); }
+  return out;
 }
 class SessionsPrimitive {
   constructor() { this.bands = []; this.chart = null; this.req = null; this.pv = [{ zOrder: () => 'bottom', renderer: () => ({ draw: (t) => this.draw(t) }) }]; }
@@ -774,7 +787,7 @@ function tkMoney(price) {
 function ticketSummary() {
   const p = act();
   if (!p || !acct) return '<span class="meta">Charge une simulation d\'abord.</span>';
-  if (!ticket.armed) return '<span class="meta">Appuie sur <b>B</b> (achat) ou <b>S</b> (vente) : les lignes Entrée, Stop et Objectif apparaissent sur le graphique. Glisse-les où tu veux, puis <b>Entrée</b> pour envoyer.</span>';
+  if (!ticket.armed) return '<span class="meta">Appuie sur <b>B</b> (achat) ou <b>V</b> (vente) : les lignes Entrée, Stop et Objectif apparaissent sur le graphique. Glisse-les où tu veux, puis <b>Entrée</b> pour envoyer.</span>';
   const e = tkEntry(); let units = null, err = '';
   try { units = sizeUnits(p, readOrder(), e, ticket.sl); } catch (x) { err = x.message; }
   if (!err && ticket.sl != null && !stopOk(e, ticket.sl)) err = `Le stop doit être ${ticket.side === 'buy' ? 'sous' : 'au-dessus de'} l'entrée.`;
@@ -802,7 +815,7 @@ function syncTicketUi() {
 const lookingAt = () => { const r = chart.timeScale().getVisibleLogicalRange(); const t = (l) => (tfBars.length && l != null ? tfBars[Math.max(0, Math.min(tfBars.length - 1, Math.round(l)))].time : null); return { tf: tfSec, view: r ? { from: t(r.from), to: t(r.to) } : null }; };
 window.sendTicket = () => {
   if (!acct || cfg.mode === 'auto') return;
-  if (!ticket.armed) { orderMsg('Choisis d\'abord Achat ou Vente (touches B / S).', true); return; }
+  if (!ticket.armed) { orderMsg('Choisis d\'abord Achat ou Vente (touches B / V).', true); return; }
   if (tryAction({ k: 'place', pairId: active, side: ticket.side, o: readOrder(), why: readWhy(), note: $('t-note').value.trim(), draw: drawingsNow(), ...lookingAt() })) { clearTicket(); clearWhy(); }
 };
 window.skipSetup = () => {
@@ -868,8 +881,11 @@ function timeframeData(p) {
     if (last && last.time === key) { last.high = Math.max(last.high, b.h); last.low = Math.min(last.low, b.l); last.close = b.c; }
     else { last = { time: key, open: b.o, high: b.h, low: b.l, close: b.c }; out.push(last); }
   }
-  tfLast = last; tfBars = out;
-  return out;
+  tfLast = last;
+  // months of history in M15 made every candle slow (the chart library reworks the whole series): each timeframe shows its last
+  // MAX_TF_BARS bars - about 2 months in M15, a year in H1, the whole history in H4 / D1 / W1
+  tfBars = out.length > MAX_TF_BARS ? out.slice(-MAX_TF_BARS) : out;
+  return tfBars;
 }
 function pushBar(p, i) {
   const b = p.base[i]; const key = snap(b.t);
@@ -920,7 +936,8 @@ function redraw({ resetView = false } = {}) {
   }
   for (const m of userMarkers[p.id] || []) if (m.sec <= t) mk.push({ time: snap(m.sec), position: m.pos, shape: m.shape, color: m.color, text: m.text });
   mk.sort((a, b) => a.time - b.time);
-  markersApi.setMarkers(mk);
+  const firstShown = tfBars.length ? tfBars[0].time : 0;
+  markersApi.setMarkers(mk.filter((m) => m.time >= firstShown));
   const news = data && $('sim-news').checked ? data.news.filter((n) => n.sec <= t) : [];
   overlay.set(drawn, news, tfLast ? tfLast.time : null);
   if (ticket.armed) tkApplyRR();
@@ -1124,7 +1141,7 @@ function requestBody(random) {
     if (!(meta.realSymbols || []).includes(real(symbol))) throw new Error(`Pas de données réelles pour ${symbol} (seulement ${(meta.realSymbols || []).join(', ')}).`);
     symbol = `real:${real(symbol)}`; extras = extras.filter((x) => meta.realSymbols.includes(x)).map((x) => `real:${x}`);
   }
-  const body = { symbol, extraSymbols: extras, days, strategyIds: ids, news: $('sim-news').checked, baseMinutes: $('sim-botfull').checked ? 15 : Number($('sim-base').value) };
+  const body = { symbol, extraSymbols: extras, days, strategyIds: ids, news: $('sim-news').checked, baseMinutes: $('sim-botfull').checked ? 15 : Number($('sim-base').value), contextDays: Number($('sim-context').value) };
   if (range !== 'custom') body.from = '9999-12-31'; // clamped by the server to the last window that fits: the END of the data
   else if (!random && !$('sim-blind').checked && from) body.from = from;
   return body;
@@ -1198,7 +1215,7 @@ window.addPair = async () => {
   try {
     const custom = (meta.customDatasets || []).find((d) => d.id === id);
     const baseMinutes = master().baseMin < 15 && custom && custom.m1 ? master().baseMin : 15;
-    const d = await fetchReplay({ symbol: id, fromMs: data.window.from, days: data.days, strategyIds: order.length ? currentStrategyIds() : [], news: false, baseMinutes });
+    const d = await fetchReplay({ symbol: id, fromMs: data.window.from, days: data.days, strategyIds: order.length ? currentStrategyIds() : [], news: false, baseMinutes, contextDays: Number($('sim-context').value) });
     const pd = d.pairs[0];
     if (pd.error) throw new Error(pd.error);
     const p = initPair(pd, now); // signals before this moment were never on the table for the bot
@@ -1432,7 +1449,8 @@ $('draw-color').addEventListener('input', (e) => { if (selectedIdx >= 0 && drawi
 
 // ---------------------------------------------------------------- keyboard (Forex Tester style)
 const TF_KEYS = { 1: 60, 2: 300, 3: 900, 4: 1800, 5: 3600, 6: 14400, 7: 86400, 8: 604800 };
-const TOOL_KEYS = { c: 'cursor', r: 'rect', l: 'trend', h: 'hline', v: 'vline', f: 'fib', t: 'text', e: 'erase' };
+// 2026-09-28 (Esdras) : S = ligne de tendance, L = ligne horizontale ; la vente passe sur V, la verticale sur I
+const TOOL_KEYS = { c: 'cursor', r: 'rect', s: 'trend', l: 'hline', h: 'hline', i: 'vline', f: 'fib', t: 'text', e: 'erase' };
 function changeSpeed(dir) {
   const list = [...document.querySelectorAll('#speed-grp [data-speed]')], i = list.findIndex((b) => b.classList.contains('active'));
   const next = list[Math.max(0, Math.min(list.length - 1, i + dir))]; if (next) next.click();
@@ -1460,8 +1478,8 @@ document.addEventListener('keydown', (e) => {
   if (k === 'Delete' || k === 'Backspace') { if (selectedIdx >= 0) { e.preventDefault(); deleteSelected(); } return; }
   if (k === '?') { $('kbd-help').open = !$('kbd-help').open; return; }
   if (TF_KEYS[k]) { const b = document.querySelector(`#tf-grp [data-tf="${TF_KEYS[k]}"]`); if (b && !b.disabled) b.click(); return; }
-  if (low === 'b') return armSide('buy');
-  if (low === 's') return armSide('sell');
+  if (low === 'b' || low === 'a') return armSide('buy');
+  if (low === 'v') return armSide('sell');
   if (low === 'j') return skipSetup();
   if (TOOL_KEYS[low] && acct) setDrawTool(TOOL_KEYS[low]);
 });

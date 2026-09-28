@@ -601,6 +601,14 @@ app.post('/api/lab/lego', async (req, res) => {
 //         strategyIds?: string[] ('bot-all' = the bot's mechanisms on each pair), news?: boolean }
 // Real time = engine time + 5 h, applied here so the page can hand it straight to the chart.
 const REPLAY_WARMUP_BARS = 400;
+// 2026-09-28 (Esdras : « je ne vois pas assez de données dans le passé ») : historique affiché avant le départ, au choix (body.contextDays),
+// jusqu'à 2 ans en M15 ; en M1 / M5 le magasin minute est lu en entier sur la fenêtre, donc 7 / 30 jours au plus.
+const REPLAY_CONTEXT_MAX_DAYS = { 1: 7, 5: 30, 15: 730 };
+function replayWarmupBars({ real, baseMinutes, contextDays }) {
+  if (real) return REAL_WARMUP_BARS;
+  const days = Math.min(REPLAY_CONTEXT_MAX_DAYS[baseMinutes] ?? 730, Math.max(0, Number(contextDays) || 0));
+  return Math.max(REPLAY_WARMUP_BARS, Math.round(days * 96)); // warm-up is counted in M15 bars of time (96 a day)
+}
 const REAL_WARMUP_BARS = 96; // the real broker export is short (~7 months): a day of chart context is enough, the strategies run on the whole file anyway
 const REPLAY_MAX_PAIRS = 6;
 app.post('/api/lab/replay', async (req, res) => {
@@ -650,7 +658,7 @@ app.post('/api/lab/replay', async (req, res) => {
       const spec = instrumentSpec(ds.symbol);
       const plan = conversionPlan(spec.quote, avail);
       const conversion = plan.status === 'ok' ? { status: 'ok', combine: plan.combine, legs: plan.legs.map((l) => ({ mode: l.mode, csvPath: csvOf(l.symbol) })) } : null;
-      const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine: fromEng, days, warmupBars: real ? REAL_WARMUP_BARS : REPLAY_WARMUP_BARS, baseMinutes: base, m1, conversion });
+      const out = await runLabJob('replayWindow', { csvPath: ds.csvPath, symbol: ds.symbol, partnerCsvPath, strategyIds: ids, fromEngine: fromEng, days, warmupBars: replayWarmupBars({ real, baseMinutes: base, contextDays: body.contextDays }), baseMinutes: base, m1, conversion });
       return {
         out,
         pair: {
