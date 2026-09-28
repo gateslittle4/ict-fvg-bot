@@ -168,6 +168,7 @@
     <button id="theme-toggle" class="theme-toggle-btn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
   </nav>
   <h1>Simulateur de marché</h1>
+  <div id="resume-banner" class="quiz-banner" style="font-size:14px;" hidden></div>
   <div class="subtitle">Rejoue n'importe quelle période de tes données bougie par bougie, avec les stratégies du bot (ou n'importe laquelle du Labo) dessinées sur le graphique — leurs entrées, stops et objectifs apparaissent quand ils apparaîtraient en vrai, le résultat seulement quand le trade se termine. Tu peux aussi trader toi-même avec un vrai panneau d'ordres, et les annonces (news) sont marquées sur le graphique.</div>
 
   <div class="card">
@@ -1254,6 +1255,9 @@ async function fetchReplay(body) {
 window.loadReplay = async (random, override = null) => {
   const btn = $('sim-load'); $('sim-msg').textContent = ''; stopPlay();
   let body;
+  // une séance à reprendre existe : ne pas l'écraser sans le demander
+  if (!override && !acct && readResume() && !confirm('Tu as une séance en cours (bandeau « Reprendre » en haut). La remplacer par une nouvelle ?')) return;
+  if (!override) $('resume-banner').hidden = true;
   try { body = override ? { ...override } : requestBody(random); } catch (e) { $('sim-msg').innerHTML = `<span class="loss">${e.message}</span>`; return; }
   btn.disabled = true; btn.textContent = 'Chargement… (jusqu\'à ~2 min si tu affiches beaucoup de stratégies ou de paires)';
   try {
@@ -1730,13 +1734,14 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) saveR
 function readResume() { try { const r = JSON.parse(localStorage.getItem(RESUME_KEY) || 'null'); return r && r.v === 1 && Date.now() - r.savedAt < 30 * 86400000 ? r : null; } catch { return null; } }
 function offerResume() {
   const r = readResume(); if (!r) return;
-  $('sim-msg').innerHTML = `⏯ <strong>Séance en cours</strong> : ${r.label}, ${r.clock}, ${r.decisions} décision(s) dans le journal${r.quiz ? ', mode quiz' : ''}. <button type="button" class="run-btn" onclick="resumeSession()">Reprendre</button> <button type="button" class="btn-ghost" onclick="dropResume()">Oublier</button>`;
+  const html = `⏯ <strong>Séance en cours</strong> : ${r.label}, ${r.clock}, ${r.decisions} décision(s) dans le journal${r.quiz ? ', mode quiz' : ''}. <button type="button" class="run-btn" onclick="resumeSession()">Reprendre</button> <button type="button" class="btn-ghost" onclick="dropResume()">Oublier</button>`;
+  $('sim-msg').innerHTML = html; $('resume-banner').innerHTML = html; $('resume-banner').hidden = false;
 }
-window.dropResume = () => { try { localStorage.removeItem(RESUME_KEY); } catch {} $('sim-msg').textContent = ''; };
+window.dropResume = () => { try { localStorage.removeItem(RESUME_KEY); } catch {} $('sim-msg').textContent = ''; $('resume-banner').hidden = true; };
 window.resumeSession = async () => {
   const r = readResume(); if (!r) return;
   $('sim-blind').checked = !!r.blind; $('sim-quiz').checked = !!r.quiz; $('sim-balance').value = r.balance;
-  resuming = r;
+  resuming = r; $('resume-banner').hidden = true;
   await loadReplay(false, r.req);
 };
 function restoreSession(r) {
