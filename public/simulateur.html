@@ -986,7 +986,7 @@ function redraw({ resetView = false } = {}) {
   if (quizFocus) { quizFocus = false; focusQuiz(); }
   if (ticket.armed) tkApplyRR();
   drawEquity(resetView); renderLines(); renderPanel(); renderSignals(); renderNews(); renderTabs(); redrawSessions();
-  syncTicketUi(); renderJournal();
+  syncTicketUi(); renderJournal(); scheduleSave();
   if (p.symbol !== drawingsSym) loadDrawings(); else renderDrawings();
   $('clock').innerHTML = `<strong>${nyText(t)}</strong> · M${master().baseMin} · bougie ${master().cur + 1}/${master().base.length}`;
 }
@@ -1250,10 +1250,10 @@ async function fetchReplay(body) {
   if (!res.ok) throw new Error(d.error || `Erreur HTTP ${res.status}`);
   return d;
 }
-window.loadReplay = async (random) => {
+window.loadReplay = async (random, override = null) => {
   const btn = $('sim-load'); $('sim-msg').textContent = ''; stopPlay();
   let body;
-  try { body = requestBody(random); } catch (e) { $('sim-msg').innerHTML = `<span class="loss">${e.message}</span>`; return; }
+  try { body = override ? { ...override } : requestBody(random); } catch (e) { $('sim-msg').innerHTML = `<span class="loss">${e.message}</span>`; return; }
   btn.disabled = true; btn.textContent = 'Chargement… (jusqu\'à ~2 min si tu affiches beaucoup de stratégies ou de paires)';
   try {
     // one request per pair (each has its own time limit on the server and shows its progress)
@@ -1269,6 +1269,7 @@ window.loadReplay = async (random) => {
       } catch (e) { d.pairs.push({ id: sym, symbol: sym, error: e.message }); }
     }
     data = d; data.days = body.days;
+    lastReq = { ...body, from: undefined, fromMs: d.window.from }; // la même fenêtre exacte, pour reprendre la séance après un rechargement
     data.news = d.news.map((n) => ({ ...n, sec: Math.floor(n.time / 1000) }));
     P = {}; order = [];
     startSec = Math.floor(d.window.from / 1000);
@@ -1288,6 +1289,7 @@ window.loadReplay = async (random) => {
     const p = P[active];
     tfSec = Math.max(tfSec, p.baseMin * 60);
     document.querySelectorAll('#tf-grp .tb').forEach((x) => { x.disabled = Number(x.dataset.tf) < p.baseMin * 60; x.classList.toggle('active', Number(x.dataset.tf) === tfSec); });
+    if (resuming) { restoreSession(resuming); resuming = null; }
     redraw({ resetView: true }); fitChart();
     const nTr = order.reduce((s, id) => s + P[id].trades.length, 0);
     const na = order.flatMap((id) => P[id].notApplicable.map((x) => `${strategyLabels[x] || x} (${label(P[id])})`));
@@ -1708,7 +1710,47 @@ window.__sim = { get quizPending() { return quizPending; }, get shots() { return
 $('sim-from').value = '';
 countStrats();
 syncCfgUi();
-loadMeta().catch((e) => { $('sim-msg').innerHTML = `<span class="loss">Erreur de chargement : ${e.message}</span>`; });
+// ---------------------------------------------------------------- reprise de la séance après un rechargement (2026-09-28, Esdras)
+// La séance (fenêtre exacte, actions, bougie atteinte) est gardée dans ce navigateur ; « Reprendre » recharge la même fenêtre et rejoue
+// les actions jusqu'à la même bougie : compte, trades, journal et réponses au quiz reviennent à l'identique.
+const RESUME_KEY = 'apexfvg_sim_resume';
+let lastReq = null, resuming = null, saveTimer = null;
+function saveResume() {
+  if (!acct || !data || !lastReq || !master()) return;
+  try {
+    localStorage.setItem(RESUME_KEY, JSON.stringify({ v: 1, savedAt: Date.now(), req: lastReq, blind: $('sim-blind').checked, quiz: $('sim-quiz').checked,
+      balance: acct.startBalance, tfSec, step: master().cur, clock: nyText(now), label: label(master()), decisions: (acct.journal || []).length, actions, sessionId }));
+  } catch { /* stockage plein ou navigation privée : pas de reprise */ }
+}
+function scheduleSave() { if (!saveTimer) saveTimer = setTimeout(() => { saveTimer = null; saveResume(); }, 2000); }
+window.addEventListener('pagehide', saveResume);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveResume(); });
+function readResume() { try { const r = JSON.parse(localStorage.getItem(RESUME_KEY) || 'null'); return r && r.v === 1 && Date.now() - r.savedAt < 30 * 86400000 ? r : null; } catch { return null; } }
+function offerResume() {
+  const r = readResume(); if (!r) return;
+  $('sim-msg').innerHTML = `⏯ <strong>Séance en cours</strong> : ${r.label}, ${r.clock}, ${r.decisions} décision(s) dans le journal${r.quiz ? ', mode quiz' : ''}. <button type="button" class="run-btn" onclick="resumeSession()">Reprendre</button> <button type="button" class="btn-ghost" onclick="dropResume()">Oublier</button>`;
+}
+window.dropResume = () => { try { localStorage.removeItem(RESUME_KEY); } catch {} $('sim-msg').textContent = ''; };
+window.resumeSession = async () => {
+  const r = readResume(); if (!r) return;
+  $('sim-blind').checked = !!r.blind; $('sim-quiz').checked = !!r.quiz; $('sim-balance').value = r.balance;
+  resuming = r;
+  await loadReplay(false, r.req);
+};
+function restoreSession(r) {
+  sessionId = r.sessionId || sessionId;
+  actions = r.actions || [];
+  const m = master();
+  silent = true;
+  replayActionsAt(m.cur);
+  while (m.cur < r.step && advanceOne()) { replayActionsAt(m.cur); if ((m.cur - startStep) % snapEvery === 0) takeSnapshot(); }
+  silent = false;
+  if (r.tfSec && r.tfSec >= m.baseMin * 60) { tfSec = r.tfSec; document.querySelectorAll('#tf-grp .tb').forEach((x) => x.classList.toggle('active', Number(x.dataset.tf) === tfSec)); }
+  quizPending = null; checkQuiz();
+  log('Séance reprise là où tu l\'avais laissée.', 'info');
+}
+
+loadMeta().then(offerResume).catch((e) => { $('sim-msg').innerHTML = `<span class="loss">Erreur de chargement : ${e.message}</span>`; });
 </script>
 </body>
 </html>
