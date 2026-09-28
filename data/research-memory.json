@@ -1633,5 +1633,20 @@
       "scripts/runEsdrasLY.js",
       "scripts/lib/esdrasMethod.js"
     ]
+  },
+  {
+    "id": "esdras-magnet-2026-09-28",
+    "title": "Le FVG 15 min à gauche est-il un aimant ? Non en général ; piste pour les FVG lointains (≥ 4 ATR)",
+    "date": "2026-09-28",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-esdras-magnet-2026-09-28.md). US100 2011-2018, 25 375 BMS dont 13 664 avec un FVG à gauche : atteint en 24 h 67,5 % contre 65,8 % pour un niveau quelconque à la même distance (en ATR) ; écart moyen par jour -0,81 point (t -1,32) ; 8 h : -1,11 point (t -2,21). Descriptif : FVG proches (0-2 ATR) 89,0 % contre 90,1 %, 2-4 ATR 67,0 % contre 67,0 %, 4-8 ATR 50,2 % contre 46,2 %, ≥ 8 ATR 27,3 % contre 18,3 % (piste non testée : peut venir d'un retour à la moyenne après un grand mouvement, à contrôler).",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-esdras-magnet-2026-09-28.md",
+      "data/backtest-input/esdras-magnet-US100-explore.md",
+      "scripts/runEsdrasMagnet.js"
+    ]
   }
 ]
