@@ -106,7 +106,7 @@ function record(acc, pos, units, exit, time, reason) {
   acc.balance += pnl;
   acc.history.push({
     id: pos.id, side: pos.side, units, entry: pos.entry, exit, openTime: pos.openTime, closeTime: time, pnl, symbol: pos.symbol ?? null, tag: pos.tag ?? null,
-    r: risk && risk > 0 ? pnl / risk : null, reason,
+    r: risk && risk > 0 ? pnl / risk : null, reason, sl0: pos.sl0, tp: pos.tp, orderId: pos.orderId ?? null,
   });
   return pnl;
 }
@@ -230,8 +230,9 @@ export function onCandle(acc, c, symbol, { onlyIds = null, noGap = false } = {})
     if (fill == null) continue;
     acc.pending.splice(acc.pending.indexOf(o), 1);
     const pos = openPosition(acc, { side: o.side, entry: fill, units: o.units, sl: o.sl, tp: o.tp, trail: o.trail, time: c.time, symbol: o.symbol ?? null, tag: o.tag ?? null });
+    pos.orderId = o.id; // the journal links a limit/stop order to the position it opened
     fresh.add(pos.id);
-    events.push({ type: 'filled', id: pos.id, side: o.side, price: fill, time: c.time, symbol: o.symbol ?? null });
+    events.push({ type: 'filled', id: pos.id, orderId: o.id, side: o.side, price: fill, time: c.time, symbol: o.symbol ?? null });
   }
 
   // 2) stops, targets, trailing on positions opened on an EARLIER candle
