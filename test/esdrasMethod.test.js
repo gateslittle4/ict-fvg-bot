@@ -73,3 +73,11 @@ test('esdrasMethod.runOrder: an infinite buy limit fills at the open plus spread
   assert.equal(r.fill, 100.1);
   assert.equal(r.reason, 'target');
 });
+
+test('esdrasMethod.bmsIdx: same events as bmsOf, with the bar index', async () => {
+  const { bmsIdx } = await import('../scripts/lib/esdrasMethod.js');
+  const list = [[10, 11, 9, 10], [10, 13, 10, 12], [12, 12.5, 11, 11], [11, 12, 10, 11.5], [11.5, 14, 11.4, 13.5]];
+  const b = bmsIdx(bars(list));
+  assert.deepEqual(b, [{ q: 4, dir: 1 }]);
+  assert.deepEqual(bmsOf(series(list), bars(list)).map((x) => x.dir), b.map((x) => x.dir));
+});
