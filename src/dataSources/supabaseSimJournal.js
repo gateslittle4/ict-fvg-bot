@@ -50,6 +50,16 @@ export async function listSimJournals(client, { limit = 20 } = {}) {
   return { ok: true, journals: data };
 }
 
+/** Returns one session's full payload (quiz decisions included) — the list route only returns metadata. */
+export async function getSimJournal(client, session) {
+  if (!client) return { ok: false, status: 503, error: 'Supabase non configuré sur le serveur' };
+  if (typeof session !== 'string' || !/^[\w-]{8,64}$/.test(session)) return { ok: false, status: 400, error: 'séance invalide' };
+  const { data, error } = await client.from(TABLE).select('session, updated_at, payload').eq('session', session).maybeSingle();
+  if (error) return { ok: false, status: 502, error: error.message };
+  if (!data) return { ok: false, status: 404, error: 'séance introuvable' };
+  return { ok: true, journal: data };
+}
+
 const SHOTS = 'bot_sim_shots';
 export const MAX_SHOT_CHARS = 3_000_000; // a JPEG data URL, ~2 MB of picture at most
 

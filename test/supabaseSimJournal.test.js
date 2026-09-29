@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toJournalRow, saveSimJournal, toShotRow, saveSimShot } from '../src/dataSources/supabaseSimJournal.js';
+import { toJournalRow, saveSimJournal, getSimJournal, toShotRow, saveSimShot } from '../src/dataSources/supabaseSimJournal.js';
 
 const body = { session: 'abcd1234-ef', blind: true, pairs: [{ id: 'US100', symbol: 'US100' }], entries: [{ kind: 'skip' }, { kind: 'trade' }] };
 
@@ -29,6 +29,22 @@ test('supabaseSimJournal.saveSimJournal: upserts on the session; 503 without Sup
   assert.equal(calls[0].t, 'bot_sim_journal');
   assert.deepEqual(calls[0].opts, { onConflict: 'session' });
   assert.equal((await saveSimJournal(null, body)).status, 503);
+});
+
+test('supabaseSimJournal.getSimJournal: returns the full payload; 404 when unknown', async () => {
+  const row = { session: 'abcd1234-ef', updated_at: 'x', payload: body };
+  const client = {
+    from: (t) => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }),
+    }),
+  };
+  const r = await getSimJournal(client, 'abcd1234-ef');
+  assert.equal(r.ok, true);
+  assert.equal(r.journal.payload, body);
+  const none = { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) };
+  assert.equal((await getSimJournal(none, 'abcd1234-ef')).status, 404);
+  assert.equal((await getSimJournal(null, 'abcd1234-ef')).status, 503);
+  assert.equal((await getSimJournal(client, 'x')).status, 400);
 });
 
 test('supabaseSimJournal.toShotRow / saveSimShot: one JPEG per (session, key), bad input refused', async () => {
