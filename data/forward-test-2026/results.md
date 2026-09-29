@@ -1,5 +1,7 @@
 # Forward-test 2026 — données réelles cTrader, ~7 mois (2026-02-05 → 2026-09-09)
 
+> ⚠ **PÉRIMÉ — CORRECTION 2026-09-29.** Ce fichier est un **rejeu** de la config de production sur des bougies cTrader exportées, **pas du trading réel** (aucun ordre n'a été passé). Il repose sur **14 signaux** seulement, réglés en M15 (règle « le stop gagne l'égalité », biais connu : research-memory `m15-tie-rule-bias`), avec une config qui a changé depuis (GER40 retiré le 2026-09-21, XAUUSD/US500 réévalués). Les win rates de 66-75 % viennent de 3 et 4 trades : ils ne prouvent rien et ne se comparent pas à un win rate d'un autre R:R. Le « signal d'alerte » sur XAUUSD (7 trades) n'est pas non plus concluant, dans un sens comme dans l'autre. Pour la performance du vrai moteur, voir `data/backtest-input/engine-m1-vs-m15-reconciliation.md`, `data/backtest-summary.json` (avec ses `caveats`) et les entrées `fvg-live-execution-gap-2026-09-23` et `live-replay-full-2010-2026` de `data/research-memory.json`.
+
 ⚠ Exporté LIVE depuis le vrai compte cTrader via `/api/admin/export-candles` (endpoint temporaire, voir server.js), pas les CSV historiques 2019-2025 habituels. Config de PRODUCTION utilisée telle quelle (`CONFIG.fvg.perSymbol` — rrMultiple 5/5/4, variants/stops/sessions inchangés) — pas de nouveau grid-search, c'est un vrai test out-of-sample sur une période qui n'a jamais servi à choisir cette config.
 
 | Symbole | Signaux bruts | Signaux net | Win rate net | R net moyen | Profit factor net | Max DD net (R) | Total R net |

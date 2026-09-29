@@ -1684,5 +1684,27 @@
       "scripts/runEsdrasLY.js",
       "scripts/lib/esdrasMethod.js"
     ]
+  },
+  {
+    "id": "backtest-summary-stale-2026-09-29",
+    "title": "Ancien résumé de backtest (2 964 R, 30,4 %, 7 217 trades, 2009-2025) : périmé, remplacé",
+    "date": "2026-09-29",
+    "status": "methodology-fix",
+    "summary": "Le fichier data/backtest-summary.json (alimente le chat du dashboard) affichait +2 964 R, 30,4 % de réussite, 7 217 trades sur 2009-2025. Ces chiffres venaient d'un rejeu M15 incluant GER40 (retiré le 2026-09-21, négatif dans le vrai moteur), avec un R BRUT (rapport R:R, sans spread) et le règlement M15 biaisé. Régénéré avec le vrai moteur sur le M1 réel 2022-2026, production sans GER40, R net du spread : 1 801 trades, +233 R (+0,129 R/trade), 24,7 % de réussite, baisse max 12,3 % à 0,3 % de risque (US100 +188 R, XAUUSD +60 R, US500 -15 R ; FVG +203 R, Divergence +46 R, CBDR -31 R). Ce nouveau chiffre reste un PLAFOND OPTIMISTE : il suppose les LIMIT remplis au niveau du signal (voir fvg-live-execution-gap-2026-09-23 : le FVG y devient négatif). Le forward-test 2026 (data/forward-test-2026/results.md) est un rejeu de 14 signaux, pas du trading réel, et est marqué périmé.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Coûts partiels (pas de commission, swap, glissement), remplissage au niveau du signal, garde-fous rejoués sur une liste canonique, historique M1 seulement depuis 2022-05 (2023-01 pour les indices).",
+    "files": [
+      "scripts/buildBacktestSummary.js",
+      "data/backtest-summary.json",
+      "src/chatAssistant.js",
+      "data/forward-test-2026/results.md",
+      "docs/STRATEGY.md"
+    ]
   }
 ]

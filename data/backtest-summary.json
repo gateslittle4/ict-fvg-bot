@@ -1,323 +1,284 @@
 {
-  "generatedAt": "2026-09-16T09:40:28.893Z",
+  "generatedAt": "2026-09-29T12:13:01.060Z",
+  "method": "Vrai moteur LiveStrategyEngine rejoué sur l'historique M1 réel du broker (data/real-m1-full), règlement M1 exact (minute par minute), garde-fous réels rejoués (3 trades/jour, pause 30 min, arrêt du jour), symboles de production sans GER40.",
   "coverage": {
-    "from": "2009-03-15",
-    "to": "2025-12-31",
+    "from": "2022-05-24",
+    "to": "2026-09-18",
     "years": [
-      2009,
-      2010,
-      2011,
-      2012,
-      2013,
-      2014,
-      2015,
-      2016,
-      2017,
-      2018,
-      2019,
-      2020,
-      2021,
       2022,
       2023,
       2024,
-      2025
+      2025,
+      2026
     ]
   },
-  "note": "Backtest sur l'historique réel complet disponible par symbole (2009-03-15 -> 2025-12-31, 17 années calendaires), rejoué avec le code EXACT de production (mêmes mécanismes, mêmes réglages). EURUSD (Judas Swing) démarre en 2018-01-01, plus tard que les autres symboles - pas d'homogénéisation artificielle à une fenêtre commune. Performance passée, ne garantit pas les résultats futurs. BTCUSD exclu (smoke-test technique récent, pas un mécanisme validé). Symboles inclus : US100, US500, XAUUSD, EURUSD, GER40.",
-  "decidedTradeCount": 7173,
+  "symbols": [
+    "US100",
+    "US500",
+    "XAUUSD",
+    "EURUSD"
+  ],
+  "riskPctPerTrade": 0.3,
+  "rUnit": "R NET : après déduction du spread, avant commission, swap et glissement (non modélisés).",
+  "caveats": [
+    "Le niveau absolu est surestimé : commission, swap et glissement ne sont pas modélisés, les garde-fous sont approximés et le remplissage de l'ordre est supposé au niveau du signal.",
+    "Historique M1 réel disponible seulement depuis 2022-05 (EURUSD, XAUUSD) et 2023-01 (US100, US500) : 2022 est une année partielle sur 2 paires.",
+    "Ce n'est PAS de l'argent réel : c'est un rejeu. Les verdicts par mécanisme ou par paire sont instables d'une période à l'autre.",
+    "PLAFOND OPTIMISTE pour le FVG : ce rejeu suppose l'ordre LIMIT rempli au niveau du signal. Or le bot réel pose le LIMIT à la clôture et n'est rempli que si le prix revient : avec ce modèle d'exécution, le FVG US100 passe de +193 / +186 / +26 R simulés à -449 / -139 / -51 R (2010-2022 / 2023-2025 / 2026), et le combo actuel est négatif (research-memory `fvg-live-execution-gap-2026-09-23`). Ne jamais citer le total ou la ligne « fvg » ci-dessous sans ce point.",
+    "Rejeu fidèle 2010-2026 de la config live (research-memory `live-replay-full-2010-2026`) : +326 R à l'entraînement 2010-2022, mais environ 0 depuis 2023 (+21,6 R sur 2023-2025, -13,3 R en 2026). Les tableaux ci-dessous (M1 exact, remplissage au niveau du signal) donnent des chiffres bien plus hauts pour 2023-2026 : les deux modèles ne s'accordent pas, donc ne pas les lire comme la performance attendue.",
+    "Les anciens chiffres du résumé (2009-2025, ~7 200 trades, ~2 964 R, 30,4 %) étaient un rejeu M15 avec GER40 (retiré du bot le 2026-09-21, négatif dans le vrai moteur) et un R brut sans coûts : ils ne doivent plus être cités."
+  ],
+  "vetoedByGuardrails": 427,
+  "maxDrawdownPct": 12.3,
   "overall": {
-    "count": 7217,
-    "wins": 2183,
-    "losses": 4990,
-    "totalR": 2964,
-    "winRatePct": 30.4
+    "count": 1801,
+    "wins": 441,
+    "losses": 1345,
+    "timeouts": 15,
+    "totalR": 233,
+    "winRatePct": 24.7,
+    "rPerTrade": 0.129
   },
   "byYear": {
-    "2009": {
-      "count": 39,
-      "wins": 7,
-      "losses": 31,
-      "totalR": -3,
-      "winRatePct": 18.4
-    },
-    "2010": {
-      "count": 71,
-      "wins": 16,
-      "losses": 52,
-      "totalR": 4,
-      "winRatePct": 23.5
-    },
-    "2011": {
-      "count": 398,
-      "wins": 97,
-      "losses": 297,
-      "totalR": 28,
-      "winRatePct": 24.6
-    },
-    "2012": {
-      "count": 386,
-      "wins": 101,
-      "losses": 283,
-      "totalR": 82,
-      "winRatePct": 26.3
-    },
-    "2013": {
-      "count": 361,
-      "wins": 94,
-      "losses": 265,
-      "totalR": 61,
-      "winRatePct": 26.2
-    },
-    "2014": {
-      "count": 412,
-      "wins": 122,
-      "losses": 287,
-      "totalR": 152,
-      "winRatePct": 29.8
-    },
-    "2015": {
-      "count": 376,
-      "wins": 111,
-      "losses": 261,
-      "totalR": 151,
-      "winRatePct": 29.8
-    },
-    "2016": {
-      "count": 396,
-      "wins": 110,
-      "losses": 286,
-      "totalR": 105,
-      "winRatePct": 27.8
-    },
-    "2017": {
-      "count": 387,
-      "wins": 103,
-      "losses": 283,
-      "totalR": 82,
-      "winRatePct": 26.7
-    },
-    "2018": {
-      "count": 539,
-      "wins": 171,
-      "losses": 364,
-      "totalR": 258,
-      "winRatePct": 32
-    },
-    "2019": {
-      "count": 571,
-      "wins": 184,
-      "losses": 385,
-      "totalR": 263,
-      "winRatePct": 32.3
-    },
-    "2020": {
-      "count": 569,
-      "wins": 189,
-      "losses": 379,
-      "totalR": 324,
-      "winRatePct": 33.3
-    },
-    "2021": {
-      "count": 504,
-      "wins": 149,
-      "losses": 351,
-      "totalR": 217,
-      "winRatePct": 29.8
-    },
     "2022": {
-      "count": 530,
-      "wins": 165,
-      "losses": 363,
-      "totalR": 268,
-      "winRatePct": 31.3
+      "count": 25,
+      "wins": 3,
+      "losses": 19,
+      "timeouts": 3,
+      "totalR": -4.9,
+      "winRatePct": 13.6,
+      "rPerTrade": -0.196
     },
     "2023": {
-      "count": 490,
-      "wins": 163,
-      "losses": 326,
-      "totalR": 278,
-      "winRatePct": 33.3
+      "count": 466,
+      "wins": 123,
+      "losses": 341,
+      "timeouts": 2,
+      "totalR": 87.1,
+      "winRatePct": 26.5,
+      "rPerTrade": 0.187
     },
     "2024": {
-      "count": 578,
-      "wins": 201,
-      "losses": 372,
-      "totalR": 361,
-      "winRatePct": 35.1
+      "count": 472,
+      "wins": 104,
+      "losses": 361,
+      "timeouts": 7,
+      "totalR": 7.8,
+      "winRatePct": 22.4,
+      "rPerTrade": 0.017
     },
     "2025": {
-      "count": 610,
-      "wins": 200,
-      "losses": 405,
-      "totalR": 333,
-      "winRatePct": 33.1
+      "count": 467,
+      "wins": 118,
+      "losses": 346,
+      "timeouts": 3,
+      "totalR": 90.2,
+      "winRatePct": 25.4,
+      "rPerTrade": 0.193
+    },
+    "2026": {
+      "count": 371,
+      "wins": 93,
+      "losses": 278,
+      "timeouts": 0,
+      "totalR": 52.9,
+      "winRatePct": 25.1,
+      "rPerTrade": 0.143
     }
   },
   "byMonth": {
     "janvier": {
-      "count": 633,
-      "wins": 206,
-      "losses": 423,
-      "totalR": 314,
-      "winRatePct": 32.8
+      "count": 151,
+      "wins": 37,
+      "losses": 114,
+      "timeouts": 0,
+      "totalR": 9.6,
+      "winRatePct": 24.5,
+      "rPerTrade": 0.064
     },
     "février": {
-      "count": 573,
-      "wins": 162,
-      "losses": 403,
-      "totalR": 189,
-      "winRatePct": 28.7
+      "count": 139,
+      "wins": 30,
+      "losses": 106,
+      "timeouts": 3,
+      "totalR": -6.7,
+      "winRatePct": 22.1,
+      "rPerTrade": -0.048
     },
     "mars": {
-      "count": 580,
-      "wins": 170,
-      "losses": 406,
-      "totalR": 213,
-      "winRatePct": 29.5
+      "count": 151,
+      "wins": 34,
+      "losses": 117,
+      "timeouts": 0,
+      "totalR": -0.5,
+      "winRatePct": 22.5,
+      "rPerTrade": -0.003
     },
     "avril": {
-      "count": 541,
-      "wins": 161,
-      "losses": 375,
-      "totalR": 213,
-      "winRatePct": 30
+      "count": 154,
+      "wins": 40,
+      "losses": 112,
+      "timeouts": 2,
+      "totalR": 38.4,
+      "winRatePct": 26.3,
+      "rPerTrade": 0.249
     },
     "mai": {
-      "count": 618,
-      "wins": 179,
-      "losses": 438,
-      "totalR": 215,
-      "winRatePct": 29
+      "count": 159,
+      "wins": 42,
+      "losses": 114,
+      "timeouts": 3,
+      "totalR": 37.3,
+      "winRatePct": 26.9,
+      "rPerTrade": 0.235
     },
     "juin": {
-      "count": 561,
-      "wins": 160,
-      "losses": 400,
-      "totalR": 176,
-      "winRatePct": 28.6
+      "count": 159,
+      "wins": 35,
+      "losses": 124,
+      "timeouts": 0,
+      "totalR": 9.6,
+      "winRatePct": 22,
+      "rPerTrade": 0.06
     },
     "juillet": {
-      "count": 599,
-      "wins": 184,
-      "losses": 411,
-      "totalR": 269,
-      "winRatePct": 30.9
+      "count": 191,
+      "wins": 42,
+      "losses": 147,
+      "timeouts": 2,
+      "totalR": 20.4,
+      "winRatePct": 22.2,
+      "rPerTrade": 0.107
     },
     "août": {
-      "count": 617,
-      "wins": 195,
-      "losses": 418,
-      "totalR": 283,
-      "winRatePct": 31.8
+      "count": 176,
+      "wins": 43,
+      "losses": 132,
+      "timeouts": 1,
+      "totalR": 14.9,
+      "winRatePct": 24.6,
+      "rPerTrade": 0.085
     },
     "septembre": {
-      "count": 628,
-      "wins": 190,
-      "losses": 437,
-      "totalR": 245,
-      "winRatePct": 30.3
+      "count": 160,
+      "wins": 43,
+      "losses": 115,
+      "timeouts": 2,
+      "totalR": 45.7,
+      "winRatePct": 27.2,
+      "rPerTrade": 0.286
     },
     "octobre": {
-      "count": 627,
-      "wins": 220,
-      "losses": 404,
-      "totalR": 392,
-      "winRatePct": 35.3
+      "count": 132,
+      "wins": 43,
+      "losses": 87,
+      "timeouts": 2,
+      "totalR": 65.6,
+      "winRatePct": 33.1,
+      "rPerTrade": 0.497
     },
     "novembre": {
-      "count": 606,
-      "wins": 190,
-      "losses": 413,
-      "totalR": 293,
-      "winRatePct": 31.5
+      "count": 114,
+      "wins": 26,
+      "losses": 88,
+      "timeouts": 0,
+      "totalR": 1.4,
+      "winRatePct": 22.8,
+      "rPerTrade": 0.012
     },
     "décembre": {
-      "count": 634,
-      "wins": 166,
-      "losses": 462,
-      "totalR": 162,
-      "winRatePct": 26.4
+      "count": 115,
+      "wins": 26,
+      "losses": 89,
+      "timeouts": 0,
+      "totalR": -2.8,
+      "winRatePct": 22.6,
+      "rPerTrade": -0.024
     }
   },
   "bySymbol": {
     "XAUUSD": {
-      "count": 567,
-      "wins": 131,
-      "losses": 407,
-      "totalR": 117,
-      "winRatePct": 24.3
+      "count": 169,
+      "wins": 43,
+      "losses": 116,
+      "timeouts": 10,
+      "totalR": 60.3,
+      "winRatePct": 27,
+      "rPerTrade": 0.357
     },
     "US500": {
-      "count": 1405,
-      "wins": 419,
-      "losses": 978,
-      "totalR": 581,
-      "winRatePct": 30
-    },
-    "GER40": {
-      "count": 2726,
-      "wins": 846,
-      "losses": 1878,
-      "totalR": 660,
-      "winRatePct": 31.1
+      "count": 661,
+      "wins": 145,
+      "losses": 512,
+      "timeouts": 4,
+      "totalR": -15,
+      "winRatePct": 22.1,
+      "rPerTrade": -0.023
     },
     "US100": {
-      "count": 1851,
-      "wins": 581,
-      "losses": 1265,
-      "totalR": 1450,
-      "winRatePct": 31.5
-    },
-    "EURUSD": {
-      "count": 668,
-      "wins": 206,
-      "losses": 462,
-      "totalR": 156,
-      "winRatePct": 30.8
+      "count": 971,
+      "wins": 253,
+      "losses": 717,
+      "timeouts": 1,
+      "totalR": 187.7,
+      "winRatePct": 26.1,
+      "rPerTrade": 0.193
     }
   },
   "bySource": {
     "fvg": {
-      "count": 2675,
-      "wins": 768,
-      "losses": 1869,
-      "totalR": 1840,
-      "winRatePct": 29.1
+      "count": 698,
+      "wins": 162,
+      "losses": 522,
+      "timeouts": 14,
+      "totalR": 202.8,
+      "winRatePct": 23.7,
+      "rPerTrade": 0.291
     },
-    "nwog": {
-      "count": 840,
-      "wins": 280,
-      "losses": 560,
-      "totalR": 280,
-      "winRatePct": 33.3
+    "silverbullet": {
+      "count": 436,
+      "wins": 111,
+      "losses": 325,
+      "timeouts": 0,
+      "totalR": -11.8,
+      "winRatePct": 25.5,
+      "rPerTrade": -0.027
     },
-    "weeklysweep": {
-      "count": 626,
-      "wins": 202,
-      "losses": 423,
-      "totalR": 183,
-      "winRatePct": 32.3
-    },
-    "breakerblock": {
-      "count": 1518,
-      "wins": 459,
-      "losses": 1058,
-      "totalR": 319,
-      "winRatePct": 30.3
+    "cbdr": {
+      "count": 203,
+      "wins": 47,
+      "losses": 156,
+      "timeouts": 0,
+      "totalR": -31.2,
+      "winRatePct": 23.2,
+      "rPerTrade": -0.154
     },
     "divergence": {
-      "count": 890,
-      "wins": 268,
-      "losses": 618,
-      "totalR": 186,
-      "winRatePct": 30.2
+      "count": 308,
+      "wins": 89,
+      "losses": 218,
+      "timeouts": 1,
+      "totalR": 46.3,
+      "winRatePct": 29,
+      "rPerTrade": 0.15
     },
-    "judaswing": {
-      "count": 668,
-      "wins": 206,
-      "losses": 462,
-      "totalR": 156,
-      "winRatePct": 30.8
+    "nwog": {
+      "count": 40,
+      "wins": 8,
+      "losses": 32,
+      "timeouts": 0,
+      "totalR": 6,
+      "winRatePct": 20,
+      "rPerTrade": 0.15
+    },
+    "weeklysweep": {
+      "count": 116,
+      "wins": 24,
+      "losses": 92,
+      "timeouts": 0,
+      "totalR": 20.9,
+      "winRatePct": 20.7,
+      "rPerTrade": 0.18
     }
   }
 }

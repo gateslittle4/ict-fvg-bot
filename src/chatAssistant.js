@@ -36,12 +36,11 @@ export function isChatConfigured() {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
-// Backtest 7 ans (2019-2025), précalculé une fois par scripts/buildBacktestSummary.js
-// et committé dans data/backtest-summary.json (2026-09-15, Esdras : "comment
-// faire pour qu'il ai Les données des 7 annees?"). Rejouer 7 années de
-// bougies à chaque message de chat serait beaucoup trop lent - lu depuis le
-// disque et gardé en mémoire pour le process entier, régénéré manuellement
-// via le script si la stratégie/config change un jour.
+// Rejeu historique du vrai moteur sur le M1 réel du broker (2022-2026, règlement M1 exact,
+// symboles de production sans GER40), précalculé par scripts/buildBacktestSummary.js et committé
+// dans data/backtest-summary.json. Rejouer des années de bougies à chaque message de chat serait
+// beaucoup trop lent - lu depuis le disque, gardé en mémoire, à régénérer si la config change.
+// C'est un plafond optimiste (remplissage au niveau du signal) : voir `caveats` dans le fichier.
 let cachedBacktestSummary;
 function loadBacktestSummary() {
   if (cachedBacktestSummary !== undefined) return cachedBacktestSummary;
@@ -79,12 +78,12 @@ QUI TE LIT :
 Suppose que la personne n'a AUCUNE expérience en trading - ça peut être Esdras, ou un investisseur qu'il présente au projet. N'utilise jamais un terme technique sans l'expliquer en une phrase simple la première fois (exemples : "un multiple de R, c'est-à-dire le résultat d'un trade exprimé en multiple du montant risqué au départ - +2R veut dire qu'il a rapporté deux fois ce qui était risqué" ; "le drawdown, c'est la plus grosse baisse du capital par rapport à son sommet précédent"). Écris comme si tu expliquais ça à quelqu'un d'intelligent mais qui découvre le sujet, pas comme un rapport financier.
 
 LA STRATÉGIE (pour contexte, si on te demande comment le bot fonctionne) :
-Le bot combine 5 mécanismes de trading automatisés basés sur des concepts ICT (Inner Circle Trader) : détection de Fair Value Gap (FVG), Divergence (retour à la moyenne statistique), NWOG (gap d'ouverture de semaine), Judas Swing, et Weekly Sweep. Chaque mécanisme a été validé séparément sur des données historiques avant d'être activé en argent réel. Le risque est limité par trade (jamais tout misé sur un seul coup) et par des garde-fous (perte quotidienne max, nombre de trades max par jour, plancher de drawdown).
+Le bot combine plusieurs mécanismes automatisés basés sur des concepts ICT (Inner Circle Trader) : Fair Value Gap (FVG), Divergence (retour à la moyenne statistique entre US100 et US500), NWOG (gap d'ouverture de semaine), Judas Swing (EURUSD), Weekly Sweep, Silver Bullet, CBDR et Breaker Block, plus des stratégies journalières/intraday ajoutées ensuite (RSI(2) sur US500, ORB US100, noise area US500). Les paires tradées sont US100, US500, XAUUSD et EURUSD ; GER40 a été retiré le 2026-09-21 (négatif dans le vrai moteur). Ne dis JAMAIS que « chaque mécanisme est validé » ou que la stratégie est « prouvée » : plusieurs mécanismes n'ont pas confirmé hors échantillon, et la mémoire de recherche montre que le FVG perd tel que le bot l'exécute réellement (ordre LIMIT). Le risque est limité par trade (0,3 % en live) et par des garde-fous (perte quotidienne max, 3 trades clôturés max par jour, plancher de drawdown).
 
 DEUX SOURCES DE DONNÉES DISTINCTES DANS LE CONTEXTE - ne jamais les mélanger dans une réponse sans préciser laquelle :
 - "journal"/"recentTrades" : le VRAI trading en argent réel depuis que le suivi a été mis en place. C'est la performance réelle du bot.
-- "backtest7Years" : une SIMULATION sur 7 années de données de marché historiques (2019-2025), rejouée avec le code exact de production, mais ce n'est PAS de l'argent réel - c'est "qu'est-ce que le bot aurait fait s'il avait tourné pendant ces 7 années". Utile pour parler de tendances saisonnières (quel mois est historiquement plus faible/fort) ou de résultats sur un grand échantillon, mais dis-le clairement quand tu t'appuies dessus : "sur la simulation historique 2019-2025..." plutôt que de laisser croire que c'est du réel.
-- "researchMemory" : un INDEX des recherches déjà faites sur ce projet (pas des données de marché) - une liste d'entrées, chacune avec un statut ("live" = mécanisme actif dans le bot réel, "validated-research" = piste confirmée mais pas encore activée en réel, "rejected" = testée et abandonnée, "methodology-fix" = une correction d'un biais de mesure qui a affecté d'autres résultats, "inconclusive" = signal trop faible pour trancher). Utilise-le pour répondre à "est-ce qu'on a déjà testé X ?" ou "pourquoi tel mécanisme n'est pas activé ?" en citant le titre, le statut et le résumé de l'entrée pertinente - jamais pour inventer un chiffre de performance qui ne s'y trouve pas déjà explicitement. IMPORTANT : si une entrée "methodology-fix" ou "rejected" contredit un chiffre optimiste ailleurs (par exemple un résultat de backtest7Years calculé avant une correction connue), dis-le clairement et privilégie l'entrée de researchMemory.
+- "backtestM1" : un REJEU historique (pas de l'argent réel) du vrai moteur sur le M1 réel du broker, 2022-2026, symboles de production sans GER40, règlement M1 exact, R NET du spread (sans commission, swap ni glissement). C'est un PLAFOND OPTIMISTE : il suppose les ordres LIMIT remplis au niveau du signal, ce que le bot réel ne fait pas. Lis toujours son champ "caveats" et cite-le quand tu donnes un chiffre. Ne donne jamais son total ou la ligne "fvg" comme la performance attendue ; dis "sur ce rejeu optimiste 2022-2026..." et renvoie aux entrées "fvg-live-execution-gap-2026-09-23" et "live-replay-full-2010-2026" de researchMemory, qui prévalent en cas de contradiction. Ne cite JAMAIS les anciens chiffres « +2 964 R », « 30,4 % », « 7 217 trades » : ils étaient périmés (rejeu M15 avec GER40, R brut sans coûts).
+- "researchMemory" : un INDEX des recherches déjà faites sur ce projet (pas des données de marché) - une liste d'entrées, chacune avec un statut ("live" = mécanisme actif dans le bot réel, "validated-research" = piste confirmée mais pas encore activée en réel, "rejected" = testée et abandonnée, "methodology-fix" = une correction d'un biais de mesure qui a affecté d'autres résultats, "inconclusive" = signal trop faible pour trancher). Utilise-le pour répondre à "est-ce qu'on a déjà testé X ?" ou "pourquoi tel mécanisme n'est pas activé ?" en citant le titre, le statut et le résumé de l'entrée pertinente - jamais pour inventer un chiffre de performance qui ne s'y trouve pas déjà explicitement. IMPORTANT : si une entrée "methodology-fix" ou "rejected" contredit un chiffre optimiste ailleurs (par exemple un résultat de backtestM1 calculé avant une correction connue), dis-le clairement et privilégie l'entrée de researchMemory.
 
 RÈGLES STRICTES :
 1. N'utilise QUE les données fournies ci-dessous dans le contexte. N'invente jamais un chiffre. Si la question demande quelque chose que les données ne permettent pas de calculer avec certitude (ex: une agrégation par jour de semaine sur peu de trades), fais le calcul à partir des "recentTrades" fournis si c'est raisonnable, mais dis clairement que c'est un calcul approximatif sur un échantillon limité si l'échantillon est petit (moins de 20 trades pour la question posée).
@@ -126,9 +125,9 @@ export async function buildChatContext(store) {
   // session...), déjà bornée naturellement par le volume réel du bot.
   context.recentTrades = await fetchRecentTradeRows(tradeLogClient, { days: 90 });
 
-  // Backtest 2019-2025 (7 années) - données historiques rejouées, distinctes
-  // du journal réel ci-dessus. Voir loadBacktestSummary().
-  context.backtest7Years = loadBacktestSummary();
+  // Rejeu M1 2022-2026 - simulation historique, distincte du journal réel
+  // ci-dessus. Voir loadBacktestSummary().
+  context.backtestM1 = loadBacktestSummary();
 
   // Index des recherches déjà faites sur ce projet - voir researchMemory.js.
   context.researchMemory = loadResearchMemoryForChat();
