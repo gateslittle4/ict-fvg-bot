@@ -1684,5 +1684,23 @@
       "scripts/runEsdrasLY.js",
       "scripts/lib/esdrasMethod.js"
     ]
+  },
+  {
+    "id": "gemini-fvg-spec-2026-09-30",
+    "title": "« Cahier des charges 100 % FVG » de Gemini (rejet M15 d'un FVG, stop au bord + 10 %, cible = FVG à gauche non comblé) : ÉCHEC à l'entraînement",
+    "date": "2026-09-30",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-gemini-fvg-2026-09-30.md, commit af34ee6). US100+US500, 24 h, achats et ventes, spread et swap réels. Entraînement 2010-2022 (M15, stop d'abord) : 24102 trades, +0,033 R, t 2,06 (seuil 2,6) -> échec ; test 2023-2025 (M1) : 5164 trades, -0,021 R, t -0,61 ; forward 2026 : +0,129 R, t 1,57. Observation APRÈS COUP, non testée : les achats portent tout (entraînement t 3,54, test +95 R t 0,81, forward +156 R t 1,75), les ventes perdent ; à ne pas adopter sans pré-enregistrement et placebo (les indices ont monté sur toute la période, un biais acheteur quelconque gagne aussi).",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-gemini-fvg-2026-09-30.md",
+      "data/backtest-input/gemini-fvg-study.md",
+      "scripts/runGeminiFvgStudy.js",
+      "scripts/lib/geminiFvg.js",
+      "test/geminiFvg.test.js"
+    ]
   }
 ]

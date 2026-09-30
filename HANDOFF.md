@@ -7068,3 +7068,26 @@ Demande d'Esdras avant de dormir : pistes secondaires, années cachées pour un 
     fera une fois sur 2023-2026, gardé intact exprès ;
   - mode discipline : risque fixe, rien après 11 h, arrêt journalier ;
   - correctif du Labo.
+
+## 2026-09-30 — « Cahier des charges 100 % FVG » de Gemini : pré-enregistré, ÉCHEC à l'entraînement
+
+Esdras a envoyé la description de Gemini (captures) : FVG M15, entrée au rejet de la zone, stop au-dessus du bord, objectif = premier
+« FVG à gauche » non comblé. Les points laissés ouverts par Gemini ont été fixés AVANT calcul :
+`data/backtest-input/preregistration-gemini-fvg-2026-09-30.md` (commit `af34ee6`). Principaux choix : Min_gap 0,02 % du prix ; entrée
+au marché à l'ouverture qui suit une bougie de rejet (touche la zone, clôture sans la franchir), parce que « dès la touche » et « sans
+clôturer au-dessus » ne peuvent pas être connus en même temps ; stop au bord + 10 % de la zone ; cible au bord le plus proche du FVG
+non comblé le plus proche, au moins 1 R ; 24 h, achats et ventes ; spread et swap réels.
+- Code : `scripts/lib/geminiFvg.js` (4 tests dans `test/geminiFvg.test.js`), `scripts/runGeminiFvgStudy.js`, qui règle avec
+  `manage()` de `scripts/lib/stopOrderEntry.js`.
+- Contrainte déclarée à l'avance : le M1 HistData 2010-2022 n'est pas dans ce dépôt. L'entraînement est donc réglé à la bougie M15
+  (stop d'abord). Test et forward sont réglés à la minute sur le M1 du broker.
+- **Résultat** (`data/backtest-input/gemini-fvg-study.md`) :
+  - Entraînement : 24 102 trades, 25 % de gagnants, **+0,033 R, t 2,06 < 2,6 → ÉCHEC** (deux moitiés positives mais faibles).
+  - Test 2023-2025 : −0,021 R, t −0,61.
+  - Forward 2026 : +0,129 R, t 1,57.
+- **Observation après coup, NON testée, à ne pas adopter** : les achats portent tout (entraînement +922 R, t 3,54 ; test +95 R, t 0,81 ;
+  forward +156 R, t 1,75), alors que les ventes perdent. Les indices ont monté sur toute la période : n'importe quel biais acheteur
+  gagne aussi. Il faudrait un pré-enregistrement « achats seulement » **avec placebo** (achat à un moment quelconque, même stop, même
+  distance de cible) avant d'y croire.
+
+Rien changé en live. Entrée `gemini-fvg-spec-2026-09-30` dans `data/research-memory.json`.
