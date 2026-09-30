@@ -7124,3 +7124,16 @@ synthétiques sans h/l/c, 4 tests sur 5 verts pour de mauvaises raisons) a été
   nette). Restent d'autres différences non isolées : pas de BMS ni de fenêtres horaires, deux indices au lieu d'un, 24 000 trades au lieu
   de ~1 400, cible fixée par le FVG à gauche le plus proche, et surtout le tri achats/ventes lu après coup.
 Rien changé en live. Validation/finale non lues (l'exploration n'est pas retenue). Entrée `esdras-lx-market-2026-09-30` dans la mémoire.
+
+## 2026-09-30 — Réagir dans la bougie (M5 / M1) plutôt qu'à la clôture M15 : NE PROUVE RIEN
+
+Question d'Esdras (« le bot ne voit la bougie qu'à sa fin »). Vérifié dans le code (`src/dataSources/ctrader/marketData.js`) : le prix arrive
+tick par tick, mais les signaux ne sont évalués qu'au premier tick de la bougie M15 suivante (`_ingestNewLiveBar`) ; les ticks suivants
+mettent seulement la bougie à jour. Test pré-enregistré `d04588a` (règle de Gemini, achats seulement ; seul le moment du rejet change) :
+`scripts/lib/geminiIntrabar.js` (le témoin M15 reproduit exactement `geminiSignals` sur 30 000 vraies bougies : `test/geminiIntrabar.test.js`),
+`scripts/runIntrabarStudy.js` → `data/backtest-input/intrabar-rejection-study.md`. M1 du broker 2023 → 2026-09 seulement (le M1 HistData
+2010-2022 n'est pas dans le dépôt).
+- M15 (témoin) 3 492 achats **+0,074 R** ; M5 4 104 achats −0,000 R (écart apparié +0,012 R, t 0,37) ; M1 4 555 achats +0,027 R (écart
+  apparié +0,049 R, t 1,35). Les deux moitiés ne vont pas dans le même sens pour M5. **Verdict : ne prouve rien** (M5 comme M1).
+- L'entrée M5/M1 se fait en moyenne à un prix moins bon (13-16 % du risque plus haut) : reconnaître le rejet plus tôt n'améliore pas le prix.
+Conclusion : rien ne justifie de passer le bot à une évaluation en cours de bougie sur cette base. Rien changé en live.

@@ -1735,5 +1735,23 @@
       "scripts/lib/lxMarket.js",
       "test/lxMarket.test.js"
     ]
+  },
+  {
+    "id": "intrabar-rejection-2026-09-30",
+    "title": "Réagir dans la bougie (rejet évalué sur M5 / M1) plutôt qu'à la clôture M15 : ne prouve rien",
+    "date": "2026-09-30",
+    "status": "inconclusive",
+    "summary": "Pré-enregistré (preregistration-intrabar-rejection-2026-09-30.md, d04588a). Règle de Gemini achats seulement, US100+US500, M1 du broker 2023-01 -> 2026-09. Témoin M15 (reproduit geminiSignals, test) : 3492 achats +0,074 R. M5 : 4104 achats -0,000 R ; écart apparié +0,012 R (t 0,37). M1 : 4555 achats +0,027 R ; écart apparié +0,049 R (t 1,35). Verdict : ne prouve rien. L'entrée M5/M1 se fait en moyenne à un prix moins bon (13-16 % du risque plus haut) que le témoin.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-intrabar-rejection-2026-09-30.md",
+      "data/backtest-input/intrabar-rejection-study.md",
+      "scripts/runIntrabarStudy.js",
+      "scripts/lib/geminiIntrabar.js",
+      "test/geminiIntrabar.test.js"
+    ]
   }
 ]
