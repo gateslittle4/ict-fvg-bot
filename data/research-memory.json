@@ -1718,5 +1718,22 @@
       "data/backtest-input/gemini-buyonly-study.md",
       "scripts/runGeminiBuyOnlyStudy.js"
     ]
+  },
+  {
+    "id": "esdras-lx-market-2026-09-30",
+    "title": "Règle LX d'Esdras avec entrée au marché après rejet (LX-MKT) : rejetée en exploration US100 2011-2018",
+    "date": "2026-09-30",
+    "status": "rejected",
+    "summary": "Pré-enregistrée (preregistration-lx-market-entry-2026-09-30.md, amendée avant calcul pour utiliser des bougies M15 faute de M1 HistData ici). Sur les mêmes bougies : LX-A marché 644 trades -0,166 R (t -1,97) contre limite 1372 trades -0,086 R ; LX-E marché +0,014 R (t 0,13) contre limite -0,032 R ; LX-M marché -0,064 R contre limite -0,029 R. Placebo battu 8/20, 12/20, 8/20 (il en faut 19). Verdict : l'entrée seule n'explique pas l'écart avec la version de Gemini ; sur les signaux pris par les deux exécutions, la limite fait mieux (+0,13 à +0,37 R) que le marché (-0,15 à +0,03 R), mais elle perd sur les signaux où le prix traverse le niveau sans rejet.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-lx-market-entry-2026-09-30.md",
+      "data/backtest-input/esdras-lx-market-US100-explore.md",
+      "scripts/runEsdrasLXMarket.js",
+      "scripts/lib/lxMarket.js",
+      "test/lxMarket.test.js"
+    ]
   }
 ]

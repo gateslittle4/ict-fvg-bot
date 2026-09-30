@@ -7107,3 +7107,20 @@ l'idée vient d'un découpage lu après le premier test, donc aucune période n'
 - Limites : entraînement réglé à la bougie M15 (stop d'abord) ; 24 h/24 ; rien testé en exécution réelle (entrée au marché à l'ouverture
   suivante, donc exécutable par le bot, contrairement à l'ancien FVG).
 Rien changé en live. Entrée `gemini-buyonly-2026-09-30` dans `data/research-memory.json`.
+
+## 2026-09-30 — Règle LX d'Esdras avec entrée au marché après rejet (LX-MKT) : REJETÉE
+
+Question d'Esdras (« pourquoi la version de Gemini est mieux que la mienne ? ») : est-ce l'entrée (ordre limite au bord contre marché
+après rejet) ? Pré-enregistré `bd29d2a`, **amendé avant calcul** `180fb4f` : le M1 HistData 2010-2022 n'est pas dans le dépôt, donc
+exploration sur les bougies M15 de `data/backtest-input/US100.csv` (règlement plus pessimiste que la minute, identique pour les deux
+entrées et le placebo ; la référence limite est recalculée sur les mêmes bougies). Code : `scripts/lib/lxMarket.js` (5 tests),
+`scripts/runEsdrasLXMarket.js` → `data/backtest-input/esdras-lx-market-US100-explore.md`. Un défaut de mes premiers tests (barres
+synthétiques sans h/l/c, 4 tests sur 5 verts pour de mauvaises raisons) a été trouvé et corrigé avant le calcul.
+- LX-A : marché 644 trades **−0,166 R** (t −1,97) ; limite 1372 trades −0,086 R. LX-E : marché **+0,014 R** (t 0,13) ; limite −0,032 R.
+  LX-M : marché −0,064 R ; limite −0,029 R. Placebo battu 8/20, 12/20, 8/20 (19 exigés) : **les trois REJETÉES**.
+- Sur les signaux pris par les deux exécutions, la limite fait mieux (+0,13 à +0,37 R) que le marché (−0,15 à +0,03 R) : le prix d'entrée
+  au bord compte. Mais la limite perd sur les signaux où le prix traverse le niveau sans rejet, que le marché évite en n'entrant pas.
+- Lecture : l'écart avec la version de Gemini ne vient pas de l'entrée seule (résultat intermédiaire : ni meilleur ni pire de façon
+  nette). Restent d'autres différences non isolées : pas de BMS ni de fenêtres horaires, deux indices au lieu d'un, 24 000 trades au lieu
+  de ~1 400, cible fixée par le FVG à gauche le plus proche, et surtout le tri achats/ventes lu après coup.
+Rien changé en live. Validation/finale non lues (l'exploration n'est pas retenue). Entrée `esdras-lx-market-2026-09-30` dans la mémoire.
