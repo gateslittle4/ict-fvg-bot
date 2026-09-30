@@ -67,6 +67,24 @@ Sur les ~62 000 FVG valides de US100 et US500, le prix va **dans le sens du FVG*
 sa formation, le prix revient souvent dans le FVG (c'est ce qui permet le remplissage de l'ordre limite). Donc la direction seule n'est **ni fausse ni prédictive** : c'est le contexte
 (4hr, FVG H4, chemin) choisi par Esdras qui devrait lui donner de la valeur, s'il en a.
 
+## La direction dans son contexte H4 (Zones analysées : 64169. Excès de rendement signé sur le hasard, en points de base (t entre parenthèses) ; signal = |t| >= 3 dans les deux moitiés, même signe.
+
+Contexte | valeur | zones (2010-16 / 2017-22) | +1 h : 2010-16 | 2017-22 || +4 h : 2010-16 | 2017-22 || +1 j : 2010-16 | 2017-22
+FVG H4 dans le même sens | oui | 15149 / 15045 | -0.03 (-0.2) | -0.34 (-1.5) || -0.88 (-2.6) | -0.71 (-1.6) || -3.96 (-4.2) | -7.70 (-6.6)
+FVG H4 dans le même sens | non | 17642 / 16333 | 0.10 (0.6) | 0.14 (0.6) || 0.56 (1.7) | 0.03 (0.1) || 2.97 (3.5) | 5.81 (4.9)
+4hr non balayé proche | oui | 21959 / 21379 | 0.01 (0.0) | 0.32 (1.7) || -0.15 (-0.5) | -0.34 (-0.9) || 1.08 (1.4) | -0.74 (-0.7)
+4hr non balayé proche | non | 10832 / 9999 | 0.11 (0.5) | -0.96 (-2.9) || -0.01 (-0.0) | -0.30 (-0.5) || -2.82 (-2.5) | -0.32 (-0.2)
+le 4hr proche ouvre un FVG H4 | oui | 5317 / 5069 | -0.45 (-1.4) | -0.53 (-1.3) || -0.22 (-0.3) | 0.30 (0.4) || 2.92 (1.8) | 9.23 (4.6)
+le 4hr proche ouvre un FVG H4 | non | 27474 / 26309 | 0.14 (1.1) | -0.00 (-0.0) || -0.08 (-0.3) | -0.45 (-1.3) || -0.84 (-1.2) | -2.54 (-2.8)
+
+Signaux (|t| >= 3 dans les deux moitiés, même signe) : 2 sur 18 cases., 2010-2022, descriptif, 3 contextes fixés d'avance)
+64 169 zones. À **+1 h et +4 h** : aucun contexte ne rend la direction prédictive (|t| < 3, signes qui changent). À **+1 jour**, un seul effet : quand la zone M15 va dans le **même sens que le dernier FVG H4**,
+le prix fait ensuite **moins bien** que le hasard (−4,0 et −7,7 points de base, t −4,2 et −6,6) ; quand elle va dans le sens **opposé**, mieux (+3,0 et +5,8) : le sens du dernier FVG H4 prédit un
+mouvement **contraire** le lendemain (retour à la moyenne), dans les deux moitiés. **Réserves** : ces t sont gonflés (≈ 20 zones par jour partagent le même futur ; l'échantillon réellement indépendant
+est de l'ordre du nombre de jours, t corrigés ≈ 1,5-2,5) ; l'horizon (1 jour) est loin de ses trades ; l'effet est l'inverse de sa croyance (« le prix continue »). Son contexte « le 4hr proche ouvre un FVG H4 »
+va dans son sens à +1 jour (+2,9 et +9,2 pts de base) mais reste sous le seuil de signal. Piste éventuelle, à pré-enregistrer et tester hors échantillon (2023-2025, jamais lu pour cette idée) :
+« le sens du dernier FVG H4 prédit le mouvement contraire du lendemain ».
+
 ## Reste ouvert
 Mesurer le **jugement** d'Esdras en direct (Simulateur : « Oui, je le prends / Non, je laisse », journal `GET /api/sim-journal/:session`), sur au moins 100 setups,
 en comparant ceux qu'il prend à ceux qu'il laisse. Ou lui faire fournir 10-15 exemples de plus, **dont des setups refusés**, pour apprendre ce qui distingue.
