@@ -44,6 +44,29 @@ Tous des gagnants choisis par Esdras ; septembre 2026 est donc déjà vu pour ce
   d'entrée de ses 11 trades (11/11) : **les entrées sont banales, ce qui distingue ses trades est la sélection** (4hr, FVG H4, résistance sur le chemin).
 - Famille FVG : 9 échecs au total (limite, limite posée avant, ordre stop, « 30 min loin », v1/v2 du FVG d'Esdras, « à gauche » v1, suivi).
 
+## La direction du FVG le plus récent est neutre (Direction du FVG valide le plus récent : le prix va-t-il dans son sens ? (hit = part des zones où le prix a bougé dans le sens du FVG ; « hasard » = ce que donnerait une direction tirée au hasard)
+Paire / période / horizon | zones | hit | hasard | rendement signé (bps) | excès sur le hasard (bps) | t
+US100 2010-2016 +15 min      | 16378 | 45.5 % | 49.9 % |   0.09 |   0.09 | 1.05
+US100 2010-2016 +60 min      | 16226 | 47.0 % | 50.0 % |   0.08 |   0.06 | 0.34
+US100 2010-2016 +240 min     | 15929 | 48.5 % | 50.2 % |   0.03 |  -0.05 | -0.15
+US100 2010-2016 +1440 min    | 13129 | 50.5 % | 50.5 % |   0.18 |  -0.43 | -0.47
+US100 2017-2022 +15 min      | 15758 | 48.3 % | 50.1 % |   0.00 |  -0.01 | -0.07
+US100 2017-2022 +60 min      | 15241 | 49.4 % | 50.2 % |  -0.16 |  -0.19 | -0.76
+US100 2017-2022 +240 min     | 15292 | 49.4 % | 50.3 % |  -0.25 |  -0.35 | -0.69
+US100 2017-2022 +1440 min    | 12522 | 50.2 % | 50.5 % |   0.71 |   0.05 | 0.04
+US500 2010-2016 +15 min      | 15949 | 41.8 % | 49.7 % |  -0.03 |  -0.04 | -0.55
+US500 2010-2016 +60 min      | 15799 | 45.0 % | 49.9 % |   0.03 |   0.02 | 0.12
+US500 2010-2016 +240 min     | 15601 | 47.7 % | 50.1 % |  -0.12 |  -0.18 | -0.56
+US500 2010-2016 +1440 min    | 12825 | 50.0 % | 50.3 % |   0.39 |  -0.01 | -0.01
+US500 2017-2022 +15 min      | 15333 | 46.4 % | 49.9 % |   0.02 |   0.01 | 0.13
+US500 2017-2022 +60 min      | 14878 | 48.0 % | 50.1 % |   0.04 |   0.02 | 0.08
+US500 2017-2022 +240 min     | 14876 | 49.1 % | 50.3 % |  -0.24 |  -0.31 | -0.75
+US500 2017-2022 +1440 min    | 12192 | 49.8 % | 50.4 % |  -0.93 |  -1.28 | -1.22, 2010-2022, descriptif)
+Sur les ~62 000 FVG valides de US100 et US500, le prix va **dans le sens du FVG** dans 42-48 % des cas à +15 min, 45-49 % à +1 h, 48-50 % à +4 h et 50 % à +1 jour (hasard :
+≈ 50 %), et l'excès de rendement sur une direction tirée au hasard est **nul** (|t| < 1,3 partout, les deux paires, les deux moitiés). Un peu sous 50 % à court terme : après
+sa formation, le prix revient souvent dans le FVG (c'est ce qui permet le remplissage de l'ordre limite). Donc la direction seule n'est **ni fausse ni prédictive** : c'est le contexte
+(4hr, FVG H4, chemin) choisi par Esdras qui devrait lui donner de la valeur, s'il en a.
+
 ## Reste ouvert
 Mesurer le **jugement** d'Esdras en direct (Simulateur : « Oui, je le prends / Non, je laisse », journal `GET /api/sim-journal/:session`), sur au moins 100 setups,
 en comparant ceux qu'il prend à ceux qu'il laisse. Ou lui faire fournir 10-15 exemples de plus, **dont des setups refusés**, pour apprendre ce qui distingue.
