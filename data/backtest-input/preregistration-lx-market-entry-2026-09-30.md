@@ -37,3 +37,19 @@ Un signal donne au plus une entrée (pas de nouvelle tentative après un stop).
 - LX-MKT rejetée mais meilleure que la limite : l'entrée explique une partie de l'écart, pas assez pour rendre la règle exploitable.
 - LX-MKT rejetée et pas meilleure : la différence avec la version de Gemini ne vient pas de l'entrée.
 Aucun réglage ne sera modifié après lecture des résultats.
+
+---
+
+## AMENDEMENT (écrit AVANT tout calcul, même jour) — données d'exploration
+
+Le M1 HistData 2010-2022 n'existe pas dans le dépôt (il est sur le poste d'Esdras) ; `loadPhase('US100', 'explore')` échoue ici. Le
+règlement « à la minute » ne peut donc pas s'appliquer à l'exploration. Remplacement, décidé avant de voir le moindre résultat :
+- L'exploration 2011-2018 utilise les bougies **M15** de `data/backtest-input/US100.csv`, une ligne par bougie, horodatée à sa dernière
+  minute (début + 14 min). Ainsi la fermeture de la bougie tombe à l'heure exacte, l'entrée « à l'ouverture suivante » utilise le vrai prix
+  d'ouverture de la bougie suivante, et le stop est vérifié avant l'objectif dans chaque bougie (y compris la bougie d'entrée) : **règlement
+  plus pessimiste que la minute**, identique pour la référence limite, le marché et le placebo.
+- La référence « ordre limite » est **recalculée sur ces mêmes bougies** (la référence M1 −0,085 / −0,072 / −0,045 R n'est plus
+  comparable et n'est citée que pour mémoire).
+- Tout le reste est inchangé : seuils (≥ 60 trades, R > 0, t ≥ 2,5, deux moitiés positives), placebo (20 tirages, ≥ 19 battus).
+- Si une variante est retenue, la validation 2019-2022 et la finale (M1 du broker) restent à lire UNE fois, la validation avec le M1
+  HistData sur le poste d'Esdras.
