@@ -7091,3 +7091,19 @@ non comblé le plus proche, au moins 1 R ; 24 h, achats et ventes ; spread et sw
   distance de cible) avant d'y croire.
 
 Rien changé en live. Entrée `gemini-fvg-spec-2026-09-30` dans `data/research-memory.json`.
+
+## 2026-09-30 — Règle de Gemini, ACHATS SEULEMENT, contre placebo : candidat exploratoire, avantage faible qui s'érode
+
+Demande d'Esdras (« les indices montent tout le temps, focus sur l'achat »). Pré-enregistré `561d856` avant calcul, avec un placebo
+(100 tirages : achat à une bougie au hasard de la même année, mêmes fractions de stop et de cible, mêmes coûts). **Réserve déclarée** :
+l'idée vient d'un découpage lu après le premier test, donc aucune période n'est vierge. `scripts/runGeminiBuyOnlyStudy.js` →
+`data/backtest-input/gemini-buyonly-study.md`.
+- Entraînement 2010-2022 : 12 761 achats, **+0,071 R, t 3,34**, deux moitiés positives (+0,102 puis +0,038) ; placebo **−0,039 R** :
+  écart +0,110 R = 5,7 σ. L'achat au hasard avec ces stops ne gagne pas, donc ce n'est pas seulement la hausse des indices.
+- Test 2023-2025 : 2 714 achats, **+0,035 R, t 0,75**, écart au placebo 0,8 σ (US500 −0,002 R). Forward 2026 : 778 achats, +0,213 R,
+  t 1,81, écart 2,8 σ.
+- Verdict pré-enregistré : **CANDIDAT EXPLORATOIRE** (démo seulement). Lecture prudente : l'avantage contre un achat au hasard est
+  réel à l'entraînement, mais il décroît (0,10 → 0,04 → 0,035 R/trade) et n'est plus distinguable de zéro depuis 2023.
+- Limites : entraînement réglé à la bougie M15 (stop d'abord) ; 24 h/24 ; rien testé en exécution réelle (entrée au marché à l'ouverture
+  suivante, donc exécutable par le bot, contrairement à l'ancien FVG).
+Rien changé en live. Entrée `gemini-buyonly-2026-09-30` dans `data/research-memory.json`.

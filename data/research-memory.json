@@ -1702,5 +1702,21 @@
       "scripts/lib/geminiFvg.js",
       "test/geminiFvg.test.js"
     ]
+  },
+  {
+    "id": "gemini-buyonly-2026-09-30",
+    "title": "Règle de Gemini, achats seulement, contre placebo : CANDIDAT EXPLORATOIRE (avantage faible et qui s'érode)",
+    "date": "2026-09-30",
+    "status": "inconclusive",
+    "summary": "Pré-enregistré (preregistration-gemini-buyonly-2026-09-30.md, commit 561d856) APRÈS avoir lu le découpage achats/ventes du premier test : aucune période n'est vierge. US100+US500, achats seulement. Entraînement 2010-2022 : 12761 achats, +0,071 R, t 3,34, placebo -0,039 R (achat au hasard, mêmes stop/cible), écart 5,7 sigma. Par période : 2010-2016 +0,102 R, 2017-2022 +0,038 R, test 2023-2025 +0,035 R (t 0,75, écart au placebo 0,8 sigma, US500 -0,002 R), forward 2026 +0,213 R (n 778, t 1,81). Verdict pré-enregistré : candidat exploratoire, démo seulement. Avantage réel contre un achat au hasard, mais il diminue avec le temps et n'est plus distinguable de zéro depuis 2023.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-gemini-buyonly-2026-09-30.md",
+      "data/backtest-input/gemini-buyonly-study.md",
+      "scripts/runGeminiBuyOnlyStudy.js"
+    ]
   }
 ]
