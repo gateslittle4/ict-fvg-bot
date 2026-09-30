@@ -1706,5 +1706,23 @@
       "data/forward-test-2026/results.md",
       "docs/STRATEGY.md"
     ]
+  },
+  {
+    "id": "prereg-fvg-a-gauche-2026-09-29",
+    "title": "FVG « 15 min » vers FVG « à gauche » (stratégie d'Esdras) : ÉCHEC à l'entraînement",
+    "date": "2026-09-29",
+    "status": "rejected",
+    "summary": "Lecture de la capture confirmée par Esdras (vente depuis le retest du FVG M15, cible = bord proche du FVG opposé plus ancien jamais touché et situé devant l'entrée, cible >= 2 R, stop = bord lointain + 10 % de hauteur ; fenêtre de pose 08h30-11h30 NY, ordre 16 bougies M15, sortie stop/cible sinon 5 jours ; netting). Pré-enregistré avant tout calcul (a23e41b), script et 11 tests commités avant le calcul (7444d99). RÉSULTAT (scripts/runFvgGaucheStudy.js train -> data/backtest-input/fvg-a-gauche-study-train.md) : US100 + US500 2010-2022, 4934 trades, 11 % gagnants, -0,070 R/trade, -345 R, t -1,15 ; 2010-2016 -37 R, 2017-2022 -308 R -> ÉCHEC (t >= 2,6 exigé). Contrôle même ordre avec cible fixe 3 R : 22 % gagnants, -0,153 R/trade, t -6,49 (le FVG à gauche fait moins mal qu une cible fixe mais ne gagne pas). Test 2023-2025 et 2026 NON lus (le script refuse). 8e échec de la famille FVG.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15/M1",
+    "files": [
+      "data/backtest-input/preregistration-fvg-a-gauche-2026-09-29.md",
+      "scripts/runFvgGaucheStudy.js",
+      "scripts/lib/fvgGauche.js",
+      "data/backtest-input/fvg-a-gauche-study-train.md"
+    ]
   }
 ]

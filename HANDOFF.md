@@ -7077,3 +7077,16 @@ Esdras a signalé que les chiffres du backtest cités dans une session (« +2 96
 - `src/chatAssistant.js` : clé de contexte `backtest7Years` -> `backtestM1`, prompt corrigé (liste réelle des mécanismes et des paires, interdiction de dire « validé/prouvé », interdiction de citer les anciens chiffres, renvoi vers researchMemory).
 - Bannières « PÉRIMÉ » : `data/forward-test-2026/results.md`, `docs/STRATEGY.md`. Entrée `backtest-summary-stale-2026-09-29` ajoutée à `data/research-memory.json`.
 - Non corrigé : les rapports `data/backtest-input/*.md` M15 d'avant les corrections (règle d'égalité, bougie d'entrée) gardent leurs chiffres d'origine ; le PDF investisseur déjà envoyé n'a pas été relu. `npm test` : 1 239/1 239.
+
+## 2026-09-29 — FVG « 15 min » vers FVG « à gauche » (stratégie d'Esdras) : pré-enregistré, ÉCHEC à l'entraînement
+
+Capture d'Esdras (US500 M15 : « 15 min fvg » et « fvg à gauche »). Lecture confirmée par Esdras : vente depuis le retest du FVG baissier M15,
+cible = bord proche du FVG haussier plus ancien, jamais touché, situé devant l'entrée (≥ 2 R). Les définitions formelles du FVG viennent de
+Gemini ; sa lecture de la capture était fausse (il a pris la flèche « B · Noise » du bot pour le point d'entrée et achetait dans le sens
+contraire), et ses paramètres inventés (invalidation 50 %, break-even 50 %, marge fixe) ont été écartés. Fenêtre 08 h 30-11 h 30 NY, ordre de
+16 bougies, sortie stop/cible : valeurs de Gemini acceptées par Esdras. Pré-enregistrement `a23e41b`, script + 11 tests `7444d99`, calcul après.
+- `scripts/runFvgGaucheStudy.js train` (14 s) : 4 934 trades, 11 % gagnants, −0,070 R/trade, −345 R, **t −1,15** (2010-2016 −37 R ; 2017-2022 −308 R)
+  → **ÉCHEC**. Test 2023-2025 et 2026 **non lus** (le script refuse tant que l'entraînement n'a pas réussi).
+- Contrôle (descriptif) : mêmes ordres avec cible fixe 3 R → 22 % gagnants, −0,153 R/trade, t −6,49.
+- Scripts NON commités d'une autre session dans le dossier (`runEsdrasMitigationStudy.js`, `runEsdrasSMC*.js`, `runEsdrasUs500M15.js`) : ils lisent
+  2026 et les périodes cachées (NIGHT_PHASE forcé) sans pré-enregistrement ; s'ils ont tourné, ces périodes sont grillées pour cette famille.
