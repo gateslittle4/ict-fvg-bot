@@ -1724,5 +1724,24 @@
       "scripts/lib/fvgGauche.js",
       "data/backtest-input/fvg-a-gauche-study-train.md"
     ]
+  },
+  {
+    "id": "prereg-fvg-suivi-2026-09-30",
+    "title": "Suivre le FVG le plus récent (entrée au retest de la partie non mangée, sortie au retournement) : ÉCHEC, avantage nul",
+    "date": "2026-09-30",
+    "status": "rejected",
+    "summary": "Cousin mécanique de la méthode d Esdras sans lignes 4hr ni FVG à gauche, pré-enregistré avant calcul (3c95987), script et 5 tests commités avant le calcul (4334fb0). Zone = FVG M15 (fusion des FVG consécutifs, trou de week-end exclu), partie non mangée par la bougie de confirmation ; entrée limite au bord proche, stop 10 % au-delà, garde-fou risque >= 3 x spread ; l ordre est remplacé par la zone la plus récente ; sortie au retournement (zone valide de sens opposé), stop, ou 5 jours ; un trade à la fois par paire. RÉSULTAT (scripts/runFvgFollowStudy.js train -> data/backtest-input/fvg-suivi-study-train.md) : US100 + US500 2010-2022, 34 597 trades, 17 % gagnants, -0,009 R/trade, -325 R, t -0,33 ; 2010-2016 -11,9 R, 2017-2022 -312,6 R -> ÉCHEC. Test 2023-2025 et 2026 NON lus. Vérification descriptive : la zone d entrée de chacun des 11 exemples d Esdras (septembre 2026) est retrouvée dans son sens (11/11) : les entrées sont banales, ce qui distingue ses trades est la sélection (4hr, FVG H4, résistance sur le chemin) que aucune règle simple ne reproduit (voir docs/methode-esdras-fvg.md). 9e échec de la famille FVG.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15/M1",
+    "files": [
+      "data/backtest-input/preregistration-fvg-suivi-2026-09-30.md",
+      "scripts/runFvgFollowStudy.js",
+      "scripts/lib/fvgFollow.js",
+      "data/backtest-input/fvg-suivi-study-train.md",
+      "docs/methode-esdras-fvg.md"
+    ]
   }
 ]

@@ -7090,3 +7090,21 @@ contraire), et ses paramètres inventés (invalidation 50 %, break-even 50 %, ma
 - Contrôle (descriptif) : mêmes ordres avec cible fixe 3 R → 22 % gagnants, −0,153 R/trade, t −6,49.
 - Scripts NON commités d'une autre session dans le dossier (`runEsdrasMitigationStudy.js`, `runEsdrasSMC*.js`, `runEsdrasUs500M15.js`) : ils lisent
   2026 et les périodes cachées (NIGHT_PHASE forcé) sans pré-enregistrement ; s'ils ont tourné, ces périodes sont grillées pour cette famille.
+
+## 2026-09-30 — La méthode FVG d'Esdras : 11 exemples, règles apprises, « suivre le FVG le plus récent » : ÉCHEC (avantage nul)
+
+Esdras a envoyé 11 captures (US100 ×5, US500 ×6, septembre 2026) et expliqué sa méthode ; tout est dans `docs/methode-esdras-fvg.md` (règles dans ses mots, tableau des
+11 exemples, résultats). Faits importants :
+- **L'axe de ses graphiques est en UTC** (l'horloge en haut à droite est en heure d'Haïti = New York). Les règles qu'il donne : FVG le plus récent = direction et entrée ;
+  validité = attendre la bougie suivante, on garde la **partie non mangée** ; FVG consécutifs = un seul ; le FVG « à gauche » est dans la bougie H4 du 4hr high/low.
+- **FVG « à gauche » v1** (`a23e41b`) : 4 934 trades, −0,070 R/trade, t −1,15, ÉCHEC ; il ne reproduisait pas la méthode (fenêtre 8 h 30-11 h 30 de Gemini trop étroite).
+- **Détection** sur les 11 exemples : FVG d'entrée 11/11, direction 11/11, mais **le choix de la ligne 4hr n'est pas une règle** (meilleures règles simples 6/11, 1/5 hors
+  échantillon) ; il y a 4 à 13 candidats valides à chaque fois ; chaîne complète 6/11 ; ≈ 4,5 alertes/jour/paire.
+- **Suivre le FVG le plus récent** (`3c95987` pré-enregistrement, `4334fb0` script) : 34 597 trades 2010-2022, −0,009 R/trade, t −0,33 → **ÉCHEC**, avantage nul. Test 2023-2025
+  non lu. La zone d'entrée des 11 exemples est retrouvée (11/11) : les entrées sont banales, la sélection d'Esdras est ce qui compte.
+- **Décision en attente d'Esdras** : (1) mesurer son jugement en direct via le Simulateur (« Oui, je le prends / Non, je laisse », `GET /api/sim-journal/:session`), sur ≥ 100 setups ;
+  (2) ou 10-15 exemples de plus dont des setups refusés ; (3) construire une alerte de candidats (≈ 9 alertes/jour au total, trop bruyante sans tri).
+- Gemini a été consulté (idées de stratégies, lecture de la capture) : ses idées 1 et 3 (dernière demi-heure US500, range asiatique) étaient déjà testées ; les fixings de l'or/WMR
+  reposent sur des anomalies d'avant la réforme de 2015 (non testés) ; sa lecture de la capture (achat à 7 668,90) était fausse (flèche « B · Noise » du bot prise pour l'entrée).
+- Scripts NON commités d'une autre session (`runEsdrasMitigationStudy.js`, `runEsdrasSMC*.js`, `runEsdrasUs500M15.js`) : lisent 2026 et les périodes cachées sans pré-enregistrement.
+- Règle de travail : calculs lourds (> quelques minutes, plusieurs processus) en ligne, pas sur le laptop d'Esdras (il a dû mettre un ventilateur).
