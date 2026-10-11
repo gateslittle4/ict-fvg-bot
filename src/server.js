@@ -23,7 +23,7 @@ import { buildHealthReport } from './healthReport.js';
 import { fetchPerformanceBySymbol, createTradeLogClient } from './dataSources/supabaseTradeLog.js';
 import { getStrategySwitches, setStrategySwitches } from './strategySwitches.js';
 import { getKillSwitchState, setKillSwitchOverride, refreshKillSwitch } from './killSwitch.js';
-import { saveSimJournal, listSimJournals, saveSimShot } from './dataSources/supabaseSimJournal.js';
+import { saveSimJournal, listSimJournals, getSimJournal, saveSimShot } from './dataSources/supabaseSimJournal.js';
 import { buildContext } from '../scripts/lib/fvgContext.js';
 import { signalsLY } from '../scripts/lib/esdrasMethod.js';
 import { fetchDynamicAccounts, saveDynamicAccount, listDynamicAccountsRedacted, deleteDynamicAccount } from './dataSources/supabaseAccountStore.js';
@@ -267,6 +267,11 @@ app.post('/api/sim-journal/shot', express.json({ limit: '4mb' }), async (req, re
 app.get('/api/sim-journal', async (req, res) => {
   if (!requireAdminToken(req, res)) return;
   const result = await listSimJournals(switchClient(), { limit: Number(req.query.limit) || 20 });
+  res.status(result.ok ? 200 : result.status).json(result);
+});
+app.get('/api/sim-journal/:session', async (req, res) => {
+  if (!requireAdminToken(req, res)) return;
+  const result = await getSimJournal(switchClient(), req.params.session);
   res.status(result.ok ? 200 : result.status).json(result);
 });
 

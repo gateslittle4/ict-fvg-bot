@@ -1684,5 +1684,64 @@
       "scripts/runEsdrasLY.js",
       "scripts/lib/esdrasMethod.js"
     ]
+  },
+  {
+    "id": "backtest-summary-stale-2026-09-29",
+    "title": "Ancien résumé de backtest (2 964 R, 30,4 %, 7 217 trades, 2009-2025) : périmé, remplacé",
+    "date": "2026-09-29",
+    "status": "methodology-fix",
+    "summary": "Le fichier data/backtest-summary.json (alimente le chat du dashboard) affichait +2 964 R, 30,4 % de réussite, 7 217 trades sur 2009-2025. Ces chiffres venaient d'un rejeu M15 incluant GER40 (retiré le 2026-09-21, négatif dans le vrai moteur), avec un R BRUT (rapport R:R, sans spread) et le règlement M15 biaisé. Régénéré avec le vrai moteur sur le M1 réel 2022-2026, production sans GER40, R net du spread : 1 801 trades, +233 R (+0,129 R/trade), 24,7 % de réussite, baisse max 12,3 % à 0,3 % de risque (US100 +188 R, XAUUSD +60 R, US500 -15 R ; FVG +203 R, Divergence +46 R, CBDR -31 R). Ce nouveau chiffre reste un PLAFOND OPTIMISTE : il suppose les LIMIT remplis au niveau du signal (voir fvg-live-execution-gap-2026-09-23 : le FVG y devient négatif). Le forward-test 2026 (data/forward-test-2026/results.md) est un rejeu de 14 signaux, pas du trading réel, et est marqué périmé.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M1",
+    "knownWeaknesses": "Coûts partiels (pas de commission, swap, glissement), remplissage au niveau du signal, garde-fous rejoués sur une liste canonique, historique M1 seulement depuis 2022-05 (2023-01 pour les indices).",
+    "files": [
+      "scripts/buildBacktestSummary.js",
+      "data/backtest-summary.json",
+      "src/chatAssistant.js",
+      "data/forward-test-2026/results.md",
+      "docs/STRATEGY.md"
+    ]
+  },
+  {
+    "id": "prereg-fvg-a-gauche-2026-09-29",
+    "title": "FVG « 15 min » vers FVG « à gauche » (stratégie d'Esdras) : ÉCHEC à l'entraînement",
+    "date": "2026-09-29",
+    "status": "rejected",
+    "summary": "Lecture de la capture confirmée par Esdras (vente depuis le retest du FVG M15, cible = bord proche du FVG opposé plus ancien jamais touché et situé devant l'entrée, cible >= 2 R, stop = bord lointain + 10 % de hauteur ; fenêtre de pose 08h30-11h30 NY, ordre 16 bougies M15, sortie stop/cible sinon 5 jours ; netting). Pré-enregistré avant tout calcul (a23e41b), script et 11 tests commités avant le calcul (7444d99). RÉSULTAT (scripts/runFvgGaucheStudy.js train -> data/backtest-input/fvg-a-gauche-study-train.md) : US100 + US500 2010-2022, 4934 trades, 11 % gagnants, -0,070 R/trade, -345 R, t -1,15 ; 2010-2016 -37 R, 2017-2022 -308 R -> ÉCHEC (t >= 2,6 exigé). Contrôle même ordre avec cible fixe 3 R : 22 % gagnants, -0,153 R/trade, t -6,49 (le FVG à gauche fait moins mal qu une cible fixe mais ne gagne pas). Test 2023-2025 et 2026 NON lus (le script refuse). 8e échec de la famille FVG.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15/M1",
+    "files": [
+      "data/backtest-input/preregistration-fvg-a-gauche-2026-09-29.md",
+      "scripts/runFvgGaucheStudy.js",
+      "scripts/lib/fvgGauche.js",
+      "data/backtest-input/fvg-a-gauche-study-train.md"
+    ]
+  },
+  {
+    "id": "prereg-fvg-suivi-2026-09-30",
+    "title": "Suivre le FVG le plus récent (entrée au retest de la partie non mangée, sortie au retournement) : ÉCHEC, avantage nul",
+    "date": "2026-09-30",
+    "status": "rejected",
+    "summary": "Cousin mécanique de la méthode d Esdras sans lignes 4hr ni FVG à gauche, pré-enregistré avant calcul (3c95987), script et 5 tests commités avant le calcul (4334fb0). Zone = FVG M15 (fusion des FVG consécutifs, trou de week-end exclu), partie non mangée par la bougie de confirmation ; entrée limite au bord proche, stop 10 % au-delà, garde-fou risque >= 3 x spread ; l ordre est remplacé par la zone la plus récente ; sortie au retournement (zone valide de sens opposé), stop, ou 5 jours ; un trade à la fois par paire. RÉSULTAT (scripts/runFvgFollowStudy.js train -> data/backtest-input/fvg-suivi-study-train.md) : US100 + US500 2010-2022, 34 597 trades, 17 % gagnants, -0,009 R/trade, -325 R, t -0,33 ; 2010-2016 -11,9 R, 2017-2022 -312,6 R -> ÉCHEC. Test 2023-2025 et 2026 NON lus. Vérification descriptive : la zone d entrée de chacun des 11 exemples d Esdras (septembre 2026) est retrouvée dans son sens (11/11) : les entrées sont banales, ce qui distingue ses trades est la sélection (4hr, FVG H4, résistance sur le chemin) que aucune règle simple ne reproduit (voir docs/methode-esdras-fvg.md). 9e échec de la famille FVG.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "timeframe": "M15/M1",
+    "files": [
+      "data/backtest-input/preregistration-fvg-suivi-2026-09-30.md",
+      "scripts/runFvgFollowStudy.js",
+      "scripts/lib/fvgFollow.js",
+      "data/backtest-input/fvg-suivi-study-train.md",
+      "docs/methode-esdras-fvg.md"
+    ]
   }
 ]

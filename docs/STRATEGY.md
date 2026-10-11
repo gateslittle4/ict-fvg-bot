@@ -1,6 +1,15 @@
 # Setup de trading actuel — US100 / US500 uniquement
 
-Dernière mise à jour : 2026-09-05. Ce document résume le setup actuellement validé
+> ⚠ **DOCUMENT HISTORIQUE (2026-09-05), PÉRIMÉ — noté le 2026-09-29.** Il ne décrit plus le bot :
+> - paires tradées aujourd'hui : US100, US500, XAUUSD, EURUSD (GER40 ajouté puis retiré le 2026-09-21) ;
+> - plafond de **3** trades clôturés par jour (et non 2), perte du jour 2 %, pause 30 min après une perte ;
+> - 8 mécanismes + RSI(2) US500 + ORB US100 + noise area US500, pas seulement le setup Silver Bullet ci-dessous ;
+> - les chiffres « net sur TEST » (win rate 43-45 %, PF ~2,2, +0,70 R/trade sur 30-38 signaux) viennent d'un rejeu M15
+>   d'avant les corrections de méthode (bougie d'entrée, règle d'égalité M15, remplissage réel de l'ordre LIMIT) : ne pas les citer ;
+> - la mémoire de recherche (`data/research-memory.json`, ids `m15-tie-rule-bias`, `entry-candle-stop-bug`,
+>   `fvg-live-execution-gap-2026-09-23`, `live-replay-full-2010-2026`) et `HANDOFF.md` font foi.
+
+Dernière mise à jour : 2026-09-05. Ce document résume le setup qui était validé à l'époque
 (tient sur des données jamais vues, 2024-2025). EURUSD et GBPUSD ont été retirés du plan :
 aucune configuration testée pour ces deux paires n'a montré un edge net qui survit
 hors-échantillon (voir `data/backtest-input/train-test-validation.md`).

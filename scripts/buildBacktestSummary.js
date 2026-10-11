@@ -1,177 +1,189 @@
 #!/usr/bin/env node
 // buildBacktestSummary.js
-// Usage: node scripts/buildBacktestSummary.js
+// Usage: node --max-old-space-size=4096 scripts/buildBacktestSummary.js
 //
-// Esdras, pour le chat IA du dashboard : "comment faire pour qu'il ai Les
-// données des 7 annees?". Le journal durable Supabase (voir chatAssistant.js)
-// ne couvre que le trading réel depuis que la persistance est en place -
-// il ne contient PAS le backtest 2019-2025 déjà utilisé dans le rapport PDF
-// investisseur (checkAugustSeasonalityAcrossYears.js,
-// checkMonthlySeasonalityAndChallengeStart.js). Rejouer 7 années de bougies
-// à CHAQUE message de chat serait beaucoup trop lent (plusieurs secondes) -
-// ce script fait le rejeu UNE FOIS, ici, et écrit un résumé compact dans
-// data/backtest-summary.json, que chatAssistant.js charge ensuite en
-// lecture simple (quelques ms) à chaque question.
+// Résumé compact chargé par le chat du dashboard (src/chatAssistant.js -> backtestM1).
+// Référence : le VRAI moteur (LiveStrategyEngine) rejoué sur tout l'historique M1 réel du broker
+// (data/real-m1-full), règlement M1 exact, garde-fous réels rejoués, symboles de production
+// (CONFIG.symbols, sans GER40). Même méthode que scripts/runEngineM1Backtest.js.
 //
-// Même construction EXACTE du combo de production que tous les scripts
-// jumeaux de cette session (checkAugustSeasonalityAcrossYears.js en
-// particulier - même symboles réels, même config, BTCUSD exclu pour la même
-// raison : smoke-test technique, pas un mécanisme validé). Ne recalcule
-// rien de nouveau - même replayAll()/partA_monthlyBreakdown() que
-// checkMonthlySeasonalityAndChallengeStart.js, plus un découpage par année
-// et par symbole/mécanisme, exportés en JSON au lieu d'un simple console.log.
-//
-// À relancer manuellement si la stratégie/la config change un jour (le
-// fichier généré est committé, pas régénéré au démarrage du serveur - un
-// résumé de backtest ne change pas tout seul).
-
+// Remplace l'ancienne version (rejeu M15 2009-2025 sur data/backtest-input, GER40 inclus, R BRUT =
+// rapport R:R sans coûts) : ses chiffres (~2964 R, 30,4 %) étaient périmés et surestimés.
 import fs from 'node:fs';
-import path from 'node:path';
+import zlib from 'node:zlib';
+import { FIXED_EST_TO_UTC_OFFSET_MS } from '../src/backtest/nySession.js';
+import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { LiveStrategyEngine } from '../src/liveStrategyEngine.js';
 import { GuardrailEngine } from '../src/engines/guardrailEngine.js';
-import { DEFAULT_SPREADS } from '../src/backtest/transactionCosts.js';
 import { CONFIG } from '../src/config.js';
-import { loadCandlesFromCsv } from '../src/backtest/csvLoader.js';
-import { fileURLToPath } from 'node:url';
 
-const REAL_SYMBOLS = ['US100', 'US500', 'XAUUSD', 'EURUSD', 'GER40'];
-const CSV_DIR = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-input');
-const OUT_PATH = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'data', 'backtest-summary.json');
+const ENGINE_SYMBOLS = ['US500', 'US100', 'XAUUSD', 'EURUSD', 'GER40'];
+const PROD_SYMBOLS = CONFIG.symbols;
+const RISK_PCT = 0.3; // risque réel du bot (les rapports M1 de référence utilisent aussi 0,3 %)
+const START = 10000;
+const OUT_PATH = 'data/backtest-summary.json';
 const MONTH_NAMES = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
-function replayAll() {
-  const historyBySymbol = {};
-  let earliestTime = Infinity;
-  let latestTime = -Infinity;
-  for (const symbol of REAL_SYMBOLS) {
-    const candles = loadCandlesFromCsv(path.join(CSV_DIR, `${symbol}.csv`)).candles;
-    historyBySymbol[symbol] = candles;
-    earliestTime = Math.min(earliestTime, candles[0].time);
-    latestTime = Math.max(latestTime, candles[candles.length - 1].time);
+function loadGz(sym) {
+  const lines = zlib.gunzipSync(fs.readFileSync(`data/real-m1-full/${sym}.csv.gz`)).toString('utf8').split('\n');
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    const p = lines[i].split(',');
+    if (p.length < 5) continue;
+    out.push({ time: +p[0] - FIXED_EST_TO_UTC_OFFSET_MS, open: +p[1], high: +p[2], low: +p[3], close: +p[4], volume: 0 });
   }
-  const guardrail = new GuardrailEngine(CONFIG.guardrails);
-  const fvgConfigRealOnly = { ...CONFIG.fvg.perSymbol };
-  delete fvgConfigRealOnly.BTCUSD;
-  const engine = new LiveStrategyEngine({
-    symbols: REAL_SYMBOLS,
-    fvgConfig: fvgConfigRealOnly,
-    divergenceConfig: CONFIG.divergence,
-    nwogConfig: CONFIG.nwog,
-    judasSwingConfig: CONFIG.judasSwing,
-    weeklySweepConfig: CONFIG.weeklySweep,
-    breakerBlockConfig: CONFIG.breakerBlock,
-    guardrail,
-    riskPctPerTrade: CONFIG.risk.riskPctPerTrade,
-    spreads: DEFAULT_SPREADS,
-    pyramidConfig: CONFIG.pyramid,
-  });
-  const openById = new Map();
-  const trades = [];
-  engine.warmUp(historyBySymbol, {
-    onEvent: (e) => {
-      if (!e) return;
-      if (e.type === 'validated' && !e.blockedReason) { openById.set(e.id, e); return; }
-      if (e.type !== 'closed') return;
-      const opened = openById.get(e.id);
-      if (!opened) return;
-      openById.delete(e.id);
-      trades.push({
-        symbol: e.symbol,
-        source: opened.source,
-        entryTime: opened.validatedAt,
-        exitTime: e.exitTime,
-        outcome: e.outcome,
-        rMultiple: e.outcome === 'win' ? opened.rrMultiple : e.outcome === 'loss' ? -1 : null,
-      });
-    },
-  });
-  trades.sort((a, b) => a.entryTime - b.entryTime);
-  return { trades, earliestTime, latestTime };
+  return out;
 }
-
-function emptyBucket() {
-  return { count: 0, wins: 0, losses: 0, totalR: 0 };
-}
-function accumulate(bucket, t) {
-  bucket.count++;
-  if (t.outcome === 'win') bucket.wins++;
-  else if (t.outcome === 'loss') bucket.losses++;
-  bucket.totalR += t.rMultiple || 0;
-}
-function finalize(bucket) {
-  const decided = bucket.wins + bucket.losses;
-  bucket.winRatePct = decided > 0 ? Math.round((bucket.wins / decided) * 1000) / 10 : null;
-  bucket.totalR = Math.round(bucket.totalR * 100) / 100;
-  return bucket;
-}
-
-function main() {
-  const { trades, earliestTime, latestTime } = replayAll();
-
-  // 2026-09-16 (Esdras, explicite : "Tous Les nvs tests doivent inclure
-  // Tous Les annees maintenant") - le filtre 2019-2025 qui existait ici
-  // avant (voir git log de ce fichier pour le raisonnement d'alors) est
-  // délibérément RETIRÉ. Chaque symbole a maintenant son propre historique
-  // réel le plus long possible (US100/US500 depuis 2010-11-14, XAUUSD
-  // depuis 2009-03-15, GER40 depuis ~2010, EURUSD reste le plus court à
-  // 2018-01-01 - donc Judas Swing/EURUSD ne démarre qu'en 2018 même si les
-  // autres mécanismes tournent depuis 2009-2010) - AUCUNE homogénéisation
-  // artificielle à une fenêtre commune, chaque bougie réellement disponible
-  // compte. Cohérent avec le correctif déjà appliqué à la comparaison prop
-  // firm (voir HANDOFF.md "CORRECTIF IMPORTANT") qui avait la même
-  // discipline pour la même raison : une fenêtre plus courte peut donner une
-  // fausse impression de robustesse en ratant des régimes de marché plus
-  // anciens.
-  const years = new Set(trades.map((t) => new Date(t.entryTime).getUTCFullYear()));
-  const yearsSorted = [...years].sort((a, b) => a - b);
-  const decided = trades.filter((t) => t.outcome === 'win' || t.outcome === 'loss');
-
-  const overall = emptyBucket();
-  const byYear = {};
-  const byMonth = Array.from({ length: 12 }, () => emptyBucket());
-  const bySymbol = {};
-  const bySource = {};
-
-  for (const t of trades) {
-    accumulate(overall, t);
-    const year = new Date(t.entryTime).getUTCFullYear();
-    byYear[year] ??= emptyBucket();
-    accumulate(byYear[year], t);
-    accumulate(byMonth[new Date(t.entryTime).getUTCMonth()], t);
-    bySymbol[t.symbol] ??= emptyBucket();
-    accumulate(bySymbol[t.symbol], t);
-    bySource[t.source] ??= emptyBucket();
-    accumulate(bySource[t.source], t);
+function toM15(m1) {
+  const out = [];
+  let cur = null;
+  for (const c of m1) {
+    const b = Math.floor(c.time / 900000) * 900000;
+    if (!cur || cur.time !== b) {
+      if (cur) out.push(cur);
+      cur = { time: b, open: c.open, high: c.high, low: c.low, close: c.close, volume: 0 };
+    } else {
+      cur.high = Math.max(cur.high, c.high);
+      cur.low = Math.min(cur.low, c.low);
+      cur.close = c.close;
+    }
   }
-
-  finalize(overall);
-  for (const y of Object.values(byYear)) finalize(y);
-  for (const m of byMonth) finalize(m);
-  for (const s of Object.values(bySymbol)) finalize(s);
-  for (const s of Object.values(bySource)) finalize(s);
-
-  const byMonthNamed = {};
-  MONTH_NAMES.forEach((name, i) => { byMonthNamed[name] = byMonth[i]; });
-
-  const summary = {
-    generatedAt: new Date().toISOString(),
-    coverage: {
-      from: new Date(earliestTime).toISOString().slice(0, 10),
-      to: new Date(latestTime).toISOString().slice(0, 10),
-      years: yearsSorted,
-    },
-    note: `Backtest sur l'historique réel complet disponible par symbole (${new Date(earliestTime).toISOString().slice(0, 10)} -> ${new Date(latestTime).toISOString().slice(0, 10)}, ${yearsSorted.length} années calendaires), rejoué avec le code EXACT de production (mêmes mécanismes, mêmes réglages). EURUSD (Judas Swing) démarre en 2018-01-01, plus tard que les autres symboles - pas d'homogénéisation artificielle à une fenêtre commune. Performance passée, ne garantit pas les résultats futurs. BTCUSD exclu (smoke-test technique récent, pas un mécanisme validé). Symboles inclus : US100, US500, XAUUSD, EURUSD, GER40.`,
-    decidedTradeCount: decided.length,
-    overall,
-    byYear,
-    byMonth: byMonthNamed,
-    bySymbol,
-    bySource,
-  };
-
-  fs.writeFileSync(OUT_PATH, JSON.stringify(summary, null, 2));
-  console.log(`Résumé écrit dans ${OUT_PATH}`);
-  console.log(`${decided.length} trades décidés, ${overall.totalR >= 0 ? '+' : ''}${overall.totalR}R au total, ${overall.winRatePct}% de réussite.`);
+  if (cur) out.push(cur);
+  return out;
 }
 
-main();
+const m1Bars = Object.fromEntries(ENGINE_SYMBOLS.map((s) => [s, loadGz(s)]));
+const m15 = Object.fromEntries(ENGINE_SYMBOLS.map((s) => [s, toM15(m1Bars[s])]));
+const M1 = {};
+for (const s of ENGINE_SYMBOLS) {
+  const cs = m1Bars[s];
+  M1[s] = { t: Float64Array.from(cs, (c) => c.time), h: Float64Array.from(cs, (c) => c.high), l: Float64Array.from(cs, (c) => c.low), c: Float64Array.from(cs, (c) => c.close), n: cs.length };
+}
+const lower = (a, n, x) => { let lo = 0, hi = n; while (hi > lo) { const m = (lo + hi) >> 1; if (a[m] >= x) hi = m; else lo = m + 1; } return lo; };
+const netR = (dir, entry, d, exit, sym) => {
+  const g = (dir === 'bullish' ? exit - entry : entry - exit) / d;
+  const s = DEFAULT_SPREADS[sym] ?? 0;
+  return g - (s > 0 ? s / d : 0);
+};
+
+function settleM1(tr) {
+  const S = M1[tr.symbol];
+  const bull = tr.direction === 'bullish';
+  const start = lower(S.t, S.n, tr.entryTime);
+  const end = Math.min(S.n, lower(S.t, S.n, tr.entryTime + 900000));
+  let fill = -1;
+  for (let i = start; i < end; i++) if (S.l[i] <= tr.entryPrice && tr.entryPrice <= S.h[i]) { fill = i; break; }
+  if (fill < 0) fill = start < S.n ? start : -1;
+  if (fill < 0) return null;
+  const maxI = Math.min(S.n, fill + 480 * 15);
+  for (let i = fill; i < maxI; i++) {
+    if (bull ? S.l[i] <= tr.stopPrice : S.h[i] >= tr.stopPrice) return { exitPrice: tr.stopPrice, exitTime: S.t[i], outcome: 'loss' };
+    if (bull ? S.h[i] >= tr.targetPrice : S.l[i] <= tr.targetPrice) return { exitPrice: tr.targetPrice, exitTime: S.t[i], outcome: 'win' };
+  }
+  return { exitPrice: S.c[maxI - 1], exitTime: S.t[maxI - 1], outcome: 'timeout' };
+}
+
+const guard0 = new GuardrailEngine({ maxTradesPerDay: 1000, cooldownMinutesAfterLoss: 0, dailyLossLimitPct: 100, dayBoundaryHourUTC: 0 });
+guard0.setBalance(START, Math.min(...ENGINE_SYMBOLS.map((s) => m15[s][0].time)));
+const engine = new LiveStrategyEngine({ symbols: ENGINE_SYMBOLS, fvgConfig: CONFIG.fvg.perSymbol, divergenceConfig: CONFIG.divergence, nwogConfig: CONFIG.nwog, judasSwingConfig: CONFIG.judasSwing, weeklySweepConfig: CONFIG.weeklySweep, breakerBlockConfig: CONFIG.breakerBlock, silverBulletConfig: CONFIG.silverBullet, cbdrConfig: CONFIG.cbdr, guardrail: guard0, riskPctPerTrade: 0.5, spreads: DEFAULT_SPREADS });
+const pending = new Map();
+const canonical = [];
+engine.warmUp(m15, {
+  completeDivergencePair: true,
+  onEvent: (sig, candle) => {
+    if (sig.type === 'validated' && !sig.blockedReason) {
+      pending.set(sig.symbol, { symbol: sig.symbol, source: sig.source, direction: sig.direction, entryPrice: sig.entryPrice, stopPrice: sig.stopPrice, targetPrice: sig.targetPrice, distance: sig.distance, entryTime: candle.time });
+      return;
+    }
+    if (sig.type !== 'closed') return;
+    const o = pending.get(sig.symbol);
+    pending.delete(sig.symbol);
+    if (!o) return;
+    const m1 = settleM1(o);
+    if (!m1) return;
+    canonical.push({ ...o, r: netR(o.direction, o.entryPrice, o.distance, m1.exitPrice, o.symbol), exitTime: m1.exitTime, outcome: m1.outcome });
+  },
+});
+canonical.sort((a, b) => a.entryTime - b.entryTime);
+
+const prod = canonical.filter((t) => PROD_SYMBOLS.includes(t.symbol));
+const guard = new GuardrailEngine({ ...CONFIG.guardrails });
+guard.setBalance(START, prod.length ? prod[0].entryTime : 0);
+let bal = START, peak = START, maxDd = 0, vetoed = 0;
+const taken = [];
+for (const t of prod) {
+  if (!guard.canTakeNewTrade(t.entryTime, t.symbol)) { vetoed++; continue; }
+  const pnl = bal * (RISK_PCT / 100) * t.r;
+  bal += pnl;
+  peak = Math.max(peak, bal);
+  maxDd = Math.max(maxDd, ((peak - bal) / peak) * 100);
+  guard.recordTrade({ pnl, time: t.exitTime, balanceAfter: bal, symbol: t.symbol });
+  taken.push(t);
+}
+
+const bucket = () => ({ count: 0, wins: 0, losses: 0, timeouts: 0, totalR: 0 });
+function add(b, t) {
+  b.count++;
+  if (t.outcome === 'win') b.wins++;
+  else if (t.outcome === 'loss') b.losses++;
+  else b.timeouts++;
+  b.totalR += t.r;
+}
+function fin(b) {
+  const decided = b.wins + b.losses;
+  b.winRatePct = decided > 0 ? Math.round((b.wins / decided) * 1000) / 10 : null;
+  b.totalR = Math.round(b.totalR * 10) / 10;
+  b.rPerTrade = b.count > 0 ? Math.round((b.totalR / b.count) * 1000) / 1000 : null;
+  return b;
+}
+
+const overall = bucket();
+const byYear = {};
+const byMonth = Array.from({ length: 12 }, bucket);
+const bySymbol = {};
+const bySource = {};
+for (const t of taken) {
+  const d = new Date(t.entryTime + FIXED_EST_TO_UTC_OFFSET_MS);
+  add(overall, t);
+  add((byYear[d.getUTCFullYear()] ??= bucket()), t);
+  add(byMonth[d.getUTCMonth()], t);
+  add((bySymbol[t.symbol] ??= bucket()), t);
+  add((bySource[t.source] ??= bucket()), t);
+}
+fin(overall);
+Object.values(byYear).forEach(fin);
+byMonth.forEach(fin);
+Object.values(bySymbol).forEach(fin);
+Object.values(bySource).forEach(fin);
+const byMonthNamed = {};
+MONTH_NAMES.forEach((n, i) => { byMonthNamed[n] = byMonth[i]; });
+
+const first = new Date(taken[0].entryTime + FIXED_EST_TO_UTC_OFFSET_MS).toISOString().slice(0, 10);
+const last = new Date(taken[taken.length - 1].entryTime + FIXED_EST_TO_UTC_OFFSET_MS).toISOString().slice(0, 10);
+const summary = {
+  generatedAt: new Date().toISOString(),
+  method: 'Vrai moteur LiveStrategyEngine rejoué sur l\'historique M1 réel du broker (data/real-m1-full), règlement M1 exact (minute par minute), garde-fous réels rejoués (3 trades/jour, pause 30 min, arrêt du jour), symboles de production sans GER40.',
+  coverage: { from: first, to: last, years: Object.keys(byYear).map(Number) },
+  symbols: PROD_SYMBOLS,
+  riskPctPerTrade: RISK_PCT,
+  rUnit: 'R NET : après déduction du spread, avant commission, swap et glissement (non modélisés).',
+  caveats: [
+    'Le niveau absolu est surestimé : commission, swap et glissement ne sont pas modélisés, les garde-fous sont approximés et le remplissage de l\'ordre est supposé au niveau du signal.',
+    'Historique M1 réel disponible seulement depuis 2022-05 (EURUSD, XAUUSD) et 2023-01 (US100, US500) : 2022 est une année partielle sur 2 paires.',
+    'Ce n\'est PAS de l\'argent réel : c\'est un rejeu. Les verdicts par mécanisme ou par paire sont instables d\'une période à l\'autre.',
+    'PLAFOND OPTIMISTE pour le FVG : ce rejeu suppose l\'ordre LIMIT rempli au niveau du signal. Or le bot réel pose le LIMIT à la clôture et n\'est rempli que si le prix revient : avec ce modèle d\'exécution, le FVG US100 passe de +193 / +186 / +26 R simulés à -449 / -139 / -51 R (2010-2022 / 2023-2025 / 2026), et le combo actuel est négatif (research-memory `fvg-live-execution-gap-2026-09-23`). Ne jamais citer le total ou la ligne « fvg » ci-dessous sans ce point.',
+    'Rejeu fidèle 2010-2026 de la config live (research-memory `live-replay-full-2010-2026`) : +326 R à l\'entraînement 2010-2022, mais environ 0 depuis 2023 (+21,6 R sur 2023-2025, -13,3 R en 2026). Les tableaux ci-dessous (M1 exact, remplissage au niveau du signal) donnent des chiffres bien plus hauts pour 2023-2026 : les deux modèles ne s\'accordent pas, donc ne pas les lire comme la performance attendue.',
+    'Les anciens chiffres du résumé (2009-2025, ~7 200 trades, ~2 964 R, 30,4 %) étaient un rejeu M15 avec GER40 (retiré du bot le 2026-09-21, négatif dans le vrai moteur) et un R brut sans coûts : ils ne doivent plus être cités.',
+  ],
+  vetoedByGuardrails: vetoed,
+  maxDrawdownPct: Math.round(maxDd * 10) / 10,
+  overall,
+  byYear,
+  byMonth: byMonthNamed,
+  bySymbol,
+  bySource,
+};
+
+fs.writeFileSync(OUT_PATH, JSON.stringify(summary, null, 2));
+console.log(`Résumé écrit dans ${OUT_PATH}`);
+console.log(`${overall.count} trades, ${overall.totalR >= 0 ? '+' : ''}${overall.totalR} R net (${overall.rPerTrade} R/trade), ${overall.winRatePct} % de réussite, baisse max ${summary.maxDrawdownPct} %, ${vetoed} vétos.`);

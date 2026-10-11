@@ -511,7 +511,7 @@ Deux ajouts faits juste avant la fin de session, à la demande explicite de l'ut
 
 - `scripts/` — 140 scripts d'analyse/backtest en Node.js (`node scripts/run....js data/backtest-input`).
 - `data/backtest-input/*.csv` — données M15 historiques, **13 instruments** : US100, US500, XAUUSD, EURUSD, GBPUSD, GER40, USDJPY (+ `USDJPY_M5.csv` pour le test scalp M5), USDCAD, NZDJPY, AUDUSD, UKX, AUX — plus `macro-vix-daily.csv` (filtre de régime macro). (Écrit « US100, US500, XAUUSD, EURUSD, GBPUSD » le 2026-09-08 : exact à l'époque, 8 instruments ont été ajoutés depuis.)
-- `data/backtest-input/*.md` — 119 rapports de résultats déjà générés (à relire avant de retester quoi que ce soit). Autres dossiers de données : `data/forward-test-2026/`, `data/real-data-2026-02-to-09/`, `data/real-data-2026-09-17/` (vraies bougies courtier) et `data/backtest-summary.json`.
+- `data/backtest-input/*.md` — 119 rapports de résultats déjà générés (à relire avant de retester quoi que ce soit). Autres dossiers de données : `data/forward-test-2026/`, `data/real-data-2026-02-to-09/`, `data/real-data-2026-09-17/` (vraies bougies courtier) et `data/backtest-summary.json` (régénéré le 2026-09-29 : rejeu M1 2022-2026 sans GER40, plafond optimiste ; `data/forward-test-2026/` = rejeu périmé, pas du trading réel).
 - `src/` — `config.js` (tous les réglages : symboles, garde-fous, risque, mécanismes), `server.js` (Express + API + service des fichiers statiques), `accountRegistry.js` / `accountRuntime.js` (multi-compte), `liveStrategyEngine.js` (moteur live), `chatAssistant.js` (assistant IA du dashboard), `keepAlive.js` (anti-veille Render).
   - `src/engines/` — `fvgEngine.js`, `guardrailEngine.js`, `lotCalculator.js`.
   - `src/backtest/` — **correction de chemin** : les filtres (`htfBias.js`, `marketStructure.js`, `nySession.js`, `liquiditySweep.js`, `weekdayFilter.js`), `gridRunner.js` (grid-search partagé) et `correlation.js` (helpers z-score/alignement pour Divergence) vivent ici, pas à la racine de `src/` comme cette section l'écrivait. 42 fichiers en tout (un par mécanisme testé + les helpers partagés).
@@ -3957,7 +3957,7 @@ Esdras : "Oui, active le multi-contact sur US500. Et on VA faire un test avec To
 - `src/dataSources/tradeCompliance.js` : commentaire de mise en garde ("KNOWN CAVEAT") mis à jour pour ne plus dire "US100 seulement" — le code lui-même était déjà générique, seul le commentaire mentait par omission.
 - `test/chartOverlays.test.js` : **2 tests cassés** — ils utilisaient délibérément US500 comme repère "toujours en contact unique" pour tester le comportement des zones "stale" (une zone jamais vue se fermer, avant les correctifs multi-contact). Maintenant que US500 est aussi multi-contact, ces deux tests devenaient invalides pour la même raison qu'ils testaient. Corrigés en utilisant **XAUUSD** à la place (le seul des 3 instruments FVG encore en contact unique). `npm test` : **534/534** (inchangé en nombre, 2 tests réécrits).
 
-`data/backtest-summary.json` régénéré (7173 trades décidés, +2964R, 30.4% de réussite — reflète maintenant les 3 mécanismes GER40 + le multi-contact US500).
+`data/backtest-summary.json` régénéré (7173 trades décidés, +2964R, 30.4% de réussite — reflète maintenant les 3 mécanismes GER40 + le multi-contact US500). **⚠ PÉRIMÉ (2026-09-29) : ces chiffres sont faux/obsolètes, voir l'entrée « Correction du résumé de backtest » en bas.**
 
 **Test final demandé : combo complet (TOUT ce qui a été ajouté cette session), train vs test vs 7 mois réels** — `scripts/testFullComboTrainTestReal.js` (nouveau), rejoue le combo directement depuis `CONFIG` (pas de config manuelle en dur, donc toujours à jour avec `config.js`) sur 3 fenêtres : historique < 2024-01-01 (train), historique >= 2024-01-01 (test, même découpage que partout ailleurs dans ce projet), et la fenêtre réelle déjà committée (`data/real-data-2026-02-to-09/`, 2026-02→09) :
 
@@ -7068,3 +7068,43 @@ Demande d'Esdras avant de dormir : pistes secondaires, années cachées pour un 
     fera une fois sur 2023-2026, gardé intact exprès ;
   - mode discipline : risque fixe, rien après 11 h, arrêt journalier ;
   - correctif du Labo.
+
+## 2026-09-29 — Correction du résumé de backtest et des textes qui le citaient
+
+Esdras a signalé que les chiffres du backtest cités dans une session (« +2 964 R, 30,4 %, système proven », « le vrai code performe mieux, 64 % de réussite en 2026 ») étaient faux. Cause : `data/backtest-summary.json` (lu par le chat du dashboard) était un rejeu M15 2009-2025 avec GER40 (retiré le 21/09), un R BRUT (rapport R:R sans spread) et le règlement M15 biaisé ; et `data/forward-test-2026/results.md` (14 signaux) avait été pris pour du trading réel alors que c'est un rejeu.
+- `scripts/buildBacktestSummary.js` réécrit : vrai moteur sur le M1 réel (`data/real-m1-full`), règlement M1 exact, garde-fous réels, production sans GER40, 0,3 % de risque, R net du spread. Résultat : 1 801 trades, +233 R (+0,129 R/trade), 24,7 % de réussite, baisse max 12,3 %, 427 vétos. Recoupé avec `scripts/runEngineM1Backtest.js` relancé sur le code actuel (mêmes 1 801 / +233,0 R / 12,3 % ; le rapport committé `engine-m1-vs-m15-reconciliation.md` date d'avant des changements de code et dit 2 071 / +227,7 R).
+- Ce chiffre reste un **plafond optimiste** (LIMIT rempli au niveau du signal, coûts partiels) : `fvg-live-execution-gap-2026-09-23` montre le FVG négatif quand il est exécuté comme le bot réel. Le fichier porte ses `caveats`.
+- `src/chatAssistant.js` : clé de contexte `backtest7Years` -> `backtestM1`, prompt corrigé (liste réelle des mécanismes et des paires, interdiction de dire « validé/prouvé », interdiction de citer les anciens chiffres, renvoi vers researchMemory).
+- Bannières « PÉRIMÉ » : `data/forward-test-2026/results.md`, `docs/STRATEGY.md`. Entrée `backtest-summary-stale-2026-09-29` ajoutée à `data/research-memory.json`.
+- Non corrigé : les rapports `data/backtest-input/*.md` M15 d'avant les corrections (règle d'égalité, bougie d'entrée) gardent leurs chiffres d'origine ; le PDF investisseur déjà envoyé n'a pas été relu. `npm test` : 1 239/1 239.
+
+## 2026-09-29 — FVG « 15 min » vers FVG « à gauche » (stratégie d'Esdras) : pré-enregistré, ÉCHEC à l'entraînement
+
+Capture d'Esdras (US500 M15 : « 15 min fvg » et « fvg à gauche »). Lecture confirmée par Esdras : vente depuis le retest du FVG baissier M15,
+cible = bord proche du FVG haussier plus ancien, jamais touché, situé devant l'entrée (≥ 2 R). Les définitions formelles du FVG viennent de
+Gemini ; sa lecture de la capture était fausse (il a pris la flèche « B · Noise » du bot pour le point d'entrée et achetait dans le sens
+contraire), et ses paramètres inventés (invalidation 50 %, break-even 50 %, marge fixe) ont été écartés. Fenêtre 08 h 30-11 h 30 NY, ordre de
+16 bougies, sortie stop/cible : valeurs de Gemini acceptées par Esdras. Pré-enregistrement `a23e41b`, script + 11 tests `7444d99`, calcul après.
+- `scripts/runFvgGaucheStudy.js train` (14 s) : 4 934 trades, 11 % gagnants, −0,070 R/trade, −345 R, **t −1,15** (2010-2016 −37 R ; 2017-2022 −308 R)
+  → **ÉCHEC**. Test 2023-2025 et 2026 **non lus** (le script refuse tant que l'entraînement n'a pas réussi).
+- Contrôle (descriptif) : mêmes ordres avec cible fixe 3 R → 22 % gagnants, −0,153 R/trade, t −6,49.
+- Scripts NON commités d'une autre session dans le dossier (`runEsdrasMitigationStudy.js`, `runEsdrasSMC*.js`, `runEsdrasUs500M15.js`) : ils lisent
+  2026 et les périodes cachées (NIGHT_PHASE forcé) sans pré-enregistrement ; s'ils ont tourné, ces périodes sont grillées pour cette famille.
+
+## 2026-09-30 — La méthode FVG d'Esdras : 11 exemples, règles apprises, « suivre le FVG le plus récent » : ÉCHEC (avantage nul)
+
+Esdras a envoyé 11 captures (US100 ×5, US500 ×6, septembre 2026) et expliqué sa méthode ; tout est dans `docs/methode-esdras-fvg.md` (règles dans ses mots, tableau des
+11 exemples, résultats). Faits importants :
+- **L'axe de ses graphiques est en UTC** (l'horloge en haut à droite est en heure d'Haïti = New York). Les règles qu'il donne : FVG le plus récent = direction et entrée ;
+  validité = attendre la bougie suivante, on garde la **partie non mangée** ; FVG consécutifs = un seul ; le FVG « à gauche » est dans la bougie H4 du 4hr high/low.
+- **FVG « à gauche » v1** (`a23e41b`) : 4 934 trades, −0,070 R/trade, t −1,15, ÉCHEC ; il ne reproduisait pas la méthode (fenêtre 8 h 30-11 h 30 de Gemini trop étroite).
+- **Détection** sur les 11 exemples : FVG d'entrée 11/11, direction 11/11, mais **le choix de la ligne 4hr n'est pas une règle** (meilleures règles simples 6/11, 1/5 hors
+  échantillon) ; il y a 4 à 13 candidats valides à chaque fois ; chaîne complète 6/11 ; ≈ 4,5 alertes/jour/paire.
+- **Suivre le FVG le plus récent** (`3c95987` pré-enregistrement, `4334fb0` script) : 34 597 trades 2010-2022, −0,009 R/trade, t −0,33 → **ÉCHEC**, avantage nul. Test 2023-2025
+  non lu. La zone d'entrée des 11 exemples est retrouvée (11/11) : les entrées sont banales, la sélection d'Esdras est ce qui compte.
+- **Décision en attente d'Esdras** : (1) mesurer son jugement en direct via le Simulateur (« Oui, je le prends / Non, je laisse », `GET /api/sim-journal/:session`), sur ≥ 100 setups ;
+  (2) ou 10-15 exemples de plus dont des setups refusés ; (3) construire une alerte de candidats (≈ 9 alertes/jour au total, trop bruyante sans tri).
+- Gemini a été consulté (idées de stratégies, lecture de la capture) : ses idées 1 et 3 (dernière demi-heure US500, range asiatique) étaient déjà testées ; les fixings de l'or/WMR
+  reposent sur des anomalies d'avant la réforme de 2015 (non testés) ; sa lecture de la capture (achat à 7 668,90) était fausse (flèche « B · Noise » du bot prise pour l'entrée).
+- Scripts NON commités d'une autre session (`runEsdrasMitigationStudy.js`, `runEsdrasSMC*.js`, `runEsdrasUs500M15.js`) : lisent 2026 et les périodes cachées sans pré-enregistrement.
+- Règle de travail : calculs lourds (> quelques minutes, plusieurs processus) en ligne, pas sur le laptop d'Esdras (il a dû mettre un ventilateur).
