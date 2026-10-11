@@ -1743,5 +1743,74 @@
       "data/backtest-input/fvg-suivi-study-train.md",
       "docs/methode-esdras-fvg.md"
     ]
+  },
+  {
+    "id": "gemini-fvg-spec-2026-09-30",
+    "title": "« Cahier des charges 100 % FVG » de Gemini (rejet M15 d'un FVG, stop au bord + 10 %, cible = FVG à gauche non comblé) : ÉCHEC à l'entraînement",
+    "date": "2026-09-30",
+    "status": "rejected",
+    "summary": "Pré-enregistré (preregistration-gemini-fvg-2026-09-30.md, commit af34ee6). US100+US500, 24 h, achats et ventes, spread et swap réels. Entraînement 2010-2022 (M15, stop d'abord) : 24102 trades, +0,033 R, t 2,06 (seuil 2,6) -> échec ; test 2023-2025 (M1) : 5164 trades, -0,021 R, t -0,61 ; forward 2026 : +0,129 R, t 1,57. Observation APRÈS COUP, non testée : les achats portent tout (entraînement t 3,54, test +95 R t 0,81, forward +156 R t 1,75), les ventes perdent ; à ne pas adopter sans pré-enregistrement et placebo (les indices ont monté sur toute la période, un biais acheteur quelconque gagne aussi).",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-gemini-fvg-2026-09-30.md",
+      "data/backtest-input/gemini-fvg-study.md",
+      "scripts/runGeminiFvgStudy.js",
+      "scripts/lib/geminiFvg.js",
+      "test/geminiFvg.test.js"
+    ]
+  },
+  {
+    "id": "gemini-buyonly-2026-09-30",
+    "title": "Règle de Gemini, achats seulement, contre placebo : CANDIDAT EXPLORATOIRE (avantage faible et qui s'érode)",
+    "date": "2026-09-30",
+    "status": "inconclusive",
+    "summary": "Pré-enregistré (preregistration-gemini-buyonly-2026-09-30.md, commit 561d856) APRÈS avoir lu le découpage achats/ventes du premier test : aucune période n'est vierge. US100+US500, achats seulement. Entraînement 2010-2022 : 12761 achats, +0,071 R, t 3,34, placebo -0,039 R (achat au hasard, mêmes stop/cible), écart 5,7 sigma. Par période : 2010-2016 +0,102 R, 2017-2022 +0,038 R, test 2023-2025 +0,035 R (t 0,75, écart au placebo 0,8 sigma, US500 -0,002 R), forward 2026 +0,213 R (n 778, t 1,81). Verdict pré-enregistré : candidat exploratoire, démo seulement. Avantage réel contre un achat au hasard, mais il diminue avec le temps et n'est plus distinguable de zéro depuis 2023.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-gemini-buyonly-2026-09-30.md",
+      "data/backtest-input/gemini-buyonly-study.md",
+      "scripts/runGeminiBuyOnlyStudy.js"
+    ]
+  },
+  {
+    "id": "esdras-lx-market-2026-09-30",
+    "title": "Règle LX d'Esdras avec entrée au marché après rejet (LX-MKT) : rejetée en exploration US100 2011-2018",
+    "date": "2026-09-30",
+    "status": "rejected",
+    "summary": "Pré-enregistrée (preregistration-lx-market-entry-2026-09-30.md, amendée avant calcul pour utiliser des bougies M15 faute de M1 HistData ici). Sur les mêmes bougies : LX-A marché 644 trades -0,166 R (t -1,97) contre limite 1372 trades -0,086 R ; LX-E marché +0,014 R (t 0,13) contre limite -0,032 R ; LX-M marché -0,064 R contre limite -0,029 R. Placebo battu 8/20, 12/20, 8/20 (il en faut 19). Verdict : l'entrée seule n'explique pas l'écart avec la version de Gemini ; sur les signaux pris par les deux exécutions, la limite fait mieux (+0,13 à +0,37 R) que le marché (-0,15 à +0,03 R), mais elle perd sur les signaux où le prix traverse le niveau sans rejet.",
+    "markets": [
+      "US100"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-lx-market-entry-2026-09-30.md",
+      "data/backtest-input/esdras-lx-market-US100-explore.md",
+      "scripts/runEsdrasLXMarket.js",
+      "scripts/lib/lxMarket.js",
+      "test/lxMarket.test.js"
+    ]
+  },
+  {
+    "id": "intrabar-rejection-2026-09-30",
+    "title": "Réagir dans la bougie (rejet évalué sur M5 / M1) plutôt qu'à la clôture M15 : ne prouve rien",
+    "date": "2026-09-30",
+    "status": "inconclusive",
+    "summary": "Pré-enregistré (preregistration-intrabar-rejection-2026-09-30.md, d04588a). Règle de Gemini achats seulement, US100+US500, M1 du broker 2023-01 -> 2026-09. Témoin M15 (reproduit geminiSignals, test) : 3492 achats +0,074 R. M5 : 4104 achats -0,000 R ; écart apparié +0,012 R (t 0,37). M1 : 4555 achats +0,027 R ; écart apparié +0,049 R (t 1,35). Verdict : ne prouve rien. L'entrée M5/M1 se fait en moyenne à un prix moins bon (13-16 % du risque plus haut) que le témoin.",
+    "markets": [
+      "US100",
+      "US500"
+    ],
+    "files": [
+      "data/backtest-input/preregistration-intrabar-rejection-2026-09-30.md",
+      "data/backtest-input/intrabar-rejection-study.md",
+      "scripts/runIntrabarStudy.js",
+      "scripts/lib/geminiIntrabar.js",
+      "test/geminiIntrabar.test.js"
+    ]
   }
 ]

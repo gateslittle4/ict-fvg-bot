@@ -7108,3 +7108,72 @@ Esdras a envoyé 11 captures (US100 ×5, US500 ×6, septembre 2026) et expliqué
   reposent sur des anomalies d'avant la réforme de 2015 (non testés) ; sa lecture de la capture (achat à 7 668,90) était fausse (flèche « B · Noise » du bot prise pour l'entrée).
 - Scripts NON commités d'une autre session (`runEsdrasMitigationStudy.js`, `runEsdrasSMC*.js`, `runEsdrasUs500M15.js`) : lisent 2026 et les périodes cachées sans pré-enregistrement.
 - Règle de travail : calculs lourds (> quelques minutes, plusieurs processus) en ligne, pas sur le laptop d'Esdras (il a dû mettre un ventilateur).
+
+## 2026-09-30 — « Cahier des charges 100 % FVG » de Gemini : pré-enregistré, ÉCHEC à l'entraînement
+
+Esdras a envoyé la description de Gemini (captures) : FVG M15, entrée au rejet de la zone, stop au-dessus du bord, objectif = premier
+« FVG à gauche » non comblé. Les points laissés ouverts par Gemini ont été fixés AVANT calcul :
+`data/backtest-input/preregistration-gemini-fvg-2026-09-30.md` (commit `af34ee6`). Principaux choix : Min_gap 0,02 % du prix ; entrée
+au marché à l'ouverture qui suit une bougie de rejet (touche la zone, clôture sans la franchir), parce que « dès la touche » et « sans
+clôturer au-dessus » ne peuvent pas être connus en même temps ; stop au bord + 10 % de la zone ; cible au bord le plus proche du FVG
+non comblé le plus proche, au moins 1 R ; 24 h, achats et ventes ; spread et swap réels.
+- Code : `scripts/lib/geminiFvg.js` (4 tests dans `test/geminiFvg.test.js`), `scripts/runGeminiFvgStudy.js`, qui règle avec
+  `manage()` de `scripts/lib/stopOrderEntry.js`.
+- Contrainte déclarée à l'avance : le M1 HistData 2010-2022 n'est pas dans ce dépôt. L'entraînement est donc réglé à la bougie M15
+  (stop d'abord). Test et forward sont réglés à la minute sur le M1 du broker.
+- **Résultat** (`data/backtest-input/gemini-fvg-study.md`) :
+  - Entraînement : 24 102 trades, 25 % de gagnants, **+0,033 R, t 2,06 < 2,6 → ÉCHEC** (deux moitiés positives mais faibles).
+  - Test 2023-2025 : −0,021 R, t −0,61.
+  - Forward 2026 : +0,129 R, t 1,57.
+- **Observation après coup, NON testée, à ne pas adopter** : les achats portent tout (entraînement +922 R, t 3,54 ; test +95 R, t 0,81 ;
+  forward +156 R, t 1,75), alors que les ventes perdent. Les indices ont monté sur toute la période : n'importe quel biais acheteur
+  gagne aussi. Il faudrait un pré-enregistrement « achats seulement » **avec placebo** (achat à un moment quelconque, même stop, même
+  distance de cible) avant d'y croire.
+
+Rien changé en live. Entrée `gemini-fvg-spec-2026-09-30` dans `data/research-memory.json`.
+
+## 2026-09-30 — Règle de Gemini, ACHATS SEULEMENT, contre placebo : candidat exploratoire, avantage faible qui s'érode
+
+Demande d'Esdras (« les indices montent tout le temps, focus sur l'achat »). Pré-enregistré `561d856` avant calcul, avec un placebo
+(100 tirages : achat à une bougie au hasard de la même année, mêmes fractions de stop et de cible, mêmes coûts). **Réserve déclarée** :
+l'idée vient d'un découpage lu après le premier test, donc aucune période n'est vierge. `scripts/runGeminiBuyOnlyStudy.js` →
+`data/backtest-input/gemini-buyonly-study.md`.
+- Entraînement 2010-2022 : 12 761 achats, **+0,071 R, t 3,34**, deux moitiés positives (+0,102 puis +0,038) ; placebo **−0,039 R** :
+  écart +0,110 R = 5,7 σ. L'achat au hasard avec ces stops ne gagne pas, donc ce n'est pas seulement la hausse des indices.
+- Test 2023-2025 : 2 714 achats, **+0,035 R, t 0,75**, écart au placebo 0,8 σ (US500 −0,002 R). Forward 2026 : 778 achats, +0,213 R,
+  t 1,81, écart 2,8 σ.
+- Verdict pré-enregistré : **CANDIDAT EXPLORATOIRE** (démo seulement). Lecture prudente : l'avantage contre un achat au hasard est
+  réel à l'entraînement, mais il décroît (0,10 → 0,04 → 0,035 R/trade) et n'est plus distinguable de zéro depuis 2023.
+- Limites : entraînement réglé à la bougie M15 (stop d'abord) ; 24 h/24 ; rien testé en exécution réelle (entrée au marché à l'ouverture
+  suivante, donc exécutable par le bot, contrairement à l'ancien FVG).
+Rien changé en live. Entrée `gemini-buyonly-2026-09-30` dans `data/research-memory.json`.
+
+## 2026-09-30 — Règle LX d'Esdras avec entrée au marché après rejet (LX-MKT) : REJETÉE
+
+Question d'Esdras (« pourquoi la version de Gemini est mieux que la mienne ? ») : est-ce l'entrée (ordre limite au bord contre marché
+après rejet) ? Pré-enregistré `bd29d2a`, **amendé avant calcul** `180fb4f` : le M1 HistData 2010-2022 n'est pas dans le dépôt, donc
+exploration sur les bougies M15 de `data/backtest-input/US100.csv` (règlement plus pessimiste que la minute, identique pour les deux
+entrées et le placebo ; la référence limite est recalculée sur les mêmes bougies). Code : `scripts/lib/lxMarket.js` (5 tests),
+`scripts/runEsdrasLXMarket.js` → `data/backtest-input/esdras-lx-market-US100-explore.md`. Un défaut de mes premiers tests (barres
+synthétiques sans h/l/c, 4 tests sur 5 verts pour de mauvaises raisons) a été trouvé et corrigé avant le calcul.
+- LX-A : marché 644 trades **−0,166 R** (t −1,97) ; limite 1372 trades −0,086 R. LX-E : marché **+0,014 R** (t 0,13) ; limite −0,032 R.
+  LX-M : marché −0,064 R ; limite −0,029 R. Placebo battu 8/20, 12/20, 8/20 (19 exigés) : **les trois REJETÉES**.
+- Sur les signaux pris par les deux exécutions, la limite fait mieux (+0,13 à +0,37 R) que le marché (−0,15 à +0,03 R) : le prix d'entrée
+  au bord compte. Mais la limite perd sur les signaux où le prix traverse le niveau sans rejet, que le marché évite en n'entrant pas.
+- Lecture : l'écart avec la version de Gemini ne vient pas de l'entrée seule (résultat intermédiaire : ni meilleur ni pire de façon
+  nette). Restent d'autres différences non isolées : pas de BMS ni de fenêtres horaires, deux indices au lieu d'un, 24 000 trades au lieu
+  de ~1 400, cible fixée par le FVG à gauche le plus proche, et surtout le tri achats/ventes lu après coup.
+Rien changé en live. Validation/finale non lues (l'exploration n'est pas retenue). Entrée `esdras-lx-market-2026-09-30` dans la mémoire.
+
+## 2026-09-30 — Réagir dans la bougie (M5 / M1) plutôt qu'à la clôture M15 : NE PROUVE RIEN
+
+Question d'Esdras (« le bot ne voit la bougie qu'à sa fin »). Vérifié dans le code (`src/dataSources/ctrader/marketData.js`) : le prix arrive
+tick par tick, mais les signaux ne sont évalués qu'au premier tick de la bougie M15 suivante (`_ingestNewLiveBar`) ; les ticks suivants
+mettent seulement la bougie à jour. Test pré-enregistré `d04588a` (règle de Gemini, achats seulement ; seul le moment du rejet change) :
+`scripts/lib/geminiIntrabar.js` (le témoin M15 reproduit exactement `geminiSignals` sur 30 000 vraies bougies : `test/geminiIntrabar.test.js`),
+`scripts/runIntrabarStudy.js` → `data/backtest-input/intrabar-rejection-study.md`. M1 du broker 2023 → 2026-09 seulement (le M1 HistData
+2010-2022 n'est pas dans le dépôt).
+- M15 (témoin) 3 492 achats **+0,074 R** ; M5 4 104 achats −0,000 R (écart apparié +0,012 R, t 0,37) ; M1 4 555 achats +0,027 R (écart
+  apparié +0,049 R, t 1,35). Les deux moitiés ne vont pas dans le même sens pour M5. **Verdict : ne prouve rien** (M5 comme M1).
+- L'entrée M5/M1 se fait en moyenne à un prix moins bon (13-16 % du risque plus haut) : reconnaître le rejet plus tôt n'améliore pas le prix.
+Conclusion : rien ne justifie de passer le bot à une évaluation en cours de bougie sur cette base. Rien changé en live.
