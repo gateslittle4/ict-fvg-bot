@@ -1812,5 +1812,27 @@
       "scripts/lib/geminiIntrabar.js",
       "test/geminiIntrabar.test.js"
     ]
+  },
+  {
+    "id": "prereg-ml-signal-filter-2026-10-15",
+    "title": "Filtre ML (régression logistique, forêt aléatoire) des signaux du combo : REJETÉ",
+    "date": "2026-10-15",
+    "status": "rejected",
+    "summary": "Pré-enregistré avant calcul (3375c53). 2 124 signaux du vrai moteur (4 paires, M1 exact, data/real-m1-full) ; entraînement <2025 (1113), test 2025 lu une fois (565), forward 2026 (446). 12 variables calculées avant l entrée. Logistique L2 : CV temporelle AUC 0,523, AUC test 0,501, R/trade des signaux gardés -0,00 contre +0,157 tous signaux, placebo p 0,454 -> REJETÉ. Forêt aléatoire : CV AUC 0,573 mais AUC test 0,480, gardés +0,076 contre +0,157, p 0,827 -> REJETÉ (bon score en validation croisée, pire que le hasard en test : surapprentissage typique). Forward 2026 : AUC 0,508 et 0,548, sans valeur. Les variables simples ne séparent pas les signaux gagnants des perdants.",
+    "markets": [
+      "US100",
+      "US500",
+      "XAUUSD",
+      "EURUSD"
+    ],
+    "timeframe": "M15 réglé en M1 exact",
+    "sample": "2124 signaux 2022-06 -> 2026-09",
+    "knownWeaknesses": "Entraînement court (~2 ans), HistData 2010-2022 absent du dépôt ; 300 permutations au lieu de 1000 pour la forêt (déclaré) ; signaux réglés comme indépendants. Ne prouve pas que tout ML échoue : seulement ces 2 modèles simples avec ces 12 variables.",
+    "files": [
+      "data/backtest-input/preregistration-ml-signal-filter-2026-10-15.md",
+      "scripts/exportMlSignals.js",
+      "scripts/runMlSignalFilter.py",
+      "data/backtest-input/ml-signal-filter-study.md"
+    ]
   }
 ]

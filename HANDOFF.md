@@ -7177,3 +7177,7 @@ mettent seulement la bougie à jour. Test pré-enregistré `d04588a` (règle de 
   apparié +0,049 R, t 1,35). Les deux moitiés ne vont pas dans le même sens pour M5. **Verdict : ne prouve rien** (M5 comme M1).
 - L'entrée M5/M1 se fait en moyenne à un prix moins bon (13-16 % du risque plus haut) : reconnaître le rejet plus tôt n'améliore pas le prix.
 Conclusion : rien ne justifie de passer le bot à une évaluation en cours de bougie sur cette base. Rien changé en live.
+
+## 2026-10-15 — Filtre ML des signaux du combo : REJETÉ (pré-enregistré, `prereg-ml-signal-filter-2026-10-15`)
+
+Demande d'Esdras : machine learning. Pré-enregistrement `preregistration-ml-signal-filter-2026-10-15.md` (commit 3375c53) AVANT le calcul. `scripts/exportMlSignals.js` (signaux du vrai moteur + 12 variables d'avant l'entrée → `data/ml-signal-filter/signals.csv`, 2 124 signaux) puis `scripts/runMlSignalFilter.py` (scikit-learn, installé par pip) → `data/backtest-input/ml-signal-filter-study.md`. Entraînement < 2025, test 2025 lu une fois, forward 2026. **Logistique L2 : AUC test 0,501, gardés -0,00 R/trade contre +0,157, placebo p 0,454. Forêt aléatoire : CV 0,573 mais AUC test 0,480, gardés +0,076 contre +0,157, p 0,827. Aucun ne passe.** Les variables simples (heure, volatilité, tendance, distance du stop, mécanisme, paire) ne séparent pas gagnants et perdants hors échantillon. Limites : entraînement court (~2 ans, HistData 2010-2022 absent), forêt à 300 permutations. Pour `pip install scikit-learn` sur un conteneur neuf : `pip install scikit-learn numpy pandas`.
