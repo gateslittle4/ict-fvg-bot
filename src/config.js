@@ -587,6 +587,7 @@ export const CONFIG = {
     clientId: process.env.CTRADER_CLIENT_ID || null,
     clientSecret: process.env.CTRADER_CLIENT_SECRET || null,
     accessToken: process.env.CTRADER_ACCESS_TOKEN || null,
+    refreshToken: process.env.CTRADER_REFRESH_TOKEN || null,
     accountId: process.env.CTRADER_ACCOUNT_ID || null,
 
     // Match-Trader Platform API (FundingPips) - written and unit-tested
@@ -716,6 +717,7 @@ export function normalizeAccountEntry(raw, index) {
     clientId: raw.broker?.clientId || null,
     clientSecret: raw.broker?.clientSecret || null,
     accessToken: raw.broker?.accessToken || null,
+    refreshToken: raw.broker?.refreshToken || null,
     accountId: raw.broker?.accountId || null,
     matchTrader: {
       email: raw.matchTrader?.email || null,
@@ -767,6 +769,7 @@ function resolveAccounts() {
           clientId: process.env.CTRADER_CLIENT_ID || null,
           clientSecret: process.env.CTRADER_CLIENT_SECRET || null,
           accessToken: process.env.CTRADER_ACCESS_TOKEN || null,
+          refreshToken: process.env.CTRADER_REFRESH_TOKEN || null,
           accountId: process.env.CTRADER_ACCOUNT_ID || null,
         },
         matchTrader: {

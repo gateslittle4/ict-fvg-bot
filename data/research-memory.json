@@ -1834,5 +1834,19 @@
       "scripts/runMlSignalFilter.py",
       "data/backtest-input/ml-signal-filter-study.md"
     ]
+  },
+  {
+    "id": "ctrader-token-expiry-2026-10-18",
+    "title": "Jeton cTrader expiré (~30 jours) : bot en démo depuis le 2026-10-11, renouvellement automatique ajouté",
+    "date": "2026-10-18",
+    "status": "methodology-fix",
+    "summary": "Constat : depuis le 11 octobre chaque démarrage authentifie l application puis échoue sur ProtoOAAccountAuthReq (« falling back to demo mode: undefined »), /healthz accountsConnected 0, /api/status mode demo. Cause probable : jeton d accès expiré (~30 jours, aucun renouvellement dans le code) ; le message d erreur du courtier était un objet sans .message, d où « undefined ». Correctif : src/dataSources/cTraderTokens.js (authorizeWithRefresh : jeton refusé ou expiration proche -> GET /apps/token?grant_type=refresh_token avec CTRADER_REFRESH_TOKEN, une seule nouvelle tentative, nouveaux jetons dans la table Supabase bot_broker_tokens car le refreshToken change à chaque usage ; jetons stockés ignorés si CTRADER_ACCESS_TOKEN change) + describeBrokerError (erreurs lisibles, jamais de jeton). 12 tests. À faire côté Esdras : mettre un jeton valide et CTRADER_REFRESH_TOKEN sur Render.",
+    "markets": [],
+    "knownWeaknesses": "Non testé contre le vrai serveur cTrader (aucun refresh token disponible ici) ; la cause exacte (code d erreur) reste à confirmer au prochain démarrage grâce aux nouveaux logs.",
+    "files": [
+      "src/dataSources/cTraderTokens.js",
+      "test/cTraderTokens.test.js",
+      "docs/CTRADER_SETUP.md"
+    ]
   }
 ]

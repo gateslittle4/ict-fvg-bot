@@ -47,6 +47,7 @@ import { BOT_MECHANISMS, BOT_IDS, botMechanismsForSymbol } from './backtest/repl
 import { newsBetween, newsCoverage } from './backtest/newsCalendar.js';
 import { instrumentSpec, conversionPlan } from './backtest/instrumentSpecs.js';
 import { getRecentAlerts } from './alertHistory.js';
+import { describeBrokerError } from './dataSources/cTraderTokens.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -2195,7 +2196,7 @@ async function bootAccount(accountConfig) {
       account.liveDataSource = live;
       console.log(`[boot:${account.id}] connected live to cTrader.`);
     } catch (err) {
-      console.error(`[boot:${account.id}] live cTrader connection failed, falling back to demo mode:`, err.message);
+      console.error(`[boot:${account.id}] live cTrader connection failed, falling back to demo mode:`, describeBrokerError(err));
       startMockDataSource(account);
     }
   } else {

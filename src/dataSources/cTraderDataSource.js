@@ -42,6 +42,7 @@ import { createSpreadAggregator, toSpreadRow, upsertSpreadRows } from './demoTra
 import { TickBarBuilder } from '../intradayMomentumEngine.js';
 
 import { refreshKillSwitch } from '../killSwitch.js';
+import { authorizeWithRefresh, createBrokerTokenStore } from './cTraderTokens.js';
 import { adjustMarketProtectionForSpread } from '../execution/marketProtection.js';
 
 import { createTradeLogClient } from './supabaseTradeLog.js';
@@ -263,9 +264,13 @@ export class CTraderDataSource {
     }
     this.accountId = accountId;
 
-    await sendCommandWithTimeout(this.connection, 'ProtoOAAccountAuthReq', {
-      ctidTraderAccountId: Number(accountId),
-      accessToken,
+    // 2026-10-18 : le jeton d'accès expire au bout de ~30 jours ; authorizeWithRefresh() le renouvelle tout seul (CTRADER_REFRESH_TOKEN)
+    // et garde les nouveaux jetons dans bot_broker_tokens. Voir cTraderTokens.js.
+    await authorizeWithRefresh({
+      authFn: (token) => sendCommandWithTimeout(this.connection, 'ProtoOAAccountAuthReq', { ctidTraderAccountId: Number(accountId), accessToken: token }),
+      creds: { clientId, clientSecret, accessToken, refreshToken: this.brokerConfig.refreshToken },
+      store: createBrokerTokenStore(this.tradeLogClient),
+      accountKey: `${store.id}:${accountId}`,
     });
     console.log(`[cTrader] account ${accountId} authenticated`);
 

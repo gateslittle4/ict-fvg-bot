@@ -34,6 +34,8 @@ curl "https://openapi.ctrader.com/apps/token?grant_type=authorization_code&code=
 ```
 La réponse contient un `accessToken` (valable environ 30 jours) et un `refreshToken` à garder précieusement pour en obtenir un nouveau sans repasser par l'étape 3 une fois qu'il expire.
 
+**Renouvellement automatique (depuis le 2026-10-18)** : mets aussi le `refreshToken` dans la variable Render `CTRADER_REFRESH_TOKEN`. Au démarrage, si le jeton est refusé (ou proche de l'expiration), le bot en demande un nouveau tout seul et garde les nouveaux jetons dans la table Supabase `bot_broker_tokens` (le refreshToken change à chaque usage, donc il ne faut plus le copier à la main ensuite). Si tu changes `CTRADER_ACCESS_TOKEN` à la main, les jetons stockés sont ignorés. Les erreurs du courtier sont maintenant écrites en clair dans le journal.
+
 ## 5. Trouver ton Account ID (ctidTraderAccountId)
 
 C'est l'identifiant technique de ton compte FundingPips spécifique (tu peux avoir plusieurs comptes sous le même login cTrader ID — démo, challenge, financé). Je peux le récupérer automatiquement dès que j'ai ton access token, via l'API — pas besoin de le chercher toi-même.
