@@ -16,6 +16,7 @@ l'API ne garde que les 5 000 dernières bougies, donc ne pas écraser ces fichie
 | `exp-funnel.mjs` | entonnoir : FVG d'entrée 11/11 → direction 9/11 → ligne 4hr (groupe de 3 règles) 8/11 → FVG à gauche 7/11 (ancienne règle de validité) |
 | `exp-all.mjs` | comparaison de règles pour choisir la ligne 4hr : pivot H4, le plus proche, le plus extrême sur 24 h / 72 h, le plus récent : 6/11 au mieux, 1/5 hors échantillon |
 | `exp-final.mjs` | chaîne complète avec la validité « ≤ 50 % de pénétration » (règle remplacée depuis par « partie non mangée ») : 6/11 de bout en bout, ≈ 4,5 alertes par jour et par paire |
+| `exp-gemini.mjs` | cahier des charges algorithmique de Gemini (30/09) appliqué **à la lettre** puis **avec les bords corrigés** (bords d'entrée/cible inversés dans son texte) : sens 7 puis 9/11, entrée dans la boîte d'Esdras 1 puis 2/11, entrée + cible 0 puis 1/10. Ordres : 0 à 7,5 par jour et par paire. Diag final : un balayage des 64 bougies précède bien le FVG d'entrée d'Esdras dans 11 cas sur 11, mais le plus souvent dans le **sens contraire** à son trade. Conclusion dans `docs/methode-esdras-fvg.md`. |
 
 Ils s'appuient sur `scripts/lib/fvgGaucheV2.js` (blocs H4 alignés sur l'UTC, extrêmes non balayés, zones fusionnées) et `scripts/lib/fvgFollow.js`.
 Les autres essais (fourchette de N bougies H4, zigzag, bougie qui ouvre un FVG H4, plus grande impulsion) ont donné 2 à 6 exemples sur 11 : voir le document de méthode.

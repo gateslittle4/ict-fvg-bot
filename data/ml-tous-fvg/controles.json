@@ -1,0 +1,16 @@
+{
+ "f2": {
+  "n": 1222,
+  "totalR": 129.69,
+  "dd": 27.41,
+  "ok": true
+ },
+ "labelMatch": {
+  "nTrades": 1222,
+  "nMatch": 1220,
+  "nMissingCandidate": 2,
+  "rate": 0.9984,
+  "ok": true
+ },
+ "exclHist": 0
+}

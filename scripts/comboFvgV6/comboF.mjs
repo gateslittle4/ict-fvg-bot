@@ -6,7 +6,7 @@ import { backtest, stats, h4SweepFilter } from './lib/krysBacktest.js';
 const D = process.argv[2] || '/mnt/user-data/uploads/ict-fvg-bot/data';
 
 // ---------- données : M1 -> M15 (temps moteur : t' - 5 h = heure NY réelle, DST réel) ----------
-function readM1(path) {
+export function readM1(path) {
   const txt = zlib.gunzipSync(fs.readFileSync(path)).toString('latin1'), out = [];
   let pos = txt.indexOf('\n') + 1;
   while (pos > 0 && pos < txt.length) {
@@ -19,7 +19,7 @@ function readM1(path) {
 }
 const nthSunday = (y, m, n) => { const d = new Date(Date.UTC(y, m, 1)); const first = (7 - d.getUTCDay()) % 7; return 1 + first + 7 * (n - 1); };
 const dstCache = new Map();
-function dstHours(ms) { // 1 si heure d'été US (règle 2007+), sinon 0
+export function dstHours(ms) { // 1 si heure d'été US (règle 2007+), sinon 0
   const y = new Date(ms).getUTCFullYear();
   if (!dstCache.has(y)) dstCache.set(y, [Date.UTC(y, 2, nthSunday(y, 2, 2), 7), Date.UTC(y, 10, nthSunday(y, 10, 1), 6)]);
   const [a, b] = dstCache.get(y); return ms >= a && ms < b ? 1 : 0;
