@@ -1,0 +1,10 @@
+ML tous FVG | pré-enregistrement SHA-256 d3ed96e73763fd5a311ece670c5d903bf0b4f689782cf4be9278b17575e8ba44 | 2026-10-18T04:32:31.868305
+## SCELLÉ (une seule lecture) : moteur filtré, une position à la fois
+candidats sans score : 137 sur 11987 décisions
+US100 2026         modèle n=  110 gagn= 29% R=    26.8 moy= 0.243 t= 1.26 | F2 n=   87 gagn= 20% R=   -20.8 moy=-0.239 t=-1.42 | permutation p=0.183
+GER40 2023-2026    modèle n=  410 gagn= 20% R=   -56.1 moy=-0.137 t=-1.57 | F2 n=  446 gagn= 26% R=    -0.9 moy=-0.002 t=-0.02 | permutation p=0.729
+XAUUSD 2023-2026   modèle n=  415 gagn= 22% R=   -14.9 moy=-0.036 t=-0.38 | F2 n=  392 gagn= 27% R=    -2.4 moy=-0.006 t=-0.07 | permutation p=0.153
+REGROUPÉ           modèle n=  935 gagn= 22% R=   -44.2 moy=-0.047 t=-0.77 | F2 n=  925 gagn= 26% R=   -24.1 moy=-0.026 t=-0.46
+Permutation regroupée : retenus 0.004, tirages -0.024, p = 0.2763
+
+VERDICT SCELLÉ : NON CONFIRMÉ

@@ -85,6 +85,21 @@ est de l'ordre du nombre de jours, t corrigés ≈ 1,5-2,5) ; l'horizon (1 jour)
 va dans son sens à +1 jour (+2,9 et +9,2 pts de base) mais reste sous le seuil de signal. Piste éventuelle, à pré-enregistrer et tester hors échantillon (2023-2025, jamais lu pour cette idée) :
 « le sens du dernier FVG H4 prédit le mouvement contraire du lendemain ».
 
+## Le cahier des charges de Gemini (30/09) — vérifié sur les 11 exemples, ÉCHEC de détection
+
+Esdras a transmis une spécification algorithmique de sa méthode rédigée par Gemini (balayage d'un 4hr high/low des 64 dernières M15 → FVG M15 dans le sens du retournement, LIMIT sur le bord proximal, stop à l'extrême du balayage + 2 points, cible = premier FVG opposé non comblé, expiration 16 bougies, 1 ré-entrée). Appliquée **à la lettre** puis **avec les bords corrigés** (dans son texte, les bords proximal/distal sont inversés : en achat il entre au fond du gap), sur les bougies M15 des 11 exemples, sans regarder aucune performance (`scripts/research-fvg-esdras/exp-gemini.mjs`).
+
+| Mesure (sur 11) | Littéral | Bords corrigés |
+|---|---|---|
+| Un setup dans le sens d'Esdras existe dans la fenêtre | 7/11 | 9/11 |
+| Son entrée tombe dans la boîte dessinée par Esdras | 1/11 | 2/11 |
+| Entrée **et** cible = son « fvg à gauche » | 0/10 | 1/10 |
+| Ordres posés | 0 à 7,5 / jour / paire | idem |
+
+Comparaison : la règle minimale du repo (« FVG M15 de son sens qui touche sa boîte ») en retrouve 11/11, la chaîne complète 6/11. Le cahier de Gemini est **nettement moins faithful** que ce qui est déjà écrit. Cause principale, mesurée sur les 11 trades : un balayage des 64 bougies précède bien le FVG d'entrée d'Esdras dans 11 cas sur 11, mais le plus souvent **dans le sens contraire** à son trade (et le 4hr est chez Esdras du côté de la **cible**, pas du catalyseur). Sa règle « premier FVG sur le chemin » est l'inverse du choix d'Esdras, qui écarte les niveaux proches et vise le FVG situé dans la bougie H4 de sa ligne 4hr. Les cibles de Gemini tombent en moyenne bien plus bas/haut que celles d'Esdras (ex. 2 : 29 304-29 319 contre 29 420-29 455 ; ex. 9 : 7 622-7 635 contre 7 628-7 635 — et dans la mauvaise moitié de la zone).
+
+**Décision : ne pas backtester cette spécification.** Aucun pré-enregistrement, aucun résultat de performance lu. Si Gemini la propose à nouveau, montrer ce tableau.
+
 ## Reste ouvert
 Mesurer le **jugement** d'Esdras en direct (Simulateur : « Oui, je le prends / Non, je laisse », journal `GET /api/sim-journal/:session`), sur au moins 100 setups,
 en comparant ceux qu'il prend à ceux qu'il laisse. Ou lui faire fournir 10-15 exemples de plus, **dont des setups refusés**, pour apprendre ce qui distingue.

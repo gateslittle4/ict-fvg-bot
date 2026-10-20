@@ -1,0 +1,32 @@
+F2 ML | pré-enregistrement SHA-256 b2870bd2ac59079d4d7d8b9625e624d148db10053ddc72ddbf4ba6ec1e15502f | lancé 2026-10-18T04:19:15.567665
+CONTRÔLE 2011-2022 : n=1222 R=129.7 => OK
+
+## MODÈLE PRINCIPAL : ridge (alpha=100), walk-forward 2017-2026
+tous    n=1023 gagn= 29% R=  124.1 moy= 0.121 t= 2.11
+pris    n= 505 gagn= 30% R=   81.8 moy= 0.162 t= 1.96
+sautés  n= 518 gagn= 28% R=   42.3 moy= 0.082 t= 1.02
+  2017-2021: tous n= 500 gagn= 30% R=   70.2 moy= 0.140 t= 1.77 | pris n= 232 gagn= 33% R=   61.2 moy= 0.264 t= 2.20 | sautés n= 268 gagn= 28% R=    9.0 moy= 0.034 t= 0.32 => pris > sautés et > tous
+  2022-2026: tous n= 523 gagn= 27% R=   53.9 moy= 0.103 t= 1.24 | pris n= 273 gagn= 26% R=   20.7 moy= 0.076 t= 0.67 | sautés n= 250 gagn= 28% R=   33.3 moy= 0.133 t= 1.09 => critère 2 NON rempli
+
+Permutation (10000 tirages, graine 12345) : R moyen observé des pris 0.162, moyenne des tirages 0.112, p = 0.2000
+Critère 1 (pris moy>0 et t>=1,96) : True | critère 2 (deux périodes) : False | critère 3 (p<=0,05) : False | critère 4 (contrôle) : True
+
+VERDICT : AUCUN GAIN
+
+## DESCRIPTIF (non jugé)
+Par année (tous | pris | sautés) :
+  2017: tous n=  95 gagn= 39% R=   50.4 moy= 0.531 t= 2.61 | pris n=  40 gagn= 48% R=   34.5 moy= 0.862 t= 2.74 | sautés n=  55 gagn= 33% R=   15.9 moy= 0.289 t= 1.10
+  2018: tous n=  97 gagn= 24% R=  -14.3 moy=-0.147 t=-0.93 | pris n=  45 gagn= 31% R=    4.6 moy= 0.102 t= 0.40 | sautés n=  52 gagn= 17% R=  -18.9 moy=-0.363 t=-1.86
+  2019: tous n=  95 gagn= 28% R=   12.7 moy= 0.134 t= 0.71 | pris n=  46 gagn= 33% R=   15.7 moy= 0.342 t= 1.18 | sautés n=  49 gagn= 24% R=   -3.0 moy=-0.062 t=-0.26
+  2020: tous n= 110 gagn= 34% R=   23.7 moy= 0.215 t= 1.27 | pris n=  47 gagn= 30% R=    6.1 moy= 0.130 t= 0.50 | sautés n=  63 gagn= 37% R=   17.6 moy= 0.279 t= 1.24
+  2021: tous n= 103 gagn= 27% R=   -2.3 moy=-0.023 t=-0.14 | pris n=  54 gagn= 28% R=    0.3 moy= 0.005 t= 0.02 | sautés n=  49 gagn= 27% R=   -2.6 moy=-0.053 t=-0.22
+  2022: tous n= 105 gagn= 29% R=   18.2 moy= 0.173 t= 0.87 | pris n=  52 gagn= 21% R=   -4.1 moy=-0.078 t=-0.30 | sautés n=  53 gagn= 36% R=   22.2 moy= 0.420 t= 1.40
+  2023: tous n= 122 gagn= 32% R=   31.6 moy= 0.259 t= 1.49 | pris n=  69 gagn= 33% R=   17.1 moy= 0.248 t= 1.11 | sautés n=  53 gagn= 30% R=   14.4 moy= 0.273 t= 0.99
+  2024: tous n= 113 gagn= 22% R=   -8.7 moy=-0.077 t=-0.44 | pris n=  56 gagn= 23% R=   -3.5 moy=-0.063 t=-0.25 | sautés n=  57 gagn= 21% R=   -5.2 moy=-0.091 t=-0.37
+  2025: tous n=  96 gagn= 32% R=   33.6 moy= 0.350 t= 1.70 | pris n=  46 gagn= 33% R=   21.0 moy= 0.457 t= 1.43 | sautés n=  50 gagn= 32% R=   12.6 moy= 0.253 t= 0.95
+  2026: tous n=  87 gagn= 20% R=  -20.8 moy=-0.239 t=-1.42 | pris n=  50 gagn= 20% R=   -9.9 moy=-0.198 t=-0.86 | sautés n=  37 gagn= 19% R=  -10.9 moy=-0.294 t=-1.18
+Années où pris > sautés : 7 sur 10
+Coefficients ridge standardisés sur 2011-2022 (R par écart-type de variable) : x1_lnRisqueATR=-0.067, x2_lnRRprevu=-0.016, x3_age=-0.023, x4_hauteurFVGsurRisque=-0.097, x5_h09_12=+0.054, x6_h12_16=+0.116, x7_lundi=+0.049
+Coefficients ridge standardisés sur 2011-2026 (R par écart-type de variable) : x1_lnRisqueATR=-0.040, x2_lnRRprevu=+0.014, x3_age=+0.058, x4_hauteurFVGsurRisque=-0.094, x5_h09_12=+0.043, x6_h12_16=+0.095, x7_lundi=+0.052
+logit (régression logistique): tous n=1023 gagn= 29% R=  124.1 moy= 0.121 t= 2.11 | pris n= 514 gagn= 32% R=   90.3 moy= 0.176 t= 2.27 | sautés n= 509 gagn= 25% R=   33.8 moy= 0.066 t= 0.78
+hgb   (arbres boostés): tous n=1023 gagn= 29% R=  124.1 moy= 0.121 t= 2.11 | pris n= 535 gagn= 27% R=   19.0 moy= 0.035 t= 0.47 | sautés n= 488 gagn= 30% R=  105.1 moy= 0.215 t= 2.45

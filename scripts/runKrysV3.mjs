@@ -1,0 +1,10 @@
+import { loadCsv, run } from './runKrysValidation.mjs';
+import { stats } from './lib/krysBacktest.js';
+const c=loadCsv('../data/real-data-2023-2025/US100.csv'); const k=run(c).k;
+const yr=(t)=>new Date(c[t.fillIdx].raw).getUTCFullYear();
+const show=(n,r)=>{const t=r.trades; const s=(x)=>`n=${String(x.n).padStart(3)} gagn=${(x.winRate*100).toFixed(0)}% R=${x.totalR.toFixed(1).padStart(6)} moy=${x.avgR.toFixed(2)} dd=${x.maxDrawdownR.toFixed(1)}`;
+ console.log(n.padEnd(34),s(r.all)); for(const y of [2023,2024,2025]) console.log('   ',y,s(stats(t.filter(x=>yr(x)===y))));};
+console.log('bougies',c.length,'échelle',k);
+show('v2 figée (stop bord, TP 4R, H4)',run(c));
+show('v3 (stop c1, TP moitié/3R, H4)',run(c,{stopMode:'c1',tpMode:'half',minRR:3,stopMargin:3*k}));
+show('info: v3 sans filtre H4',run(c,{stopMode:'c1',tpMode:'half',minRR:3,stopMargin:3*k,noH4:true}));

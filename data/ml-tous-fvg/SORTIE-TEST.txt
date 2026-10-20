@@ -1,0 +1,21 @@
+ML tous FVG | pré-enregistrement SHA-256 d3ed96e73763fd5a311ece670c5d903bf0b4f689782cf4be9278b17575e8ba44 | 2026-10-18T04:32:49.386863
+## MOTEUR FILTRÉ (une position à la fois), US100 2023-2025
+modèle  n=  392 gagn= 24% R=     2.5 moy= 0.006 t= 0.07
+F2      n=  331 gagn= 29% R=    56.5 moy= 0.171 t= 1.61
+candidats sans score : 40 sur 4504 décisions (0.89 %)
+Permutation (10000 tirages) : R moyen des retenus (étiquettes indépendantes, 487 setups) 0.005, tirages 0.008, p = 0.5104
+crit.1 (>=100 trades) True | crit.2 (moy>0, t>=1,96) False | crit.3 (> F2) False | crit.4 (p<=0,05) False | contrôles True
+
+VERDICT TEST : AUCUN GAIN
+
+## DESCRIPTIF (non jugé), étiquettes indépendantes sur les candidats du test
+tous     n= 2767 gagn= 24% R=    23.9 moy= 0.009 t= 0.23
+retenus  n=  487 gagn= 25% R=     2.4 moy= 0.005 t= 0.06
+écartés  n= 2280 gagn= 24% R=    21.6 moy= 0.009 t= 0.23
+  2023: tous n=  940 gagn= 22% R=   -62.0 moy=-0.066 t=-1.02 | retenus n=  171 gagn= 21% R=   -23.5 moy=-0.137 t=-0.96
+  2024: tous n=  937 gagn= 25% R=    27.0 moy= 0.029 t= 0.44 | retenus n=  165 gagn= 27% R=    16.4 moy= 0.099 t= 0.65
+  2025: tous n=  890 gagn= 26% R=    59.0 moy= 0.066 t= 1.04 | retenus n=  151 gagn= 26% R=     9.4 moy= 0.062 t= 0.41
+  achats: tous n= 1480 gagn= 26% R=   108.2 moy= 0.073 t= 1.41 | retenus n=  275 gagn= 26% R=     8.9 moy= 0.032 t= 0.28
+  ventes: tous n= 1287 gagn= 22% R=   -84.3 moy=-0.065 t=-1.23 | retenus n=  212 gagn= 23% R=    -6.6 moy=-0.031 t=-0.24
+Importance par permutation (validation) : depuisBalayage=0.0036, atrRel=0.0036, pos96=0.0019, ret96ATR=0.0014, lnRRprevu=0.0008, lnRisqueATR=0.0007, dir=0.0006, hauteurCibleATR=0.0000
+Ridge (comparaison, même q) : retenus n=  594 gagn= 25% R=    28.3 moy= 0.048 t= 0.55 | écartés n= 2173 gagn= 24% R=    -4.3 moy=-0.002 t=-0.05
