@@ -1,0 +1,27 @@
+SWING SW1 (FVG H1, balayage daily) | mode train | pré-enregistrement SHA-256 8461d27d872df720cbc1dadf25750f12aabcf71d42fa67b8c412ea7fa7da21ed | lancé 2026-11-15T02:06:01.899Z
+
+CONTRÔLE 1, F2C M15 2011-2022 avec le moteur S (attendu n=1222, R 129,7, dd 27,4) : n=1222 gagn=29% R=  129.7 moy= 0.106 t= 2.04 dd=27.4 => OK
+CONTRÔLE 2, bougies H1 par an 2011-2025 : min 5738, max 6107 => OK
+
+## ENTRAÎNEMENT US100 2011-2022, SW1, R nets du spread et du swap (7 %/an)
+  2011-2022 : n= 942 gagn=26% R=   75.8 moy= 0.080 t= 1.28 dd=30.9 | R total / pire baisse 2.45
+  2011-2016 : n= 486 gagn=25% R=   43.3 moy= 0.089 t= 0.99 dd=20.1 
+  2017-2022 : n= 456 gagn=26% R=   32.5 moy= 0.071 t= 0.82 dd=23.8
+  par an    : 2011: 0.22(102)  2012: 0.17(78)  2013: 0.00(65)  2014: -0.05(72)  2015: 0.25(91)  2016: -0.15(78)  2017: -0.19(56)  2018: -0.05(70)  2019: 0.58(60)  2020: 0.25(68)  2021: -0.00(88)  2022: -0.04(114)
+  Critères : 1 (≥ 150 trades) OK | 2 (R > 0, t ≥ 1,96) NON | 3 (deux moitiés > 0) OK | 4 (R total / pire baisse ≥ 2) OK
+
+ENTRAÎNEMENT : ÉCHEC -> SW1 rejetée
+
+## DESCRIPTIF 2011-2022 (non jugé)
+  SW1 : durée médiane 5 h | tenus ≥ 1 nuit 30 % | nuits moyennes 0.7 | sortis au temps 2 % | gagnants : durée médiane 15 h
+  SW1 avant swap        : n= 942 gagn=26% R=   96.6 moy= 0.103 t= 1.62 dd=25.6
+  SW1 swap 10 %/an      : n= 942 gagn=26% R=   66.8 moy= 0.071 t= 1.13 dd=33.1
+  SW1 spread x2         : n= 938 gagn=25% R=   53.8 moy= 0.057 t= 0.92 dd=29.0
+  achats H1 sans balayage : n=1914 gagn=23% R=  -55.6 moy=-0.029 t=-0.68 dd=140.8 | durée médiane 5 h | tenus ≥ 1 nuit 29 % | nuits moyennes 0.7 | sortis au temps 2 % | gagnants : durée médiane 17 h
+  SW4 (FVG H4, 16 jours) : n= 207 gagn=26% R=   -7.8 moy=-0.038 t=-0.30 dd=32.4 | durée médiane 24 h | tenus ≥ 1 nuit 59 % | nuits moyennes 3.3 | sortis au temps 3 % | gagnants : durée médiane 72 h
+    par an : 2011: 0.38(13)  2012: -0.65(20)  2013: 0.95(15)  2014: 0.03(15)  2015: -0.59(25)  2016: 0.21(15)  2017: -0.05(13)  2018: 0.88(11)  2019: 0.63(15)  2020: 0.55(13)  2021: -0.45(20)  2022: -0.61(32)
+  achats H4 sans balayage : n= 410 gagn=26% R=   -6.1 moy=-0.015 t=-0.16 dd=39.5
+  US500 SW1              : n= 910 gagn=25% R=   45.3 moy= 0.050 t= 0.76 dd=54.3 
+    par an : 2011: 0.22(79)  2012: -0.02(73)  2013: -0.10(65)  2014: -0.06(82)  2015: 0.10(90)  2016: -0.19(71)  2017: -0.13(58)  2018: -0.04(88)  2019: 0.69(61)  2020: 0.22(66)  2021: 0.19(70)  2022: -0.13(107)
+
+Test 2023-2026 NON LU (nombre seulement) : 283 trades SW1.
