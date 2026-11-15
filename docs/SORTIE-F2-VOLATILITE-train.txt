@@ -1,0 +1,29 @@
+F2 ET RÉGIME DE VOLATILITÉ (VOL1) | mode train | pré-enregistrement SHA-256 f7aac0172aed8799add6486eefb3884039623a0e6400f376722a975ee958b2c9 | lancé 2026-11-15T01:24:04.879Z
+
+CONTRÔLE F2C 2011-2022 (attendu n=1222, R 129,7, dd 27,4) : n=1222 gagn=29% R=  129.7 moy= 0.106 t= 2.04 dd=27.4 => OK
+Part des bougies en régime élevé (toute la série) : 45.8 %
+
+## ENTRAÎNEMENT US100 2011-2022
+  élevé : n= 564 gagn=30% R=   91.4 moy= 0.162 t= 2.06 dd=25.5 
+  calme : n= 658 gagn=28% R=   38.3 moy= 0.058 t= 0.84 dd=35.0
+  2011-2016 élevé n= 280 gagn=29% R=   38.2 moy= 0.136 t= 1.22 dd=14.0 | calme n= 337 gagn=26% R=    3.1 moy= 0.009 t= 0.10 dd=35.0
+  2017-2022 élevé n= 284 gagn=31% R=   53.2 moy= 0.187 t= 1.68 dd=25.5 | calme n= 321 gagn=29% R=   35.2 moy= 0.110 t= 1.11 dd=25.7
+  Welch élevé − calme : 0.99
+  Critères : 1 (élevé > calme, Welch ≥ 1,96) NON | 2 (élevé ≥ 0,156) OK | 3 (élevé > 0 dans les deux moitiés) OK | 4 (≥ 30 % des trades) OK
+  Par an :
+    2011: élevé 0.00(45) calme 0.06(62)
+    2012: élevé 0.18(53) calme 0.19(55)
+    2013: élevé 0.62(25) calme -0.03(68)
+    2014: élevé 0.06(47) calme 0.18(38)
+    2015: élevé 0.12(57) calme -0.43(57)
+    2016: élevé 0.06(53) calme 0.15(57)
+    2017: élevé 0.67(47) calme 0.39(48)
+    2018: élevé -0.27(50) calme -0.02(47)
+    2019: élevé -0.02(36) calme 0.23(59)
+    2020: élevé 0.20(51) calme 0.23(59)
+    2021: élevé -0.21(44) calme 0.12(59)
+    2022: élevé 0.62(56) calme -0.34(49)
+
+ENTRAÎNEMENT : ÉCHEC -> VOL1 rejetée
+
+Test 2023-2025 NON LU (nombres seulement) : élevé 136 trades, calme 195 trades ; 2026 : 87 trades.

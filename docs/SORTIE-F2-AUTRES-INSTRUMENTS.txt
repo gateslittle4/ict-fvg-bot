@@ -1,0 +1,57 @@
+F2 GELÉE SUR D'AUTRES INSTRUMENTS | pré-enregistrement SHA-256 9222a76a4cebb4541b9c7f5bf27ba3352a2b8ccea60f9d0f972fd640942fe764 | lancé 2026-11-15T01:23:56.745Z
+
+CONTRÔLE US100 F2C 2011-2022 (attendu n=1222, R total 129,7, pire baisse 27,4) : n=1222 gagn=29% R=  129.7 moy= 0.106 t= 2.04 dd=27.4 => OK
+
+## PRINCIPAL : GER40 et XAUUSD, 2023-01-01 -> dernière bougie
+
+GER40 : M15 85594, de 2023-01-11 02:45 à 2026-09-21 03:30 UTC | trades/semaine 2.31
+  2023-2026  n= 446 gagn=26% R=   -0.9 moy=-0.002 t=-0.02 dd=35.1
+  2023-2024  n= 233 gagn=23% R=  -24.3 moy=-0.104 t=-0.96 dd=34.4
+  2025-2026  n= 213 gagn=29% R=   23.4 moy= 0.110 t= 0.89 dd=30.4
+  par an     2023: -0.14(125)  2024: -0.06(108)  2025: 0.34(129)  2026: -0.24(84)
+
+XAUUSD : M15 101437, de 2022-05-19 00:00 à 2026-09-21 03:30 UTC | trades/semaine 2.02
+  2023-2026  n= 392 gagn=27% R=   -2.4 moy=-0.006 t=-0.07 dd=31.0
+  2023-2024  n= 200 gagn=27% R=   -3.9 moy=-0.019 t=-0.16 dd=29.1
+  2025-2026  n= 192 gagn=27% R=    1.5 moy= 0.008 t= 0.06 dd=31.0
+  par an     2023: -0.00(106)  2024: -0.04(94)  2025: 0.28(108)  2026: -0.35(84)
+
+POOLÉ GER40 + XAUUSD : n= 838 gagn=26% R=   -3.3 moy=-0.004 t=-0.07 dd=38.8 
+  2023-2024 : n= 433 gagn=25% R=  -28.2 moy=-0.065 t=-0.81 dd=43.9 
+  2025-2026 : n= 405 gagn=28% R=   24.9 moy= 0.061 t= 0.69 dd=31.7
+
+VERDICT (pré-enregistré) : Non répliquée
+Rappel : puissance faible (environ 40 % de chances de passer t >= 1,96 si le vrai R moyen était +0,106) ; ne prouve ni ne réfute F2 à lui seul.
+
+## SECONDAIRE (descriptif, corrélé à US100) : US500
+  2011-2016  n= 584 gagn=27% R=   26.1 moy= 0.045 t= 0.60 dd=47.0
+  2017-2022  n= 542 gagn=30% R=   77.5 moy= 0.143 t= 1.86 dd=41.1
+  2023-2026  n= 383 gagn=23% R=  -40.2 moy=-0.105 t=-1.23 dd=52.4
+  US100 2023-2026 (référence) : n= 418 gagn=27% R=   35.7 moy= 0.085 t= 0.94 dd=24.8
+  Recouvrement 2023-2026 : 184 ordres US500 sur 383 sont posés à la même bougie qu'un ordre US100
+
+## DESCRIPTIF 2023-2026 : coûts et filtre de balayage (non jugé)
+
+GER40
+  F2 (spread du projet)            n= 446 gagn=26% R=   -0.9 moy=-0.002 t=-0.02 dd=35.1
+  F2 spread nul                    n= 452 gagn=27% R=   20.2 moy= 0.045 t= 0.54 dd=28.6
+  F2 spread x2                     n= 434 gagn=24% R=  -30.8 moy=-0.071 t=-0.88 dd=48.5
+  achats sans filtre de balayage   n=1032 gagn=26% R=   49.6 moy= 0.048 t= 0.85 dd=43.5
+
+XAUUSD
+  F2 (spread du projet)            n= 392 gagn=27% R=   -2.4 moy=-0.006 t=-0.07 dd=31.0
+  F2 spread nul                    n= 404 gagn=27% R=    7.5 moy= 0.019 t= 0.21 dd=28.0
+  F2 spread x2                     n= 379 gagn=25% R=  -24.8 moy=-0.066 t=-0.75 dd=45.4
+  achats sans filtre de balayage   n=1070 gagn=26% R=   19.5 moy= 0.018 t= 0.33 dd=70.1
+
+US500
+  F2 (spread du projet)            n= 383 gagn=23% R=  -40.2 moy=-0.105 t=-1.23 dd=52.4
+  F2 spread nul                    n= 389 gagn=24% R=  -18.9 moy=-0.049 t=-0.56 dd=44.6
+  F2 spread x2                     n= 373 gagn=22% R=  -54.7 moy=-0.147 t=-1.73 dd=66.6
+  achats sans filtre de balayage   n=1147 gagn=23% R= -134.0 moy=-0.117 t=-2.38 dd=161.1
+
+US100
+  F2 (spread du projet)            n= 418 gagn=27% R=   35.7 moy= 0.085 t= 0.94 dd=24.8
+  F2 spread nul                    n= 424 gagn=28% R=   52.9 moy= 0.125 t= 1.36 dd=24.8
+  F2 spread x2                     n= 412 gagn=26% R=   18.2 moy= 0.044 t= 0.49 dd=25.8
+  achats sans filtre de balayage   n=1232 gagn=25% R=   35.5 moy= 0.029 t= 0.53 dd=53.2
